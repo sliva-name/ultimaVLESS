@@ -1,0 +1,68 @@
+import React, { useState } from 'react';
+import { Sidebar } from './components/Sidebar';
+import { SettingsModal } from './components/SettingsModal';
+import { ConnectionStatus } from './components/ConnectionStatus';
+import { useServerState } from './hooks/useServerState';
+
+function App() {
+  const { 
+    servers, 
+    selectedServer, 
+    isConnected, 
+    isConfigLoading,
+    setSelectedServer, 
+    toggleConnection, 
+    saveSubscription,
+    pingAllServers
+  } = useServerState();
+
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const handleSaveSub = async (url: string) => {
+    await saveSubscription(url);
+    setIsSettingsOpen(false);
+  };
+
+  return (
+    <div className="flex h-screen bg-gradient-to-br from-background via-background to-gray-950 text-gray-200 relative overflow-hidden">
+      {/* Background decorative elements */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/3 via-transparent to-transparent pointer-events-none" />
+      <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-primary/2 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-1/2 h-1/2 bg-blue-500/2 rounded-full blur-3xl pointer-events-none" />
+      
+      <Sidebar 
+        servers={servers}
+        selectedServer={selectedServer}
+        isConnected={isConnected}
+        onSelectServer={setSelectedServer}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onPingAll={pingAllServers}
+      />
+
+      <div className="flex-1 flex flex-col relative">
+        {/* Drag Region for Window Move */}
+        <div 
+          className="h-8 w-full app-drag-region bg-gradient-to-r from-surface/50 to-transparent backdrop-blur-sm border-b border-gray-800/30" 
+          style={{ WebkitAppRegion: 'drag' } as any}
+        />
+
+        {isSettingsOpen ? (
+           <SettingsModal 
+             isOpen={isSettingsOpen} 
+             isLoading={isConfigLoading}
+             onClose={() => setIsSettingsOpen(false)} 
+             onSave={handleSaveSub}
+           />
+        ) : (
+          <ConnectionStatus 
+            isConnected={isConnected}
+            selectedServer={selectedServer}
+            onToggleConnection={toggleConnection}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default App;

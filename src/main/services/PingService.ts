@@ -1,0 +1,143 @@
+import * as net from 'net';
+import { VlessConfig } from '../../shared/types';
+import { logger } from './LoggerService';
+
+/**
+ * Service for checking server latency (ping) via TCP connection attempts.
+ * Measures the time it takes to establish a TCP connection to the server.
+ */
+export class PingService {
+  private readonly DEFAULT_TIMEOUT = 5000; // 5 seconds timeout
+  private readonly MAX_CONCURRENT_PINGS = 5; // Limit concurrent ping operations
+
+  /**
+   * Pings a single server by attempting a TCP connection.
+   * @param server - The server configuration to ping.
+   * @param timeout - Connection timeout in milliseconds (default: 5000ms).
+   * @returns Promise resolving to latency in milliseconds, or null if connection failed.
+   */
+  public async pingServer(server: VlessConfig, timeout: number = this.DEFAULT_TIMEOUT): Promise<number | null> {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const socket = new net.Socket();
+
+      const cleanup = () => {
+        socket.removeAllListeners();
+        socket.destroy();
+      };
+
+      const onError = (error: Error) => {
+        cleanup();
+        logger.debug('PingService', `Ping failed for ${server.name} (${server.address}:${server.port})`, { error: error.message });
+        resolve(null);
+      };
+
+      const onTimeout = () => {
+        cleanup();
+        logger.debug('PingService', `Ping timeout for ${server.name} (${server.address}:${server.port})`);
+        resolve(null);
+      };
+
+      const onConnect = () => {
+        const latency = Date.now() - startTime;
+        cleanup();
+        logger.debug('PingService', `Ping success for ${server.name} (${server.address}:${server.port}): ${latency}ms`);
+        resolve(latency);
+      };
+
+      socket.setTimeout(timeout);
+      socket.once('error', onError);
+      socket.once('timeout', onTimeout);
+      socket.once('connect', onConnect);
+
+      try {
+        socket.connect(server.port, server.address);
+      } catch (error) {
+        onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  /**
+   * Generates a unique key for a server (address:port or uuid if unique).
+   * @param server - The server configuration.
+   * @returns Unique identifier string.
+   */
+  private getServerKey(server: VlessConfig): string {
+    // Use address:port as key since UUIDs might not be unique
+    return `${server.address}:${server.port}`;
+  }
+
+  /**
+   * Pings multiple servers with concurrency control.
+   * @param servers - Array of server configurations to ping.
+   * @param timeout - Connection timeout in milliseconds (default: 5000ms).
+   * @returns Promise resolving to a map of server keys (address:port) to their latency values.
+   */
+  public async pingServers(
+    servers: VlessConfig[],
+    timeout: number = this.DEFAULT_TIMEOUT
+  ): Promise<Map<string, number | null>> {
+    const results = new Map<string, number | null>();
+    
+    if (servers.length === 0) {
+      return results;
+    }
+
+    // Process servers in batches with concurrency limit
+    const batchSize = this.MAX_CONCURRENT_PINGS;
+    for (let i = 0; i < servers.length; i += batchSize) {
+      const batch = servers.slice(i, i + batchSize);
+      const batchPromises = batch.map(async (server) => {
+        const latency = await this.pingServer(server, timeout);
+        const key = this.getServerKey(server);
+        logger.debug('PingService', `Ping result for ${server.name}`, {
+          key,
+          uuid: server.uuid.substring(0, 8) + '...',
+          address: server.address,
+          port: server.port,
+          latency
+        });
+        return { key, uuid: server.uuid, latency };
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      batchResults.forEach(({ key, uuid, latency }) => {
+        results.set(key, latency);
+      });
+    }
+    
+    logger.debug('PingService', 'All ping results', {
+      totalServers: servers.length,
+      resultsCount: results.size,
+      uniqueUUIDs: new Set(servers.map(s => s.uuid)).size,
+      uniqueKeys: results.size,
+      results: Array.from(results.entries()).map(([key, latency]) => ({
+        key,
+        latency
+      }))
+    });
+
+    return results;
+  }
+
+  /**
+   * Pings a single server and returns the result with server info.
+   * @param server - The server configuration to ping.
+   * @param timeout - Connection timeout in milliseconds (default: 5000ms).
+   * @returns Promise resolving to ping result object.
+   */
+  public async pingServerWithResult(
+    server: VlessConfig,
+    timeout: number = this.DEFAULT_TIMEOUT
+  ): Promise<{ uuid: string; latency: number | null }> {
+    const latency = await this.pingServer(server, timeout);
+    return {
+      uuid: server.uuid,
+      latency
+    };
+  }
+}
+
+export const pingService = new PingService();
+

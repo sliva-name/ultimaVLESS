@@ -1,0 +1,315 @@
+import React, { useState, useEffect } from 'react';
+import { Copy, FolderOpen, Check, Loader2, Settings, Link2, Shield, RefreshCw, AlertTriangle, X } from 'lucide-react';
+import { ConnectionStatus as MonitorStatus, ConnectionMonitorEvent } from '../preload.d';
+
+interface SettingsModalProps {
+  isOpen: boolean;
+  isLoading: boolean;
+  onClose: () => void;
+  onSave: (url: string) => void;
+}
+
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading, onClose, onSave }) => {
+  const [subUrl, setSubUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [autoSwitching, setAutoSwitching] = useState(true);
+  const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
+  const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>([]);
+  const [servers, setServers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      window.electronAPI.getSubscriptionUrl().then((url) => {
+        setSubUrl(url || '');
+      }).catch(err => {
+        console.error('Failed to load subscription URL:', err);
+      });
+
+      // Загружаем список серверов для отображения имен
+      window.electronAPI.getServers().then(setServers).catch(console.error);
+
+      // Загружаем статус мониторинга
+      loadMonitorStatus();
+      
+      // Подписываемся на события мониторинга
+      const handleMonitorEvent = (event: ConnectionMonitorEvent) => {
+        setRecentEvents(prev => [event, ...prev].slice(0, 10)); // Храним последние 10 событий
+        loadMonitorStatus(); // Обновляем статус
+      };
+
+      window.electronAPI.onConnectionMonitorEvent(handleMonitorEvent);
+
+      // Обновляем статус каждые 5 секунд
+      const interval = setInterval(loadMonitorStatus, 5000);
+
+      return () => {
+        clearInterval(interval);
+      };
+    }
+  }, [isOpen]);
+
+  const loadMonitorStatus = async () => {
+    try {
+      const status = await window.electronAPI.getConnectionMonitorStatus();
+      setMonitorStatus(status);
+      setAutoSwitching(status.autoSwitchingEnabled ?? true);
+    } catch (err) {
+      console.error('Failed to load monitor status:', err);
+    }
+  };
+
+  const handleToggleAutoSwitching = async (enabled: boolean) => {
+    try {
+      await window.electronAPI.setAutoSwitching(enabled);
+      setAutoSwitching(enabled);
+    } catch (err) {
+      console.error('Failed to toggle auto-switching:', err);
+    }
+  };
+
+  const handleClearBlocked = async () => {
+    try {
+      await window.electronAPI.clearBlockedServers();
+      loadMonitorStatus();
+    } catch (err) {
+      console.error('Failed to clear blocked servers:', err);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave(subUrl);
+  };
+
+  const handleCopyLogs = async () => {
+    const logs = await window.electronAPI.getLogs();
+    await navigator.clipboard.writeText(logs);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleOpenFolder = () => {
+    window.electronAPI.openLogFolder();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-8 animate-[fadeIn_0.3s_ease-out] overflow-hidden">
+      <div className="w-full max-w-2xl max-h-[90vh] bg-gradient-to-br from-surface via-surface to-surface/95 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl shadow-black/50 relative overflow-hidden flex flex-col">
+        {/* Decorative gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none z-0" />
+        
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto p-8 space-y-6 relative z-10 pb-8">
+        
+          {/* Subscription Section */}
+          <div>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20">
+                <Settings className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-white tracking-tight">Subscription Settings</h2>
+                <p className="text-sm text-gray-400 mt-0.5">Configure your VLESS connection</p>
+              </div>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-3">
+                <Link2 className="w-4 h-4 text-primary" />
+                VLESS Subscription URL
+              </label>
+              <div className="relative group">
+                <input 
+                  type="text" 
+                  value={subUrl}
+                  onChange={(e) => setSubUrl(e.target.value)}
+                  placeholder="https://ultm.app/..."
+                  className="w-full bg-black/40 backdrop-blur-sm border border-gray-600/50 rounded-xl px-4 py-3.5 text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-200 hover:border-gray-500/70"
+                />
+                <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 pt-2">
+              <button 
+                type="button" 
+                onClick={onClose} 
+                disabled={isLoading}
+                className="px-5 py-2.5 rounded-xl text-gray-300 font-medium hover:bg-white/5 hover:text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-gray-700/50"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                disabled={isLoading}
+                className="px-6 py-2.5 bg-gradient-to-r from-primary to-blue-600 rounded-xl text-white font-semibold hover:from-blue-500 hover:to-blue-700 disabled:from-primary/50 disabled:to-blue-600/50 flex items-center gap-2 transition-all duration-200 shadow-lg shadow-primary/25 hover:shadow-primary/40 disabled:shadow-none disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
+              >
+                {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isLoading ? 'Updating...' : 'Save & Update'}
+              </button>
+            </div>
+            </form>
+          </div>
+
+          {/* Connection Monitoring Section */}
+          <div className="pt-4 border-t border-gray-800/50">
+            <div className="flex items-center gap-2 mb-4">
+              <RefreshCw className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Connection Monitoring</h3>
+            </div>
+
+            {/* Auto-switching toggle */}
+            <div className="mb-4 p-4 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-sm font-medium text-white mb-1">Auto Server Switching</div>
+                <div className="text-xs text-gray-400">Automatically switch to another server when connection is blocked</div>
+              </div>
+              <button
+                onClick={() => handleToggleAutoSwitching(!autoSwitching)}
+                className={`
+                  relative w-12 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary/50
+                  ${autoSwitching ? 'bg-primary' : 'bg-gray-700'}
+                `}
+              >
+                <div
+                  className={`
+                    absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200
+                    ${autoSwitching ? 'translate-x-6' : 'translate-x-0'}
+                  `}
+                />
+              </button>
+            </div>
+
+            {/* Monitor status info */}
+            {monitorStatus && (
+              <div className="mt-3 pt-3 border-t border-gray-700/50 space-y-2">
+                {monitorStatus.isConnected && monitorStatus.currentServer && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-400">Current Server:</span>
+                    <span className="text-white font-medium">{monitorStatus.currentServer.name}</span>
+                  </div>
+                )}
+                {monitorStatus.blockedServers.length > 0 && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-400">Blocked Servers:</span>
+                    <span className="text-orange-400 font-medium">{monitorStatus.blockedServers.length}</span>
+                  </div>
+                )}
+                {monitorStatus.lastError && (
+                  <div className="flex items-start gap-2 text-xs">
+                    <AlertTriangle className="w-3 h-3 text-orange-400 mt-0.5 flex-shrink-0" />
+                    <span className="text-gray-400 flex-1 truncate" title={monitorStatus.lastError}>
+                      Last Error: {monitorStatus.lastError}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Blocked servers list */}
+            {monitorStatus && monitorStatus.blockedServers.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-700/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-400">Blocked Servers ({monitorStatus.blockedServers.length})</span>
+                  <button
+                    onClick={handleClearBlocked}
+                    className="text-xs text-primary hover:text-blue-400 transition-colors flex items-center gap-1"
+                  >
+                    <X className="w-3 h-3" />
+                    Clear
+                  </button>
+                </div>
+                <div className="space-y-1 max-h-24 overflow-y-auto">
+                  {monitorStatus.blockedServers.map((serverId) => {
+                    // Находим имя сервера по ID из списка серверов
+                    const server = servers.find(s => s.uuid === serverId);
+                    const serverName = server?.name || monitorStatus.currentServer?.uuid === serverId 
+                      ? monitorStatus.currentServer?.name 
+                      : `Server ${serverId.substring(0, 8)}...`;
+                    return (
+                      <div key={serverId} className="text-xs text-orange-400 bg-orange-500/10 px-2 py-1 rounded border border-orange-500/20 truncate">
+                        {serverName}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+            {/* Recent events */}
+            {recentEvents.length > 0 && (
+              <div className="mb-4 p-4 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50">
+                <div className="text-xs text-gray-400 mb-3">Recent Events</div>
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {recentEvents.map((event, idx) => (
+                    <div key={idx} className="text-xs p-2 rounded bg-gray-900/50 border border-gray-700/30">
+                      <div className="flex items-center gap-2">
+                        {event.type === 'error' && <AlertTriangle className="w-3 h-3 text-orange-400" />}
+                        {event.type === 'blocked' && <X className="w-3 h-3 text-red-400" />}
+                        {event.type === 'switching' && <RefreshCw className="w-3 h-3 text-blue-400" />}
+                        {event.type === 'connected' && <Check className="w-3 h-3 text-green-400" />}
+                        <span className="text-gray-300 flex-1 truncate">{event.message || event.type}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Troubleshooting Section */}
+          <div className="pt-4 border-t border-gray-800/50">
+            <div className="flex items-center gap-2 mb-4">
+              <Shield className="w-4 h-4 text-gray-400" />
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Troubleshooting</h3>
+            </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            <button 
+              type="button"
+              onClick={handleCopyLogs}
+              className="group flex flex-col items-center justify-center gap-2.5 p-4 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 hover:from-gray-700/60 hover:to-gray-700/40 transition-all duration-200 border border-gray-700/50 hover:border-gray-600/70 hover:shadow-lg hover:shadow-black/20 transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <div className={`p-2 rounded-lg ${copied ? 'bg-green-500/20' : 'bg-gray-700/50 group-hover:bg-gray-600/50'} transition-all duration-200`}>
+                {copied ? (
+                  <Check className="w-5 h-5 text-green-400" />
+                ) : (
+                  <Copy className="w-5 h-5 text-gray-300 group-hover:text-white transition-colors" />
+                )}
+              </div>
+              <span className={`text-sm font-medium ${copied ? 'text-green-400' : 'text-gray-300 group-hover:text-white'} transition-colors`}>
+                {copied ? 'Copied!' : 'Copy Logs'}
+              </span>
+            </button>
+
+            <button 
+              type="button"
+              onClick={handleOpenFolder}
+              className="group flex flex-col items-center justify-center gap-2.5 p-4 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 hover:from-gray-700/60 hover:to-gray-700/40 transition-all duration-200 border border-gray-700/50 hover:border-gray-600/70 hover:shadow-lg hover:shadow-black/20 transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <div className="p-2 rounded-lg bg-gray-700/50 group-hover:bg-gray-600/50 transition-all duration-200">
+                <FolderOpen className="w-5 h-5 text-gray-300 group-hover:text-white transition-colors" />
+              </div>
+              <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">
+                Open Folder
+              </span>
+            </button>
+          </div>
+          
+          <div className="mt-4 p-3 rounded-lg bg-gray-800/30 border border-gray-700/30">
+            <p className="text-xs text-gray-500 text-center leading-relaxed">
+              <Shield className="w-3 h-3 inline-block mr-1.5 mb-0.5" />
+              Logs are sanitized to remove sensitive personal data
+            </p>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
