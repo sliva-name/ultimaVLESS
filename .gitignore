@@ -2,12 +2,10 @@ node_modules
 dist
 dist-electron
 release
-release-portable
 .idea/
 .DS_Store
 .env
 .env.*.local
-.cursor
 
 # Xray binaries
 resources/bin/
