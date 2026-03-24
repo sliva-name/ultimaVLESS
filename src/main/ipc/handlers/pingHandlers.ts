@@ -12,8 +12,11 @@ interface RegisterPingHandlersParams {
 
 export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs }: RegisterPingHandlersParams): void {
   let latestPingRequestId = 0;
+  const RETRY_TIMEOUT_MS = 8000;
+  const RETRY_DELAY_MS = 1200;
   const buildServersFingerprint = (servers: VlessConfig[]): string =>
     servers.map((s) => `${s.uuid}|${s.address}:${s.port}`).join('||');
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
   ipcMain.handle('ping-server', async (_event: IpcMainInvokeEvent, serverPayload: unknown) => {
     try {
@@ -61,6 +64,28 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs }: 
       }
 
       const results = await deps.pingService.pingServers(servers);
+      const failedServers = servers.filter((server) => {
+        const key = `${server.address}:${server.port}`;
+        return results.get(key) == null;
+      });
+
+      if (failedServers.length > 0) {
+        logger.debug('IPC', 'Retrying failed ping servers', {
+          total: servers.length,
+          failed: failedServers.length,
+          retryTimeoutMs: RETRY_TIMEOUT_MS,
+        });
+        await sleep(RETRY_DELAY_MS);
+        const retryResults = await deps.pingService.pingServers(failedServers, RETRY_TIMEOUT_MS);
+        for (const server of failedServers) {
+          const key = `${server.address}:${server.port}`;
+          const retryLatency = retryResults.get(key);
+          if (retryLatency != null) {
+            results.set(key, retryLatency);
+          }
+        }
+      }
+
       const currentServers = deps.configService.getServers();
       const currentFingerprint = buildServersFingerprint(currentServers);
 

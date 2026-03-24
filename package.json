@@ -1,6 +1,6 @@
 {
   "name": "ultima-vless-client",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "description": "Desktop V2Ray Client for UltimaVPN",
   "main": "dist-electron/main.js",
   "scripts": {

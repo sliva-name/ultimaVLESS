@@ -197,7 +197,8 @@ async function refreshSubscription(
       if (pingData) {
         return { ...config, ping: pingData.ping, pingTime: pingData.pingTime };
       }
-      return config;
+      // Keep ping shape stable in renderer: use null instead of undefined.
+      return { ...config, ping: null };
     });
     
     const hasInput = !!subscriptionUrl.trim() || !!manualLinks.trim();

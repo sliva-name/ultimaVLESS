@@ -32,27 +32,31 @@ export class TunRouteService {
     }
 
     const enableWithTimeout = async () => {
-      const defaultRoute = await this.getDefaultRoute();
+      const startedAt = Date.now();
+      const [defaultRoute, proxyIps, tunInterfaceIndex] = await Promise.all([
+        this.getDefaultRoute(),
+        this.resolveProxyAddresses(config.address),
+        this.waitForTunInterface(),
+      ]);
+
       if (!defaultRoute) {
         throw new Error('Could not get default route. Check network connection.');
       }
-
-      const proxyIps = await this.resolveProxyAddresses(config.address);
       if (proxyIps.length === 0) {
         throw new Error(`Could not resolve proxy server address: ${config.address}`);
       }
 
-      await this.waitForTunInterface();
       await this.ensureTunAddress();
 
       for (const proxyIp of proxyIps) {
         await this.addRoute(proxyIp, '255.255.255.255', defaultRoute.gateway, 1, defaultRoute.interfaceIndex);
       }
-      await this.addDefaultRouteViaTun();
+      await this.addDefaultRouteViaTun(tunInterfaceIndex);
 
       logger.info('TunRouteService', 'TUN routing enabled', {
         proxyIps,
         defaultGateway: defaultRoute.gateway,
+        setupDurationMs: Date.now() - startedAt,
       });
     };
 
@@ -121,17 +125,27 @@ export class TunRouteService {
     };
   }
 
-  private async waitForTunInterface(): Promise<void> {
-    const start = Date.now();
-    while (Date.now() - start < TUN_WAIT_TIMEOUT) {
-      const idx = await this.getTunInterfaceIndex();
-      if (idx !== null) {
-        logger.info('TunRouteService', 'TUN interface found', { index: idx });
-        return;
+  private async waitForTunInterface(): Promise<number> {
+    const script = `
+      $deadline = (Get-Date).AddMilliseconds(${TUN_WAIT_TIMEOUT})
+      while ((Get-Date) -lt $deadline) {
+        $adapter = Get-NetAdapter -Name "${TUN_INTERFACE_NAME}" -ErrorAction SilentlyContinue
+        if ($adapter) {
+          Write-Output $adapter.ifIndex
+          exit 0
+        }
+        Start-Sleep -Milliseconds ${TUN_WAIT_INTERVAL}
       }
-      await this.sleep(TUN_WAIT_INTERVAL);
+      Write-Error "TUN interface '${TUN_INTERFACE_NAME}' was not found in time"
+      exit 1
+    `;
+    const out = await this.runPowerShell(script);
+    const idx = parseInt(out.trim(), 10);
+    if (Number.isNaN(idx)) {
+      throw new Error(`TUN interface "${TUN_INTERFACE_NAME}" did not appear within ${TUN_WAIT_TIMEOUT / 1000}s. Ensure Xray started correctly.`);
     }
-    throw new Error(`TUN interface "${TUN_INTERFACE_NAME}" did not appear within ${TUN_WAIT_TIMEOUT / 1000}s. Ensure Xray started correctly.`);
+    logger.info('TunRouteService', 'TUN interface found', { index: idx });
+    return idx;
   }
 
   private async getTunInterfaceIndex(): Promise<number | null> {
@@ -212,12 +226,7 @@ export class TunRouteService {
     return bits;
   }
 
-  private async addDefaultRouteViaTun(): Promise<void> {
-    const tunIdx = await this.getTunInterfaceIndex();
-    if (tunIdx === null) {
-      throw new Error('TUN interface not found when adding default route');
-    }
-
+  private async addDefaultRouteViaTun(tunIdx: number): Promise<void> {
     const script = `
       $existing = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
       if (-not $existing) {

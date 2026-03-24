@@ -58,7 +58,7 @@ const ServerItem = React.memo<ServerItemProps>(({ server, isSelected, isConnecte
             )}>
               {server.name}
             </div>
-            {server.ping !== null && server.ping !== undefined && (
+            {server.ping != null && (
               <div className={clsx(
                 "text-xs font-semibold px-1.5 py-0.5 rounded flex-shrink-0",
                 server.ping < 100 ? "text-green-400 bg-green-500/10" :
@@ -69,7 +69,7 @@ const ServerItem = React.memo<ServerItemProps>(({ server, isSelected, isConnecte
                 {server.ping}ms
               </div>
             )}
-            {server.ping === null && (
+            {server.ping == null && (
               <div className="text-xs text-gray-500 flex-shrink-0">
                 —
               </div>

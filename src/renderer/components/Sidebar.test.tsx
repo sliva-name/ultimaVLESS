@@ -73,5 +73,19 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByTestId('server-item-1'));
     expect(handleSelect).toHaveBeenCalledWith(mockServers[0]);
   });
+
+  it('shows placeholder when ping is missing', () => {
+    render(
+      <Sidebar
+        servers={mockServers}
+        selectedServer={null}
+        isConnected={false}
+        onSelectServer={() => {}}
+        onOpenSettings={() => {}}
+      />
+    );
+
+    expect(screen.getAllByText('—')).toHaveLength(2);
+  });
 });
 
