@@ -23,7 +23,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
   const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>([]);
   const [servers, setServers] = useState<VlessConfig[]>([]);
-  const loadMonitorStatusRef = useRef<() => Promise<void>>();
+  const loadMonitorStatusRef = useRef<(() => Promise<void>) | null>(null);
 
   const loadMonitorStatus = useCallback(async () => {
     try {

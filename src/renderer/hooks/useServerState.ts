@@ -28,41 +28,35 @@ export function useServerState() {
       }
 
       if (initialServers.length > 0) {
-        try {
-          const hasMissingPingData = initialServers.some((s) => !s.pingTime || s.pingTime === 0);
-          if (hasMissingPingData) {
-            await window.electronAPI.pingAllServers(true);
-          }
-        } catch (error) {
-          console.error('Failed to ping servers', error);
+        const hasMissingPingData = initialServers.some((s) => !s.pingTime || s.pingTime === 0);
+        if (hasMissingPingData) {
+          void window.electronAPI.pingAllServers(true).catch((error) => {
+            console.error('Failed to ping servers', error);
+          });
         }
       }
     };
 
     loadInitialState();
 
-    const handleUpdateServers = async (newServers: VlessConfig[]) => {
+    const handleUpdateServers = (newServers: VlessConfig[]) => {
       setServers(newServers);
-      
+
       setSelectedServer((currentSelected) => {
         if (newServers.length === 0) return null;
         if (currentSelected) {
-          const found = newServers.find(s => s.uuid === currentSelected.uuid);
+          const found = newServers.find((s) => s.uuid === currentSelected.uuid);
           if (found) return found;
         }
         return newServers[0];
       });
 
       if (newServers.length > 0) {
-        try {
-          // Only trigger auto-ping when fresh server list has missing ping data.
-          // This avoids repeated ping loops on update-servers events.
-          const hasMissingPingData = newServers.some((s) => !s.pingTime || s.pingTime === 0);
-          if (hasMissingPingData) {
-            await window.electronAPI.pingAllServers(false);
-          }
-        } catch (error) {
-          console.error('Failed to ping servers after update', error);
+        const hasMissingPingData = newServers.some((s) => !s.pingTime || s.pingTime === 0);
+        if (hasMissingPingData) {
+          void window.electronAPI.pingAllServers(false).catch((error) => {
+            console.error('Failed to ping servers after update', error);
+          });
         }
       }
     };

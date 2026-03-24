@@ -1,9 +1,31 @@
 import { app, BrowserWindow, Menu, Tray } from 'electron';
 import path from 'path';
-import { registerIpcHandlers, loadInitialState } from './ipc/IpcHandler';
-import { xrayService } from './services/XrayService';
 import { logger } from './services/LoggerService';
-import { systemProxyService } from './services/SystemProxyService';
+
+if (typeof process.versions.electron !== 'string') {
+  // `node .` loads package.json "main" but `require("electron")` is not the real API outside Electron.
+  console.error(
+    'Run this app with Electron, not Node:\n' +
+      '  npx electron .\n' +
+      '  npm run electron:start\n' +
+      '  npx electron --trace-deprecation .'
+  );
+  process.exit(1);
+}
+
+async function stopNetworkStack(): Promise<void> {
+  const [{ systemProxyService }, { xrayService }] = await Promise.all([
+    import('./services/SystemProxyService'),
+    import('./services/XrayService'),
+  ]);
+  await systemProxyService.disable();
+  xrayService.stop();
+}
+
+/** Must match build.appId — Windows taskbar, jump lists, toasts. @see https://www.electron.build/nsis */
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.ultima.vless');
+}
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -15,13 +37,13 @@ if (!gotSingleInstanceLock) {
 } else {
   app.on('second-instance', async () => {
     await ensureTray();
-    showMainWindow();
+    await showMainWindow();
   });
 }
 
-function showMainWindow() {
+async function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    createWindow();
+    await createWindow();
   }
 
   if (!mainWindow) return;
@@ -57,7 +79,9 @@ async function ensureTray() {
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Показать',
-      click: () => showMainWindow(),
+      click: () => {
+        void showMainWindow();
+      },
     },
     {
       label: 'Скрыть',
@@ -68,9 +92,7 @@ async function ensureTray() {
       label: 'Выход',
       click: async () => {
         isQuitting = true;
-        // Отключаем прокси перед выходом
-        await systemProxyService.disable();
-        xrayService.stop();
+        await stopNetworkStack();
         app.quit();
       },
     },
@@ -80,21 +102,24 @@ async function ensureTray() {
 
   // Common Windows behavior: click tray icon to toggle the window.
   tray.on('click', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      showMainWindow();
-      return;
-    }
-
-    if (mainWindow.isVisible()) hideMainWindow();
-    else showMainWindow();
+    void (async () => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        await showMainWindow();
+        return;
+      }
+      if (mainWindow.isVisible()) hideMainWindow();
+      else await showMainWindow();
+    })();
   });
 
-  tray.on('double-click', () => showMainWindow());
+  tray.on('double-click', () => {
+    void showMainWindow();
+  });
 }
 
-function createWindow() {
+async function createWindow() {
   logger.info('Main', 'createWindow called');
-  
+
   // Load icon for the window based on platform
   let iconPath: string | undefined;
   if (process.platform === 'win32') {
@@ -109,6 +134,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 900,
     height: 700,
+    show: false,
+    backgroundColor: '#121212',
     icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -120,6 +147,12 @@ function createWindow() {
     titleBarOverlay: {
       color: '#1e1e1e',
       symbolColor: '#ffffff'
+    }
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
     }
   });
 
@@ -145,36 +178,29 @@ function createWindow() {
     }
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    // In production, the renderer files are in the 'dist' folder
-    // main.js is in 'dist-electron', so we go up one level and into 'dist'
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-  }
-
-  // Open the DevTools.
-  // mainWindow.webContents.openDevTools();
-
-  // Register IPC handlers
+  const { registerIpcHandlers, loadInitialState } = await import('./ipc/IpcHandler');
   registerIpcHandlers(mainWindow);
 
-  // Send initial state when page finishes loading (including reloads)
   mainWindow.webContents.once('did-finish-load', async () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       await loadInitialState(mainWindow);
     }
   });
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  }
 }
 
 app.on('ready', async () => {
   logger.info('Main', 'App ready');
-  createWindow();
+  await createWindow();
   await ensureTray();
-  
-  if (mainWindow) {
-      await loadInitialState(mainWindow);
-  }
+  // loadInitialState runs from did-finish-load so the renderer has subscribed to
+  // update-servers; calling it here as well duplicated refresh/ping work and
+  // caused overlapping ping-all-servers requests to be discarded as stale.
 });
 
 app.on('window-all-closed', () => {
@@ -188,17 +214,16 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('activate', () => {
+app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    await createWindow();
   }
-  void ensureTray();
+  await ensureTray();
 });
 
 app.on('before-quit', async () => {
   if (!isQuitting) {
     isQuitting = true;
-    await systemProxyService.disable();
-    xrayService.stop();
+    await stopNetworkStack();
   }
 });

@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ultima VLESS Client</title>
+    <!-- Matches app theme before JS/CSS bundle loads (avoids long gray/white flash). -->
+    <style>
+      html, body, #root { height: 100%; margin: 0; background-color: #121212; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

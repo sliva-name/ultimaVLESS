@@ -1,17 +1,30 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SubscriptionService } from './SubscriptionService';
-import axios from 'axios';
 import { encode } from 'js-base64';
 
-vi.mock('axios');
+function mockFetchText(body: string, ok = true, status = 200) {
+  vi.mocked(globalThis.fetch).mockResolvedValue({
+    ok,
+    status,
+    text: async () => body,
+  } as Response);
+}
 
 describe('SubscriptionService', () => {
   const service = new SubscriptionService();
   const mockVlessLink = 'vless://uuid@example.com:443?type=tcp&security=reality&sni=example.com&fp=chrome&pbk=key&sid=123#TestServer';
-  
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('should fetch and parse a valid subscription', async () => {
     const encodedBody = encode(mockVlessLink + '\n');
-    (axios.get as any).mockResolvedValue({ data: encodedBody });
+    mockFetchText(encodedBody);
 
     const configs = await service.fetchAndParse('https://sub.url');
     
@@ -24,7 +37,7 @@ describe('SubscriptionService', () => {
   it('should handle multiple links', async () => {
     const link2 = 'vless://uuid2@test.com:443?type=ws&security=tls#Server2';
     const encodedBody = encode(mockVlessLink + '\n' + link2);
-    (axios.get as any).mockResolvedValue({ data: encodedBody });
+    mockFetchText(encodedBody);
 
     const configs = await service.fetchAndParse('https://sub.url');
     expect(configs).toHaveLength(2);
@@ -32,7 +45,7 @@ describe('SubscriptionService', () => {
   });
 
   it('should throw error on invalid base64', async () => {
-    (axios.get as any).mockResolvedValue({ data: 'invalid-base-64%%' });
+    mockFetchText('invalid-base-64%%');
     await expect(service.fetchAndParse('https://sub.url')).rejects.toThrow();
   });
 });

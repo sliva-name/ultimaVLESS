@@ -240,9 +240,12 @@ export async function loadInitialState(window: BrowserWindow) {
   
   const savedServers = configService.getServers();
   sendToRenderer('update-servers', stripRawConfigs(savedServers));
-  
+
   if (url || manualLinks) {
-    await refreshSubscription(url, manualLinks);
+    // Do not await: subscription fetch can take a long time; UI already has saved servers.
+    void refreshSubscription(url, manualLinks).catch((error) => {
+      logger.error('IPC', 'Background refreshSubscription failed', error);
+    });
   } else {
     logger.info('IPC', 'No subscription URL or manual links saved');
   }

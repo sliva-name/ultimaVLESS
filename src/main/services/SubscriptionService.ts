@@ -1,7 +1,16 @@
 import { decode, isValid } from 'js-base64';
-import axios from 'axios';
 import { VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
+
+async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
 function makeStableId(address: string, port: number, userUUID: string): string {
   return `${userUUID.substring(0, 8)}-${address}:${port}`;
 }
@@ -16,11 +25,25 @@ export class SubscriptionService {
         return directConfigs;
       }
 
-      const response = await axios.get(url, { timeout: 15000 });
-      const body = response.data;
-
-      if (!body) {
+      const response = await fetchWithTimeout(url, 15000);
+      if (!response.ok) {
+        throw new Error(`Subscription request failed: HTTP ${response.status}`);
+      }
+      const rawText = await response.text();
+      if (!rawText.trim()) {
         throw new Error('Empty response from subscription URL');
+      }
+
+      const trimmed = rawText.trim();
+      let body: string | unknown[] | Record<string, unknown>;
+      if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+        try {
+          body = JSON.parse(trimmed) as unknown[] | Record<string, unknown>;
+        } catch {
+          body = rawText;
+        }
+      } else {
+        body = rawText;
       }
 
       if (typeof body === 'object' && Array.isArray(body)) {
