@@ -57,15 +57,21 @@ export function registerConnectionHandlers({ deps, handleAsync }: RegisterConnec
         logger.error('IPC', 'Failed to connect', error);
         deps.connectionMonitorService.recordError(errorMessage);
 
-        await deps.xrayService.stop().catch((stopError) => {
+        try {
+          deps.xrayService.stop();
+        } catch (stopError) {
           logger.error('IPC', 'Failed to stop xray after connect failure', stopError);
-        });
-        await deps.systemProxyService.disable().catch((proxyError) => {
+        }
+        try {
+          await deps.systemProxyService.disable();
+        } catch (proxyError) {
           logger.error('IPC', 'Failed to disable proxy after connect failure', proxyError);
-        });
-        await deps.tunRouteService.disable().catch((tunError) => {
+        }
+        try {
+          await deps.tunRouteService.disable();
+        } catch (tunError) {
           logger.error('IPC', 'Failed to disable TUN routes after connect failure', tunError);
-        });
+        }
         event.reply('connection-error', errorMessage);
         event.reply('connection-status', false);
       }
@@ -79,7 +85,7 @@ export function registerConnectionHandlers({ deps, handleAsync }: RegisterConnec
         deps.connectionMonitorService.stopMonitoring();
         await deps.systemProxyService.disable();
         await deps.tunRouteService.disable();
-        await deps.xrayService.stop();
+        deps.xrayService.stop();
       } finally {
         event.reply('connection-status', false);
       }

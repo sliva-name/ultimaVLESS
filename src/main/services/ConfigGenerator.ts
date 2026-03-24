@@ -1,21 +1,81 @@
-import { VlessConfig } from '../../shared/types';
+import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { XrayConfig, XrayOutbound, XrayInbound, XrayStreamSettings } from '../../shared/xray-types';
 import { APP_CONSTANTS } from '../../shared/constants';
 
-/**
- * Service responsible for generating Xray-core JSON configuration.
- * Transforms internal VlessConfig into Xray-compatible JSON structure.
- */
 export class ConfigGenerator {
-  
-  /**
-   * Generates a complete Xray configuration object.
-   * 
-   * @param {VlessConfig} config - The internal VLESS configuration.
-   * @param {string} logPath - The file path where Xray should write its logs.
-   * @returns {XrayConfig} The valid Xray JSON configuration.
-   */
-  static generate(config: VlessConfig, logPath: string): XrayConfig {
+  static generate(config: VlessConfig, logPath: string, connectionMode: ConnectionMode = 'proxy'): any {
+    if (config.rawConfig) {
+      return this.applyRawConfig(config.rawConfig, logPath, connectionMode);
+    }
+    return this.generateFromFields(config, logPath, connectionMode);
+  }
+
+  private static applyRawConfig(rawConfig: Record<string, any>, logPath: string, connectionMode: ConnectionMode): any {
+    const cfg = JSON.parse(JSON.stringify(rawConfig));
+
+    cfg.log = {
+      loglevel: APP_CONSTANTS.DEFAULTS.LOG_LEVEL,
+      access: logPath,
+      error: logPath,
+    };
+
+    if (!cfg.inbounds || !Array.isArray(cfg.inbounds)) {
+      cfg.inbounds = [];
+    }
+
+    const hasSocks = cfg.inbounds.some((ib: any) => ib.protocol === 'socks');
+    const hasHttp = cfg.inbounds.some((ib: any) => ib.protocol === 'http');
+
+    for (const ib of cfg.inbounds) {
+      if (ib.protocol === 'socks') {
+        ib.port = APP_CONSTANTS.PORTS.SOCKS;
+        ib.listen = '127.0.0.1';
+      }
+      if (ib.protocol === 'http') {
+        ib.port = APP_CONSTANTS.PORTS.HTTP;
+        ib.listen = '127.0.0.1';
+      }
+    }
+
+    if (!hasSocks) {
+      cfg.inbounds.push({
+        tag: 'socks',
+        port: APP_CONSTANTS.PORTS.SOCKS,
+        listen: '127.0.0.1',
+        protocol: 'socks',
+        settings: { udp: true, auth: 'noauth' },
+        sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'] },
+      });
+    }
+
+    if (!hasHttp) {
+      cfg.inbounds.push({
+        tag: 'http',
+        port: APP_CONSTANTS.PORTS.HTTP,
+        listen: '127.0.0.1',
+        protocol: 'http',
+        settings: { allowTransparent: false },
+        sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'] },
+      });
+    }
+
+    if (connectionMode === 'tun') {
+      cfg.inbounds.unshift({
+        tag: 'tun-in',
+        port: 0,
+        protocol: 'tun' as any,
+        settings: {
+          name: 'ultima0',
+          MTU: 1400,
+          inet4_address: '172.19.0.1/30',
+        },
+      });
+    }
+
+    return cfg;
+  }
+
+  private static generateFromFields(config: VlessConfig, logPath: string, connectionMode: ConnectionMode): XrayConfig {
     const streamSettings: XrayStreamSettings = {
       network: config.type || 'tcp',
       security: config.security || 'none',
@@ -34,22 +94,21 @@ export class ConfigGenerator {
       streamSettings.tlsSettings = {
         serverName: config.sni || '',
         allowInsecure: false,
+        alpn: ['h2', 'http/1.1'],
       };
     }
 
     if (config.type === 'ws') {
-        streamSettings.wsSettings = {
-            path: config.path || '/',
-            headers: {
-                Host: config.host || config.sni || ''
-            }
-        }
+      streamSettings.wsSettings = {
+        path: config.path || '/',
+        headers: { Host: config.host || config.sni || '' },
+      };
     }
 
     if (config.type === 'grpc') {
-        streamSettings.grpcSettings = {
-            serviceName: config.serviceName || ''
-        }
+      streamSettings.grpcSettings = {
+        serviceName: config.serviceName || '',
+      };
     }
 
     const outbound: XrayOutbound = {
@@ -59,13 +118,11 @@ export class ConfigGenerator {
           {
             address: config.address,
             port: config.port,
-            users: [
-              {
-                id: config.uuid,
-                encryption: config.encryption || 'none',
-                flow: config.flow || '',
-              },
-            ],
+            users: [{
+              id: config.uuid,
+              encryption: config.encryption || 'none',
+              flow: config.flow || '',
+            }],
           },
         ],
       },
@@ -92,10 +149,22 @@ export class ConfigGenerator {
       port: APP_CONSTANTS.PORTS.HTTP,
       listen: '127.0.0.1',
       protocol: 'http',
-      settings: {
-        timeout: 0,
-      },
+      settings: {},
     };
+
+    const inbounds: XrayInbound[] = [inboundSocks, inboundHttp];
+    if (connectionMode === 'tun') {
+      inbounds.unshift({
+        tag: 'tun-in',
+        port: 0,
+        protocol: 'tun' as any,
+        settings: {
+          name: 'ultima0',
+          MTU: 1400,
+          inet4_address: '172.19.0.1/30',
+        },
+      });
+    }
 
     return {
       log: {
@@ -103,31 +172,22 @@ export class ConfigGenerator {
         access: logPath,
         error: logPath,
       },
-      inbounds: [inboundSocks, inboundHttp],
+      dns: {
+        servers: ['1.1.1.1', '1.0.0.1', 'localhost'],
+        queryStrategy: 'UseIPv4',
+      },
+      inbounds,
       outbounds: [
         outbound,
-        {
-          protocol: 'freedom',
-          tag: 'direct',
-        },
-        {
-          protocol: 'blackhole',
-          tag: 'block',
-        },
+        { protocol: 'freedom', tag: 'direct' },
+        { protocol: 'blackhole', tag: 'block' },
       ],
       routing: {
         domainStrategy: 'IPIfNonMatch',
         rules: [
-          {
-            type: 'field',
-            ip: ['geoip:private'],
-            outboundTag: 'direct',
-          },
-          {
-            type: 'field',
-            port: '0-65535',
-            outboundTag: 'proxy',
-          },
+          { type: 'field', protocol: ['bittorrent'], outboundTag: 'proxy' },
+          { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
+          { type: 'field', port: '0-65535', outboundTag: 'proxy' },
         ],
       },
     };

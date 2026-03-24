@@ -3,6 +3,7 @@ export interface VlessConfig {
   address: string;
   port: number;
   name: string;
+  source?: 'subscription' | 'manual';
   flow?: string; // xtls-rprx-vision
   encryption?: string;
   type?: 'tcp' | 'kcp' | 'ws' | 'http' | 'grpc' | 'quic';
@@ -21,9 +22,14 @@ export interface VlessConfig {
   serviceName?: string;
   
   // Ping information
-  ping?: number | null; // Latency in milliseconds
-  pingTime?: number; // Timestamp when ping was checked
+  ping?: number | null;
+  pingTime?: number;
+
+  // Full Xray config from JSON subscription
+  rawConfig?: Record<string, any>;
 }
+
+export type ConnectionMode = 'proxy' | 'tun';
 
 export interface AppState {
   isConnected: boolean;

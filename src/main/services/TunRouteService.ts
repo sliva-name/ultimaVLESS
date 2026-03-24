@@ -1,0 +1,293 @@
+import { spawn } from 'child_process';
+import { promisify } from 'util';
+import dns from 'dns';
+import { VlessConfig } from '../../shared/types';
+import { logger } from './LoggerService';
+
+const dnsLookup = promisify(dns.lookup);
+const TUN_INTERFACE_NAME = 'ultima0';
+const TUN_ADDRESS = '172.19.0.1';
+const TUN_PREFIX = 30;
+const TUN_NEXTHOP = '172.19.0.2';
+const TUN_ROUTE_METRIC = 1;
+const TUN_WAIT_TIMEOUT = 8000;
+const TUN_WAIT_INTERVAL = 300;
+const POWERSHELL_TIMEOUT = 30000;
+const DNS_TIMEOUT = 8000;
+const ENABLE_TIMEOUT = 60000;
+
+interface DefaultRouteInfo {
+  gateway: string;
+  interfaceIndex: number;
+  interfaceName: string;
+}
+
+export class TunRouteService {
+  private addedRoutes: { destination: string; mask: string; interfaceIndex?: number }[] = [];
+
+  public async enable(config: VlessConfig): Promise<void> {
+    if (process.platform !== 'win32') {
+      logger.info('TunRouteService', 'Not Windows, skipping TUN routing');
+      return;
+    }
+
+    const enableWithTimeout = async () => {
+      const defaultRoute = await this.getDefaultRoute();
+      if (!defaultRoute) {
+        throw new Error('Could not get default route. Check network connection.');
+      }
+
+      const proxyIps = await this.resolveProxyAddresses(config.address);
+      if (proxyIps.length === 0) {
+        throw new Error(`Could not resolve proxy server address: ${config.address}`);
+      }
+
+      await this.waitForTunInterface();
+      await this.ensureTunAddress();
+
+      for (const proxyIp of proxyIps) {
+        await this.addRoute(proxyIp, '255.255.255.255', defaultRoute.gateway, 1, defaultRoute.interfaceIndex);
+      }
+      await this.addDefaultRouteViaTun();
+
+      logger.info('TunRouteService', 'TUN routing enabled', {
+        proxyIps,
+        defaultGateway: defaultRoute.gateway,
+      });
+    };
+
+    try {
+      await Promise.race([
+        enableWithTimeout(),
+        this.sleep(ENABLE_TIMEOUT).then(() =>
+          Promise.reject(new Error(`TUN setup timed out after ${ENABLE_TIMEOUT / 1000}s. Xray may not support TUN on this system.`))
+        ),
+      ]);
+    } catch (error) {
+      await this.disable();
+      throw error;
+    }
+  }
+
+  public async disable(): Promise<void> {
+    if (process.platform !== 'win32') return;
+
+    for (const route of [...this.addedRoutes].reverse()) {
+      try {
+        await this.deleteRoute(route);
+      } catch (error) {
+        logger.warn('TunRouteService', 'Failed to remove route', {
+          destination: route.destination,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    this.addedRoutes = [];
+    logger.info('TunRouteService', 'TUN routing disabled');
+  }
+
+  private async getDefaultRoute(): Promise<DefaultRouteInfo | null> {
+    const script = `
+      $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
+        Where-Object { $_.NextHop -ne "0.0.0.0" } |
+        ForEach-Object {
+          $if = Get-NetAdapter -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue
+          if ($if -and $if.Name -ne "${TUN_INTERFACE_NAME}" -and $if.Status -eq "Up") {
+            $ipif = Get-NetIPInterface -InterfaceIndex $_.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+            [PSCustomObject]@{
+              InterfaceIndex = $_.InterfaceIndex
+              NextHop = $_.NextHop
+              InterfaceName = $if.Name
+              EffectiveMetric = ($_.RouteMetric + ($ipif.InterfaceMetric))
+            }
+          }
+        } |
+        Sort-Object EffectiveMetric |
+        Select-Object -First 1
+      if ($route) {
+        $ifIndex = $route.InterfaceIndex
+        $gw = $route.NextHop
+        $ifName = $route.InterfaceName
+        Write-Output "$ifIndex|$gw|$ifName"
+      }
+    `;
+    const out = await this.runPowerShell(script);
+    const match = out.trim().match(/^(\d+)\|([^\s|]+)\|(.+)$/);
+    if (!match) return null;
+    return {
+      interfaceIndex: parseInt(match[1], 10),
+      gateway: match[2].trim(),
+      interfaceName: match[3].trim(),
+    };
+  }
+
+  private async waitForTunInterface(): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < TUN_WAIT_TIMEOUT) {
+      const idx = await this.getTunInterfaceIndex();
+      if (idx !== null) {
+        logger.info('TunRouteService', 'TUN interface found', { index: idx });
+        return;
+      }
+      await this.sleep(TUN_WAIT_INTERVAL);
+    }
+    throw new Error(`TUN interface "${TUN_INTERFACE_NAME}" did not appear within ${TUN_WAIT_TIMEOUT / 1000}s. Ensure Xray started correctly.`);
+  }
+
+  private async getTunInterfaceIndex(): Promise<number | null> {
+    const script = `
+      $adapter = Get-NetAdapter -Name "${TUN_INTERFACE_NAME}" -ErrorAction SilentlyContinue
+      if ($adapter) { Write-Output $adapter.ifIndex }
+    `;
+    const out = await this.runPowerShell(script);
+    const n = parseInt(out.trim(), 10);
+    return Number.isNaN(n) ? null : n;
+  }
+
+  private async ensureTunAddress(): Promise<void> {
+    const script = `
+      $addr = Get-NetIPAddress -InterfaceAlias "${TUN_INTERFACE_NAME}" -AddressFamily IPv4 -ErrorAction SilentlyContinue
+      if (-not $addr) {
+        New-NetIPAddress -InterfaceAlias "${TUN_INTERFACE_NAME}" -IPAddress ${TUN_ADDRESS} -PrefixLength ${TUN_PREFIX} -ErrorAction Stop
+      }
+    `;
+    try {
+      await this.runPowerShell(script);
+    } catch (e) {
+      logger.warn('TunRouteService', 'Could not set TUN address (Xray may have set it)', {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  private async resolveProxyAddresses(address: string): Promise<string[]> {
+    if (this.isIp(address)) return [address];
+    try {
+      const result = await Promise.race<dns.LookupAddress[] | dns.LookupAddress>([
+        dnsLookup(address, { family: 4, all: true }),
+        this.sleep(DNS_TIMEOUT).then(() => Promise.reject(new Error('DNS lookup timeout'))),
+      ]);
+      const addresses = Array.isArray(result)
+        ? result.map((r) => r.address)
+        : [result.address];
+      return [...new Set(addresses)];
+    } catch {
+      return [];
+    }
+  }
+
+  private isIp(str: string): boolean {
+    return /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(str);
+  }
+
+  private async addRoute(
+    destination: string,
+    mask: string,
+    gateway: string,
+    metric: number,
+    interfaceIndex?: number
+  ): Promise<void> {
+    const prefixLen = this.maskToPrefix(mask);
+    const destPrefix = `${destination}/${prefixLen}`;
+    const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
+    const script = `
+      $existing = Get-NetRoute -DestinationPrefix "${destPrefix}"${ifPart} -ErrorAction SilentlyContinue | Select-Object -First 1
+      if (-not $existing) {
+        New-NetRoute -DestinationPrefix "${destPrefix}" -NextHop "${gateway}"${ifPart} -RouteMetric ${metric} -ErrorAction Stop
+      }
+    `;
+    await this.runPowerShell(script);
+    this.addedRoutes.push({ destination, mask, interfaceIndex });
+  }
+
+  private maskToPrefix(mask: string): number {
+    const parts = mask.split('.').map(Number);
+    let n = 0;
+    for (const p of parts) n = (n << 8) | p;
+    let bits = 0;
+    while (n) {
+      bits += n & 1;
+      n >>>= 1;
+    }
+    return bits;
+  }
+
+  private async addDefaultRouteViaTun(): Promise<void> {
+    const tunIdx = await this.getTunInterfaceIndex();
+    if (tunIdx === null) {
+      throw new Error('TUN interface not found when adding default route');
+    }
+
+    const script = `
+      $existing = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
+      if (-not $existing) {
+        New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "${TUN_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
+      }
+    `;
+    await this.runPowerShell(script);
+    this.addedRoutes.push({ destination: '0.0.0.0', mask: '0.0.0.0', interfaceIndex: tunIdx });
+  }
+
+  private async deleteRoute(route: { destination: string; mask: string; interfaceIndex?: number }): Promise<void> {
+    const prefix = route.destination === '0.0.0.0' ? '0.0.0.0/0' : `${route.destination}/32`;
+    const ifPart = route.interfaceIndex != null
+      ? ` -InterfaceIndex ${route.interfaceIndex}`
+      : '';
+    const script = `
+      Remove-NetRoute -DestinationPrefix "${prefix}"${ifPart} -ErrorAction SilentlyContinue
+    `;
+    await this.runPowerShell(script);
+  }
+
+  private runPowerShell(script: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const normalizedScript = `$ProgressPreference = 'SilentlyContinue'\n${script}`;
+      const encodedScript = Buffer.from(normalizedScript, 'utf16le').toString('base64');
+      const ps = spawn(
+        'powershell.exe',
+        [
+          '-NoLogo',
+          '-NonInteractive',
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-EncodedCommand',
+          encodedScript,
+        ],
+        { windowsHide: true }
+      );
+
+      const timeout = setTimeout(() => {
+        ps.kill('SIGTERM');
+        reject(new Error(`PowerShell command timed out after ${POWERSHELL_TIMEOUT / 1000}s`));
+      }, POWERSHELL_TIMEOUT);
+
+      let stdout = '';
+      let stderr = '';
+
+      ps.stdout?.on('data', (chunk) => {
+        stdout += chunk.toString();
+      });
+
+      ps.stderr?.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
+
+      ps.on('error', reject);
+      ps.on('close', (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          resolve(stdout);
+          return;
+        }
+        reject(new Error(stderr || stdout || `PowerShell exited with code ${code}`));
+      });
+    });
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+}
+
+export const tunRouteService = new TunRouteService();

@@ -8,6 +8,7 @@ import { app } from 'electron';
  */
 export class LoggerService {
   private logPath: string;
+  private readonly debugEnabled: boolean;
 
   /**
    * @param {string} filename - The log file name (default: 'app.log').
@@ -31,6 +32,7 @@ export class LoggerService {
     }
     
     this.logPath = path.join(logDir, filename);
+    this.debugEnabled = process.env.NODE_ENV === 'development' || process.env.ULTIMA_DEBUG === '1';
   }
 
   /**
@@ -97,6 +99,9 @@ export class LoggerService {
    * @param {any} [data] - Optional context data.
    */
   public debug(location: string, message: string, data?: any): void {
+    if (!this.debugEnabled) {
+      return;
+    }
     this.log(location, `[DEBUG] ${message}`, data);
   }
 }

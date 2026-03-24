@@ -1,11 +1,13 @@
 import Store from 'electron-store';
-import { VlessConfig } from '../../shared/types';
+import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
 
 interface StoreSchema {
   subscriptionUrl: string;
+  manualLinksInput: string;
   servers: VlessConfig[];
   selectedServerId: string | null;
+  connectionMode: ConnectionMode;
 }
 
 /**
@@ -29,8 +31,10 @@ export class ConfigService {
       name: 'app-config',
       defaults: {
         subscriptionUrl: '',
+        manualLinksInput: '',
         servers: [],
-        selectedServerId: null
+        selectedServerId: null,
+        connectionMode: 'proxy'
       }
     });
     logger.info('ConfigService', 'Initialized', { path: this.store.path });
@@ -59,6 +63,14 @@ export class ConfigService {
       redactedUrl: this.redactUrl(url),
     });
     this.store.set('subscriptionUrl', url);
+  }
+
+  public getManualLinksInput(): string {
+    return this.store.get('manualLinksInput') || '';
+  }
+
+  public setManualLinksInput(input: string): void {
+    this.store.set('manualLinksInput', input);
   }
 
   /**
@@ -94,6 +106,14 @@ export class ConfigService {
    */
   public setSelectedServerId(id: string | null): void {
     this.store.set('selectedServerId', id);
+  }
+
+  public getConnectionMode(): ConnectionMode {
+    return this.store.get('connectionMode') || 'proxy';
+  }
+
+  public setConnectionMode(mode: ConnectionMode): void {
+    this.store.set('connectionMode', mode);
   }
 }
 

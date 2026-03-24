@@ -9,14 +9,9 @@ import { XrayService } from './XrayService';
 vi.mock('fs', () => ({
   default: {
     existsSync: vi.fn(() => true),
+    writeFileSync: vi.fn(),
+    appendFileSync: vi.fn(),
     mkdirSync: vi.fn(),
-    promises: {
-      writeFile: vi.fn(),
-      access: vi.fn(),
-    },
-    constants: {
-      X_OK: 1,
-    },
   }
 }));
 
@@ -61,8 +56,8 @@ describe('XrayService', () => {
     const svc = new XrayService();
 
     // Setup mocks
-    vi.mocked(fs.promises.writeFile).mockResolvedValue(undefined as never);
-    vi.mocked(fs.promises.access).mockResolvedValue(undefined as never);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+    vi.mocked(fs.existsSync).mockReturnValue(true);
     
     const mockProcess = {
       pid: 123,
@@ -76,7 +71,7 @@ describe('XrayService', () => {
 
     await svc.start(mockConfig);
 
-    expect(fs.promises.writeFile).toHaveBeenCalled();
+    expect(fs.writeFileSync).toHaveBeenCalled();
     expect(spawn).toHaveBeenCalled();
     expect(svc.isRunning()).toBe(true);
   });
@@ -84,8 +79,8 @@ describe('XrayService', () => {
   it('should throw if binary missing', async () => {
     const svc = new XrayService();
 
-    vi.mocked(fs.promises.writeFile).mockResolvedValue(undefined as never);
-    vi.mocked(fs.promises.access).mockRejectedValue(new Error('missing') as never);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+    vi.mocked(fs.existsSync).mockReturnValue(false);
 
     await expect(svc.start(mockConfig)).rejects.toThrow('Xray binary not found');
   });
@@ -93,18 +88,13 @@ describe('XrayService', () => {
   it('should stop process when requested', async () => {
     const svc = new XrayService();
 
-    vi.mocked(fs.promises.writeFile).mockResolvedValue(undefined as never);
-    vi.mocked(fs.promises.access).mockResolvedValue(undefined as never);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+    vi.mocked(fs.existsSync).mockReturnValue(true);
     const mockProcess = {
       pid: 123,
       stdout: { on: vi.fn() },
       stderr: { on: vi.fn() },
       on: vi.fn(),
-      once: vi.fn((event: string, callback: () => void) => {
-        if (event === 'close') {
-          callback();
-        }
-      }),
       kill: vi.fn(() => true)
     };
     vi.mocked(spawn).mockReturnValue(mockProcess as any);
@@ -112,7 +102,7 @@ describe('XrayService', () => {
     await svc.start(mockConfig);
     expect(svc.isRunning()).toBe(true);
 
-    await svc.stop();
+    svc.stop();
     expect(mockProcess.kill).toHaveBeenCalled();
     expect(svc.isRunning()).toBe(false);
   });

@@ -7,12 +7,14 @@ import { CountryFlag } from './CountryFlag';
 interface ConnectionStatusProps {
   isConnected: boolean;
   selectedServer: VlessConfig | null;
+  connectionError?: string | null;
   onToggleConnection: () => void;
 }
 
 export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ 
   isConnected, 
   selectedServer, 
+  connectionError,
   onToggleConnection 
 }) => {
   return (
@@ -135,6 +137,14 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           <div className="mt-8 flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 border border-green-500/30 backdrop-blur-sm animate-[fadeIn_0.5s_ease-out]">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-lg shadow-green-500/50" />
             <span className="text-sm text-green-400 font-medium">Connection Active</span>
+          </div>
+        )}
+
+        {connectionError && (
+          <div className="mt-6 w-full max-w-2xl p-4 rounded-xl bg-orange-500/10 border border-orange-500/30 animate-[fadeIn_0.3s_ease-out]">
+            <div className="text-sm text-orange-300 font-medium break-words">
+              {connectionError}
+            </div>
           </div>
         )}
       </div>

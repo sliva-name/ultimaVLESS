@@ -29,8 +29,10 @@ export function useServerState() {
 
       if (initialServers.length > 0) {
         try {
-          const serversWithoutPing = initialServers.filter(s => !s.pingTime || s.pingTime === 0);
-          await window.electronAPI.pingAllServers(serversWithoutPing.length > 0);
+          const hasMissingPingData = initialServers.some((s) => !s.pingTime || s.pingTime === 0);
+          if (hasMissingPingData) {
+            await window.electronAPI.pingAllServers(true);
+          }
         } catch (error) {
           console.error('Failed to ping servers', error);
         }
@@ -53,7 +55,12 @@ export function useServerState() {
 
       if (newServers.length > 0) {
         try {
-          await window.electronAPI.pingAllServers(false);
+          // Only trigger auto-ping when fresh server list has missing ping data.
+          // This avoids repeated ping loops on update-servers events.
+          const hasMissingPingData = newServers.some((s) => !s.pingTime || s.pingTime === 0);
+          if (hasMissingPingData) {
+            await window.electronAPI.pingAllServers(false);
+          }
         } catch (error) {
           console.error('Failed to ping servers after update', error);
         }

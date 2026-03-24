@@ -2,7 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import { VlessConfig } from '../../shared/types';
+import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { ConfigGenerator } from './ConfigGenerator';
 import { logger } from './LoggerService';
 
@@ -30,7 +30,7 @@ export class XrayService {
    * @throws {Error} If config generation fails or binary is missing.
    * @returns {Promise<void>} Resolves when process is successfully spawned.
    */
-  public async start(config: VlessConfig): Promise<void> {
+  public async start(config: VlessConfig, connectionMode: ConnectionMode = 'proxy'): Promise<void> {
     this.stop();
 
     const userDataPath = app.getPath('userData');
@@ -44,10 +44,10 @@ export class XrayService {
       serverAddress: `${config.address}:${config.port}`,
       protocol: config.type || 'tcp',
       security: config.security || 'none',
+      connectionMode,
     });
     
-    // Generate config file
-    const xrayConfig = ConfigGenerator.generate(config, logPath);
+    const xrayConfig = ConfigGenerator.generate(config, logPath, connectionMode);
     try {
       fs.writeFileSync(configPath, JSON.stringify(xrayConfig, null, 2));
       logger.info('XrayService', 'Config written to disk');
