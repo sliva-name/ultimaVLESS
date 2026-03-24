@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { VlessConfig } from '../../shared/types';
-import { ShieldCheck, Settings, Server, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Settings, Server, RefreshCw, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
 
@@ -13,6 +13,77 @@ interface SidebarProps {
   onPingAll?: () => Promise<void>;
 }
 
+interface ServerItemProps {
+  server: VlessConfig;
+  isSelected: boolean;
+  isConnected: boolean;
+  onSelect: (server: VlessConfig) => void;
+}
+
+const ServerItem = React.memo<ServerItemProps>(({ server, isSelected, isConnected, onSelect }) => {
+  const handleClick = useCallback(() => {
+    if (!isConnected) onSelect(server);
+  }, [isConnected, onSelect, server]);
+
+  return (
+    <div
+      onClick={handleClick}
+      data-testid={`server-item-${server.uuid}`}
+      className={clsx(
+        "group p-3.5 rounded-xl cursor-pointer transition-all duration-200 border relative overflow-hidden",
+        isSelected 
+          ? "bg-gradient-to-br from-primary/20 via-primary/15 to-primary/10 border-primary/40 text-white shadow-lg shadow-primary/20" 
+          : "bg-gradient-to-br from-gray-800/30 to-gray-800/20 hover:from-gray-700/40 hover:to-gray-700/30 text-gray-300 border-gray-700/30 hover:border-gray-600/50",
+        isConnected && !isSelected && "opacity-50 cursor-not-allowed"
+      )}
+    >
+      {!isSelected && (
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+      )}
+      
+      <div className="flex items-center gap-3 relative z-10">
+        <div className={clsx(
+          "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 shadow-lg overflow-hidden",
+          isSelected
+            ? "bg-gradient-to-br from-primary/30 to-primary/20 border border-primary/40 ring-2 ring-primary/30"
+            : "bg-gradient-to-br from-gray-700/50 to-gray-800/50 border border-gray-600/30 group-hover:from-gray-600/50 group-hover:to-gray-700/50 group-hover:ring-1 group-hover:ring-gray-500/30"
+        )}>
+          <CountryFlag server={server} size={28} className="rounded-sm" />
+        </div>
+        <div className="flex-1 overflow-hidden min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className={clsx(
+              "font-semibold truncate text-sm mb-0.5 transition-colors",
+              isSelected ? "text-white" : "text-gray-200 group-hover:text-white"
+            )}>
+              {server.name}
+            </div>
+            {server.ping !== null && server.ping !== undefined && (
+              <div className={clsx(
+                "text-xs font-semibold px-1.5 py-0.5 rounded flex-shrink-0",
+                server.ping < 100 ? "text-green-400 bg-green-500/10" :
+                server.ping < 200 ? "text-yellow-400 bg-yellow-500/10" :
+                server.ping < 300 ? "text-orange-400 bg-orange-500/10" :
+                "text-red-400 bg-red-500/10"
+              )}>
+                {server.ping}ms
+              </div>
+            )}
+            {server.ping === null && (
+              <div className="text-xs text-gray-500 flex-shrink-0">
+                —
+              </div>
+            )}
+          </div>
+          <div className="text-xs text-gray-500 truncate font-mono">
+            {server.address}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export const Sidebar: React.FC<SidebarProps> = ({ 
   servers, 
   selectedServer, 
@@ -23,15 +94,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [appVersion, setAppVersion] = useState<string>('');
   const [isPinging, setIsPinging] = useState(false);
+  const [isSubscriptionExpanded, setIsSubscriptionExpanded] = useState(true);
+  const [isManualExpanded, setIsManualExpanded] = useState(true);
+  const subscriptionServers = servers.filter((s) => s.source !== 'manual');
+  const manualServers = servers.filter((s) => s.source === 'manual');
 
   useEffect(() => {
     window.electronAPI.getAppVersion().then(setAppVersion).catch(() => {
-      // Fallback if version cannot be retrieved
       setAppVersion('');
     });
   }, []);
 
-  const handlePingAll = async () => {
+  const handlePingAll = useCallback(async () => {
     if (!onPingAll || isPinging) return;
     setIsPinging(true);
     try {
@@ -39,14 +113,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     } finally {
       setIsPinging(false);
     }
-  };
+  }, [onPingAll, isPinging]);
 
   return (
     <div className="w-72 bg-gradient-to-b from-surface via-surface to-surface/95 backdrop-blur-xl border-r border-gray-800/50 flex flex-col shadow-2xl shadow-black/30 relative overflow-hidden">
-      {/* Decorative gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
       
-      {/* Header */}
       <div className="relative z-10 p-5 border-b border-gray-800/50 bg-gradient-to-r from-surface to-surface/95 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -67,14 +139,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
       
-      {/* Server List */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2 relative z-10">
         {servers.length > 0 && (
           <div className="px-2 mb-3">
             <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-              <Server className="w-3 h-3" />
-              Servers ({servers.length})
+              <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                <Server className="w-3 h-3" />
+                Servers ({servers.length})
               </div>
               {onPingAll && (
                 <button
@@ -95,65 +166,69 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
         
-        {servers.map((server, idx) => (
-          <div
-            key={idx}
-            data-testid={`server-item-${idx}`}
-            onClick={() => !isConnected && onSelectServer(server)}
-            className={clsx(
-              "group p-3.5 rounded-xl cursor-pointer transition-all duration-200 border relative overflow-hidden",
-              selectedServer === server 
-                ? "bg-gradient-to-br from-primary/20 via-primary/15 to-primary/10 border-primary/40 text-white shadow-lg shadow-primary/20" 
-                : "bg-gradient-to-br from-gray-800/30 to-gray-800/20 hover:from-gray-700/40 hover:to-gray-700/30 text-gray-300 border-gray-700/30 hover:border-gray-600/50",
-              isConnected && selectedServer !== server && "opacity-50 cursor-not-allowed"
-            )}
-          >
-            {/* Hover gradient effect */}
-            {selectedServer !== server && (
-              <div className="absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-            )}
-            
-            <div className="flex items-center gap-3 relative z-10">
-              <div className={clsx(
-                "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 shadow-lg overflow-hidden",
-                selectedServer === server
-                  ? "bg-gradient-to-br from-primary/30 to-primary/20 border border-primary/40 ring-2 ring-primary/30"
-                  : "bg-gradient-to-br from-gray-700/50 to-gray-800/50 border border-gray-600/30 group-hover:from-gray-600/50 group-hover:to-gray-700/50 group-hover:ring-1 group-hover:ring-gray-500/30"
-              )}>
-                <CountryFlag server={server} size={28} className="rounded-sm" />
+        {subscriptionServers.length > 0 && (
+          <div className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/8 to-transparent p-2">
+            <button
+              type="button"
+              onClick={() => setIsSubscriptionExpanded((prev) => !prev)}
+              className="w-full px-2 py-1.5 mb-1 flex items-center justify-between rounded-lg hover:bg-white/5 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-sm shadow-blue-400/60" />
+                <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Subscription</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                  {subscriptionServers.length}
+                </span>
               </div>
-              <div className="flex-1 overflow-hidden min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                <div className={clsx(
-                  "font-semibold truncate text-sm mb-0.5 transition-colors",
-                  selectedServer === server ? "text-white" : "text-gray-200 group-hover:text-white"
-                )}>
-                  {server.name}
-                  </div>
-                  {server.ping !== null && server.ping !== undefined && (
-                    <div className={clsx(
-                      "text-xs font-semibold px-1.5 py-0.5 rounded flex-shrink-0",
-                      server.ping < 100 ? "text-green-400 bg-green-500/10" :
-                      server.ping < 200 ? "text-yellow-400 bg-yellow-500/10" :
-                      server.ping < 300 ? "text-orange-400 bg-orange-500/10" :
-                      "text-red-400 bg-red-500/10"
-                    )}>
-                      {server.ping}ms
-                    </div>
-                  )}
-                  {server.ping === null && (
-                    <div className="text-xs text-gray-500 flex-shrink-0">
-                      —
-                    </div>
-                  )}
-                </div>
-                <div className="text-xs text-gray-500 truncate font-mono">
-                  {server.address}
-                </div>
+              <ChevronDown className={clsx('w-3.5 h-3.5 text-gray-400 transition-transform', isSubscriptionExpanded && 'rotate-180')} />
+            </button>
+            {isSubscriptionExpanded && (
+              <div className="space-y-2">
+                {subscriptionServers.map((server) => (
+                  <ServerItem
+                    key={server.uuid}
+                    server={server}
+                    isSelected={selectedServer?.uuid === server.uuid}
+                    isConnected={isConnected}
+                    onSelect={onSelectServer}
+                  />
+                ))}
               </div>
-            </div>
+            )}
           </div>
-        ))}
+        )}
+
+        {manualServers.length > 0 && (
+          <div className="rounded-xl border border-violet-500/20 bg-gradient-to-br from-violet-500/8 to-transparent p-2">
+            <button
+              type="button"
+              onClick={() => setIsManualExpanded((prev) => !prev)}
+              className="w-full px-2 py-1.5 mb-1 flex items-center justify-between rounded-lg hover:bg-white/5 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-sm shadow-violet-400/60" />
+                <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Manual</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-300 border border-violet-500/30">
+                  {manualServers.length}
+                </span>
+              </div>
+              <ChevronDown className={clsx('w-3.5 h-3.5 text-gray-400 transition-transform', isManualExpanded && 'rotate-180')} />
+            </button>
+            {isManualExpanded && (
+              <div className="space-y-2">
+                {manualServers.map((server) => (
+                  <ServerItem
+                    key={server.uuid}
+                    server={server}
+                    isSelected={selectedServer?.uuid === server.uuid}
+                    isConnected={isConnected}
+                    onSelect={onSelectServer}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {servers.length === 0 && (
           <div className="flex flex-col items-center justify-center p-8 text-center">
@@ -166,7 +241,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Footer */}
       <div className="relative z-10 p-4 border-t border-gray-800/50 bg-gradient-to-r from-surface to-surface/95 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           {appVersion && (
@@ -185,4 +259,3 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </div>
   );
 };
-

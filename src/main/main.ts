@@ -114,6 +114,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
     },
     titleBarStyle: 'hidden', 
     titleBarOverlay: {
@@ -127,6 +128,21 @@ function createWindow() {
     if (isQuitting) return;
     event.preventDefault();
     hideMainWindow();
+  });
+
+  // Deny all popup windows from renderer content.
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  // Prevent navigation away from trusted app content.
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    const isDev = !!process.env.VITE_DEV_SERVER_URL;
+    const allowPrefix = isDev
+      ? process.env.VITE_DEV_SERVER_URL || ''
+      : 'file://';
+    if (!navigationUrl.startsWith(allowPrefix)) {
+      event.preventDefault();
+      logger.warn('Main', 'Blocked unexpected navigation', { navigationUrl });
+    }
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {

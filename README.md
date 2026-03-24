@@ -70,7 +70,8 @@ The application follows a modular Service-Oriented Architecture (SOA) adapted fo
 ```bash
 npm run build
 ```
-The installer will be generated in `dist/`.
+The installer will be generated in `release/<version>/`.
+Use `RELEASE_CHECKLIST.md` before publishing production builds.
 
 ## 🧪 Testing
 

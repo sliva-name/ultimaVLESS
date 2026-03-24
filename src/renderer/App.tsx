@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectionStatus } from './components/ConnectionStatus';
@@ -9,6 +9,7 @@ function App() {
     servers, 
     selectedServer, 
     isConnected, 
+    connectionError,
     isConfigLoading,
     setSelectedServer, 
     toggleConnection, 
@@ -18,14 +19,19 @@ function App() {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const handleSaveSub = async (url: string) => {
-    await saveSubscription(url);
-    setIsSettingsOpen(false);
-  };
+  const handleOpenSettings = useCallback(() => setIsSettingsOpen(true), []);
+  const handleCloseSettings = useCallback(() => setIsSettingsOpen(false), []);
+
+  const handleSaveSub = useCallback(async (payload: { subscriptionUrl: string; manualLinks: string }) => {
+    const result = await saveSubscription(payload);
+    if (result.ok) {
+      setIsSettingsOpen(false);
+    }
+    return result;
+  }, [saveSubscription]);
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-background via-background to-gray-950 text-gray-200 relative overflow-hidden">
-      {/* Background decorative elements */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/3 via-transparent to-transparent pointer-events-none" />
       <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-primary/2 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-1/2 h-1/2 bg-blue-500/2 rounded-full blur-3xl pointer-events-none" />
@@ -35,12 +41,11 @@ function App() {
         selectedServer={selectedServer}
         isConnected={isConnected}
         onSelectServer={setSelectedServer}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={handleOpenSettings}
         onPingAll={pingAllServers}
       />
 
       <div className="flex-1 flex flex-col relative">
-        {/* Drag Region for Window Move */}
         <div 
           className="h-8 w-full app-drag-region bg-gradient-to-r from-surface/50 to-transparent backdrop-blur-sm border-b border-gray-800/30" 
           style={{ WebkitAppRegion: 'drag' } as any}
@@ -50,13 +55,14 @@ function App() {
            <SettingsModal 
              isOpen={isSettingsOpen} 
              isLoading={isConfigLoading}
-             onClose={() => setIsSettingsOpen(false)} 
+             onClose={handleCloseSettings} 
              onSave={handleSaveSub}
            />
         ) : (
           <ConnectionStatus 
             isConnected={isConnected}
             selectedServer={selectedServer}
+            connectionError={connectionError}
             onToggleConnection={toggleConnection}
           />
         )}

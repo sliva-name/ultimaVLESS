@@ -1,54 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { Copy, FolderOpen, Check, Loader2, Settings, Link2, Shield, RefreshCw, AlertTriangle, X } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Copy, FolderOpen, Check, Loader2, Settings, Link2, Shield, RefreshCw, AlertTriangle, X, ChevronDown } from 'lucide-react';
 import { ConnectionStatus as MonitorStatus, ConnectionMonitorEvent } from '../preload.d';
+import { ConnectionMode, VlessConfig } from '../../shared/types';
 
 interface SettingsModalProps {
   isOpen: boolean;
   isLoading: boolean;
   onClose: () => void;
-  onSave: (url: string) => void;
+  onSave: (payload: { subscriptionUrl: string; manualLinks: string }) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading, onClose, onSave }) => {
   const [subUrl, setSubUrl] = useState('');
+  const [manualLinks, setManualLinks] = useState('');
+  const [isSubscriptionExpanded, setIsSubscriptionExpanded] = useState(true);
+  const [isManualExpanded, setIsManualExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [autoSwitching, setAutoSwitching] = useState(true);
+  const [connectionMode, setConnectionMode] = useState<ConnectionMode>('proxy');
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
   const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>([]);
-  const [servers, setServers] = useState<any[]>([]);
+  const [servers, setServers] = useState<VlessConfig[]>([]);
+  const loadMonitorStatusRef = useRef<() => Promise<void>>();
 
-  useEffect(() => {
-    if (isOpen) {
-      window.electronAPI.getSubscriptionUrl().then((url) => {
-        setSubUrl(url || '');
-      }).catch(err => {
-        console.error('Failed to load subscription URL:', err);
-      });
-
-      // Загружаем список серверов для отображения имен
-      window.electronAPI.getServers().then(setServers).catch(console.error);
-
-      // Загружаем статус мониторинга
-      loadMonitorStatus();
-      
-      // Подписываемся на события мониторинга
-      const handleMonitorEvent = (event: ConnectionMonitorEvent) => {
-        setRecentEvents(prev => [event, ...prev].slice(0, 10)); // Храним последние 10 событий
-        loadMonitorStatus(); // Обновляем статус
-      };
-
-      window.electronAPI.onConnectionMonitorEvent(handleMonitorEvent);
-
-      // Обновляем статус каждые 5 секунд
-      const interval = setInterval(loadMonitorStatus, 5000);
-
-      return () => {
-        clearInterval(interval);
-      };
-    }
-  }, [isOpen]);
-
-  const loadMonitorStatus = async () => {
+  const loadMonitorStatus = useCallback(async () => {
     try {
       const status = await window.electronAPI.getConnectionMonitorStatus();
       setMonitorStatus(status);
@@ -56,54 +33,117 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
     } catch (err) {
       console.error('Failed to load monitor status:', err);
     }
-  };
+  }, []);
 
-  const handleToggleAutoSwitching = async (enabled: boolean) => {
+  loadMonitorStatusRef.current = loadMonitorStatus;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setCopyError(null);
+    setSaveError(null);
+
+    window.electronAPI.getSubscriptionUrl().then((url) => {
+      setSubUrl(url || '');
+    }).catch(err => {
+      console.error('Failed to load subscription URL:', err);
+    });
+
+    window.electronAPI.getManualLinks().then((links) => {
+      setManualLinks(links || '');
+    }).catch(err => {
+      console.error('Failed to load manual links:', err);
+    });
+
+    window.electronAPI.getConnectionMode().then((mode) => {
+      setConnectionMode(mode);
+    }).catch(err => {
+      console.error('Failed to load connection mode:', err);
+    });
+
+    window.electronAPI.getServers().then(setServers).catch(console.error);
+
+    loadMonitorStatus();
+    
+    const handleMonitorEvent = (event: ConnectionMonitorEvent) => {
+      setRecentEvents(prev => [event, ...prev].slice(0, 10));
+      loadMonitorStatusRef.current?.();
+    };
+
+    const removeMonitorListener = window.electronAPI.onConnectionMonitorEvent(handleMonitorEvent);
+    const interval = setInterval(loadMonitorStatus, 5000);
+
+    return () => {
+      removeMonitorListener();
+      clearInterval(interval);
+    };
+  }, [isOpen, loadMonitorStatus]);
+
+  const handleToggleAutoSwitching = useCallback(async (enabled: boolean) => {
     try {
       await window.electronAPI.setAutoSwitching(enabled);
       setAutoSwitching(enabled);
     } catch (err) {
       console.error('Failed to toggle auto-switching:', err);
     }
-  };
+  }, []);
 
-  const handleClearBlocked = async () => {
+  const handleConnectionModeChange = useCallback(async (mode: ConnectionMode) => {
+    try {
+      await window.electronAPI.setConnectionMode(mode);
+      setConnectionMode(mode);
+    } catch (err) {
+      console.error('Failed to set connection mode:', err);
+    }
+  }, []);
+
+  const handleClearBlocked = useCallback(async () => {
     try {
       await window.electronAPI.clearBlockedServers();
       loadMonitorStatus();
     } catch (err) {
       console.error('Failed to clear blocked servers:', err);
     }
-  };
+  }, [loadMonitorStatus]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(subUrl);
-  };
+    setSaveError(null);
+    const isSaved = await onSave({
+      subscriptionUrl: subUrl.trim(),
+      manualLinks,
+    });
+    if (!isSaved.ok) {
+      setSaveError(isSaved.error || 'Failed to save subscription. Check URL/links and try again.');
+    }
+  }, [onSave, subUrl, manualLinks]);
 
-  const handleCopyLogs = async () => {
-    const logs = await window.electronAPI.getLogs();
-    await navigator.clipboard.writeText(logs);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const handleCopyLogs = useCallback(async () => {
+    setCopyError(null);
+    try {
+      const logs = await window.electronAPI.getLogs();
+      await navigator.clipboard.writeText(logs);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy logs', error);
+      setCopyError('Failed to copy logs to clipboard.');
+      setCopied(false);
+    }
+  }, []);
 
-  const handleOpenFolder = () => {
+  const handleOpenFolder = useCallback(() => {
     window.electronAPI.openLogFolder();
-  };
+  }, []);
 
   if (!isOpen) return null;
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 animate-[fadeIn_0.3s_ease-out] overflow-hidden">
       <div className="w-full max-w-2xl max-h-[90vh] bg-gradient-to-br from-surface via-surface to-surface/95 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl shadow-black/50 relative overflow-hidden flex flex-col">
-        {/* Decorative gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none z-0" />
         
-        {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto p-8 space-y-6 relative z-10 pb-8">
         
-          {/* Subscription Section */}
           <div>
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20">
@@ -116,21 +156,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
             </div>
             
             <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-3">
-                <Link2 className="w-4 h-4 text-primary" />
-                VLESS Subscription URL
-              </label>
-              <div className="relative group">
-                <input 
-                  type="text" 
-                  value={subUrl}
-                  onChange={(e) => setSubUrl(e.target.value)}
-                  placeholder="https://ultm.app/..."
-                  className="w-full bg-black/40 backdrop-blur-sm border border-gray-600/50 rounded-xl px-4 py-3.5 text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-200 hover:border-gray-500/70"
-                />
-                <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-              </div>
+            <div className="rounded-xl border border-gray-700/50 bg-gray-900/20 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setIsSubscriptionExpanded((prev) => !prev)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-300">
+                  <Link2 className="w-4 h-4 text-primary" />
+                  Subscription URL
+                </span>
+                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isSubscriptionExpanded ? 'rotate-180' : ''}`} />
+              </button>
+              {isSubscriptionExpanded && (
+                <div className="px-4 pb-4">
+                  <div className="relative group">
+                    <input
+                      type="text"
+                      value={subUrl}
+                      onChange={(e) => setSubUrl(e.target.value)}
+                      placeholder="https://ultm.app/..."
+                      className="w-full bg-black/40 backdrop-blur-sm border border-gray-600/50 rounded-xl px-4 py-3.5 text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-200 hover:border-gray-500/70"
+                    />
+                    <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">Used for automatic updates from provider.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-gray-700/50 bg-gray-900/20 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setIsManualExpanded((prev) => !prev)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-300">
+                  <Link2 className="w-4 h-4 text-primary" />
+                  Manual configs (multi-paste)
+                </span>
+                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isManualExpanded ? 'rotate-180' : ''}`} />
+              </button>
+              {isManualExpanded && (
+                <div className="px-4 pb-4">
+                  <div className="relative group">
+                    <textarea
+                      value={manualLinks}
+                      onChange={(e) => setManualLinks(e.target.value)}
+                      rows={7}
+                      placeholder="Paste any text from clipboard. All vless://, trojan://, hysteria2:// links will be extracted."
+                      className="w-full resize-y min-h-[140px] bg-black/40 backdrop-blur-sm border border-gray-600/50 rounded-xl px-4 py-3.5 text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-200 hover:border-gray-500/70"
+                    />
+                    <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">Can include mixed clipboard text, not only one-link-per-line.</p>
+                </div>
+              )}
             </div>
             
             <div className="flex justify-end gap-3 pt-2">
@@ -151,17 +232,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
                 {isLoading ? 'Updating...' : 'Save & Update'}
               </button>
             </div>
+            {saveError && (
+              <p className="text-xs text-orange-400 pt-1">{saveError}</p>
+            )}
             </form>
           </div>
 
-          {/* Connection Monitoring Section */}
+          <div className="pt-4 border-t border-gray-800/50">
+            <div className="flex items-center gap-2 mb-4">
+              <Shield className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Network Mode</h3>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => handleConnectionModeChange('proxy')}
+                className={`p-4 rounded-xl border text-left transition-all duration-200 ${
+                  connectionMode === 'proxy'
+                    ? 'border-primary/70 bg-primary/10 text-white'
+                    : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70'
+                }`}
+              >
+                <div className="text-sm font-semibold mb-1">Proxy Mode</div>
+                <div className="text-xs text-gray-400">System proxy mode for regular desktop apps.</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConnectionModeChange('tun')}
+                className={`p-4 rounded-xl border text-left transition-all duration-200 ${
+                  connectionMode === 'tun'
+                    ? 'border-primary/70 bg-primary/10 text-white'
+                    : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70'
+                }`}
+              >
+                <div className="text-sm font-semibold mb-1">TUN Mode</div>
+                <div className="text-xs text-gray-400">Routes full system traffic. Requires Administrator rights.</div>
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 mt-3">Mode applies after reconnect.</p>
+          </div>
+
           <div className="pt-4 border-t border-gray-800/50">
             <div className="flex items-center gap-2 mb-4">
               <RefreshCw className="w-4 h-4 text-primary" />
               <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Connection Monitoring</h3>
             </div>
 
-            {/* Auto-switching toggle */}
             <div className="mb-4 p-4 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50">
             <div className="flex items-center justify-between mb-3">
               <div>
@@ -184,7 +302,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
               </button>
             </div>
 
-            {/* Monitor status info */}
             {monitorStatus && (
               <div className="mt-3 pt-3 border-t border-gray-700/50 space-y-2">
                 {monitorStatus.isConnected && monitorStatus.currentServer && (
@@ -210,7 +327,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
               </div>
             )}
 
-            {/* Blocked servers list */}
             {monitorStatus && monitorStatus.blockedServers.length > 0 && (
               <div className="mt-3 pt-3 border-t border-gray-700/50">
                 <div className="flex items-center justify-between mb-2">
@@ -225,11 +341,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
                 </div>
                 <div className="space-y-1 max-h-24 overflow-y-auto">
                   {monitorStatus.blockedServers.map((serverId) => {
-                    // Находим имя сервера по ID из списка серверов
                     const server = servers.find(s => s.uuid === serverId);
-                    const serverName = server?.name || monitorStatus.currentServer?.uuid === serverId 
-                      ? monitorStatus.currentServer?.name 
-                      : `Server ${serverId.substring(0, 8)}...`;
+                    const serverName = server?.name
+                      ?? (monitorStatus.currentServer?.uuid === serverId
+                        ? monitorStatus.currentServer.name
+                        : `Server ${serverId.substring(0, 8)}...`);
                     return (
                       <div key={serverId} className="text-xs text-orange-400 bg-orange-500/10 px-2 py-1 rounded border border-orange-500/20 truncate">
                         {serverName}
@@ -241,7 +357,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
             )}
           </div>
 
-            {/* Recent events */}
             {recentEvents.length > 0 && (
               <div className="mb-4 p-4 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50">
                 <div className="text-xs text-gray-400 mb-3">Recent Events</div>
@@ -262,7 +377,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
             )}
           </div>
 
-          {/* Troubleshooting Section */}
           <div className="pt-4 border-t border-gray-800/50">
             <div className="flex items-center gap-2 mb-4">
               <Shield className="w-4 h-4 text-gray-400" />
@@ -306,6 +420,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
               <Shield className="w-3 h-3 inline-block mr-1.5 mb-0.5" />
               Logs are sanitized to remove sensitive personal data
             </p>
+            {copyError && (
+              <p className="text-xs text-orange-400 text-center mt-2">{copyError}</p>
+            )}
           </div>
           </div>
         </div>

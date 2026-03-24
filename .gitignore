@@ -1,6 +1,8 @@
 node_modules
 dist
+dist-electron
 release
+.idea/
 .DS_Store
 .env
 .env.*.local

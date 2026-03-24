@@ -14,6 +14,15 @@ interface StoreSchema {
  */
 export class ConfigService {
   private store: Store<StoreSchema>;
+  private redactUrl(url: string): string {
+    if (!url) return '';
+    try {
+      const parsed = new URL(url);
+      return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+    } catch {
+      return '[invalid-url]';
+    }
+  }
 
   constructor() {
     this.store = new Store<StoreSchema>({
@@ -33,7 +42,10 @@ export class ConfigService {
    */
   public getSubscriptionUrl(): string {
     const url = this.store.get('subscriptionUrl');
-    logger.info('ConfigService', 'getSubscriptionUrl', { url });
+    logger.info('ConfigService', 'getSubscriptionUrl', {
+      hasUrl: !!url,
+      redactedUrl: this.redactUrl(url),
+    });
     return url;
   }
 
@@ -42,7 +54,10 @@ export class ConfigService {
    * @param {string} url - The new subscription URL.
    */
   public setSubscriptionUrl(url: string): void {
-    logger.info('ConfigService', 'setSubscriptionUrl', { url });
+    logger.info('ConfigService', 'setSubscriptionUrl', {
+      hasUrl: !!url,
+      redactedUrl: this.redactUrl(url),
+    });
     this.store.set('subscriptionUrl', url);
   }
 

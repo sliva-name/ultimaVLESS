@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Sidebar } from './Sidebar';
 import { VlessConfig } from '../../shared/types';
-import { vi } from 'vitest';
+import { vi, beforeEach } from 'vitest';
 
 describe('Sidebar', () => {
   const mockServers: VlessConfig[] = [
@@ -21,6 +21,12 @@ describe('Sidebar', () => {
       security: 'tls'
     }
   ];
+
+  beforeEach(() => {
+    (window as unknown as { electronAPI: { getAppVersion: () => Promise<string> } }).electronAPI = {
+      getAppVersion: vi.fn().mockResolvedValue('2.1.2'),
+    };
+  });
 
   it('renders server list', () => {
     render(
@@ -48,8 +54,8 @@ describe('Sidebar', () => {
       />
     );
 
-    const server1 = screen.getByTestId('server-item-0');
-    expect(server1.className).toContain('bg-primary/20');
+    const server1 = screen.getByTestId('server-item-1');
+    expect(server1.className).toContain('from-primary/20');
   });
 
   it('calls onSelectServer when clicked', () => {
@@ -64,7 +70,7 @@ describe('Sidebar', () => {
       />
     );
 
-    fireEvent.click(screen.getByTestId('server-item-0'));
+    fireEvent.click(screen.getByTestId('server-item-1'));
     expect(handleSelect).toHaveBeenCalledWith(mockServers[0]);
   });
 });
