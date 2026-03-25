@@ -103,7 +103,7 @@ export class SystemProxyService {
         '-ExecutionPolicy', 'Bypass',
         '-File', this.scriptPath,
         enable,
-        `"${proxy}"` // Quote the proxy string to handle semicolons
+        proxy
       ]);
 
       ps.stdout.on('data', (data) => {

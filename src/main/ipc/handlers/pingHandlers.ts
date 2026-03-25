@@ -2,15 +2,16 @@ import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { VlessConfig } from '../../../shared/types';
 import { logger } from '../../services/LoggerService';
 import { IpcDependencies } from '../dependencies';
-import { assertValidServerPayload } from '../validators';
+import { assertBoolean, assertValidServerPayload } from '../validators';
 
 interface RegisterPingHandlersParams {
   deps: IpcDependencies;
   sendToRenderer: (channel: string, ...args: unknown[]) => void;
   stripRawConfigs: (servers: VlessConfig[]) => VlessConfig[];
+  assertTrustedSender: (event: IpcMainInvokeEvent) => void;
 }
 
-export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs }: RegisterPingHandlersParams): void {
+export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, assertTrustedSender }: RegisterPingHandlersParams): void {
   const RETRY_TIMEOUT_MS = 8000;
   const RETRY_DELAY_MS = 1200;
   const buildServersFingerprint = (servers: VlessConfig[]): string =>
@@ -21,6 +22,7 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs }: 
   let pingAllQueue: Promise<unknown> = Promise.resolve();
 
   ipcMain.handle('ping-server', async (_event: IpcMainInvokeEvent, serverPayload: unknown) => {
+    assertTrustedSender(_event);
     try {
       const requestedServer = assertValidServerPayload(serverPayload);
       const storedServer = deps.configService.getServers().find((server) => server.uuid === requestedServer.uuid);
@@ -121,7 +123,9 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs }: 
   }
 
   ipcMain.handle('ping-all-servers', async (_event: IpcMainInvokeEvent, force: boolean = false) => {
-    const job = pingAllQueue.then(() => runPingAllServers(force));
+    assertTrustedSender(_event);
+    const forcePing = typeof force === 'undefined' ? false : assertBoolean(force, 'force');
+    const job = pingAllQueue.then(() => runPingAllServers(forcePing));
     pingAllQueue = job.then(
       () => undefined,
       () => undefined

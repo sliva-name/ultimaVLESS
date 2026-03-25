@@ -48,5 +48,13 @@ describe('SubscriptionService', () => {
     mockFetchText('invalid-base-64%%');
     await expect(service.fetchAndParse('https://sub.url')).rejects.toThrow();
   });
+
+  it('should reject non-http(s) subscription urls', async () => {
+    await expect(service.fetchAndParse('file:///etc/passwd')).rejects.toThrow(/Only HTTP\(S\)/);
+  });
+
+  it('should reject localhost subscription host', async () => {
+    await expect(service.fetchAndParse('http://127.0.0.1/sub')).rejects.toThrow(/host is not allowed/);
+  });
 });
 

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { VlessConfig } from '../../shared/types';
 
+let didBootstrapInitialState = false;
+
 export function useServerState() {
   type SaveSubscriptionResult = { ok: true } | { ok: false; error: string };
   const [servers, setServers] = useState<VlessConfig[]>([]);
@@ -10,12 +12,29 @@ export function useServerState() {
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
+    let pingTimer: number | null = null;
+    let disposed = false;
+    const schedulePingAll = (force: boolean) => {
+      if (disposed) return;
+      if (pingTimer !== null) {
+        window.clearTimeout(pingTimer);
+      }
+      pingTimer = window.setTimeout(() => {
+        if (disposed) return;
+        void window.electronAPI.pingAllServers(force).catch((error) => {
+          console.error('Failed to ping servers', error);
+        });
+        pingTimer = null;
+      }, 1200);
+    };
+
     const loadInitialState = async () => {
       const [initialServers, savedServerId, connectionStatus] = await Promise.all([
         window.electronAPI.getServers(),
         window.electronAPI.getSelectedServerId(),
         window.electronAPI.getConnectionStatus()
       ]);
+      if (disposed) return;
 
       setServers(initialServers);
       setIsConnected(connectionStatus);
@@ -30,14 +49,15 @@ export function useServerState() {
       if (initialServers.length > 0) {
         const hasMissingPingData = initialServers.some((s) => !s.pingTime || s.pingTime === 0);
         if (hasMissingPingData) {
-          void window.electronAPI.pingAllServers(true).catch((error) => {
-            console.error('Failed to ping servers', error);
-          });
+          schedulePingAll(true);
         }
       }
     };
 
-    loadInitialState();
+    if (!didBootstrapInitialState) {
+      didBootstrapInitialState = true;
+      void loadInitialState();
+    }
 
     const handleUpdateServers = (newServers: VlessConfig[]) => {
       setServers(newServers);
@@ -54,9 +74,7 @@ export function useServerState() {
       if (newServers.length > 0) {
         const hasMissingPingData = newServers.some((s) => !s.pingTime || s.pingTime === 0);
         if (hasMissingPingData) {
-          void window.electronAPI.pingAllServers(false).catch((error) => {
-            console.error('Failed to ping servers after update', error);
-          });
+          schedulePingAll(false);
         }
       }
     };
@@ -75,20 +93,27 @@ export function useServerState() {
     const removeConnectionError = window.electronAPI.onConnectionError(handleConnectionError);
 
     return () => {
+      disposed = true;
+      if (pingTimer !== null) {
+        window.clearTimeout(pingTimer);
+      }
       removeUpdateServers();
       removeConnectionStatus();
       removeConnectionError();
     };
   }, []);
 
-  const toggleConnection = useCallback(() => {
+  const toggleConnection = useCallback(async () => {
     if (!selectedServer) return;
     if (isConnected) {
-      window.electronAPI.disconnect();
+      await window.electronAPI.disconnect();
       setConnectionError(null);
     } else {
       setConnectionError(null);
-      window.electronAPI.connect(selectedServer);
+      const result = await window.electronAPI.connect(selectedServer);
+      if (!result.ok && result.error) {
+        setConnectionError(result.error);
+      }
     }
   }, [selectedServer, isConnected]);
 

@@ -26,8 +26,10 @@ function createListener<T>(channel: string) {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  connect: (server: VlessConfig) => ipcRenderer.send('connect', server),
-  disconnect: () => ipcRenderer.send('disconnect'),
+  connect: (server: VlessConfig) =>
+    ipcRenderer.invoke('connect', server) as Promise<{ ok: boolean; error?: string; relaunched?: boolean }>,
+  disconnect: () =>
+    ipcRenderer.invoke('disconnect') as Promise<{ ok: boolean }>,
   saveSubscription: (payload: { subscriptionUrl: string; manualLinks: string }) =>
     ipcRenderer.invoke('save-subscription', payload) as Promise<boolean>,
 
@@ -48,7 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setConnectionMode: (mode: ConnectionMode) => ipcRenderer.invoke('set-connection-mode', mode) as Promise<boolean>,
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
   getLogs: () => ipcRenderer.invoke('get-logs'),
-  openLogFolder: () => ipcRenderer.send('open-log-folder'),
+  openLogFolder: () => ipcRenderer.invoke('open-log-folder') as Promise<boolean>,
   getAppVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,
 
   pingServer: (server: VlessConfig) => ipcRenderer.invoke('ping-server', server) as Promise<{ uuid: string; latency: number | null }>,

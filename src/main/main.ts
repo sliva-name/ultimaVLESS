@@ -1,5 +1,7 @@
 import { app, BrowserWindow, Menu, Tray } from 'electron';
+import { performance } from 'perf_hooks';
 import path from 'path';
+import { pathToFileURL } from 'url';
 import { logger } from './services/LoggerService';
 
 if (typeof process.versions.electron !== 'string') {
@@ -30,6 +32,16 @@ if (process.platform === 'win32') {
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+let isShuttingDown = false;
+const startupPerfOriginMs = performance.now();
+const SHUTDOWN_TIMEOUT_MS = 5000;
+
+function logStartupStep(step: string, data?: Record<string, unknown>) {
+  logger.info('Startup', step, {
+    elapsedMs: Math.round(performance.now() - startupPerfOriginMs),
+    ...data,
+  });
+}
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -37,12 +49,14 @@ if (!gotSingleInstanceLock) {
 } else {
   app.on('second-instance', async () => {
     await ensureTray();
-    await showMainWindow();
+    await showMainWindow('second-instance');
   });
 }
 
-async function showMainWindow() {
+async function showMainWindow(reason: string = 'unspecified') {
+  logStartupStep('showMainWindow called', { reason });
   if (!mainWindow || mainWindow.isDestroyed()) {
+    logStartupStep('showMainWindow creating missing window', { reason });
     await createWindow();
   }
 
@@ -54,7 +68,8 @@ async function showMainWindow() {
   mainWindow.focus();
 }
 
-function hideMainWindow() {
+function hideMainWindow(reason: string = 'unspecified') {
+  logStartupStep('hideMainWindow called', { reason });
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.hide();
   mainWindow.setSkipTaskbar(true);
@@ -80,19 +95,18 @@ async function ensureTray() {
     {
       label: 'Показать',
       click: () => {
-        void showMainWindow();
+        void showMainWindow('tray-menu-show');
       },
     },
     {
       label: 'Скрыть',
-      click: () => hideMainWindow(),
+      click: () => hideMainWindow('tray-menu-hide'),
     },
     { type: 'separator' },
     {
       label: 'Выход',
-      click: async () => {
+      click: () => {
         isQuitting = true;
-        await stopNetworkStack();
         app.quit();
       },
     },
@@ -104,20 +118,22 @@ async function ensureTray() {
   tray.on('click', () => {
     void (async () => {
       if (!mainWindow || mainWindow.isDestroyed()) {
-        await showMainWindow();
+        await showMainWindow('tray-click-create-or-show');
         return;
       }
-      if (mainWindow.isVisible()) hideMainWindow();
-      else await showMainWindow();
+      if (mainWindow.isVisible()) hideMainWindow('tray-click-toggle-hide');
+      else await showMainWindow('tray-click-toggle-show');
     })();
   });
 
   tray.on('double-click', () => {
-    void showMainWindow();
+    void showMainWindow('tray-double-click');
   });
+  logStartupStep('Tray initialized');
 }
 
 async function createWindow() {
+  const windowCreateStartedAt = performance.now();
   logger.info('Main', 'createWindow called');
 
   // Load icon for the window based on platform
@@ -149,10 +165,52 @@ async function createWindow() {
       symbolColor: '#ffffff'
     }
   });
+  const wc = mainWindow.webContents;
+
+  wc.on('did-start-loading', () => {
+    logStartupStep('webContents did-start-loading');
+  });
+  wc.on('dom-ready', () => {
+    logStartupStep('webContents dom-ready');
+  });
+  wc.on('did-stop-loading', () => {
+    logStartupStep('webContents did-stop-loading');
+  });
+  wc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    logStartupStep('webContents did-fail-load', {
+      errorCode,
+      errorDescription,
+      validatedURL,
+      isMainFrame,
+    });
+  });
+  wc.on('render-process-gone', (_event, details) => {
+    logStartupStep('webContents render-process-gone', {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
+  });
+  wc.on('unresponsive', () => {
+    logStartupStep('webContents unresponsive');
+  });
+  wc.on('responsive', () => {
+    logStartupStep('webContents responsive');
+  });
+
+  mainWindow.on('show', () => {
+    logStartupStep('Main window show event');
+  });
+  mainWindow.on('hide', () => {
+    logStartupStep('Main window hide event');
+  });
+  mainWindow.on('focus', () => {
+    logStartupStep('Main window focus event');
+  });
 
   mainWindow.once('ready-to-show', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
+      logStartupStep('Main window ready-to-show');
     }
   });
 
@@ -160,7 +218,7 @@ async function createWindow() {
     // On Windows/Linux we keep running in tray instead of quitting.
     if (isQuitting) return;
     event.preventDefault();
-    hideMainWindow();
+    hideMainWindow('window-close');
   });
 
   // Deny all popup windows from renderer content.
@@ -168,11 +226,31 @@ async function createWindow() {
 
   // Prevent navigation away from trusted app content.
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-    const isDev = !!process.env.VITE_DEV_SERVER_URL;
-    const allowPrefix = isDev
-      ? process.env.VITE_DEV_SERVER_URL || ''
-      : 'file://';
-    if (!navigationUrl.startsWith(allowPrefix)) {
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+    const isAllowed = (() => {
+      if (devServerUrl) {
+        try {
+          const targetUrl = new URL(navigationUrl);
+          const allowedDevUrl = new URL(devServerUrl);
+          return targetUrl.origin === allowedDevUrl.origin;
+        } catch {
+          return false;
+        }
+      }
+
+      try {
+        const targetUrl = new URL(navigationUrl);
+        const expectedIndexUrl = pathToFileURL(path.join(__dirname, '../dist/index.html'));
+        return (
+          targetUrl.protocol === 'file:' &&
+          decodeURIComponent(targetUrl.pathname) === decodeURIComponent(expectedIndexUrl.pathname)
+        );
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!isAllowed) {
       event.preventDefault();
       logger.warn('Main', 'Blocked unexpected navigation', { navigationUrl });
     }
@@ -183,21 +261,31 @@ async function createWindow() {
 
   mainWindow.webContents.once('did-finish-load', async () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
+      logStartupStep('Renderer did-finish-load');
       await loadInitialState(mainWindow);
+      logStartupStep('Initial state loaded');
     }
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {
+    logStartupStep('Loading dev renderer URL');
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
+    logStartupStep('Loading packaged renderer file');
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  logStartupStep('BrowserWindow created', {
+    createWindowMs: Math.round(performance.now() - windowCreateStartedAt),
+  });
 }
 
-app.on('ready', async () => {
-  logger.info('Main', 'App ready');
+void app.whenReady().then(async () => {
+  logStartupStep('App ready event');
   await createWindow();
+  logStartupStep('createWindow finished');
   await ensureTray();
+  logStartupStep('ensureTray finished');
   // loadInitialState runs from did-finish-load so the renderer has subscribed to
   // update-servers; calling it here as well duplicated refresh/ping work and
   // caused overlapping ping-all-servers requests to be discarded as stale.
@@ -221,9 +309,26 @@ app.on('activate', async () => {
   await ensureTray();
 });
 
-app.on('before-quit', async () => {
-  if (!isQuitting) {
-    isQuitting = true;
-    await stopNetworkStack();
-  }
+app.on('before-quit', (event) => {
+  if (isShuttingDown) return;
+
+  event.preventDefault();
+  isQuitting = true;
+  isShuttingDown = true;
+
+  const forceExitTimeout = setTimeout(() => {
+    logger.warn('Main', 'Forced exit after shutdown timeout', { timeoutMs: SHUTDOWN_TIMEOUT_MS });
+    app.exit(0);
+  }, SHUTDOWN_TIMEOUT_MS);
+
+  void (async () => {
+    try {
+      await stopNetworkStack();
+    } catch (error) {
+      logger.error('Main', 'Failed to stop network stack on quit', error);
+    } finally {
+      clearTimeout(forceExitTimeout);
+      app.exit(0);
+    }
+  })();
 });

@@ -58,19 +58,6 @@ export default defineConfig({
     port: DEV_SERVER_PORT,
     strictPort: true,
   },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return;
-          if (id.includes('react-dom')) return 'react-dom';
-          if (id.includes('/react/') || id.includes('\\react\\')) return 'react';
-          if (id.includes('lucide-react')) return 'lucide';
-          return 'vendor';
-        },
-      },
-    },
-  },
   plugins: [
     electronCspMetaPlugin(),
     react(),
@@ -79,9 +66,9 @@ export default defineConfig({
         entry: 'src/main/main.ts',
         vite: {
           build: {
+            codeSplitting: false,
             rollupOptions: {
               output: {
-                inlineDynamicImports: false,
                 chunkFileNames: 'main-[name].js',
                 entryFileNames: 'main.js',
               },

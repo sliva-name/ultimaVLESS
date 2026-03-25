@@ -73,6 +73,22 @@ npm run build
 The installer will be generated in `release/<version>/`.
 Use `RELEASE_CHECKLIST.md` before publishing production builds.
 
+### Windows Code Signing
+
+Code signing is enabled and required for Windows production builds.
+
+1. Set signing environment variables in PowerShell:
+   ```powershell
+   $env:CSC_LINK = "C:\certs\ultima-signing.pfx"
+   $env:CSC_KEY_PASSWORD = "your-cert-password"
+   ```
+2. Build signed Windows installer:
+   ```powershell
+   npm run package:win:signed
+   ```
+
+If `CSC_LINK` or `CSC_KEY_PASSWORD` is missing, the script fails fast with an explicit error.
+
 ## 🧪 Testing
 
 Run the test suite (Unit + Component tests):

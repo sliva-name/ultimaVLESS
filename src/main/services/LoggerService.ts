@@ -7,6 +7,7 @@ import { app } from 'electron';
  * Writes logs to the application's dedicated log directory to ensure write permissions.
  */
 export class LoggerService {
+  private static readonly MAX_LOG_SIZE_BYTES = 5 * 1024 * 1024;
   private logPath: string;
   private readonly debugEnabled: boolean;
 
@@ -50,6 +51,7 @@ export class LoggerService {
    */
   public log(location: string, message: string, data?: any): void {
     try {
+      this.rotateIfNeeded();
       const logEntry = JSON.stringify({
         timestamp: new Date().toISOString(),
         location,
@@ -60,6 +62,23 @@ export class LoggerService {
     } catch (e) {
       console.error('Failed to write to log file', e);
     }
+  }
+
+  private rotateIfNeeded(): void {
+    if (!fs.existsSync(this.logPath)) {
+      return;
+    }
+
+    const stats = fs.statSync(this.logPath);
+    if (stats.size < LoggerService.MAX_LOG_SIZE_BYTES) {
+      return;
+    }
+
+    const backupPath = `${this.logPath}.1`;
+    if (fs.existsSync(backupPath)) {
+      fs.unlinkSync(backupPath);
+    }
+    fs.renameSync(this.logPath, backupPath);
   }
 
   /**

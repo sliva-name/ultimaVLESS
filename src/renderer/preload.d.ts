@@ -18,8 +18,8 @@ export interface ConnectionStatus {
 }
 
 export interface IElectronAPI {
-  connect: (server: VlessConfig) => void;
-  disconnect: () => void;
+  connect: (server: VlessConfig) => Promise<{ ok: boolean; error?: string; relaunched?: boolean }>;
+  disconnect: () => Promise<{ ok: boolean }>;
   saveSubscription: (payload: { subscriptionUrl: string; manualLinks: string }) => Promise<boolean>;
   onUpdateServers: (callback: (servers: VlessConfig[]) => void) => () => void;
   onConnectionStatus: (callback: (status: boolean) => void) => () => void;
@@ -36,7 +36,7 @@ export interface IElectronAPI {
   setConnectionMode: (mode: ConnectionMode) => Promise<boolean>;
   getConnectionStatus: () => Promise<boolean>;
   getLogs: () => Promise<string>;
-  openLogFolder: () => void;
+  openLogFolder: () => Promise<boolean>;
   getAppVersion: () => Promise<string>;
   pingServer: (server: VlessConfig) => Promise<{ uuid: string; latency: number | null }>;
   pingAllServers: (force?: boolean) => Promise<Array<{ uuid: string; latency: number | null }>>;

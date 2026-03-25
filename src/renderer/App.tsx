@@ -4,6 +4,9 @@ import { SettingsModal } from './components/SettingsModal';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { useServerState } from './hooks/useServerState';
 
+type DragRegionStyle = React.CSSProperties & { WebkitAppRegion: 'drag' | 'no-drag' };
+const dragRegionStyle: DragRegionStyle = { WebkitAppRegion: 'drag' };
+
 function App() {
   const { 
     servers, 
@@ -48,7 +51,7 @@ function App() {
       <div className="flex-1 flex flex-col relative">
         <div 
           className="h-8 w-full app-drag-region bg-gradient-to-r from-surface/50 to-transparent backdrop-blur-sm border-b border-gray-800/30" 
-          style={{ WebkitAppRegion: 'drag' } as any}
+          style={dragRegionStyle}
         />
 
         {isSettingsOpen ? (

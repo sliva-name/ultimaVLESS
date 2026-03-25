@@ -46,7 +46,7 @@ export class ConfigService {
    */
   public getSubscriptionUrl(): string {
     const url = this.store.get('subscriptionUrl');
-    logger.info('ConfigService', 'getSubscriptionUrl', {
+    logger.debug('ConfigService', 'getSubscriptionUrl', {
       hasUrl: !!url,
       redactedUrl: this.redactUrl(url),
     });
@@ -79,7 +79,7 @@ export class ConfigService {
    */
   public getServers(): VlessConfig[] {
     const servers = this.store.get('servers') || [];
-    logger.info('ConfigService', 'getServers', { count: servers.length });
+    logger.debug('ConfigService', 'getServers', { count: servers.length });
     return servers;
   }
 

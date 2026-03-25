@@ -132,7 +132,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
   }, []);
 
   const handleOpenFolder = useCallback(() => {
-    window.electronAPI.openLogFolder();
+    void window.electronAPI.openLogFolder().catch((error) => {
+      console.error('Failed to open log folder', error);
+    });
   }, []);
 
   if (!isOpen) return null;

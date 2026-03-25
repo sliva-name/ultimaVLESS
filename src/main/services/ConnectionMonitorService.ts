@@ -3,6 +3,7 @@ import { logger } from './LoggerService';
 import { xrayService } from './XrayService';
 import { configService } from './ConfigService';
 import { systemProxyService } from './SystemProxyService';
+import { tunRouteService } from './TunRouteService';
 import { APP_CONSTANTS } from '../../shared/constants';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
@@ -244,7 +245,23 @@ export class ConnectionMonitorService extends EventEmitter {
         return [];
       }
 
-      const content = fs.readFileSync(this.xrayLogPath, 'utf-8');
+      const stats = fs.statSync(this.xrayLogPath);
+      if (stats.size === 0) {
+        return [];
+      }
+
+      const maxTailBytes = 128 * 1024;
+      const readStart = Math.max(0, stats.size - maxTailBytes);
+      const readLength = stats.size - readStart;
+      const buffer = Buffer.alloc(readLength);
+      const fd = fs.openSync(this.xrayLogPath, 'r');
+      try {
+        fs.readSync(fd, buffer, 0, readLength, readStart);
+      } finally {
+        fs.closeSync(fd);
+      }
+
+      const content = buffer.toString('utf-8');
       const lines = content.split('\n').filter(line => line.trim());
       return lines.slice(-count);
     } catch (error) {
@@ -365,16 +382,24 @@ export class ConnectionMonitorService extends EventEmitter {
    */
   private async switchToServer(server: VlessConfig): Promise<void> {
     try {
+      const connectionMode = configService.getConnectionMode();
+
       // Отключаемся от текущего сервера
       await systemProxyService.disable();
+      await tunRouteService.disable();
       xrayService.stop();
 
       // Небольшая задержка перед переподключением
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Подключаемся к новому серверу
-      await xrayService.start(server);
-      await systemProxyService.enable(APP_CONSTANTS.PORTS.HTTP, APP_CONSTANTS.PORTS.SOCKS);
+      await xrayService.start(server, connectionMode);
+      if (connectionMode === 'proxy') {
+        await systemProxyService.enable(APP_CONSTANTS.PORTS.HTTP, APP_CONSTANTS.PORTS.SOCKS);
+      } else {
+        await systemProxyService.disable();
+        await tunRouteService.enable(server);
+      }
       
       configService.setSelectedServerId(server.uuid);
       
@@ -383,14 +408,8 @@ export class ConnectionMonitorService extends EventEmitter {
 
       logger.info('ConnectionMonitorService', 'Successfully switched server', {
         serverName: server.name,
+        connectionMode,
       });
-
-      // Отправляем событие об успешном переключении
-      this.emit('connected', {
-        type: 'connected',
-        server,
-        message: `Successfully switched to ${server.name}`,
-      } as ConnectionEvent);
     } catch (error) {
       logger.error('ConnectionMonitorService', 'Failed to switch server', error);
       const errorMessage = `Failed to switch: ${error instanceof Error ? error.message : String(error)}`;
@@ -399,6 +418,7 @@ export class ConnectionMonitorService extends EventEmitter {
       // Если переключение не удалось, пытаемся отключиться
       try {
         await systemProxyService.disable();
+        await tunRouteService.disable();
         xrayService.stop();
         this.stopMonitoring();
       } catch (cleanupError) {
