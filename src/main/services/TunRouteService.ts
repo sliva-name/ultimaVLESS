@@ -23,6 +23,10 @@ interface DefaultRouteInfo {
   interfaceName: string;
 }
 
+interface RunPowerShellOptions {
+  allowNonZeroExit?: boolean;
+}
+
 export class TunRouteService {
   private addedRoutes: { destination: string; mask: string; interfaceIndex?: number }[] = [];
 
@@ -32,13 +36,15 @@ export class TunRouteService {
       return;
     }
 
-    const enableWithTimeout = async () => {
-      const startedAt = Date.now();
+    const startedAt = Date.now();
+    const deadline = startedAt + ENABLE_TIMEOUT;
+    try {
       const [defaultRoute, proxyIps, tunInterfaceIndex] = await Promise.all([
         this.getDefaultRoute(),
         this.resolveProxyAddresses(config.address),
         this.waitForTunInterface(),
       ]);
+      this.ensureWithinDeadline(deadline, 'initial discovery');
       logger.info('TunRouteService', 'Discovery completed', {
         hasDefaultRoute: !!defaultRoute,
         proxyIpCount: proxyIps.length,
@@ -53,10 +59,13 @@ export class TunRouteService {
       }
 
       await this.ensureTunAddress();
+      this.ensureWithinDeadline(deadline, 'set TUN interface address');
 
       for (const proxyIp of proxyIps) {
+        this.ensureWithinDeadline(deadline, `add host route for ${proxyIp}`);
         await this.addRoute(proxyIp, '255.255.255.255', defaultRoute.gateway, 1, defaultRoute.interfaceIndex);
       }
+      this.ensureWithinDeadline(deadline, 'add default route via TUN');
       await this.addDefaultRouteViaTun(tunInterfaceIndex);
 
       logger.info('TunRouteService', 'TUN routing enabled', {
@@ -64,15 +73,6 @@ export class TunRouteService {
         defaultGateway: defaultRoute.gateway,
         setupDurationMs: Date.now() - startedAt,
       });
-    };
-
-    try {
-      await Promise.race([
-        enableWithTimeout(),
-        this.sleep(ENABLE_TIMEOUT).then(() =>
-          Promise.reject(new Error(`TUN setup timed out after ${ENABLE_TIMEOUT / 1000}s. Xray may not support TUN on this system.`))
-        ),
-      ]);
     } catch (error) {
       await this.disable();
       throw error;
@@ -128,7 +128,7 @@ export class TunRouteService {
         Write-Output "$ifIndex|$gw|$ifName"
       }
     `;
-    const out = await this.runPowerShell(script);
+    const out = await this.runPowerShell(script, { allowNonZeroExit: true });
     const match = out.trim().match(/^(\d+)\|([^\s|]+)\|(.+)$/);
     if (!match) return null;
     return {
@@ -186,7 +186,7 @@ export class TunRouteService {
       $adapter = Get-NetAdapter -Name "${TUN_INTERFACE_NAME}" -ErrorAction SilentlyContinue
       if ($adapter) { Write-Output $adapter.ifIndex }
     `;
-    const out = await this.runPowerShell(script);
+    const out = await this.runPowerShell(script, { allowNonZeroExit: true });
     const n = parseInt(out.trim(), 10);
     return Number.isNaN(n) ? null : n;
   }
@@ -278,7 +278,7 @@ export class TunRouteService {
     const script = `
       Remove-NetRoute -DestinationPrefix "${prefix}"${ifPart} -ErrorAction SilentlyContinue
     `;
-    await this.runPowerShell(script);
+    await this.runPowerShell(script, { allowNonZeroExit: true });
   }
 
   private async cleanupStaleTunRoutes(): Promise<void> {
@@ -327,10 +327,10 @@ export class TunRouteService {
         Where-Object { $_.RouteMetric -eq ${metric} } |
         Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
     `;
-    await this.runPowerShell(script);
+    await this.runPowerShell(script, { allowNonZeroExit: true });
   }
 
-  private runPowerShell(script: string): Promise<string> {
+  private runPowerShell(script: string, options: RunPowerShellOptions = {}): Promise<string> {
     return new Promise((resolve, reject) => {
       const normalizedScript = `$ProgressPreference = 'SilentlyContinue'\n${script}`;
       const encodedScript = Buffer.from(normalizedScript, 'utf16le').toString('base64');
@@ -374,6 +374,10 @@ export class TunRouteService {
           resolve(stdout);
           return;
         }
+        if (options.allowNonZeroExit && stderr.trim().length === 0) {
+          resolve(stdout);
+          return;
+        }
         const combined = `${stderr}\n${stdout}`.trim();
         const cleaned = this.cleanPowerShellError(combined);
         const fallbackMessage = `PowerShell exited with code ${code} (no stdout/stderr).`;
@@ -403,6 +407,16 @@ export class TunRouteService {
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 180);
+  }
+
+  private ensureWithinDeadline(deadline: number, stage: string): void {
+    if (Date.now() <= deadline) {
+      return;
+    }
+    throw new Error(
+      `TUN setup timed out after ${ENABLE_TIMEOUT / 1000}s while running: ${stage}. ` +
+      'Xray may not support TUN on this system.'
+    );
   }
 
   private sleep(ms: number): Promise<void> {

@@ -13,6 +13,7 @@ import { logger } from './LoggerService';
 export class XrayService {
   private process: ChildProcess | null = null;
   private resourcesPath: string;
+  private static readonly STARTUP_GRACE_MS = 1200;
 
   constructor() {
     this.resourcesPath = app.isPackaged 
@@ -66,21 +67,23 @@ export class XrayService {
       throw error;
     }
 
+    let spawnedProcess: ChildProcess;
     try {
-      this.process = spawn(binPath, ['-c', configPath], {
+      spawnedProcess = spawn(binPath, ['-c', configPath], {
         env: {
           ...process.env,
           'XRAY_LOCATION_ASSET': this.resourcesPath
         }
       });
-      logger.info('XrayService', 'Process spawned', { pid: this.process.pid });
+      this.process = spawnedProcess;
+      logger.info('XrayService', 'Process spawned', { pid: spawnedProcess.pid });
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
       logger.error('XrayService', 'Spawn failed', error);
       throw error;
     }
 
-    this.process.stdout?.on('data', (data) => {
+    spawnedProcess.stdout?.on('data', (data) => {
       const output = data.toString();
       const lines: string[] = output
         .split(/\r?\n/)
@@ -91,7 +94,7 @@ export class XrayService {
       }
     });
 
-    this.process.stderr?.on('data', (data) => {
+    spawnedProcess.stderr?.on('data', (data) => {
       const output = data.toString();
       const lines: string[] = output
         .split(/\r?\n/)
@@ -102,17 +105,19 @@ export class XrayService {
       }
     });
 
-    this.process.on('close', (code) => {
+    spawnedProcess.on('close', (code) => {
       logger.warn('XrayService', 'Process exited', { 
         code,
         server: config.name,
         serverAddress: `${config.address}:${config.port}`,
         exitCode: code,
       });
-      this.process = null;
+      if (this.process === spawnedProcess) {
+        this.process = null;
+      }
     });
     
-    this.process.on('error', (err) => {
+    spawnedProcess.on('error', (err) => {
         logger.error('XrayService', 'Process error', {
           error: err.message,
           stack: err.stack,
@@ -120,6 +125,8 @@ export class XrayService {
           serverAddress: `${config.address}:${config.port}`,
         });
     });
+
+    await this.awaitStartupGracePeriod(spawnedProcess);
   }
 
   /**
@@ -161,6 +168,74 @@ export class XrayService {
     }
 
     logger.debug('XrayService', 'Xray runtime output', metadata);
+  }
+
+  private awaitStartupGracePeriod(processRef: ChildProcess): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timeoutId: NodeJS.Timeout | null = null;
+      type ProcessEventHandler = (...args: any[]) => void;
+
+      const addListener = (event: 'close' | 'error', handler: ProcessEventHandler): boolean => {
+        const withOnce = processRef as ChildProcess & { once?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+        if (typeof withOnce.once === 'function') {
+          withOnce.once(event, handler);
+          return true;
+        }
+        const withOn = processRef as ChildProcess & { on?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+        if (typeof withOn.on === 'function') {
+          withOn.on(event, handler);
+          return true;
+        }
+        return false;
+      };
+
+      const removeListener = (event: 'close' | 'error', handler: ProcessEventHandler): void => {
+        const withOff = processRef as ChildProcess & { off?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+        if (typeof withOff.off === 'function') {
+          withOff.off(event, handler);
+          return;
+        }
+        const withRemove = processRef as ChildProcess & { removeListener?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+        if (typeof withRemove.removeListener === 'function') {
+          withRemove.removeListener(event, handler);
+        }
+      };
+
+      const finish = (fn: () => void): void => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        removeListener('close', onCloseDuringStartup);
+        removeListener('error', onErrorDuringStartup);
+        fn();
+      };
+
+      const onCloseDuringStartup = (code: number | null, signal: NodeJS.Signals | null) => {
+        finish(() => {
+          reject(
+            new Error(
+              `Xray exited during startup (code=${code ?? 'null'}, signal=${signal ?? 'none'})`
+            )
+          );
+        });
+      };
+
+      const onErrorDuringStartup = (error: Error) => {
+        finish(() => reject(error));
+      };
+
+      const closeListenerAttached = addListener('close', onCloseDuringStartup);
+      const errorListenerAttached = addListener('error', onErrorDuringStartup);
+      if (!closeListenerAttached && !errorListenerAttached) {
+        resolve();
+        return;
+      }
+      timeoutId = setTimeout(() => finish(resolve), XrayService.STARTUP_GRACE_MS);
+    });
   }
 }
 

@@ -45,6 +45,19 @@ export function registerConnectionHandlers({ deps, handleAsync, assertTrustedSen
         const connectionMode = deps.configService.getConnectionMode();
         logger.info('IPC', 'connect mode selected', { connectionMode });
 
+        const monitorStatus = deps.connectionMonitorService.getStatus();
+        if (
+          deps.xrayService.isRunning() &&
+          monitorStatus.isConnected &&
+          monitorStatus.currentServer?.uuid === fullConfig.uuid
+        ) {
+          logger.info('IPC', 'connect skipped: already connected to selected server', {
+            serverId: fullConfig.uuid.substring(0, 8),
+            connectionMode,
+          });
+          return { ok: true as const };
+        }
+
         if (connectionMode === 'tun' && !(await deps.isElevatedOnWindows())) {
           const relaunched = await deps.relaunchAsAdminOnWindows();
           if (relaunched) {

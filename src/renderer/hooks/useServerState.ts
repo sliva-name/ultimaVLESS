@@ -7,6 +7,7 @@ export function useServerState() {
   const [selectedServer, setSelectedServer] = useState<VlessConfig | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isConfigLoading, setIsConfigLoading] = useState(false);
+  const [isConnectionBusy, setIsConnectionBusy] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,18 +100,27 @@ export function useServerState() {
   }, []);
 
   const toggleConnection = useCallback(async () => {
-    if (!selectedServer) return;
-    if (isConnected) {
-      await window.electronAPI.disconnect();
-      setConnectionError(null);
-    } else {
-      setConnectionError(null);
-      const result = await window.electronAPI.connect(selectedServer);
-      if (!result.ok && result.error) {
-        setConnectionError(result.error);
+    if (!selectedServer || isConnectionBusy) return;
+    setIsConnectionBusy(true);
+    try {
+      if (isConnected) {
+        const result = await window.electronAPI.disconnect();
+        if (!result.ok) {
+          setConnectionError('Failed to disconnect cleanly');
+          return;
+        }
+        setConnectionError(null);
+      } else {
+        setConnectionError(null);
+        const result = await window.electronAPI.connect(selectedServer);
+        if (!result.ok && result.error) {
+          setConnectionError(result.error);
+        }
       }
+    } finally {
+      setIsConnectionBusy(false);
     }
-  }, [selectedServer, isConnected]);
+  }, [selectedServer, isConnected, isConnectionBusy]);
 
   const saveSubscription = useCallback(async (payload: { subscriptionUrl: string; manualLinks: string }) => {
     setIsConfigLoading(true);
@@ -148,6 +158,7 @@ export function useServerState() {
     selectedServer,
     isConnected,
     connectionError,
+    isConnectionBusy,
     isConfigLoading,
     setSelectedServer: selectServer,
     toggleConnection,

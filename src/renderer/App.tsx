@@ -12,6 +12,7 @@ function App() {
     servers, 
     selectedServer, 
     isConnected, 
+    isConnectionBusy,
     connectionError,
     isConfigLoading,
     setSelectedServer, 
@@ -64,6 +65,7 @@ function App() {
         ) : (
           <ConnectionStatus 
             isConnected={isConnected}
+            isBusy={isConnectionBusy}
             selectedServer={selectedServer}
             connectionError={connectionError}
             onToggleConnection={toggleConnection}

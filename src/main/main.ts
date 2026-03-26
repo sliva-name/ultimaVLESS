@@ -38,7 +38,7 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let isShuttingDown = false;
 const startupPerfOriginMs = performance.now();
-const SHUTDOWN_TIMEOUT_MS = 5000;
+const SHUTDOWN_TIMEOUT_MS = 15000;
 
 function logStartupStep(step: string, data?: Record<string, unknown>) {
   logger.info('Startup', step, {

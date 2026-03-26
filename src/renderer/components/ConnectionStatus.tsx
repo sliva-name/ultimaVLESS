@@ -6,6 +6,7 @@ import { CountryFlag } from './CountryFlag';
 
 interface ConnectionStatusProps {
   isConnected: boolean;
+  isBusy?: boolean;
   selectedServer: VlessConfig | null;
   connectionError?: string | null;
   onToggleConnection: () => void;
@@ -13,6 +14,7 @@ interface ConnectionStatusProps {
 
 export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ 
   isConnected, 
+  isBusy = false,
   selectedServer, 
   connectionError,
   onToggleConnection 
@@ -74,13 +76,13 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           
           <button
             onClick={onToggleConnection}
-            disabled={!selectedServer}
+            disabled={!selectedServer || isBusy}
             className={clsx(
               "relative w-56 h-56 rounded-full border-8 flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-105 active:scale-95",
               isConnected 
                 ? "bg-gradient-to-br from-green-500/20 to-green-600/10 border-green-500 shadow-green-500/30 hover:shadow-green-500/40" 
                 : "bg-gradient-to-br from-gray-800/50 to-gray-800/30 border-gray-700 hover:border-gray-600 hover:from-gray-700/60 hover:to-gray-700/40 shadow-black/30 hover:shadow-black/40",
-              !selectedServer && "opacity-50 cursor-not-allowed hover:scale-100"
+              (!selectedServer || isBusy) && "opacity-50 cursor-not-allowed hover:scale-100"
             )}
           >
             <div className={clsx(
