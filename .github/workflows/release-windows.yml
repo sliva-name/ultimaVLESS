@@ -83,7 +83,10 @@ jobs:
           fi
 
       - name: Build Windows artifacts
-        run: npm run package:all
+        shell: pwsh
+        run: |
+          npm run build:electron
+          npx electron-builder --win nsis portable --x64 --publish never
 
       - name: Build SHA256 checksums
         shell: pwsh
