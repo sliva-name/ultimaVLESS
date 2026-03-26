@@ -9,8 +9,13 @@ release-portable
 .env.*.local
 .cursor
 
-# Xray binaries
-resources/bin/
+# Xray binaries and runtime assets
+resources/bin/*
+!resources/bin/.gitkeep
+!resources/bin/logo.ico
+!resources/bin/logo.icns
+!resources/bin/logo-256x256.png
+!resources/bin/LICENSE
 
 # Logs
 *.log

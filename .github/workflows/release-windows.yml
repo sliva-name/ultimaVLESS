@@ -1,0 +1,110 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare resources/bin directory
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "resources/bin" -Force | Out-Null
+
+      - name: Download Xray core assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/XTLS/Xray-core/releases/latest"
+          $zipAsset = $release.assets | Where-Object { $_.name -eq "Xray-windows-64.zip" } | Select-Object -First 1
+          if (-not $zipAsset) {
+            throw "Could not find Xray-windows-64.zip in latest Xray-core release"
+          }
+
+          $zipPath = Join-Path $env:RUNNER_TEMP "xray.zip"
+          $extractDir = Join-Path $env:RUNNER_TEMP "xray"
+          Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+          $required = @("xray.exe", "geoip.dat", "geosite.dat")
+          foreach ($file in $required) {
+            $source = Join-Path $extractDir $file
+            if (-not (Test-Path $source)) {
+              throw "Required Xray asset missing after extraction: $file"
+            }
+            Copy-Item -Path $source -Destination (Join-Path "resources/bin" $file) -Force
+          }
+
+          $optional = @("wintun.dll")
+          foreach ($file in $optional) {
+            $source = Join-Path $extractDir $file
+            if (Test-Path $source) {
+              Copy-Item -Path $source -Destination (Join-Path "resources/bin" $file) -Force
+            }
+          }
+
+      - name: Validate app icon files exist
+        shell: pwsh
+        run: |
+          $requiredIcons = @("resources/bin/logo.ico", "resources/bin/logo-256x256.png")
+          foreach ($iconPath in $requiredIcons) {
+            if (-not (Test-Path $iconPath)) {
+              throw "Missing required icon asset in repository: $iconPath"
+            }
+          }
+
+      - name: Validate tag matches package version
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json version ($PACKAGE_VERSION)"
+            exit 1
+          fi
+
+      - name: Build Windows artifacts
+        run: npm run package:all
+
+      - name: Build SHA256 checksums
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path "release" -Recurse -File -Include *.exe
+          if (-not $files) {
+            throw "No .exe artifacts were produced"
+          }
+          $output = @()
+          foreach ($file in $files) {
+            $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLower()
+            $relative = Resolve-Path -Relative -Path $file.FullName
+            $output += "$hash  $relative"
+          }
+          $output | Set-Content -Path "release/SHA256SUMS.txt" -Encoding utf8
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/**/UltimaVLESS-Setup-*.exe
+            release/**/UltimaVLESS-Portable-*.exe
+            release/SHA256SUMS.txt

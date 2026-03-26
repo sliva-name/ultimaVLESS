@@ -2,6 +2,17 @@
 
 A modern, secure, and fast desktop VPN client for Windows, built with Electron, React, and Xray-core.
 
+## Download And Install
+
+For end users, manual build steps are no longer required.
+
+1. Open the [latest release](https://github.com/sliva-name/ultimaVLESS/releases/latest).
+2. Download `UltimaVLESS-Setup-*.exe`.
+3. Run the installer and follow the setup wizard.
+4. Launch the app from Start Menu or desktop shortcut.
+
+Portable build (`UltimaVLESS-Portable-*.exe`) is also published for users who do not want installation.
+
 ## 🚀 Features
 
 - **Protocol Support:** VLESS (TCP, WS, gRPC, XTLS-Vision, REALITY).
@@ -72,6 +83,20 @@ npm run build
 ```
 The installer will be generated in `release/<version>/`.
 Use `RELEASE_CHECKLIST.md` before publishing production builds.
+
+### Automated Releases (GitHub)
+
+This repository includes a release workflow in `.github/workflows/release-windows.yml`.
+
+When you push a tag like `v3.2.3`, GitHub Actions will:
+- download `xray.exe`, `geoip.dat`, and `geosite.dat` automatically from latest Xray-core release;
+- build NSIS installer and portable Windows builds;
+- generate `SHA256SUMS.txt`;
+- create/update GitHub Release and upload artifacts automatically.
+
+Note: app icon files must exist in the repository at:
+- `resources/bin/logo.ico`
+- `resources/bin/logo-256x256.png`
 
 ### Windows Code Signing
 
