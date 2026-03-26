@@ -7,8 +7,8 @@ import { logger } from './LoggerService';
  * Measures the time it takes to establish a TCP connection to the server.
  */
 export class PingService {
-  private readonly DEFAULT_TIMEOUT = 5000; // 5 seconds timeout
-  private readonly MAX_CONCURRENT_PINGS = 5; // Limit concurrent ping operations
+  private readonly DEFAULT_TIMEOUT = 1800; // Fast first result for UI
+  private readonly MAX_CONCURRENT_PINGS = 20; // Higher concurrency for large server lists
 
   /**
    * Pings a single server by attempting a TCP connection.
@@ -64,8 +64,7 @@ export class PingService {
    * @returns Unique identifier string.
    */
   private getServerKey(server: VlessConfig): string {
-    // Use address:port as key since UUIDs might not be unique
-    return `${server.address}:${server.port}`;
+    return server.uuid;
   }
 
   /**
@@ -84,11 +83,16 @@ export class PingService {
       return results;
     }
 
-    // Process servers in batches with concurrency limit
-    const batchSize = this.MAX_CONCURRENT_PINGS;
-    for (let i = 0; i < servers.length; i += batchSize) {
-      const batch = servers.slice(i, i + batchSize);
-      const batchPromises = batch.map(async (server) => {
+    const workersCount = Math.min(this.MAX_CONCURRENT_PINGS, servers.length);
+    let cursor = 0;
+
+    const runWorker = async () => {
+      while (cursor < servers.length) {
+        const index = cursor;
+        cursor += 1;
+        const server = servers[index];
+        if (!server) break;
+
         const latency = await this.pingServer(server, timeout);
         const key = this.getServerKey(server);
         logger.debug('PingService', `Ping result for ${server.name}`, {
@@ -98,14 +102,11 @@ export class PingService {
           port: server.port,
           latency
         });
-        return { key, uuid: server.uuid, latency };
-      });
-      
-      const batchResults = await Promise.all(batchPromises);
-      batchResults.forEach(({ key, uuid, latency }) => {
         results.set(key, latency);
-      });
-    }
+      }
+    };
+
+    await Promise.all(Array.from({ length: workersCount }, () => runWorker()));
     
     logger.debug('PingService', 'All ping results', {
       totalServers: servers.length,

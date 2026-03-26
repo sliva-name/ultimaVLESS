@@ -32,6 +32,7 @@ export interface IElectronAPI {
   getSubscriptionUrl: () => Promise<string>;
   getManualLinks: () => Promise<string>;
   getSelectedServerId: () => Promise<string | null>;
+  setSelectedServerId: (serverId: string | null) => Promise<boolean>;
   getConnectionMode: () => Promise<ConnectionMode>;
   setConnectionMode: (mode: ConnectionMode) => Promise<boolean>;
   getConnectionStatus: () => Promise<boolean>;

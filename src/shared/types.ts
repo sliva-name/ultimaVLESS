@@ -1,5 +1,6 @@
 export interface VlessConfig {
   uuid: string;
+  userId?: string; // original VLESS user UUID used for auth
   address: string;
   port: number;
   name: string;

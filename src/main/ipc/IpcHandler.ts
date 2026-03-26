@@ -13,6 +13,7 @@ import { assertBoolean, normalizeSavePayload, redactUrl } from './validators';
 
 let windowRef: BrowserWindow | null = null;
 let handlersRegistered = false;
+let refreshQueue: Promise<{ configCount: number; reason?: string }> = Promise.resolve({ configCount: 0 });
 
 function getWindow(): BrowserWindow | null {
   if (windowRef && !windowRef.isDestroyed()) return windowRef;
@@ -35,6 +36,36 @@ function assertTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent): void {
 
 function stripRawConfigs(servers: VlessConfig[]): VlessConfig[] {
   return servers.map(({ rawConfig, ...rest }) => rest);
+}
+
+function queueRefreshSubscription(
+  subscriptionUrl: string,
+  manualLinks: string
+): Promise<{ configCount: number; reason?: string }> {
+  const job = refreshQueue.then(() => refreshSubscription(subscriptionUrl, manualLinks));
+  refreshQueue = job.catch(() => ({ configCount: 0 }));
+  return job;
+}
+
+function getDedupKey(config: VlessConfig): string {
+  return [
+    config.source || '',
+    config.uuid || '',
+    config.address || '',
+    String(config.port || 0),
+    config.type || '',
+    config.security || '',
+    config.sni || '',
+    config.fp || '',
+    config.pbk || '',
+    config.sid || '',
+    config.spx || '',
+    config.path || '',
+    config.host || '',
+    config.serviceName || '',
+    config.flow || '',
+    config.encryption || '',
+  ].join('|');
 }
 
 export function registerIpcHandlers(
@@ -67,7 +98,7 @@ export function registerIpcHandlers(
     try {
       configService.setSubscriptionUrl(subscriptionUrl || '');
       configService.setManualLinksInput(manualLinks || '');
-      const result = await refreshSubscription(subscriptionUrl || '', manualLinks || '');
+      const result = await queueRefreshSubscription(subscriptionUrl || '', manualLinks || '');
       const hasInput = !!subscriptionUrl.trim() || !!manualLinks.trim();
       if (hasInput && result.configCount === 0) {
         throw new Error(result.reason || 'No valid configs found in subscription or manual links');
@@ -116,6 +147,19 @@ export function registerIpcHandlers(
     return configService.getSelectedServerId();
   });
 
+  ipcMain.handle('set-selected-server-id', (event: IpcMainInvokeEvent, serverId: unknown) => {
+    assertTrustedSender(event);
+    if (typeof serverId !== 'string' && serverId !== null) {
+      throw new Error('Invalid selected server id');
+    }
+    if (typeof serverId === 'string' && serverId.trim().length === 0) {
+      configService.setSelectedServerId(null);
+      return true;
+    }
+    configService.setSelectedServerId(serverId);
+    return true;
+  });
+
   ipcMain.handle('get-connection-mode', (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
     return configService.getConnectionMode();
@@ -125,6 +169,9 @@ export function registerIpcHandlers(
     assertTrustedSender(_event);
     if (mode !== 'proxy' && mode !== 'tun') {
       throw new Error('Invalid connection mode');
+    }
+    if (xrayService.isRunning()) {
+      throw new Error('Disconnect before changing connection mode.');
     }
     configService.setConnectionMode(mode);
     return true;
@@ -206,14 +253,14 @@ async function refreshSubscription(
       configs.push(...manualConfigs.map((cfg) => ({ ...cfg, source: 'manual' as const })));
     }
 
-    const uniqueConfigs = Array.from(new Map(configs.map((cfg) => [cfg.uuid, cfg])).values());
+    const uniqueConfigs = Array.from(new Map(configs.map((cfg) => [getDedupKey(cfg), cfg])).values());
     logger.info('IPC', 'refreshSubscription success', { count: uniqueConfigs.length });
     
     const existingServers = configService.getServers();
     const pingDataMap = new Map<string, { ping: number | null; pingTime: number | undefined }>();
     existingServers.forEach(server => {
       if (server.ping !== undefined || server.pingTime !== undefined) {
-        const key = `${server.address}:${server.port}`;
+        const key = server.uuid;
         pingDataMap.set(key, {
           ping: server.ping ?? null,
           pingTime: server.pingTime
@@ -222,7 +269,7 @@ async function refreshSubscription(
     });
     
     const configsWithPing = uniqueConfigs.map(config => {
-      const key = `${config.address}:${config.port}`;
+      const key = config.uuid;
       const pingData = pingDataMap.get(key);
       if (pingData) {
         return { ...config, ping: pingData.ping, pingTime: pingData.pingTime };
@@ -273,7 +320,7 @@ export async function loadInitialState(window: BrowserWindow) {
 
   if (url || manualLinks) {
     // Do not await: subscription fetch can take a long time; UI already has saved servers.
-    void refreshSubscription(url, manualLinks).catch((error) => {
+    void queueRefreshSubscription(url, manualLinks).catch((error) => {
       logger.error('IPC', 'Background refreshSubscription failed', error);
     });
   } else {

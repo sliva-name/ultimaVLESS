@@ -44,6 +44,7 @@ try {
  */
 export class SystemProxyService {
   private scriptPath: string;
+  private readonly SCRIPT_TIMEOUT_MS = 10000;
 
   constructor() {
     this.scriptPath = path.join(app.getPath('userData'), 'proxy_manager.ps1');
@@ -104,7 +105,12 @@ export class SystemProxyService {
         '-File', this.scriptPath,
         enable,
         proxy
-      ]);
+      ], { windowsHide: true });
+
+      const timeout = setTimeout(() => {
+        ps.kill('SIGTERM');
+        reject(new Error(`Proxy script timed out after ${this.SCRIPT_TIMEOUT_MS / 1000}s`));
+      }, this.SCRIPT_TIMEOUT_MS);
 
       ps.stdout.on('data', (data) => {
         logger.info('SystemProxyService', 'STDOUT', { data: data.toString().trim() });
@@ -115,11 +121,17 @@ export class SystemProxyService {
       });
 
       ps.on('close', (code) => {
+        clearTimeout(timeout);
         if (code === 0) {
           resolve();
         } else {
           reject(new Error(`Proxy script exited with code ${code}`));
         }
+      });
+
+      ps.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
       });
     });
   }

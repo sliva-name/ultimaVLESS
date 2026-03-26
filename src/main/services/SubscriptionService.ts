@@ -1,4 +1,5 @@
 import { decode, isValid } from 'js-base64';
+import { createHash } from 'crypto';
 import net from 'net';
 import { VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
@@ -12,10 +13,6 @@ async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
     clearTimeout(id);
   }
 }
-function makeStableId(address: string, port: number, userUUID: string): string {
-  return `${userUUID.substring(0, 8)}-${address}:${port}`;
-}
-
 function redactUrlForLogs(url: string): string {
   try {
     const parsed = new URL(url);
@@ -50,6 +47,31 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   }
 
   return false;
+}
+
+function safeDecodeComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function isTruthyQueryParam(value: string | null): boolean {
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+function makeServerIdentity(
+  authToken: string,
+  address: string,
+  port: number,
+  parts: Array<string | undefined>
+): string {
+  const signature = [authToken, address, String(port), ...parts.map((part) => part || '')].join('|');
+  const digest = createHash('sha256').update(signature).digest('hex').slice(0, 16);
+  return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
 }
 
 export class SubscriptionService {
@@ -259,10 +281,24 @@ export class SubscriptionService {
 
         const networkType = (['tcp', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(network) ? network : undefined) as VlessConfig['type'];
         const secType = (['reality', 'tls', 'none'].includes(security) ? security : undefined) as VlessConfig['security'];
-        const stableId = makeStableId(address, port, userUUID);
+        const stableId = makeServerIdentity(userUUID || 'user', address, port, [
+          network,
+          security,
+          sni,
+          fp,
+          pbk,
+          sid,
+          spx,
+          path,
+          host,
+          serviceName,
+          flow,
+          encryption,
+        ]);
 
         results.push({
           uuid: stableId,
+          userId: userUUID || undefined,
           address,
           port,
           name,
@@ -318,55 +354,71 @@ export class SubscriptionService {
     return configs;
   }
 
+  private normalizeLinkForParsing(link: string): string {
+    return link.trim().replace(/&amp;/gi, '&');
+  }
+
   private parseVlessLink(link: string): VlessConfig | null {
     try {
-      const uri = link.substring(8);
-      if (!uri.includes('@') || !uri.includes(':')) return null;
-      const [addressPart, queryPart] = uri.split('?');
-      if (!addressPart) return null;
+      const normalizedLink = this.normalizeLinkForParsing(link);
+      const parsedUrl = new URL(normalizedLink);
+      if (parsedUrl.protocol !== 'vless:') return null;
 
-      const lastAt = addressPart.lastIndexOf('@');
-      const uuid = addressPart.substring(0, lastAt);
-      const hostPort = addressPart.substring(lastAt + 1);
-      const lastColon = hostPort.lastIndexOf(':');
-      const address = hostPort.substring(0, lastColon);
-      const port = parseInt(hostPort.substring(lastColon + 1), 10);
+      const uuid = safeDecodeComponent(parsedUrl.username || '');
+      const address = parsedUrl.hostname || '';
+      const port = Number(parsedUrl.port);
+      if (!uuid || !address || !Number.isInteger(port) || port < 1 || port > 65535) return null;
 
-      let paramsPart = queryPart || '';
-      let name = 'Server';
-      if (paramsPart.includes('#')) {
-        const parts = paramsPart.split('#');
-        paramsPart = parts[0];
-        name = parts[1] ? decodeURIComponent(parts[1]) : 'Server';
-      }
+      const name = parsedUrl.hash ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Server' : 'Server';
+      const params = parsedUrl.searchParams;
 
-      const params: Record<string, string> = {};
-      if (paramsPart) {
-        paramsPart.split('&').forEach((p) => {
-          const [key, val] = p.split('=');
-          if (key && val) params[key] = decodeURIComponent(val);
-        });
-      }
+      const typeValue = params.get('type') || 'tcp';
+      const securityValue = params.get('security') || 'none';
+      const type = (['tcp', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(typeValue) ? typeValue : 'tcp') as VlessConfig['type'];
+      const security = (['reality', 'tls', 'none'].includes(securityValue) ? securityValue : 'none') as VlessConfig['security'];
+      const flow = params.get('flow') ?? undefined;
+      const encryption = params.get('encryption') ?? undefined;
+      const sni = params.get('sni') ?? undefined;
+      const fp = params.get('fp') ?? undefined;
+      const pbk = params.get('pbk') ?? undefined;
+      const sid = params.get('sid') ?? undefined;
+      const spx = params.get('spx') ?? undefined;
+      const path = params.get('path') ?? undefined;
+      const host = params.get('host') ?? undefined;
+      const serviceName = params.get('serviceName') ?? undefined;
+      const stableId = makeServerIdentity(uuid, address, port, [
+        type,
+        security,
+        sni,
+        fp,
+        pbk,
+        sid,
+        spx,
+        path,
+        host,
+        serviceName,
+        flow,
+        encryption,
+      ]);
 
-      const type = (['tcp', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(params.type || '') ? params.type : 'tcp') as VlessConfig['type'];
-      const security = (['reality', 'tls', 'none'].includes(params.security || '') ? params.security : 'none') as VlessConfig['security'];
       return {
-        uuid,
+        uuid: stableId,
+        userId: uuid,
         address,
         port,
         name,
-        encryption: params.encryption,
+        encryption,
         type,
         security,
-        sni: params.sni,
-        fp: params.fp,
-        pbk: params.pbk,
-        sid: params.sid,
-        flow: params.flow,
-        spx: params.spx,
-        path: params.path,
-        host: params.host,
-        serviceName: params.serviceName,
+        sni,
+        fp,
+        pbk,
+        sid,
+        flow,
+        spx,
+        path,
+        host,
+        serviceName,
       };
     } catch {
       logger.error('SubscriptionService', 'Error parsing VLESS link', { link: link.substring(0, 50) + '...' });
@@ -376,55 +428,36 @@ export class SubscriptionService {
 
   private parseTrojanLink(link: string): VlessConfig | null {
     try {
-      const uri = link.substring('trojan://'.length);
-      const [beforeQuery, queryAndHash = ''] = uri.split('?');
-      if (!beforeQuery) return null;
-      const lastAt = beforeQuery.lastIndexOf('@');
-      if (lastAt <= 0) return null;
+      const normalizedLink = this.normalizeLinkForParsing(link);
+      const parsedUrl = new URL(normalizedLink);
+      if (parsedUrl.protocol !== 'trojan:') return null;
 
-      const password = decodeURIComponent(beforeQuery.substring(0, lastAt));
-      const hostPort = beforeQuery.substring(lastAt + 1).replace(/\/+$/, '');
-      const lastColon = hostPort.lastIndexOf(':');
-      if (lastColon <= 0) return null;
+      const password = safeDecodeComponent(parsedUrl.username || '');
+      const address = parsedUrl.hostname || '';
+      const port = Number(parsedUrl.port);
+      if (!password || !address || !Number.isInteger(port) || port < 1 || port > 65535) return null;
 
-      const address = hostPort.substring(0, lastColon);
-      const port = parseInt(hostPort.substring(lastColon + 1), 10);
-      if (!address || Number.isNaN(port) || port <= 0) return null;
-
-      let paramsPart = queryAndHash;
-      let name = 'Trojan Server';
-      if (paramsPart.includes('#')) {
-        const parts = paramsPart.split('#');
-        paramsPart = parts[0];
-        name = parts[1] ? decodeURIComponent(parts[1]) : name;
-      }
-
-      const params: Record<string, string> = {};
-      if (paramsPart) {
-        paramsPart.split('&').forEach((p) => {
-          const [key, val = ''] = p.split('=');
-          if (key) params[key] = decodeURIComponent(val);
-        });
-      }
-
-      const network = (['tcp', 'ws', 'grpc'].includes(params.type || '') ? params.type : 'tcp') as 'tcp' | 'ws' | 'grpc';
-      const security = (params.security || 'tls') as 'tls' | 'none';
+      const name = parsedUrl.hash ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Trojan Server' : 'Trojan Server';
+      const params = parsedUrl.searchParams;
+      const typeParam = params.get('type') || '';
+      const network = (['tcp', 'ws', 'grpc'].includes(typeParam) ? typeParam : 'tcp') as 'tcp' | 'ws' | 'grpc';
+      const security = ((params.get('security') || 'tls') === 'none' ? 'none' : 'tls') as 'tls' | 'none';
 
       const streamSettings: Record<string, any> = { network, security };
       if (security === 'tls') {
         streamSettings.tlsSettings = {
-          serverName: params.sni || '',
-          allowInsecure: params.insecure === '1' || params.allowInsecure === '1',
-          fingerprint: params.fp || undefined,
+          serverName: params.get('sni') || '',
+          allowInsecure: isTruthyQueryParam(params.get('insecure')) || isTruthyQueryParam(params.get('allowInsecure')),
+          fingerprint: params.get('fp') || undefined,
         };
       }
       if (network === 'ws') {
         streamSettings.wsSettings = {
-          path: params.path || '/',
-          headers: { Host: params.host || params.sni || '' },
+          path: params.get('path') || '/',
+          headers: { Host: params.get('host') || params.get('sni') || '' },
         };
       } else if (network === 'grpc') {
-        streamSettings.grpcSettings = { serviceName: params.serviceName || '' };
+        streamSettings.grpcSettings = { serviceName: params.get('serviceName') || '' };
       }
 
       const rawConfig = {
@@ -437,17 +470,26 @@ export class SubscriptionService {
       };
 
       return {
-        uuid: makeStableId(address, port, password || 'trojan'),
+        uuid: makeServerIdentity(password || 'trojan', address, port, [
+          network,
+          security,
+          params.get('sni') || '',
+          params.get('fp') || '',
+          params.get('path') || '',
+          params.get('host') || '',
+          params.get('serviceName') || '',
+          String(isTruthyQueryParam(params.get('insecure')) || isTruthyQueryParam(params.get('allowInsecure'))),
+        ]),
         address,
         port,
         name,
         type: network,
         security,
-        sni: params.sni,
-        fp: params.fp,
-        path: params.path,
-        host: params.host,
-        serviceName: params.serviceName,
+        sni: params.get('sni') ?? undefined,
+        fp: params.get('fp') ?? undefined,
+        path: params.get('path') ?? undefined,
+        host: params.get('host') ?? undefined,
+        serviceName: params.get('serviceName') ?? undefined,
         rawConfig,
       };
     } catch {
@@ -458,39 +500,20 @@ export class SubscriptionService {
 
   private parseHysteria2Link(link: string): VlessConfig | null {
     try {
-      const uri = link.substring('hysteria2://'.length);
-      const [beforeQuery, queryAndHash = ''] = uri.split('?');
-      if (!beforeQuery) return null;
-      const lastAt = beforeQuery.lastIndexOf('@');
-      if (lastAt <= 0) return null;
+      const normalizedLink = this.normalizeLinkForParsing(link);
+      const parsedUrl = new URL(normalizedLink);
+      if (parsedUrl.protocol !== 'hysteria2:') return null;
 
-      const password = decodeURIComponent(beforeQuery.substring(0, lastAt));
-      const hostPort = beforeQuery.substring(lastAt + 1).replace(/\/+$/, '');
-      const lastColon = hostPort.lastIndexOf(':');
-      if (lastColon <= 0) return null;
+      const password = safeDecodeComponent(parsedUrl.username || '');
+      const address = parsedUrl.hostname || '';
+      const port = Number(parsedUrl.port);
+      if (!password || !address || !Number.isInteger(port) || port < 1 || port > 65535) return null;
 
-      const address = hostPort.substring(0, lastColon);
-      const port = parseInt(hostPort.substring(lastColon + 1), 10);
-      if (!address || Number.isNaN(port) || port <= 0) return null;
+      const name = parsedUrl.hash ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Hysteria2 Server' : 'Hysteria2 Server';
+      const params = parsedUrl.searchParams;
 
-      let paramsPart = queryAndHash;
-      let name = 'Hysteria2 Server';
-      if (paramsPart.includes('#')) {
-        const parts = paramsPart.split('#');
-        paramsPart = parts[0];
-        name = parts[1] ? decodeURIComponent(parts[1]) : name;
-      }
-
-      const params: Record<string, string> = {};
-      if (paramsPart) {
-        paramsPart.split('&').forEach((p) => {
-          const [key, val = ''] = p.split('=');
-          if (key) params[key] = decodeURIComponent(val);
-        });
-      }
-
-      const allowInsecure = params.insecure === '1' || params.allowInsecure === '1';
-      const sni = params.sni || '';
+      const allowInsecure = isTruthyQueryParam(params.get('insecure')) || isTruthyQueryParam(params.get('allowInsecure'));
+      const sni = params.get('sni') || '';
       const rawConfig = {
         outbounds: [{
           tag: 'proxy',
@@ -505,7 +528,12 @@ export class SubscriptionService {
       };
 
       return {
-        uuid: makeStableId(address, port, password || 'hy2'),
+        uuid: makeServerIdentity(password || 'hy2', address, port, [
+          'tcp',
+          'tls',
+          sni,
+          String(allowInsecure),
+        ]),
         address,
         port,
         name,

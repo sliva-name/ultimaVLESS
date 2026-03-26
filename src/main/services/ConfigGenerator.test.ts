@@ -47,5 +47,18 @@ describe('ConfigGenerator', () => {
     const result = ConfigGenerator.generate(noFpConfig, '/tmp/log');
     expect(result.outbounds?.[0].streamSettings?.realitySettings?.fingerprint).toBe('chrome');
   });
+
+  it('should route bittorrent traffic to block outbound', () => {
+    const result = ConfigGenerator.generate(mockConfig, '/tmp/log');
+    expect(result.routing?.rules?.some((rule: any) => rule.protocol?.includes('bittorrent') && rule.outboundTag === 'block')).toBe(true);
+  });
+
+  it('should generate tun inbound with lowercase mtu key', () => {
+    const result = ConfigGenerator.generate(mockConfig, '/tmp/log', 'tun');
+    const tunInbound = result.inbounds?.find((inbound: any) => inbound.tag === 'tun-in');
+    expect(tunInbound).toBeTruthy();
+    expect(tunInbound.settings?.mtu).toBe(1400);
+    expect((tunInbound.settings as any).MTU).toBeUndefined();
+  });
 });
 

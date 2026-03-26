@@ -18,6 +18,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [modeError, setModeError] = useState<string | null>(null);
   const [autoSwitching, setAutoSwitching] = useState(true);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('proxy');
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
@@ -41,6 +42,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
     if (!isOpen) return;
     setCopyError(null);
     setSaveError(null);
+    setModeError(null);
 
     window.electronAPI.getSubscriptionUrl().then((url) => {
       setSubUrl(url || '');
@@ -91,8 +93,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
     try {
       await window.electronAPI.setConnectionMode(mode);
       setConnectionMode(mode);
+      setModeError(null);
     } catch (err) {
       console.error('Failed to set connection mode:', err);
+      setModeError(err instanceof Error ? err.message : 'Failed to set connection mode');
     }
   }, []);
 
@@ -274,6 +278,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
             </div>
 
             <p className="text-xs text-gray-500 mt-3">Mode applies after reconnect.</p>
+            {modeError && <p className="text-xs text-orange-400 mt-2">{modeError}</p>}
           </div>
 
           <div className="pt-4 border-t border-gray-800/50">

@@ -82,19 +82,24 @@ export class XrayService {
 
     this.process.stdout?.on('data', (data) => {
       const output = data.toString();
-      // Логируем важные сообщения из stdout
-      if (output.includes('error') || output.includes('failed') || output.includes('blocked')) {
-        logger.error('XrayService', 'STDOUT error detected', { data: output.trim() });
+      const lines: string[] = output
+        .split(/\r?\n/)
+        .map((line: string) => line.trim())
+        .filter(Boolean);
+      for (const line of lines) {
+        this.logXrayLine('stdout', line, config);
       }
     });
 
     this.process.stderr?.on('data', (data) => {
-      const errorOutput = data.toString();
-      logger.error('XrayService', 'STDERR', { 
-        data: errorOutput.trim(),
-        server: config.name,
-        serverAddress: `${config.address}:${config.port}`,
-      });
+      const output = data.toString();
+      const lines: string[] = output
+        .split(/\r?\n/)
+        .map((line: string) => line.trim())
+        .filter(Boolean);
+      for (const line of lines) {
+        this.logXrayLine('stderr', line, config);
+      }
     });
 
     this.process.on('close', (code) => {
@@ -134,6 +139,28 @@ export class XrayService {
    */
   public isRunning(): boolean {
     return this.process !== null;
+  }
+
+  private logXrayLine(stream: 'stdout' | 'stderr', line: string, config: VlessConfig): void {
+    const normalized = line.toLowerCase();
+    const metadata = {
+      stream,
+      data: line,
+      server: config.name,
+      serverAddress: `${config.address}:${config.port}`,
+    };
+
+    if (normalized.includes('[error]') || normalized.includes('failed to start')) {
+      logger.error('XrayService', 'Xray runtime error', metadata);
+      return;
+    }
+
+    if (normalized.includes('[warning]') || normalized.includes('deprecated')) {
+      logger.warn('XrayService', 'Xray runtime warning', metadata);
+      return;
+    }
+
+    logger.debug('XrayService', 'Xray runtime output', metadata);
   }
 }
 

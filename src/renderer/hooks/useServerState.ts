@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { VlessConfig } from '../../shared/types';
 
-let didBootstrapInitialState = false;
-
 export function useServerState() {
   type SaveSubscriptionResult = { ok: true } | { ok: false; error: string };
   const [servers, setServers] = useState<VlessConfig[]>([]);
@@ -54,10 +52,7 @@ export function useServerState() {
       }
     };
 
-    if (!didBootstrapInitialState) {
-      didBootstrapInitialState = true;
-      void loadInitialState();
-    }
+    void loadInitialState();
 
     const handleUpdateServers = (newServers: VlessConfig[]) => {
       setServers(newServers);
@@ -141,13 +136,20 @@ export function useServerState() {
     }
   }, []);
 
+  const selectServer = useCallback((server: VlessConfig) => {
+    setSelectedServer(server);
+    void window.electronAPI.setSelectedServerId(server.uuid).catch((error) => {
+      console.error('Failed to persist selected server', error);
+    });
+  }, []);
+
   return {
     servers,
     selectedServer,
     isConnected,
     connectionError,
     isConfigLoading,
-    setSelectedServer,
+    setSelectedServer: selectServer,
     toggleConnection,
     saveSubscription,
     pingAllServers

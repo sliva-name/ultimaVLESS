@@ -66,7 +66,7 @@ export class ConfigGenerator {
         protocol: 'tun' as any,
         settings: {
           name: 'ultima0',
-          MTU: 1400,
+          mtu: 1400,
           inet4_address: '172.19.0.1/30',
         },
       });
@@ -119,7 +119,7 @@ export class ConfigGenerator {
             address: config.address,
             port: config.port,
             users: [{
-              id: config.uuid,
+              id: config.userId || config.uuid,
               encryption: config.encryption || 'none',
               flow: config.flow || '',
             }],
@@ -160,7 +160,7 @@ export class ConfigGenerator {
         protocol: 'tun' as any,
         settings: {
           name: 'ultima0',
-          MTU: 1400,
+          mtu: 1400,
           inet4_address: '172.19.0.1/30',
         },
       });
@@ -185,7 +185,7 @@ export class ConfigGenerator {
       routing: {
         domainStrategy: 'IPIfNonMatch',
         rules: [
-          { type: 'field', protocol: ['bittorrent'], outboundTag: 'proxy' },
+          { type: 'field', protocol: ['bittorrent'], outboundTag: 'block' },
           { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
           { type: 'field', port: '0-65535', outboundTag: 'proxy' },
         ],

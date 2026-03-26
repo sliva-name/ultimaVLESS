@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSubscriptionUrl: () => ipcRenderer.invoke('get-subscription-url'),
   getManualLinks: () => ipcRenderer.invoke('get-manual-links'),
   getSelectedServerId: () => ipcRenderer.invoke('get-selected-server-id'),
+  setSelectedServerId: (serverId: string | null) => ipcRenderer.invoke('set-selected-server-id', serverId) as Promise<boolean>,
   getConnectionMode: () => ipcRenderer.invoke('get-connection-mode') as Promise<ConnectionMode>,
   setConnectionMode: (mode: ConnectionMode) => ipcRenderer.invoke('set-connection-mode', mode) as Promise<boolean>,
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),

@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import dns from 'dns';
 import { VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
+import { configService } from './ConfigService';
 
 const dnsLookup = promisify(dns.lookup);
 const TUN_INTERFACE_NAME = 'ultima0';
@@ -10,7 +11,7 @@ const TUN_ADDRESS = '172.19.0.1';
 const TUN_PREFIX = 30;
 const TUN_NEXTHOP = '172.19.0.2';
 const TUN_ROUTE_METRIC = 1;
-const TUN_WAIT_TIMEOUT = 8000;
+const TUN_WAIT_TIMEOUT = 20000;
 const TUN_WAIT_INTERVAL = 300;
 const POWERSHELL_TIMEOUT = 30000;
 const DNS_TIMEOUT = 8000;
@@ -38,6 +39,11 @@ export class TunRouteService {
         this.resolveProxyAddresses(config.address),
         this.waitForTunInterface(),
       ]);
+      logger.info('TunRouteService', 'Discovery completed', {
+        hasDefaultRoute: !!defaultRoute,
+        proxyIpCount: proxyIps.length,
+        tunInterfaceIndex,
+      });
 
       if (!defaultRoute) {
         throw new Error('Could not get default route. Check network connection.');
@@ -87,6 +93,13 @@ export class TunRouteService {
       }
     }
     this.addedRoutes = [];
+    try {
+      await this.cleanupStaleTunRoutes();
+    } catch (error) {
+      logger.warn('TunRouteService', 'Stale route cleanup failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     logger.info('TunRouteService', 'TUN routing disabled');
   }
 
@@ -130,19 +143,39 @@ export class TunRouteService {
       $deadline = (Get-Date).AddMilliseconds(${TUN_WAIT_TIMEOUT})
       while ((Get-Date) -lt $deadline) {
         $adapter = Get-NetAdapter -Name "${TUN_INTERFACE_NAME}" -ErrorAction SilentlyContinue
+        if (-not $adapter) {
+          $adapter = Get-NetAdapter -ErrorAction SilentlyContinue |
+            Where-Object {
+              $_.Status -eq "Up" -and (
+                $_.Name -like "${TUN_INTERFACE_NAME}*" -or
+                $_.InterfaceDescription -like "*Wintun*"
+              )
+            } |
+            Sort-Object ifIndex |
+            Select-Object -First 1
+        }
         if ($adapter) {
           Write-Output $adapter.ifIndex
           exit 0
         }
         Start-Sleep -Milliseconds ${TUN_WAIT_INTERVAL}
       }
-      Write-Error "TUN interface '${TUN_INTERFACE_NAME}' was not found in time"
+      Write-Output "NOT_FOUND"
       exit 1
     `;
-    const out = await this.runPowerShell(script);
+    const out = await this.runPowerShell(script).catch((error) => {
+      const details = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `TUN interface did not appear within ${TUN_WAIT_TIMEOUT / 1000}s. ` +
+        `Make sure app runs as Administrator and Xray has TUN support. Details: ${details}`
+      );
+    });
     const idx = parseInt(out.trim(), 10);
     if (Number.isNaN(idx)) {
-      throw new Error(`TUN interface "${TUN_INTERFACE_NAME}" did not appear within ${TUN_WAIT_TIMEOUT / 1000}s. Ensure Xray started correctly.`);
+      throw new Error(
+        `TUN interface did not appear within ${TUN_WAIT_TIMEOUT / 1000}s. ` +
+        `Make sure app runs as Administrator and Xray has TUN support.`
+      );
     }
     logger.info('TunRouteService', 'TUN interface found', { index: idx });
     return idx;
@@ -248,6 +281,55 @@ export class TunRouteService {
     await this.runPowerShell(script);
   }
 
+  private async cleanupStaleTunRoutes(): Promise<void> {
+    const knownServerIps = this.getKnownServerIps();
+    const tunIndex = await this.getTunInterfaceIndex();
+    if (tunIndex != null) {
+      await this.deleteRouteByPrefixAndMetric('0.0.0.0/0', TUN_ROUTE_METRIC, tunIndex).catch((error) => {
+        logger.warn('TunRouteService', 'Failed to cleanup stale TUN default route', {
+          interfaceIndex: tunIndex,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
+    for (const ip of knownServerIps) {
+      await this.deleteRouteByPrefixAndMetric(`${ip}/32`, 1).catch((error) => {
+        logger.warn('TunRouteService', 'Failed to cleanup stale host route', {
+          destination: `${ip}/32`,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
+    logger.info('TunRouteService', 'Stale route cleanup finished', {
+      removedHostRouteCandidates: knownServerIps.length,
+      checkedTunDefaultRoute: tunIndex != null,
+    });
+  }
+
+  private getKnownServerIps(): string[] {
+    const servers = configService.getServers();
+    const ips = servers
+      .map((server) => server.address)
+      .filter((address) => this.isIp(address));
+    return [...new Set(ips)];
+  }
+
+  private async deleteRouteByPrefixAndMetric(
+    destinationPrefix: string,
+    metric: number,
+    interfaceIndex?: number
+  ): Promise<void> {
+    const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
+    const script = `
+      Get-NetRoute -DestinationPrefix "${destinationPrefix}"${ifPart} -ErrorAction SilentlyContinue |
+        Where-Object { $_.RouteMetric -eq ${metric} } |
+        Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+    `;
+    await this.runPowerShell(script);
+  }
+
   private runPowerShell(script: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const normalizedScript = `$ProgressPreference = 'SilentlyContinue'\n${script}`;
@@ -282,16 +364,45 @@ export class TunRouteService {
         stderr += chunk.toString();
       });
 
-      ps.on('error', reject);
+      ps.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
       ps.on('close', (code) => {
         clearTimeout(timeout);
         if (code === 0) {
           resolve(stdout);
           return;
         }
-        reject(new Error(stderr || stdout || `PowerShell exited with code ${code}`));
+        const combined = `${stderr}\n${stdout}`.trim();
+        const cleaned = this.cleanPowerShellError(combined);
+        const fallbackMessage = `PowerShell exited with code ${code} (no stdout/stderr).`;
+        const message = cleaned || fallbackMessage;
+        logger.warn('TunRouteService', 'PowerShell command failed', {
+          code,
+          message,
+          stdoutBytes: Buffer.byteLength(stdout, 'utf8'),
+          stderrBytes: Buffer.byteLength(stderr, 'utf8'),
+          scriptPreview: this.scriptPreview(script),
+        });
+        reject(new Error(message));
       });
     });
+  }
+
+  private cleanPowerShellError(message: string): string {
+    const noClixmlPrefix = message.replace(/#<\s*CLIXML/g, '').trim();
+    return noClixmlPrefix
+      .replace(/<Objs[\s\S]*<\/Objs>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private scriptPreview(script: string): string {
+    return script
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 180);
   }
 
   private sleep(ms: number): Promise<void> {

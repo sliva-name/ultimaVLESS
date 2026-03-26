@@ -12,8 +12,9 @@ interface RegisterPingHandlersParams {
 }
 
 export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, assertTrustedSender }: RegisterPingHandlersParams): void {
-  const RETRY_TIMEOUT_MS = 8000;
-  const RETRY_DELAY_MS = 1200;
+  const INITIAL_TIMEOUT_MS = 1800;
+  const RETRY_TIMEOUT_MS = 3500;
+  const RETRY_DELAY_MS = 250;
   const buildServersFingerprint = (servers: VlessConfig[]): string =>
     servers.map((s) => `${s.uuid}|${s.address}:${s.port}`).join('||');
   const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -65,28 +66,11 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
       }
     }
 
-    const results = await deps.pingService.pingServers(servers);
+    const results = await deps.pingService.pingServers(servers, INITIAL_TIMEOUT_MS);
     const failedServers = servers.filter((server) => {
-      const key = `${server.address}:${server.port}`;
+      const key = server.uuid;
       return results.get(key) == null;
     });
-
-    if (failedServers.length > 0) {
-      logger.debug('IPC', 'Retrying failed ping servers', {
-        total: servers.length,
-        failed: failedServers.length,
-        retryTimeoutMs: RETRY_TIMEOUT_MS,
-      });
-      await sleep(RETRY_DELAY_MS);
-      const retryResults = await deps.pingService.pingServers(failedServers, RETRY_TIMEOUT_MS);
-      for (const server of failedServers) {
-        const key = `${server.address}:${server.port}`;
-        const retryLatency = retryResults.get(key);
-        if (retryLatency != null) {
-          results.set(key, retryLatency);
-        }
-      }
-    }
 
     const currentServers = deps.configService.getServers();
     const currentFingerprint = buildServersFingerprint(currentServers);
@@ -105,7 +89,7 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
 
     const pingTime = Date.now();
     const updatedServers = servers.map((server) => {
-      const key = `${server.address}:${server.port}`;
+      const key = server.uuid;
       const ping = results.get(key) ?? null;
       return { ...server, ping, pingTime };
     });
@@ -113,8 +97,48 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
     deps.configService.setServers(updatedServers);
     sendToRenderer('update-servers', stripRawConfigs(updatedServers));
 
+    if (failedServers.length > 0) {
+      void (async () => {
+        logger.debug('IPC', 'Retrying failed ping servers in background', {
+          total: servers.length,
+          failed: failedServers.length,
+          retryTimeoutMs: RETRY_TIMEOUT_MS,
+        });
+        await sleep(RETRY_DELAY_MS);
+
+        const retryResults = await deps.pingService.pingServers(failedServers, RETRY_TIMEOUT_MS);
+        const hasRecovered = failedServers.some((server) => retryResults.get(server.uuid) != null);
+        if (!hasRecovered) return;
+
+        const latestServers = deps.configService.getServers();
+        const latestFingerprint = buildServersFingerprint(latestServers);
+        if (latestFingerprint !== startFingerprint) {
+          logger.debug('IPC', 'Dropping retry ping results (server list changed)');
+          return;
+        }
+
+        const retryPingTime = Date.now();
+        const mergedServers = latestServers.map((server) => {
+          const retryLatency = retryResults.get(server.uuid);
+          if (retryLatency == null) {
+            return server;
+          }
+          return {
+            ...server,
+            ping: retryLatency,
+            pingTime: retryPingTime,
+          };
+        });
+
+        deps.configService.setServers(mergedServers);
+        sendToRenderer('update-servers', stripRawConfigs(mergedServers));
+      })().catch((error) => {
+        logger.error('IPC', 'Background retry ping failed', error);
+      });
+    }
+
     return servers.map((server) => {
-      const key = `${server.address}:${server.port}`;
+      const key = server.uuid;
       return {
         uuid: server.uuid,
         latency: results.get(key) ?? null,

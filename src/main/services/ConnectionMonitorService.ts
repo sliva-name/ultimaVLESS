@@ -46,6 +46,8 @@ export class ConnectionMonitorService extends EventEmitter {
   private isAutoSwitchingEnabled: boolean = true;
   private checkIntervalMs: number = 30000; // Проверка каждые 30 секунд
   private xrayLogPath: string;
+  private monitoringGeneration: number = 0;
+  private switchInProgress: boolean = false;
 
   constructor() {
     super();
@@ -73,6 +75,7 @@ export class ConnectionMonitorService extends EventEmitter {
       serverAddress: server.address 
     });
 
+    this.monitoringGeneration += 1;
     this.status.currentServer = server;
     this.status.isConnected = true;
     this.status.lastConnectionTime = Date.now();
@@ -93,6 +96,8 @@ export class ConnectionMonitorService extends EventEmitter {
    * Stops monitoring.
    */
   public stopMonitoring(): void {
+    this.monitoringGeneration += 1;
+    this.switchInProgress = false;
     logger.info('ConnectionMonitorService', 'Stopping monitoring');
     
     if (this.checkInterval) {
@@ -161,10 +166,11 @@ export class ConnectionMonitorService extends EventEmitter {
       'no route to host',
       'connection closed',
       'handshake failure',
-      'certificate',
-      'tls',
       'blocked',
       'forbidden',
+      'failed to dial',
+      'i/o timeout',
+      'context deadline exceeded',
     ];
 
     const lowerError = error.toLowerCase();
@@ -281,9 +287,9 @@ export class ConnectionMonitorService extends EventEmitter {
       /timeout/i,
       /network unreachable/i,
       /handshake failure/i,
-      /certificate/i,
-      /tls/i,
-      /error/i,
+      /connection reset/i,
+      /no route to host/i,
+      /context deadline exceeded/i,
     ];
 
     for (const line of logLines) {
@@ -319,9 +325,10 @@ export class ConnectionMonitorService extends EventEmitter {
    * Attempts to automatically switch to another server.
    */
   private async attemptAutoSwitch(): Promise<void> {
-    if (!this.status.currentServer) {
+    if (!this.status.currentServer || this.switchInProgress) {
       return;
     }
+    const generationAtStart = this.monitoringGeneration;
 
     logger.info('ConnectionMonitorService', 'Attempting auto-switch');
 
@@ -360,6 +367,13 @@ export class ConnectionMonitorService extends EventEmitter {
       nextServer = availableServers[0];
     }
 
+    if (nextServer && this.status.currentServer && nextServer.uuid === this.status.currentServer.uuid) {
+      logger.warn('ConnectionMonitorService', 'Auto-switch skipped because next server equals current server', {
+        server: nextServer.name,
+      });
+      return;
+    }
+
     if (nextServer) {
       logger.info('ConnectionMonitorService', 'Switching to server', {
         from: this.status.currentServer.name,
@@ -373,15 +387,21 @@ export class ConnectionMonitorService extends EventEmitter {
       } as ConnectionEvent);
 
       // Переключаемся на новый сервер
-      await this.switchToServer(nextServer);
+      this.switchInProgress = true;
+      try {
+        await this.switchToServer(nextServer, generationAtStart);
+      } finally {
+        this.switchInProgress = false;
+      }
     }
   }
 
   /**
    * Switches to a different server.
    */
-  private async switchToServer(server: VlessConfig): Promise<void> {
+  private async switchToServer(server: VlessConfig, expectedGeneration: number): Promise<void> {
     try {
+      if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) return;
       const connectionMode = configService.getConnectionMode();
 
       // Отключаемся от текущего сервера
@@ -391,9 +411,16 @@ export class ConnectionMonitorService extends EventEmitter {
 
       // Небольшая задержка перед переподключением
       await new Promise(resolve => setTimeout(resolve, 1000));
+      if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) return;
 
       // Подключаемся к новому серверу
       await xrayService.start(server, connectionMode);
+      if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) {
+        xrayService.stop();
+        await systemProxyService.disable();
+        await tunRouteService.disable();
+        return;
+      }
       if (connectionMode === 'proxy') {
         await systemProxyService.enable(APP_CONSTANTS.PORTS.HTTP, APP_CONSTANTS.PORTS.SOCKS);
       } else {
