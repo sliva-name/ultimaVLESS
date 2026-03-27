@@ -1,125 +1,40 @@
 # Ultima VLESS Client
 
-A modern, secure, and fast desktop VPN client for Windows, built with Electron, React, and Xray-core.
+Ultima VLESS Client is a desktop VPN app for Windows with a simple interface, fast connection flow, and support for modern Xray/VLESS configurations.
 
 ## Download And Install
 
-For end users, manual build steps are no longer required.
-
 1. Open the [latest release](https://github.com/sliva-name/ultimaVLESS/releases/latest).
 2. Download `UltimaVLESS-Setup-*.exe`.
-3. Run the installer and follow the setup wizard.
-4. Launch the app from Start Menu or desktop shortcut.
+3. Run the installer.
+4. Launch the app from the desktop or Start Menu.
 
-Portable build (`UltimaVLESS-Portable-*.exe`) is also published for users who do not want installation.
+Portable build (`UltimaVLESS-Portable-*.exe`) is also available.
 
-## 🚀 Features
+## What The App Can Do
 
-- **Protocol Support:** VLESS (TCP, WS, gRPC, XTLS-Vision, REALITY).
-- **Subscription Support:** Import servers via standard `vless://` links (Base64 encoded subscriptions).
-- **System Proxy Integration:** Automatically configures Windows system proxy (HTTP/Socks5) upon connection.
-- **Modern UI:** Clean, dark-themed interface built with React and TailwindCSS.
-- **Security:**
-  - Secure IPC communication between Renderer and Main process.
-  - No remote code execution vulnerabilities (nodeIntegration: false).
-  - Configurable fingerprinting (uTLS) to evade detection.
+- Connect to VLESS servers (including Reality / Vision presets).
+- Import and update server lists from subscription links.
+- Work in system proxy mode and TUN mode.
+- Save selected server and connection mode between launches.
+- Auto-refresh server subscriptions on a timer.
+- Show server latency (ping) in the server list.
+- Skip automatic ping checks while VPN is connected.
 
-## 🛠 Tech Stack
+## Default Subscription Source
 
-- **Framework:** Electron (with `electron-vite`)
-- **Frontend:** React, TypeScript, TailwindCSS
-- **Core:** Xray-core (Project X)
-- **State Management:** React Hooks + Electron Store
-- **Testing:** Vitest + React Testing Library
+Built-in default subscription URL:
 
-## 📦 Architecture
+`https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt`
 
-The application follows a modular Service-Oriented Architecture (SOA) adapted for Electron:
+## Basic Usage
 
-### Main Process (`src/main/`)
-- **`services/XrayService.ts`**: Manages the Xray-core child process (spawn, kill, logs).
-- **`services/ConfigGenerator.ts`**: Generates `config.json` for Xray based on strict types.
-- **`services/SubscriptionService.ts`**: Fetches and parses Base64 subscription URLs.
-- **`services/SystemProxyService.ts`**: PowerShell-based service to safely toggle Windows Registry proxy settings.
-- **`services/LoggerService.ts`**: Centralized file logger (`debug_local.log`).
-- **`ipc/IpcHandler.ts`**: Handles all IPC events from the renderer.
+1. Open **Settings** and add your subscription link (or manual config links).
+2. Select a server from the list.
+3. Choose connection mode (`proxy` or `tun`).
+4. Click **Connect**.
+5. To switch server, disconnect first, then connect to another server.
 
-### Renderer Process (`src/renderer/`)
-- **`components/`**: Atomic UI components (Sidebar, ConnectionStatus, etc.).
-- **`hooks/useServerState.ts`**: Custom hook encapsulating server selection and connection logic.
+## License
 
-## 🏁 Getting Started
-
-### Prerequisites
-- Node.js 18+
-- Windows 10/11 (for system proxy support)
-
-### Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-repo/ultima-vless-client.git
-   cd ultima-vless-client
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Setup Xray Core:**
-   - Download `Xray-windows-64.zip` from [Xray-core Releases](https://github.com/XTLS/Xray-core/releases/latest).
-   - Create `resources/bin/` in the project root.
-   - Extract `xray.exe`, `geoip.dat`, and `geosite.dat` into `resources/bin/`.
-
-4. **Run in Development Mode:**
-   ```bash
-   npm run dev
-   ```
-
-### Building for Production
-```bash
-npm run build
-```
-The installer will be generated in `release/<version>/`.
-Use `RELEASE_CHECKLIST.md` before publishing production builds.
-
-### Automated Releases (GitHub)
-
-This repository includes a release workflow in `.github/workflows/release-windows.yml`.
-
-When you push a tag like `v3.2.3`, GitHub Actions will:
-- download `xray.exe`, `geoip.dat`, and `geosite.dat` automatically from latest Xray-core release;
-- build NSIS installer and portable Windows builds;
-- generate `SHA256SUMS.txt`;
-- create/update GitHub Release and upload artifacts automatically.
-
-Note: app icon files must exist in the repository at:
-- `resources/bin/logo.ico`
-- `resources/bin/logo-256x256.png`
-
-### Windows Code Signing
-
-Code signing is enabled and required for Windows production builds.
-
-1. Set signing environment variables in PowerShell:
-   ```powershell
-   $env:CSC_LINK = "C:\certs\ultima-signing.pfx"
-   $env:CSC_KEY_PASSWORD = "your-cert-password"
-   ```
-2. Build signed Windows installer:
-   ```powershell
-   npm run package:win:signed
-   ```
-
-If `CSC_LINK` or `CSC_KEY_PASSWORD` is missing, the script fails fast with an explicit error.
-
-## 🧪 Testing
-
-Run the test suite (Unit + Component tests):
-```bash
-npm test
-```
-
-## 📝 License
 MIT
