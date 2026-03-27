@@ -59,6 +59,21 @@ describe('SubscriptionService', () => {
     expect(configs[1].name).toBe('Two');
   });
 
+  it('parses links embedded in HTML attributes', async () => {
+    const htmlBody = [
+      '<div>',
+      '<a href="vless://uuid@example.com:443?type=tcp&amp;security=reality&amp;sni=example.com#AttrOne">one</a>',
+      "<a href='hysteria2://pass@144.31.224.14:443/?insecure=1&amp;sni=www.cloudflare.com#AttrTwo'>two</a>",
+      '</div>',
+    ].join('\n');
+    mockFetchText(htmlBody);
+
+    const configs = await service.fetchAndParse('https://translated.turbopages.org/some/path');
+    expect(configs).toHaveLength(2);
+    expect(configs[0].name).toBe('AttrOne');
+    expect(configs[1].name).toBe('AttrTwo');
+  });
+
   it('should throw error on invalid base64', async () => {
     mockFetchText('invalid-base-64%%');
     await expect(service.fetchAndParse('https://sub.url')).rejects.toThrow();
@@ -117,5 +132,6 @@ describe('SubscriptionService', () => {
     expect(links).toHaveLength(2);
     expect(links[0].uuid).not.toBe(links[1].uuid);
   });
+
 });
 

@@ -36,11 +36,17 @@ export function isSupportedLink(link: string): boolean {
 }
 
 export function extractSupportedLinks(input: string): string[] {
-  const matches = input.match(/(?:vless|trojan|hysteria2):\/\/\S+/gi);
+  // Stop before common HTML delimiters so links embedded in markup are still valid.
+  const matches = input.match(/(?:vless|trojan|hysteria2):\/\/[^\s<>"'`]+/gi);
   if (!matches) return [];
 
   return matches
-    .map((link) => link.replace(/[)\],.;]+$/g, '').trim())
+    .map((link) =>
+      link
+        .replace(/(?:&quot;|&apos;|&#34;|&#39;)+$/gi, '')
+        .replace(/[)\],.;]+$/g, '')
+        .trim()
+    )
     .filter((link) => isSupportedLink(link));
 }
 

@@ -53,6 +53,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
 
 export class SubscriptionService {
   private static readonly MAX_RESPONSE_BODY_LENGTH = 5_000_000;
+  private static readonly FETCH_TIMEOUT_MS = 30_000;
 
   public extractSupportedLinksFromText(input: string): string[] {
     return extractSupportedLinks(input);
@@ -95,7 +96,7 @@ export class SubscriptionService {
       }
 
       const validatedUrl = this.validateRemoteSubscriptionUrl(url);
-      const response = await fetchWithTimeout(validatedUrl.toString(), 15000);
+      const response = await fetchWithTimeout(validatedUrl.toString(), SubscriptionService.FETCH_TIMEOUT_MS);
       if (!response.ok) {
         throw new Error(`Subscription request failed: HTTP ${response.status}`);
       }

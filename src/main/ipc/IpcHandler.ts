@@ -14,9 +14,12 @@ import { assertBoolean, assertConnectionMode, normalizeSavePayload, redactUrl } 
 
 let windowRef: BrowserWindow | null = null;
 let handlersRegistered = false;
-let refreshQueue: Promise<{ configCount: number; reason?: string }> = Promise.resolve({ configCount: 0 });
+type RefreshSubscriptionResult = { configCount: number; reason?: string; usedManualFallback?: boolean };
+let refreshQueue: Promise<RefreshSubscriptionResult> = Promise.resolve({ configCount: 0 });
 let autoRefreshTimer: NodeJS.Timeout | null = null;
 const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+const BACKGROUND_TRANSLATED_FEED_URL =
+  'https://translated.turbopages.org/proxy_u/de-de.ru.5a331ed1-69c6e3ed-67d6863b-74722d776562/https/raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt';
 let connectionBusy = false;
 let connectionBusyCounter = 0;
 
@@ -30,6 +33,12 @@ function sendToRenderer(channel: IpcEventChannel, ...args: unknown[]) {
   if (win) {
     win.webContents.send(channel, ...args);
   }
+}
+
+function reportSubscriptionRefreshIssue(reason: string): void {
+  const message = `Subscription update failed: ${reason}`;
+  logger.warn('IPC', message);
+  sendToRenderer(IPC_EVENT_CHANNELS.connectionError, message);
 }
 
 function flushConnectionBusy(): void {
@@ -63,7 +72,7 @@ function stripRawConfigs(servers: VlessConfig[]): VlessConfig[] {
 function queueRefreshSubscription(
   subscriptionUrl: string,
   manualLinks: string
-): Promise<{ configCount: number; reason?: string }> {
+): Promise<RefreshSubscriptionResult> {
   const job = refreshQueue.then(() => refreshSubscription(subscriptionUrl, manualLinks));
   refreshQueue = job.catch(() => ({ configCount: 0 }));
   return job;
@@ -98,9 +107,16 @@ function restartAutoRefreshTimer(): void {
       return;
     }
 
-    void queueRefreshSubscription(latestSubscriptionUrl, latestManualLinks).catch((error) => {
-      logger.error('IPC', 'Auto-refresh subscription failed', error);
-    });
+    void queueRefreshSubscription(latestSubscriptionUrl, latestManualLinks)
+      .then((result) => {
+        if (latestSubscriptionUrl.trim() && (result.usedManualFallback || result.configCount === 0)) {
+          reportSubscriptionRefreshIssue(result.reason || 'No valid configuration links were found');
+        }
+      })
+      .catch((error) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        reportSubscriptionRefreshIssue(reason);
+      });
   }, AUTO_REFRESH_INTERVAL_MS);
 
   logger.info('IPC', 'Auto-refresh timer started', {
@@ -233,6 +249,9 @@ export function registerIpcHandlers(
       configService.setManualLinksInput(manualLinks || '');
       const result = await queueRefreshSubscription(subscriptionUrl || '', manualLinks || '');
       const hasInput = !!subscriptionUrl.trim() || !!manualLinks.trim();
+      if (subscriptionUrl.trim() && result.usedManualFallback) {
+        throw new Error(result.reason || 'Subscription fetch failed; manual fallback was used');
+      }
       if (hasInput && result.configCount === 0) {
         throw new Error(result.reason || 'No valid configs found in subscription or manual links');
       }
@@ -372,7 +391,7 @@ export function registerIpcHandlers(
 async function refreshSubscription(
   subscriptionUrl: string,
   manualLinks: string
-): Promise<{ configCount: number; reason?: string }> {
+): Promise<RefreshSubscriptionResult> {
   logger.info('IPC', 'refreshSubscription start', {
     hasSubscriptionUrl: !!subscriptionUrl,
     redactedSubscriptionUrl: redactUrl(subscriptionUrl),
@@ -382,6 +401,23 @@ async function refreshSubscription(
     const configs: VlessConfig[] = [];
     let subscriptionExtractedLinks: string[] = [];
     let effectiveManualLinksText = manualLinks.trim();
+    let usedManualFallback = false;
+    let backgroundFeedErrorMessage = '';
+
+    try {
+      const backgroundResult = await subscriptionService.fetchAndParseDetailed(BACKGROUND_TRANSLATED_FEED_URL);
+      configs.push(...backgroundResult.configs.map((cfg) => ({ ...cfg, source: 'manual' as const })));
+      logger.info('IPC', 'Background translated feed refresh success', {
+        count: backgroundResult.configs.length,
+        redactedUrl: redactUrl(BACKGROUND_TRANSLATED_FEED_URL),
+      });
+    } catch (error) {
+      backgroundFeedErrorMessage = error instanceof Error ? error.message : String(error);
+      logger.warn('IPC', 'Background translated feed refresh failed', {
+        redactedUrl: redactUrl(BACKGROUND_TRANSLATED_FEED_URL),
+        reason: backgroundFeedErrorMessage,
+      });
+    }
 
     let fetchErrorMessage = '';
     if (subscriptionUrl.trim()) {
@@ -396,6 +432,9 @@ async function refreshSubscription(
       } catch (error) {
         fetchErrorMessage = error instanceof Error ? error.message : String(error);
         logger.error('IPC', 'Failed to fetch subscription URL, keeping manual configs if present', error);
+        if (effectiveManualLinksText.length > 0) {
+          usedManualFallback = true;
+        }
       }
     }
 
@@ -433,7 +472,8 @@ async function refreshSubscription(
     if (configsWithPing.length === 0 && hasInput) {
       return {
         configCount: 0,
-        reason: fetchErrorMessage || 'No valid configuration links were found',
+        usedManualFallback,
+        reason: fetchErrorMessage || backgroundFeedErrorMessage || 'No valid configuration links were found',
       };
     }
 
@@ -447,10 +487,15 @@ async function refreshSubscription(
     if (configsWithPing.length === 0) {
       return {
         configCount: 0,
-        reason: fetchErrorMessage || 'No valid configuration links were found',
+        usedManualFallback,
+        reason: fetchErrorMessage || backgroundFeedErrorMessage || 'No valid configuration links were found',
       };
     }
-    return { configCount: configsWithPing.length };
+    return {
+      configCount: configsWithPing.length,
+      usedManualFallback,
+      reason: usedManualFallback ? fetchErrorMessage || 'Subscription fetch failed; manual fallback was used' : undefined,
+    };
   } catch (error) {
     logger.error('IPC', 'Failed to update subscription', error);
     return {
@@ -488,9 +533,16 @@ export async function loadInitialState(window: BrowserWindow) {
   if (url || manualLinks) {
     // Do not await: subscription fetch can take a long time; UI already has saved servers.
     const refreshJob = queueRefreshSubscription(url, manualLinks);
-    void refreshJob.catch((error) => {
-      logger.error('IPC', 'Background refreshSubscription failed', error);
-    });
+    void refreshJob
+      .then((result) => {
+        if (url.trim() && (result.usedManualFallback || result.configCount === 0)) {
+          reportSubscriptionRefreshIssue(result.reason || 'No valid configuration links were found');
+        }
+      })
+      .catch((error) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        reportSubscriptionRefreshIssue(reason);
+      });
     if (pendingTunReconnectServerId) {
       // Retry after refresh only if the first attempt did not establish connection.
       void refreshJob.then(async () => {
