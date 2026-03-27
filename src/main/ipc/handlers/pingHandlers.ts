@@ -45,6 +45,11 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
 
   async function runPingAllServers(force: boolean): Promise<Array<{ uuid: string; latency: number | null }>> {
     const servers = deps.configService.getServers();
+    const monitorStatus = deps.connectionMonitorService.getStatus();
+    if (deps.xrayService.isRunning() || monitorStatus.isConnected) {
+      logger.debug('IPC', 'Skipping ping-all-servers while VPN is connected');
+      return servers.map((s) => ({ uuid: s.uuid, latency: s.ping ?? null }));
+    }
     const startFingerprint = buildServersFingerprint(servers);
 
     if (!force && servers.length > 0) {

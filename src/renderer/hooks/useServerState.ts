@@ -22,7 +22,11 @@ export function useServerState() {
       }
       pingTimer = window.setTimeout(() => {
         if (disposed) return;
-        void window.electronAPI.pingAllServers(force).catch((error) => {
+        void (async () => {
+          const connectedNow = await window.electronAPI.getConnectionStatus();
+          if (connectedNow) return;
+          await window.electronAPI.pingAllServers(force);
+        })().catch((error) => {
           console.error('Failed to ping servers', error);
         });
         pingTimer = null;

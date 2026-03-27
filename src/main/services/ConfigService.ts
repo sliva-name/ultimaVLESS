@@ -2,8 +2,10 @@ import Store from 'electron-store';
 import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
 
-const DEFAULT_SUBSCRIPTION_URL =
+const LEGACY_DEFAULT_SUBSCRIPTION_URL =
   'https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt';
+const DEFAULT_SUBSCRIPTION_URL =
+  'https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt';
 
 interface StoreSchema {
   subscriptionUrl: string;
@@ -48,6 +50,9 @@ export class ConfigService {
 
     const storedSubscriptionUrl = this.store.get('subscriptionUrl');
     if (!storedSubscriptionUrl?.trim()) {
+      this.store.set('subscriptionUrl', DEFAULT_SUBSCRIPTION_URL);
+    } else if (storedSubscriptionUrl === LEGACY_DEFAULT_SUBSCRIPTION_URL) {
+      // Seamlessly migrate users from the old built-in default feed.
       this.store.set('subscriptionUrl', DEFAULT_SUBSCRIPTION_URL);
     }
 
