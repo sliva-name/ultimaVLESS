@@ -15,11 +15,17 @@ Portable build (`UltimaVLESS-Portable-*.exe`) is also available.
 
 - Connect to VLESS servers (including Reality / Vision presets).
 - Import and update server lists from subscription links.
+- Add manual links from clipboard/text (supports mixed text with `vless://`, `trojan://`, `hysteria2://` links).
+- Split servers by source (Subscription / Manual) for easier navigation.
 - Work in system proxy mode and TUN mode.
 - Save selected server and connection mode between launches.
 - Auto-refresh server subscriptions on a timer.
 - Show server latency (ping) in the server list.
-- Skip automatic ping checks while VPN is connected.
+- Refresh ping for all servers on demand.
+- Show connection progress, errors, and current active server.
+- Auto-switch to another server when the current one appears blocked.
+- Show blocked servers list and allow clearing it in settings.
+- Copy application logs and open log folder for troubleshooting.
 
 ## Default Subscription Source
 
