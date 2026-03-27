@@ -1,9 +1,7 @@
 import { VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
-import { xrayService } from './XrayService';
 import { configService } from './ConfigService';
-import { systemProxyService } from './SystemProxyService';
-import { tunRouteService } from './TunRouteService';
+import { connectionStackService } from './ConnectionStackService';
 import { APP_CONSTANTS } from '../../shared/constants';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
@@ -404,28 +402,21 @@ export class ConnectionMonitorService extends EventEmitter {
       if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) return;
       const connectionMode = configService.getConnectionMode();
 
-      // Отключаемся от текущего сервера
-      await systemProxyService.disable();
-      await tunRouteService.disable();
-      xrayService.stop();
+      // Reuse the same stack reset path as manual connect/disconnect flows.
+      await connectionStackService.resetNetworkingStack({ stopXray: true });
 
       // Небольшая задержка перед переподключением
       await new Promise(resolve => setTimeout(resolve, 1000));
       if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) return;
 
-      // Подключаемся к новому серверу
-      await xrayService.start(server, connectionMode);
+      // Use shared stack application to keep mode transition logic consistent.
+      await connectionStackService.applyConnectionMode(server, connectionMode, {
+        http: APP_CONSTANTS.PORTS.HTTP,
+        socks: APP_CONSTANTS.PORTS.SOCKS,
+      });
       if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) {
-        xrayService.stop();
-        await systemProxyService.disable();
-        await tunRouteService.disable();
+        await connectionStackService.resetNetworkingStack({ stopXray: true });
         return;
-      }
-      if (connectionMode === 'proxy') {
-        await systemProxyService.enable(APP_CONSTANTS.PORTS.HTTP, APP_CONSTANTS.PORTS.SOCKS);
-      } else {
-        await systemProxyService.disable();
-        await tunRouteService.enable(server);
       }
       
       configService.setSelectedServerId(server.uuid);
@@ -444,9 +435,7 @@ export class ConnectionMonitorService extends EventEmitter {
       
       // Если переключение не удалось, пытаемся отключиться
       try {
-        await systemProxyService.disable();
-        await tunRouteService.disable();
-        xrayService.stop();
+        await connectionStackService.cleanupAfterFailure();
         this.stopMonitoring();
       } catch (cleanupError) {
         logger.error('ConnectionMonitorService', 'Cleanup after switch failure failed', cleanupError);

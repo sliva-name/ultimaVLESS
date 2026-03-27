@@ -2,22 +2,34 @@ import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { logger } from '../../services/LoggerService';
 import { IpcDependencies } from '../dependencies';
 import { assertValidServerPayload } from '../validators';
+import { IpcEventChannel, IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '../../../shared/ipc';
 
 interface RegisterConnectionHandlersParams {
   deps: IpcDependencies;
   handleAsync: (operation: string, fn: () => Promise<void>) => Promise<void>;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
-  sendToRenderer: (channel: string, ...args: unknown[]) => void;
+  sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
+  beginConnectionBusy: () => void;
+  endConnectionBusy: () => void;
 }
 
-export function registerConnectionHandlers({ deps, handleAsync, assertTrustedSender, sendToRenderer }: RegisterConnectionHandlersParams): void {
+export function registerConnectionHandlers({
+  deps,
+  handleAsync,
+  assertTrustedSender,
+  sendToRenderer,
+  beginConnectionBusy,
+  endConnectionBusy,
+}: RegisterConnectionHandlersParams): void {
   let connectionOperationQueue: Promise<void> = Promise.resolve();
   const runConnectionOperation = <T>(operationName: string, fn: () => Promise<T>): Promise<T> => {
     const run = async (): Promise<T> => {
       logger.info('IPC', 'connection operation started', { operationName });
+      beginConnectionBusy();
       try {
         return await fn();
       } finally {
+        endConnectionBusy();
         logger.info('IPC', 'connection operation finished', { operationName });
       }
     };
@@ -26,7 +38,7 @@ export function registerConnectionHandlers({ deps, handleAsync, assertTrustedSen
     return operation;
   };
 
-  ipcMain.handle('connect', async (event: IpcMainInvokeEvent, configPayload: unknown) => {
+  ipcMain.handle(IPC_INVOKE_CHANNELS.connect, async (event: IpcMainInvokeEvent, configPayload: unknown) => {
     assertTrustedSender(event);
     return runConnectionOperation('connect', async () => {
       const requestedConfig = assertValidServerPayload(configPayload);
@@ -59,29 +71,22 @@ export function registerConnectionHandlers({ deps, handleAsync, assertTrustedSen
         }
 
         if (connectionMode === 'tun' && !(await deps.isElevatedOnWindows())) {
+          deps.configService.setPendingTunReconnect(fullConfig.uuid);
           const relaunched = await deps.relaunchAsAdminOnWindows();
           if (relaunched) {
-            sendToRenderer('connection-error', 'Restarting UltimaVLESS with Administrator rights...');
+            sendToRenderer(IPC_EVENT_CHANNELS.connectionError, 'Restarting UltimaVLESS with Administrator rights...');
             deps.app.releaseSingleInstanceLock();
             deps.app.quit();
             return { ok: false as const, error: 'Restarting as administrator', relaunched: true as const };
           }
+          deps.configService.clearPendingTunReconnect();
           throw new Error('TUN mode requires Administrator rights. Please approve UAC prompt or run UltimaVLESS as Administrator.');
         }
 
-        // Always reset both networking modes first to avoid stale routes/proxy state.
-        // This prevents "works only after mode toggle/update" behavior.
-        await deps.systemProxyService.disable();
-        await deps.tunRouteService.disable();
+        await deps.connectionStackService.resetNetworkingStack({ stopXray: true });
+        await deps.connectionStackService.applyConnectionMode(fullConfig, connectionMode, deps.constants.ports);
 
-        await deps.xrayService.start(fullConfig, connectionMode);
-        if (connectionMode === 'proxy') {
-          await deps.systemProxyService.enable(deps.constants.ports.http, deps.constants.ports.socks);
-        } else {
-          await deps.systemProxyService.disable();
-          await deps.tunRouteService.enable(fullConfig);
-        }
-
+        deps.configService.clearPendingTunReconnect();
         deps.configService.setSelectedServerId(fullConfig.uuid);
         deps.connectionMonitorService.startMonitoring(fullConfig);
         return { ok: true as const };
@@ -91,37 +96,26 @@ export function registerConnectionHandlers({ deps, handleAsync, assertTrustedSen
         deps.connectionMonitorService.recordError(errorMessage);
 
         try {
-          deps.xrayService.stop();
-        } catch (stopError) {
-          logger.error('IPC', 'Failed to stop xray after connect failure', stopError);
+          await deps.connectionStackService.cleanupAfterFailure();
+        } catch (cleanupError) {
+          logger.error('IPC', 'Failed to cleanup network stack after connect failure', cleanupError);
         }
-        try {
-          await deps.systemProxyService.disable();
-        } catch (proxyError) {
-          logger.error('IPC', 'Failed to disable proxy after connect failure', proxyError);
-        }
-        try {
-          await deps.tunRouteService.disable();
-        } catch (tunError) {
-          logger.error('IPC', 'Failed to disable TUN routes after connect failure', tunError);
-        }
-        sendToRenderer('connection-error', errorMessage);
+        sendToRenderer(IPC_EVENT_CHANNELS.connectionError, errorMessage);
         return { ok: false as const, error: errorMessage };
       }
     });
   });
 
-  ipcMain.handle('disconnect', async (event: IpcMainInvokeEvent) => {
+  ipcMain.handle(IPC_INVOKE_CHANNELS.disconnect, async (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
     return runConnectionOperation('disconnect', async () => {
       let ok = true;
       await handleAsync('disconnect', async () => {
         logger.info('IPC', 'disconnect');
         try {
+          deps.configService.clearPendingTunReconnect();
           deps.connectionMonitorService.stopMonitoring();
-          await deps.systemProxyService.disable();
-          await deps.tunRouteService.disable();
-          deps.xrayService.stop();
+          await deps.connectionStackService.resetNetworkingStack({ stopXray: true });
         } catch (error) {
           ok = false;
           throw error;

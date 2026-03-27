@@ -1,10 +1,10 @@
-import { VlessConfig } from '../../shared/types';
+import { ConnectionMode, VlessConfig } from '../../shared/types';
+import { SaveSubscriptionPayload } from '../../shared/ipc';
 
-export type SaveConfigsPayload = { subscriptionUrl: string; manualLinks: string };
 const MAX_SUBSCRIPTION_URL_LENGTH = 4096;
 const MAX_MANUAL_LINKS_LENGTH = 1_000_000;
 
-function normalizeAndValidatePayload(subscriptionUrl: string, manualLinks: string): SaveConfigsPayload {
+function normalizeAndValidatePayload(subscriptionUrl: string, manualLinks: string): SaveSubscriptionPayload {
   if (subscriptionUrl.length > MAX_SUBSCRIPTION_URL_LENGTH) {
     throw new Error(`Subscription URL is too long (max ${MAX_SUBSCRIPTION_URL_LENGTH} characters)`);
   }
@@ -28,14 +28,14 @@ export function redactUrl(url: string): string {
   }
 }
 
-export function normalizeSavePayload(payload: unknown): SaveConfigsPayload {
+export function normalizeSavePayload(payload: unknown): SaveSubscriptionPayload {
   if (typeof payload === 'string') {
     return normalizeAndValidatePayload(payload, '');
   }
   if (!payload || typeof payload !== 'object') {
     throw new Error('Invalid subscription payload');
   }
-  const candidate = payload as Partial<SaveConfigsPayload>;
+  const candidate = payload as Partial<SaveSubscriptionPayload>;
   if (typeof candidate.subscriptionUrl !== 'string' || typeof candidate.manualLinks !== 'string') {
     throw new Error('Invalid subscription payload');
   }
@@ -69,6 +69,13 @@ export function assertValidServerPayload(payload: unknown): VlessConfig {
 export function assertBoolean(value: unknown, fieldName: string): boolean {
   if (typeof value !== 'boolean') {
     throw new Error(`Invalid ${fieldName}: expected boolean`);
+  }
+  return value;
+}
+
+export function assertConnectionMode(value: unknown): ConnectionMode {
+  if (value !== 'proxy' && value !== 'tun') {
+    throw new Error('Invalid connection mode');
   }
   return value;
 }

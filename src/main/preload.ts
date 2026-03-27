@@ -1,21 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { ConnectionMode, VlessConfig } from '../shared/types';
-
-export interface ConnectionMonitorEvent {
-  type: 'connected' | 'disconnected' | 'error' | 'blocked' | 'switching';
-  server: VlessConfig | null;
-  error?: string;
-  message?: string;
-}
-
-export interface ConnectionStatus {
-  isConnected: boolean;
-  currentServer: VlessConfig | null;
-  lastError: string | null;
-  connectionAttempts: number;
-  lastConnectionTime: number | null;
-  blockedServers: string[];
-}
+import {
+  ConnectResult,
+  ConnectionMonitorEvent,
+  ConnectionMonitorStatus,
+  DisconnectResult,
+  IPC_EVENT_CHANNELS,
+  IPC_INVOKE_CHANNELS,
+  PingResult,
+  SaveSubscriptionPayload,
+} from '../shared/ipc';
 
 function createListener<T>(channel: string) {
   return (callback: (data: T) => void): (() => void) => {
@@ -27,33 +21,38 @@ function createListener<T>(channel: string) {
 
 contextBridge.exposeInMainWorld('electronAPI', {
   connect: (server: VlessConfig) =>
-    ipcRenderer.invoke('connect', server) as Promise<{ ok: boolean; error?: string; relaunched?: boolean }>,
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.connect, server) as Promise<ConnectResult>,
   disconnect: () =>
-    ipcRenderer.invoke('disconnect') as Promise<{ ok: boolean }>,
-  saveSubscription: (payload: { subscriptionUrl: string; manualLinks: string }) =>
-    ipcRenderer.invoke('save-subscription', payload) as Promise<boolean>,
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.disconnect) as Promise<DisconnectResult>,
+  saveSubscription: (payload: SaveSubscriptionPayload) =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.saveSubscription, payload) as Promise<boolean>,
 
-  onUpdateServers: createListener<VlessConfig[]>('update-servers'),
-  onConnectionStatus: createListener<boolean>('connection-status'),
-  onConnectionError: createListener<string>('connection-error'),
-  onConnectionMonitorEvent: createListener<ConnectionMonitorEvent>('connection-monitor-event'),
+  onUpdateServers: createListener<VlessConfig[]>(IPC_EVENT_CHANNELS.updateServers),
+  onManualLinksUpdated: createListener<string>(IPC_EVENT_CHANNELS.manualLinksUpdated),
+  onConnectionStatus: createListener<boolean>(IPC_EVENT_CHANNELS.connectionStatus),
+  onConnectionBusy: createListener<boolean>(IPC_EVENT_CHANNELS.connectionBusy),
+  onConnectionError: createListener<string>(IPC_EVENT_CHANNELS.connectionError),
+  onConnectionMonitorEvent: createListener<ConnectionMonitorEvent>(IPC_EVENT_CHANNELS.connectionMonitorEvent),
 
-  getConnectionMonitorStatus: () => ipcRenderer.invoke('get-connection-monitor-status') as Promise<ConnectionStatus>,
-  setAutoSwitching: (enabled: boolean) => ipcRenderer.invoke('set-auto-switching', enabled) as Promise<boolean>,
-  clearBlockedServers: () => ipcRenderer.invoke('clear-blocked-servers') as Promise<boolean>,
+  getConnectionMonitorStatus: () =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getConnectionMonitorStatus) as Promise<ConnectionMonitorStatus>,
+  setAutoSwitching: (enabled: boolean) => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setAutoSwitching, enabled) as Promise<boolean>,
+  clearBlockedServers: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.clearBlockedServers) as Promise<boolean>,
 
-  getServers: () => ipcRenderer.invoke('get-servers'),
-  getSubscriptionUrl: () => ipcRenderer.invoke('get-subscription-url'),
-  getManualLinks: () => ipcRenderer.invoke('get-manual-links'),
-  getSelectedServerId: () => ipcRenderer.invoke('get-selected-server-id'),
-  setSelectedServerId: (serverId: string | null) => ipcRenderer.invoke('set-selected-server-id', serverId) as Promise<boolean>,
-  getConnectionMode: () => ipcRenderer.invoke('get-connection-mode') as Promise<ConnectionMode>,
-  setConnectionMode: (mode: ConnectionMode) => ipcRenderer.invoke('set-connection-mode', mode) as Promise<boolean>,
-  getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
-  getLogs: () => ipcRenderer.invoke('get-logs'),
-  openLogFolder: () => ipcRenderer.invoke('open-log-folder') as Promise<boolean>,
-  getAppVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,
+  getServers: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getServers) as Promise<VlessConfig[]>,
+  getSubscriptionUrl: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getSubscriptionUrl) as Promise<string>,
+  getManualLinks: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getManualLinks) as Promise<string>,
+  getSelectedServerId: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getSelectedServerId) as Promise<string | null>,
+  setSelectedServerId: (serverId: string | null) =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setSelectedServerId, serverId) as Promise<boolean>,
+  getConnectionMode: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getConnectionMode) as Promise<ConnectionMode>,
+  setConnectionMode: (mode: ConnectionMode) => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setConnectionMode, mode) as Promise<boolean>,
+  getConnectionStatus: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getConnectionStatus) as Promise<boolean>,
+  getConnectionBusy: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getConnectionBusy) as Promise<boolean>,
+  getLogs: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getLogs) as Promise<string>,
+  openLogFolder: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.openLogFolder) as Promise<boolean>,
+  getAppVersion: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getAppVersion) as Promise<string>,
 
-  pingServer: (server: VlessConfig) => ipcRenderer.invoke('ping-server', server) as Promise<{ uuid: string; latency: number | null }>,
-  pingAllServers: (force?: boolean) => ipcRenderer.invoke('ping-all-servers', force) as Promise<Array<{ uuid: string; latency: number | null }>>,
+  pingServer: (server: VlessConfig) => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.pingServer, server) as Promise<PingResult>,
+  pingAllServers: (force?: boolean) => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.pingAllServers, force) as Promise<PingResult[]>,
 });

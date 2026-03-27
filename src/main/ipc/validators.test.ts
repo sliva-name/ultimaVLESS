@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertValidServerPayload, normalizeSavePayload } from './validators';
+import { assertConnectionMode, assertValidServerPayload, normalizeSavePayload } from './validators';
 
 describe('normalizeSavePayload', () => {
   it('trims subscriptionUrl and manualLinks for object payload', () => {
@@ -59,5 +59,17 @@ describe('assertValidServerPayload', () => {
         port: 70000,
       })
     ).toThrow(/Invalid server payload/);
+  });
+});
+
+describe('assertConnectionMode', () => {
+  it('accepts proxy and tun modes', () => {
+    expect(assertConnectionMode('proxy')).toBe('proxy');
+    expect(assertConnectionMode('tun')).toBe('tun');
+  });
+
+  it('rejects invalid values', () => {
+    expect(() => assertConnectionMode('bridge')).toThrow(/Invalid connection mode/);
+    expect(() => assertConnectionMode(null)).toThrow(/Invalid connection mode/);
   });
 });

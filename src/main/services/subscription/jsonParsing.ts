@@ -1,0 +1,174 @@
+import { createHash } from 'crypto';
+import { VlessConfig } from '../../../shared/types';
+import { logger } from '../LoggerService';
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function makeServerIdentity(
+  authToken: string,
+  address: string,
+  port: number,
+  parts: Array<string | undefined>
+): string {
+  const signature = [authToken, address, String(port), ...parts.map((part) => part || '')].join('|');
+  const digest = createHash('sha256').update(signature).digest('hex').slice(0, 16);
+  return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
+}
+
+export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
+  const results: VlessConfig[] = [];
+
+  for (const cfg of configs) {
+    try {
+      const root = asRecord(cfg);
+      if (!root) continue;
+
+      const name = asString(root.remarks) || asString(root.ps) || 'Server';
+      const outbounds = asArray(root.outbounds);
+      const proxyOutbound = outbounds.find((item) => {
+        const outbound = asRecord(item);
+        if (!outbound) return false;
+        const tag = asString(outbound.tag);
+        const protocol = asString(outbound.protocol);
+        return tag === 'proxy' || protocol === 'vless' || protocol === 'vmess';
+      });
+
+      const outbound = asRecord(proxyOutbound);
+      if (!outbound) {
+        logger.warn('SubscriptionService', 'No proxy outbound found', { name });
+        continue;
+      }
+
+      let address = '';
+      let port = 0;
+      let userUUID = '';
+      let flow = '';
+      let encryption = 'none';
+
+      const settings = asRecord(outbound.settings);
+      const vnext = asArray(settings?.vnext);
+      if (vnext.length > 0) {
+        const firstVnext = asRecord(vnext[0]);
+        if (firstVnext) {
+          address = asString(firstVnext.address);
+          port = asNumber(firstVnext.port);
+          const users = asArray(firstVnext.users);
+          if (users.length > 0) {
+            const firstUser = asRecord(users[0]);
+            if (firstUser) {
+              userUUID = asString(firstUser.id);
+              flow = asString(firstUser.flow);
+              encryption = asString(firstUser.encryption, 'none') || 'none';
+            }
+          }
+        }
+      }
+
+      if (!address || !port) {
+        logger.warn('SubscriptionService', 'Missing address/port', { name });
+        continue;
+      }
+
+      const stream = asRecord(outbound.streamSettings) ?? {};
+      const network = asString(stream.network, 'tcp');
+      const security = asString(stream.security, 'none');
+
+      let sni = '';
+      let fp = '';
+      let pbk = '';
+      let sid = '';
+      let spx = '';
+      let path = '';
+      let host = '';
+      let serviceName = '';
+
+      if (security === 'reality') {
+        const rs = asRecord(stream.realitySettings);
+        if (rs) {
+          sni = asString(rs.serverName);
+          fp = asString(rs.fingerprint);
+          pbk = asString(rs.publicKey);
+          sid = asString(rs.shortId);
+          spx = asString(rs.spiderX);
+        }
+      } else if (security === 'tls') {
+        const ts = asRecord(stream.tlsSettings);
+        if (ts) {
+          sni = asString(ts.serverName);
+          fp = asString(ts.fingerprint);
+        }
+      }
+
+      const wsSettings = asRecord(stream.wsSettings);
+      if (wsSettings) {
+        path = asString(wsSettings.path);
+        const headers = asRecord(wsSettings.headers);
+        host = asString(headers?.Host);
+      }
+      const grpcSettings = asRecord(stream.grpcSettings);
+      if (grpcSettings) {
+        serviceName = asString(grpcSettings.serviceName);
+      }
+
+      const networkType = (['tcp', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(network) ? network : undefined) as VlessConfig['type'];
+      const secType = (['reality', 'tls', 'none'].includes(security) ? security : undefined) as VlessConfig['security'];
+      const stableId = makeServerIdentity(userUUID || 'user', address, port, [
+        network,
+        security,
+        sni,
+        fp,
+        pbk,
+        sid,
+        spx,
+        path,
+        host,
+        serviceName,
+        flow,
+        encryption,
+      ]);
+
+      results.push({
+        uuid: stableId,
+        userId: userUUID || undefined,
+        address,
+        port,
+        name,
+        flow,
+        encryption,
+        type: networkType,
+        security: secType,
+        sni,
+        fp,
+        pbk,
+        sid,
+        spx,
+        path,
+        host,
+        serviceName,
+        rawConfig: cfg as Record<string, unknown>,
+      });
+    } catch (error) {
+      logger.error('SubscriptionService', 'Error parsing JSON config', error);
+    }
+  }
+
+  logger.info('SubscriptionService', 'Parsed JSON configs', { count: results.length });
+  return results;
+}

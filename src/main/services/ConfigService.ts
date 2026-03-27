@@ -8,6 +8,10 @@ interface StoreSchema {
   servers: VlessConfig[];
   selectedServerId: string | null;
   connectionMode: ConnectionMode;
+  pendingTunReconnect: {
+    serverId: string;
+    createdAt: number;
+  } | null;
 }
 
 /**
@@ -34,7 +38,8 @@ export class ConfigService {
         manualLinksInput: '',
         servers: [],
         selectedServerId: null,
-        connectionMode: 'proxy'
+        connectionMode: 'proxy',
+        pendingTunReconnect: null,
       }
     });
     logger.info('ConfigService', 'Initialized', { path: this.store.path });
@@ -114,6 +119,36 @@ export class ConfigService {
 
   public setConnectionMode(mode: ConnectionMode): void {
     this.store.set('connectionMode', mode);
+  }
+
+  public setPendingTunReconnect(serverId: string): void {
+    this.store.set('pendingTunReconnect', {
+      serverId,
+      createdAt: Date.now(),
+    });
+  }
+
+  public consumePendingTunReconnect(maxAgeMs: number = 2 * 60 * 1000): string | null {
+    const pending = this.store.get('pendingTunReconnect');
+    this.store.set('pendingTunReconnect', null);
+    if (!pending || typeof pending.serverId !== 'string' || typeof pending.createdAt !== 'number') {
+      return null;
+    }
+
+    const ageMs = Date.now() - pending.createdAt;
+    if (ageMs < 0 || ageMs > maxAgeMs) {
+      logger.info('ConfigService', 'Dropped stale pending TUN reconnect', {
+        ageMs,
+        maxAgeMs,
+      });
+      return null;
+    }
+
+    return pending.serverId;
+  }
+
+  public clearPendingTunReconnect(): void {
+    this.store.set('pendingTunReconnect', null);
   }
 }
 

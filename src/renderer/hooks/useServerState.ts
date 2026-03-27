@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { VlessConfig } from '../../shared/types';
+import { SaveSubscriptionPayload } from '../../shared/ipc';
 
 export function useServerState() {
   type SaveSubscriptionResult = { ok: true } | { ok: false; error: string };
@@ -9,6 +10,7 @@ export function useServerState() {
   const [isConfigLoading, setIsConfigLoading] = useState(false);
   const [isConnectionBusy, setIsConnectionBusy] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const toggleInFlightRef = useRef(false);
 
   useEffect(() => {
     let pingTimer: number | null = null;
@@ -28,15 +30,17 @@ export function useServerState() {
     };
 
     const loadInitialState = async () => {
-      const [initialServers, savedServerId, connectionStatus] = await Promise.all([
+      const [initialServers, savedServerId, connectionStatus, initialBusy] = await Promise.all([
         window.electronAPI.getServers(),
         window.electronAPI.getSelectedServerId(),
-        window.electronAPI.getConnectionStatus()
+        window.electronAPI.getConnectionStatus(),
+        window.electronAPI.getConnectionBusy(),
       ]);
       if (disposed) return;
 
       setServers(initialServers);
       setIsConnected(connectionStatus);
+      setIsConnectionBusy(initialBusy);
 
       if (savedServerId && initialServers.length > 0) {
         const savedServer = initialServers.find(s => s.uuid === savedServerId);
@@ -80,12 +84,17 @@ export function useServerState() {
       if (status) setConnectionError(null);
     };
 
+    const handleConnectionBusy = (busy: boolean) => {
+      setIsConnectionBusy(busy);
+    };
+
     const handleConnectionError = (error: string) => {
       setConnectionError(error);
     };
 
     const removeUpdateServers = window.electronAPI.onUpdateServers(handleUpdateServers);
     const removeConnectionStatus = window.electronAPI.onConnectionStatus(handleConnectionStatus);
+    const removeConnectionBusy = window.electronAPI.onConnectionBusy(handleConnectionBusy);
     const removeConnectionError = window.electronAPI.onConnectionError(handleConnectionError);
 
     return () => {
@@ -95,12 +104,14 @@ export function useServerState() {
       }
       removeUpdateServers();
       removeConnectionStatus();
+      removeConnectionBusy();
       removeConnectionError();
     };
   }, []);
 
   const toggleConnection = useCallback(async () => {
-    if (!selectedServer || isConnectionBusy) return;
+    if (!selectedServer || isConnectionBusy || toggleInFlightRef.current) return;
+    toggleInFlightRef.current = true;
     setIsConnectionBusy(true);
     try {
       if (isConnected) {
@@ -117,15 +128,25 @@ export function useServerState() {
           setConnectionError(result.error);
         }
       }
-    } finally {
+    } catch (error) {
+      console.error('Connection toggle failed', error);
+      setConnectionError(error instanceof Error ? error.message : 'Connection operation failed');
       setIsConnectionBusy(false);
+    } finally {
+      toggleInFlightRef.current = false;
     }
   }, [selectedServer, isConnected, isConnectionBusy]);
 
-  const saveSubscription = useCallback(async (payload: { subscriptionUrl: string; manualLinks: string }) => {
+  const saveSubscription = useCallback(async (payload: SaveSubscriptionPayload) => {
     setIsConfigLoading(true);
     try {
-      await window.electronAPI.saveSubscription(payload);
+      const isSaved = await window.electronAPI.saveSubscription(payload);
+      if (!isSaved) {
+        return {
+          ok: false,
+          error: 'Failed to save subscription',
+        } as SaveSubscriptionResult;
+      }
       return { ok: true } as SaveSubscriptionResult;
     } catch (e) {
       console.error('Failed to save subscription', e);

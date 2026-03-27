@@ -44,6 +44,21 @@ describe('SubscriptionService', () => {
     expect(configs[1].type).toBe('ws');
   });
 
+  it('parses direct protocol links from plain-text HTTP response body', async () => {
+    const textBody = [
+      'You are on translated page',
+      'vless://uuid@example.com:443?type=tcp&security=reality&sni=example.com&fp=chrome&pbk=key&sid=123#One',
+      'some unrelated text',
+      'hysteria2://pass@144.31.224.14:443/?insecure=1&amp;sni=www.cloudflare.com#Two',
+    ].join('\n');
+    mockFetchText(textBody);
+
+    const configs = await service.fetchAndParse('https://translated.turbopages.org/some/path');
+    expect(configs).toHaveLength(2);
+    expect(configs[0].name).toBe('One');
+    expect(configs[1].name).toBe('Two');
+  });
+
   it('should throw error on invalid base64', async () => {
     mockFetchText('invalid-base-64%%');
     await expect(service.fetchAndParse('https://sub.url')).rejects.toThrow();

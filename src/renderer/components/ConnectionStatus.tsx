@@ -1,6 +1,6 @@
 import React from 'react';
 import { VlessConfig } from '../../shared/types';
-import { Power, Shield, Globe, Zap, CheckCircle2 } from 'lucide-react';
+import { Power, Shield, Globe, Zap, CheckCircle2, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
 
@@ -19,6 +19,11 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
   connectionError,
   onToggleConnection 
 }) => {
+  const busyLabel = isConnected ? 'Disconnecting...' : 'Connecting...';
+  const busyHint = isConnected
+    ? 'Applying disconnect sequence and cleaning routes.'
+    : 'Applying TUN/proxy settings and network routes. This can take a few seconds.';
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-hidden">
       {/* Background decorative elements */}
@@ -56,11 +61,13 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
             )}
           </div>
           <p className="text-gray-400 text-lg font-medium">
-            {isConnected 
-              ? `Connected to ${selectedServer?.name || 'server'}` 
-              : selectedServer 
-                ? `Ready to connect to ${selectedServer.name}` 
-                : 'Select a server to connect'}
+            {isBusy
+              ? busyLabel
+              : isConnected 
+                ? `Connected to ${selectedServer?.name || 'server'}` 
+                : selectedServer 
+                  ? `Ready to connect to ${selectedServer.name}` 
+                  : 'Select a server to connect'}
           </p>
         </div>
 
@@ -97,8 +104,21 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
                 ? "text-green-400 drop-shadow-lg shadow-green-500/50" 
                 : "text-gray-400 group-hover:text-gray-300"
             )} />
+
+            {isBusy && (
+              <div className="absolute inset-0 flex items-center justify-center z-20 rounded-full bg-black/35">
+                <Loader2 className="w-14 h-14 text-white animate-spin" />
+              </div>
+            )}
           </button>
         </div>
+
+        {isBusy && (
+          <div className="mb-8 flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/30 backdrop-blur-sm animate-[fadeIn_0.3s_ease-out]">
+            <Loader2 className="w-4 h-4 text-primary animate-spin" />
+            <span className="text-sm text-primary font-medium">{busyHint}</span>
+          </div>
+        )}
 
         {/* Server Info Cards */}
         {selectedServer && (

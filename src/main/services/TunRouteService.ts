@@ -184,6 +184,17 @@ export class TunRouteService {
   private async getTunInterfaceIndex(): Promise<number | null> {
     const script = `
       $adapter = Get-NetAdapter -Name "${TUN_INTERFACE_NAME}" -ErrorAction SilentlyContinue
+      if (-not $adapter) {
+        $adapter = Get-NetAdapter -ErrorAction SilentlyContinue |
+          Where-Object {
+            $_.Status -eq "Up" -and (
+              $_.Name -like "${TUN_INTERFACE_NAME}*" -or
+              $_.InterfaceDescription -like "*Wintun*"
+            )
+          } |
+          Sort-Object ifIndex |
+          Select-Object -First 1
+      }
       if ($adapter) { Write-Output $adapter.ifIndex }
     `;
     const out = await this.runPowerShell(script, { allowNonZeroExit: true });
@@ -291,6 +302,15 @@ export class TunRouteService {
           error: error instanceof Error ? error.message : String(error),
         });
       });
+    } else {
+      // Fallback: remove stale default route candidates by next hop/metric even if
+      // interface alias changed (e.g. "ultima0 #2") and exact index is unknown.
+      await this.deleteTunDefaultRoutesByNextHop(TUN_NEXTHOP, TUN_ROUTE_METRIC).catch((error) => {
+        logger.warn('TunRouteService', 'Failed to cleanup stale TUN default routes by next hop', {
+          nextHop: TUN_NEXTHOP,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
     }
 
     for (const ip of knownServerIps) {
@@ -325,6 +345,17 @@ export class TunRouteService {
     const script = `
       Get-NetRoute -DestinationPrefix "${destinationPrefix}"${ifPart} -ErrorAction SilentlyContinue |
         Where-Object { $_.RouteMetric -eq ${metric} } |
+        Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+    `;
+    await this.runPowerShell(script, { allowNonZeroExit: true });
+  }
+
+  private async deleteTunDefaultRoutesByNextHop(nextHop: string, metric: number): Promise<void> {
+    const script = `
+      Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
+        Where-Object {
+          $_.RouteMetric -eq ${metric} -and $_.NextHop -eq "${nextHop}"
+        } |
         Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
     `;
     await this.runPowerShell(script, { allowNonZeroExit: true });

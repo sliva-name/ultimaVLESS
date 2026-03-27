@@ -1,12 +1,13 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { VlessConfig } from '../../../shared/types';
+import { IpcEventChannel, IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '../../../shared/ipc';
 import { logger } from '../../services/LoggerService';
 import { IpcDependencies } from '../dependencies';
 import { assertBoolean, assertValidServerPayload } from '../validators';
 
 interface RegisterPingHandlersParams {
   deps: IpcDependencies;
-  sendToRenderer: (channel: string, ...args: unknown[]) => void;
+  sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
   stripRawConfigs: (servers: VlessConfig[]) => VlessConfig[];
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
 }
@@ -22,7 +23,7 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
   /** Serialize ping-all-servers so overlapping invokes are not invalidated as "stale". */
   let pingAllQueue: Promise<unknown> = Promise.resolve();
 
-  ipcMain.handle('ping-server', async (_event: IpcMainInvokeEvent, serverPayload: unknown) => {
+  ipcMain.handle(IPC_INVOKE_CHANNELS.pingServer, async (_event: IpcMainInvokeEvent, serverPayload: unknown) => {
     assertTrustedSender(_event);
     try {
       const requestedServer = assertValidServerPayload(serverPayload);
@@ -95,7 +96,7 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
     });
 
     deps.configService.setServers(updatedServers);
-    sendToRenderer('update-servers', stripRawConfigs(updatedServers));
+    sendToRenderer(IPC_EVENT_CHANNELS.updateServers, stripRawConfigs(updatedServers));
 
     if (failedServers.length > 0) {
       void (async () => {
@@ -131,7 +132,7 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
         });
 
         deps.configService.setServers(mergedServers);
-        sendToRenderer('update-servers', stripRawConfigs(mergedServers));
+        sendToRenderer(IPC_EVENT_CHANNELS.updateServers, stripRawConfigs(mergedServers));
       })().catch((error) => {
         logger.error('IPC', 'Background retry ping failed', error);
       });
@@ -146,7 +147,7 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
     });
   }
 
-  ipcMain.handle('ping-all-servers', async (_event: IpcMainInvokeEvent, force: boolean = false) => {
+  ipcMain.handle(IPC_INVOKE_CHANNELS.pingAllServers, async (_event: IpcMainInvokeEvent, force: boolean = false) => {
     assertTrustedSender(_event);
     const forcePing = typeof force === 'undefined' ? false : assertBoolean(force, 'force');
     const job = pingAllQueue.then(() => runPingAllServers(forcePing));

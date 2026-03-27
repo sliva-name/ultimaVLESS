@@ -3,6 +3,7 @@ import { APP_CONSTANTS } from '../../shared/constants';
 import { configService } from '../services/ConfigService';
 import { connectionMonitorService } from '../services/ConnectionMonitorService';
 import { isElevatedOnWindows, relaunchAsAdminOnWindows } from '../services/PrivilegeService';
+import { connectionStackService } from '../services/ConnectionStackService';
 import { systemProxyService } from '../services/SystemProxyService';
 import { tunRouteService } from '../services/TunRouteService';
 import { xrayService } from '../services/XrayService';
@@ -20,6 +21,7 @@ export interface IpcDependencies {
     };
   };
   configService: typeof configService;
+  connectionStackService: typeof connectionStackService;
   connectionMonitorService: typeof connectionMonitorService;
   isElevatedOnWindows: typeof isElevatedOnWindows;
   relaunchAsAdminOnWindows: typeof relaunchAsAdminOnWindows;
@@ -39,6 +41,7 @@ export function createIpcDependencies(): IpcDependencies {
       },
     },
     configService,
+    connectionStackService,
     connectionMonitorService,
     isElevatedOnWindows,
     relaunchAsAdminOnWindows,

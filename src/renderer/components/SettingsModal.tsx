@@ -2,15 +2,17 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Copy, FolderOpen, Check, Loader2, Settings, Link2, Shield, RefreshCw, AlertTriangle, X, ChevronDown } from 'lucide-react';
 import { ConnectionStatus as MonitorStatus, ConnectionMonitorEvent } from '../preload.d';
 import { ConnectionMode, VlessConfig } from '../../shared/types';
+import { SaveSubscriptionPayload } from '../../shared/ipc';
 
 interface SettingsModalProps {
   isOpen: boolean;
   isLoading: boolean;
+  servers: VlessConfig[];
   onClose: () => void;
-  onSave: (payload: { subscriptionUrl: string; manualLinks: string }) => Promise<{ ok: boolean; error?: string }>;
+  onSave: (payload: SaveSubscriptionPayload) => Promise<{ ok: boolean; error?: string }>;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading, onClose, onSave }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading, servers, onClose, onSave }) => {
   const [subUrl, setSubUrl] = useState('');
   const [manualLinks, setManualLinks] = useState('');
   const [isSubscriptionExpanded, setIsSubscriptionExpanded] = useState(true);
@@ -23,7 +25,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('proxy');
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
   const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>([]);
-  const [servers, setServers] = useState<VlessConfig[]>([]);
   const loadMonitorStatusRef = useRef<(() => Promise<void>) | null>(null);
 
   const loadMonitorStatus = useCallback(async () => {
@@ -62,8 +63,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
       console.error('Failed to load connection mode:', err);
     });
 
-    window.electronAPI.getServers().then(setServers).catch(console.error);
-
     loadMonitorStatus();
     
     const handleMonitorEvent = (event: ConnectionMonitorEvent) => {
@@ -71,11 +70,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
       loadMonitorStatusRef.current?.();
     };
 
+    const handleManualLinksUpdated = (updatedManualLinks: string) => {
+      setManualLinks(updatedManualLinks || '');
+    };
+
     const removeMonitorListener = window.electronAPI.onConnectionMonitorEvent(handleMonitorEvent);
+    const removeManualLinksListener = window.electronAPI.onManualLinksUpdated(handleManualLinksUpdated);
     const interval = setInterval(loadMonitorStatus, 5000);
 
     return () => {
       removeMonitorListener();
+      removeManualLinksListener();
       clearInterval(interval);
     };
   }, [isOpen, loadMonitorStatus]);

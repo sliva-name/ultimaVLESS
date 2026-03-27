@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { useServerState } from './hooks/useServerState';
+import { SaveSubscriptionPayload } from '../shared/ipc';
 
 type DragRegionStyle = React.CSSProperties & { WebkitAppRegion: 'drag' | 'no-drag' };
 const dragRegionStyle: DragRegionStyle = { WebkitAppRegion: 'drag' };
@@ -26,7 +27,7 @@ function App() {
   const handleOpenSettings = useCallback(() => setIsSettingsOpen(true), []);
   const handleCloseSettings = useCallback(() => setIsSettingsOpen(false), []);
 
-  const handleSaveSub = useCallback(async (payload: { subscriptionUrl: string; manualLinks: string }) => {
+  const handleSaveSub = useCallback(async (payload: SaveSubscriptionPayload) => {
     const result = await saveSubscription(payload);
     if (result.ok) {
       setIsSettingsOpen(false);
@@ -59,6 +60,7 @@ function App() {
            <SettingsModal 
              isOpen={isSettingsOpen} 
              isLoading={isConfigLoading}
+             servers={servers}
              onClose={handleCloseSettings} 
              onSave={handleSaveSub}
            />
