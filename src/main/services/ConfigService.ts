@@ -2,6 +2,9 @@ import Store from 'electron-store';
 import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
 
+const DEFAULT_SUBSCRIPTION_URL =
+  'https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt';
+
 interface StoreSchema {
   subscriptionUrl: string;
   manualLinksInput: string;
@@ -34,7 +37,7 @@ export class ConfigService {
     this.store = new Store<StoreSchema>({
       name: 'app-config',
       defaults: {
-        subscriptionUrl: '',
+        subscriptionUrl: DEFAULT_SUBSCRIPTION_URL,
         manualLinksInput: '',
         servers: [],
         selectedServerId: null,
@@ -42,6 +45,12 @@ export class ConfigService {
         pendingTunReconnect: null,
       }
     });
+
+    const storedSubscriptionUrl = this.store.get('subscriptionUrl');
+    if (!storedSubscriptionUrl?.trim()) {
+      this.store.set('subscriptionUrl', DEFAULT_SUBSCRIPTION_URL);
+    }
+
     logger.info('ConfigService', 'Initialized', { path: this.store.path });
   }
 

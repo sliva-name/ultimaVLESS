@@ -16,11 +16,22 @@ const TUN_WAIT_INTERVAL = 300;
 const POWERSHELL_TIMEOUT = 30000;
 const DNS_TIMEOUT = 8000;
 const ENABLE_TIMEOUT = 60000;
+const DEFAULT_ROUTE_WAIT_TIMEOUT = 12000;
+const DEFAULT_ROUTE_WAIT_INTERVAL = 500;
+const DEFAULT_ROUTE_STABLE_HITS = 2;
+const DEFAULT_ROUTE_ADD_RETRIES = 3;
+const DEFAULT_ROUTE_ADD_RETRY_DELAY_MS = 400;
 
 interface DefaultRouteInfo {
   gateway: string;
   interfaceIndex: number;
   interfaceName: string;
+  localAddress: string | null;
+}
+
+export interface TunRoutingPlan {
+  defaultRoute: DefaultRouteInfo;
+  proxyIps: string[];
 }
 
 interface RunPowerShellOptions {
@@ -30,7 +41,23 @@ interface RunPowerShellOptions {
 export class TunRouteService {
   private addedRoutes: { destination: string; mask: string; interfaceIndex?: number }[] = [];
 
-  public async enable(config: VlessConfig): Promise<void> {
+  public async prepareRoutingPlan(config: VlessConfig): Promise<TunRoutingPlan> {
+    const [defaultRoute, proxyIps] = await Promise.all([
+      this.waitForDefaultRoute(),
+      this.resolveProxyAddresses(config.address),
+    ]);
+
+    if (!defaultRoute) {
+      throw new Error('Could not get default route. Check network connection.');
+    }
+    if (proxyIps.length === 0) {
+      throw new Error(`Could not resolve proxy server address: ${config.address}`);
+    }
+
+    return { defaultRoute, proxyIps };
+  }
+
+  public async enable(config: VlessConfig, plan?: TunRoutingPlan): Promise<void> {
     if (process.platform !== 'win32') {
       logger.info('TunRouteService', 'Not Windows, skipping TUN routing');
       return;
@@ -39,26 +66,25 @@ export class TunRouteService {
     const startedAt = Date.now();
     const deadline = startedAt + ENABLE_TIMEOUT;
     try {
-      const [defaultRoute, proxyIps, tunInterfaceIndex] = await Promise.all([
-        this.getDefaultRoute(),
-        this.resolveProxyAddresses(config.address),
+      const [routingPlan, tunInterfaceIndex] = await Promise.all([
+        plan ? Promise.resolve(plan) : this.prepareRoutingPlan(config),
         this.waitForTunInterface(),
       ]);
+      const { defaultRoute, proxyIps } = routingPlan;
       this.ensureWithinDeadline(deadline, 'initial discovery');
       logger.info('TunRouteService', 'Discovery completed', {
-        hasDefaultRoute: !!defaultRoute,
+        hasDefaultRoute: true,
         proxyIpCount: proxyIps.length,
         tunInterfaceIndex,
       });
+      logger.info('TunRouteService', 'Using default route candidate', {
+        interfaceIndex: defaultRoute.interfaceIndex,
+        interfaceName: defaultRoute.interfaceName,
+        gateway: defaultRoute.gateway,
+        localAddress: defaultRoute.localAddress,
+      });
 
-      if (!defaultRoute) {
-        throw new Error('Could not get default route. Check network connection.');
-      }
-      if (proxyIps.length === 0) {
-        throw new Error(`Could not resolve proxy server address: ${config.address}`);
-      }
-
-      await this.ensureTunAddress();
+      await this.ensureTunAddress(tunInterfaceIndex);
       this.ensureWithinDeadline(deadline, 'set TUN interface address');
 
       for (const proxyIp of proxyIps) {
@@ -105,37 +131,121 @@ export class TunRouteService {
 
   private async getDefaultRoute(): Promise<DefaultRouteInfo | null> {
     const script = `
+      $virtualPatterns = @(
+        'vEthernet*',
+        'Default Switch*',
+        '*Hyper-V*',
+        '*VirtualBox*',
+        '*VMware*',
+        '*Loopback*',
+        '*Teredo*',
+        '*isatap*'
+      )
+      function IsVirtualLike($name, $description) {
+        foreach ($pattern in $virtualPatterns) {
+          if ($name -like $pattern -or $description -like $pattern) {
+            return $true
+          }
+        }
+        return $false
+      }
+      function IsValidIPv4($value) {
+        $ip = [System.Net.IPAddress]::None
+        return [System.Net.IPAddress]::TryParse($value, [ref]$ip) -and $ip.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork
+      }
+      function NewCandidate($routeObj) {
+        $if = Get-NetAdapter -InterfaceIndex $routeObj.InterfaceIndex -ErrorAction SilentlyContinue
+        if (-not $if -or $if.Name -eq "${TUN_INTERFACE_NAME}" -or $if.Status -ne "Up") {
+          return $null
+        }
+        if (-not (IsValidIPv4 $routeObj.NextHop) -or $routeObj.NextHop -eq "0.0.0.0") {
+          return $null
+        }
+        $ipif = Get-NetIPInterface -InterfaceIndex $routeObj.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+        $profile = Get-NetConnectionProfile -InterfaceIndex $routeObj.InterfaceIndex -ErrorAction SilentlyContinue
+        $ifMetric = if ($ipif) { [int]$ipif.InterfaceMetric } else { 0 }
+        $isVirtual = IsVirtualLike $if.Name $if.InterfaceDescription
+        $isConnectedProfile = if ($profile) { $profile.IPv4Connectivity -ne "Disconnected" } else { $true }
+        [PSCustomObject]@{
+          InterfaceIndex = $routeObj.InterfaceIndex
+          NextHop = $routeObj.NextHop
+          InterfaceName = $if.Name
+          EffectiveMetric = ([int]$routeObj.RouteMetric + $ifMetric)
+          IsVirtual = $isVirtual
+          IsConnectedProfile = $isConnectedProfile
+        }
+      }
       $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
         Where-Object { $_.NextHop -ne "0.0.0.0" } |
-        ForEach-Object {
-          $if = Get-NetAdapter -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue
-          if ($if -and $if.Name -ne "${TUN_INTERFACE_NAME}" -and $if.Status -eq "Up") {
-            $ipif = Get-NetIPInterface -InterfaceIndex $_.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
-            [PSCustomObject]@{
-              InterfaceIndex = $_.InterfaceIndex
-              NextHop = $_.NextHop
-              InterfaceName = $if.Name
-              EffectiveMetric = ($_.RouteMetric + ($ipif.InterfaceMetric))
-            }
-          }
-        } |
-        Sort-Object EffectiveMetric |
+        ForEach-Object { NewCandidate $_ } |
+        Where-Object { $_ -ne $null } |
+        Sort-Object @{Expression = "IsVirtual"; Ascending = $true}, @{Expression = "IsConnectedProfile"; Descending = $true}, @{Expression = "EffectiveMetric"; Ascending = $true} |
         Select-Object -First 1
+      if (-not $route) {
+        $route = Get-CimInstance Win32_IP4RouteTable -ErrorAction SilentlyContinue |
+          Where-Object { $_.Destination -eq "0.0.0.0" -and $_.Mask -eq "0.0.0.0" } |
+          ForEach-Object {
+            [PSCustomObject]@{
+              InterfaceIndex = [int]$_.InterfaceIndex
+              NextHop = $_.NextHop
+              RouteMetric = [int]$_.Metric1
+            }
+          } |
+          ForEach-Object { NewCandidate $_ } |
+          Where-Object { $_ -ne $null } |
+          Sort-Object @{Expression = "IsVirtual"; Ascending = $true}, @{Expression = "IsConnectedProfile"; Descending = $true}, @{Expression = "EffectiveMetric"; Ascending = $true} |
+          Select-Object -First 1
+      }
       if ($route) {
+        $local = Get-NetIPAddress -InterfaceIndex $route.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+          Where-Object { $_.IPAddress -and $_.IPAddress -ne "127.0.0.1" -and $_.IPAddress -notlike "169.254.*" } |
+          Sort-Object @{Expression = "SkipAsSource"; Ascending = $true}, @{Expression = "PrefixLength"; Descending = $true} |
+          Select-Object -First 1 -ExpandProperty IPAddress
         $ifIndex = $route.InterfaceIndex
         $gw = $route.NextHop
         $ifName = $route.InterfaceName
-        Write-Output "$ifIndex|$gw|$ifName"
+        Write-Output "$ifIndex|$gw|$ifName|$local"
       }
     `;
     const out = await this.runPowerShell(script, { allowNonZeroExit: true });
-    const match = out.trim().match(/^(\d+)\|([^\s|]+)\|(.+)$/);
+    const match = out.trim().match(/^(\d+)\|([^\s|]+)\|([^|]+)(?:\|(.*))?$/);
     if (!match) return null;
+    const localAddress = match[4]?.trim() || '';
     return {
       interfaceIndex: parseInt(match[1], 10),
       gateway: match[2].trim(),
       interfaceName: match[3].trim(),
+      localAddress: localAddress.length > 0 ? localAddress : null,
     };
+  }
+
+  private async waitForDefaultRoute(): Promise<DefaultRouteInfo | null> {
+    const startedAt = Date.now();
+    let previousRouteKey: string | null = null;
+    let stableHits = 0;
+    let lastObservedRoute: DefaultRouteInfo | null = null;
+
+    while (Date.now() - startedAt <= DEFAULT_ROUTE_WAIT_TIMEOUT) {
+      const route = await this.getDefaultRoute();
+      if (route) {
+        lastObservedRoute = route;
+        const routeKey = `${route.interfaceIndex}|${route.gateway}`;
+        if (routeKey === previousRouteKey) {
+          stableHits += 1;
+        } else {
+          previousRouteKey = routeKey;
+          stableHits = 1;
+        }
+        if (stableHits >= DEFAULT_ROUTE_STABLE_HITS) {
+          return route;
+        }
+      } else {
+        previousRouteKey = null;
+        stableHits = 0;
+      }
+      await this.sleep(DEFAULT_ROUTE_WAIT_INTERVAL);
+    }
+    return lastObservedRoute;
   }
 
   private async waitForTunInterface(): Promise<number> {
@@ -202,11 +312,12 @@ export class TunRouteService {
     return Number.isNaN(n) ? null : n;
   }
 
-  private async ensureTunAddress(): Promise<void> {
+  private async ensureTunAddress(tunInterfaceIndex: number): Promise<void> {
     const script = `
-      $addr = Get-NetIPAddress -InterfaceAlias "${TUN_INTERFACE_NAME}" -AddressFamily IPv4 -ErrorAction SilentlyContinue
-      if (-not $addr) {
-        New-NetIPAddress -InterfaceAlias "${TUN_INTERFACE_NAME}" -IPAddress ${TUN_ADDRESS} -PrefixLength ${TUN_PREFIX} -ErrorAction Stop
+      $existing = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+      if (-not $existing) {
+        New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress ${TUN_ADDRESS} -PrefixLength ${TUN_PREFIX} -ErrorAction Stop
       }
     `;
     try {
@@ -271,14 +382,35 @@ export class TunRouteService {
   }
 
   private async addDefaultRouteViaTun(tunIdx: number): Promise<void> {
-    const script = `
-      $existing = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
-      if (-not $existing) {
-        New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "${TUN_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= DEFAULT_ROUTE_ADD_RETRIES; attempt += 1) {
+      try {
+        const script = `
+          $existing = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
+          if (-not $existing) {
+            New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "${TUN_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
+          }
+        `;
+        await this.runPowerShell(script);
+        this.addedRoutes.push({ destination: '0.0.0.0', mask: '0.0.0.0', interfaceIndex: tunIdx });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < DEFAULT_ROUTE_ADD_RETRIES) {
+          logger.warn('TunRouteService', 'Retrying add default route via TUN', {
+            interfaceIndex: tunIdx,
+            attempt,
+            maxAttempts: DEFAULT_ROUTE_ADD_RETRIES,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          await this.sleep(DEFAULT_ROUTE_ADD_RETRY_DELAY_MS);
+          continue;
+        }
       }
-    `;
-    await this.runPowerShell(script);
-    this.addedRoutes.push({ destination: '0.0.0.0', mask: '0.0.0.0', interfaceIndex: tunIdx });
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Failed to add default route via TUN');
   }
 
   private async deleteRoute(route: { destination: string; mask: string; interfaceIndex?: number }): Promise<void> {
@@ -313,17 +445,22 @@ export class TunRouteService {
       });
     }
 
-    for (const ip of knownServerIps) {
-      await this.deleteRouteByPrefixAndMetric(`${ip}/32`, 1).catch((error) => {
-        logger.warn('TunRouteService', 'Failed to cleanup stale host route', {
-          destination: `${ip}/32`,
-          error: error instanceof Error ? error.message : String(error),
-        });
+    let removedHostRoutes = 0;
+    try {
+      removedHostRoutes = await this.deleteHostRoutesByPrefixesAndMetric(
+        knownServerIps.map((ip) => `${ip}/32`),
+        1
+      );
+    } catch (error) {
+      logger.warn('TunRouteService', 'Failed to cleanup stale host routes', {
+        count: knownServerIps.length,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
 
     logger.info('TunRouteService', 'Stale route cleanup finished', {
       removedHostRouteCandidates: knownServerIps.length,
+      removedHostRoutes,
       checkedTunDefaultRoute: tunIndex != null,
     });
   }
@@ -359,6 +496,36 @@ export class TunRouteService {
         Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
     `;
     await this.runPowerShell(script, { allowNonZeroExit: true });
+  }
+
+  private async deleteHostRoutesByPrefixesAndMetric(
+    destinationPrefixes: string[],
+    metric: number
+  ): Promise<number> {
+    if (destinationPrefixes.length === 0) {
+      return 0;
+    }
+    const prefixesLiteral = destinationPrefixes.map((prefix) => `'${prefix}'`).join(', ');
+    const script = `
+      $targets = @(${prefixesLiteral})
+      $targetSet = @{}
+      foreach ($target in $targets) {
+        $targetSet[$target] = $true
+      }
+      $removed = 0
+      Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object {
+          $_.RouteMetric -eq ${metric} -and $targetSet.ContainsKey($_.DestinationPrefix)
+        } |
+        ForEach-Object {
+          Remove-NetRoute -DestinationPrefix $_.DestinationPrefix -InterfaceIndex $_.InterfaceIndex -NextHop $_.NextHop -Confirm:$false -ErrorAction SilentlyContinue
+          $removed++
+        }
+      Write-Output $removed
+    `;
+    const out = await this.runPowerShell(script, { allowNonZeroExit: true });
+    const parsed = parseInt(out.trim(), 10);
+    return Number.isNaN(parsed) ? 0 : parsed;
   }
 
   private runPowerShell(script: string, options: RunPowerShellOptions = {}): Promise<string> {

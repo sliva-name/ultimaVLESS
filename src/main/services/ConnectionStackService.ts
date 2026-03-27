@@ -39,21 +39,17 @@ export class ConnectionStackService {
 
   private async applyConnectionModeUnsafe(server: VlessConfig, mode: ConnectionMode, ports: ProxyPorts): Promise<void> {
     if (mode === 'proxy') {
-      // Ensure TUN leftovers from previous sessions are removed before proxy mode starts.
-      await this.routeService.disable();
-      await this.proxyService.disable();
       await this.coreService.start(server, mode);
       await this.proxyService.enable(ports.http, ports.socks);
       return;
     }
 
-    // Ensure clean state before TUN setup to avoid route/proxy races.
-    await this.routeService.disable();
-    await this.proxyService.disable();
-    await this.coreService.start(server, mode);
-    // Defensive disable once more in case system proxy was externally re-enabled.
-    await this.proxyService.disable();
-    await this.routeService.enable(server);
+    const routingPlan = await this.routeService.prepareRoutingPlan(server);
+    await this.coreService.start(server, mode, {
+      // Prevent outbound loop when TUN default route is enabled.
+      sendThrough: routingPlan.defaultRoute.localAddress || undefined,
+    });
+    await this.routeService.enable(server, routingPlan);
   }
 
   public async resetNetworkingStack(options: { stopXray?: boolean } = {}): Promise<void> {

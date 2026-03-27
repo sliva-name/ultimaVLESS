@@ -24,6 +24,7 @@ export type XrayInbound = {
 
 export type XrayOutbound = {
   tag?: string;
+  sendThrough?: string;
   protocol: 'freedom' | 'blackhole' | 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'dns';
   settings?: any;
   streamSettings?: XrayStreamSettings;

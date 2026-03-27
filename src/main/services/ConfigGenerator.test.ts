@@ -60,5 +60,12 @@ describe('ConfigGenerator', () => {
     expect(tunInbound.settings?.mtu).toBe(1400);
     expect((tunInbound.settings as any).MTU).toBeUndefined();
   });
+
+  it('should set sendThrough in tun mode when provided', () => {
+    const result = ConfigGenerator.generate(mockConfig, '/tmp/log', 'tun', {
+      sendThrough: '192.168.1.10',
+    });
+    expect(result.outbounds?.[0]?.sendThrough).toBe('192.168.1.10');
+  });
 });
 

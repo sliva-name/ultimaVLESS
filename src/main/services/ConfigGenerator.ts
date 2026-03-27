@@ -2,15 +2,29 @@ import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { XrayConfig, XrayOutbound, XrayInbound, XrayStreamSettings } from '../../shared/xray-types';
 import { APP_CONSTANTS } from '../../shared/constants';
 
+export interface ConfigGeneratorOptions {
+  sendThrough?: string;
+}
+
 export class ConfigGenerator {
-  static generate(config: VlessConfig, logPath: string, connectionMode: ConnectionMode = 'proxy'): any {
+  static generate(
+    config: VlessConfig,
+    logPath: string,
+    connectionMode: ConnectionMode = 'proxy',
+    options: ConfigGeneratorOptions = {}
+  ): any {
     if (config.rawConfig) {
-      return this.applyRawConfig(config.rawConfig, logPath, connectionMode);
+      return this.applyRawConfig(config.rawConfig, logPath, connectionMode, options);
     }
-    return this.generateFromFields(config, logPath, connectionMode);
+    return this.generateFromFields(config, logPath, connectionMode, options);
   }
 
-  private static applyRawConfig(rawConfig: Record<string, any>, logPath: string, connectionMode: ConnectionMode): any {
+  private static applyRawConfig(
+    rawConfig: Record<string, any>,
+    logPath: string,
+    connectionMode: ConnectionMode,
+    options: ConfigGeneratorOptions
+  ): any {
     const cfg = JSON.parse(JSON.stringify(rawConfig));
 
     cfg.log = {
@@ -70,12 +84,18 @@ export class ConfigGenerator {
           inet4_address: '172.19.0.1/30',
         },
       });
+      this.applySendThroughIfNeeded(cfg, options.sendThrough);
     }
 
     return cfg;
   }
 
-  private static generateFromFields(config: VlessConfig, logPath: string, connectionMode: ConnectionMode): XrayConfig {
+  private static generateFromFields(
+    config: VlessConfig,
+    logPath: string,
+    connectionMode: ConnectionMode,
+    options: ConfigGeneratorOptions
+  ): XrayConfig {
     const streamSettings: XrayStreamSettings = {
       network: config.type || 'tcp',
       security: config.security || 'none',
@@ -129,6 +149,9 @@ export class ConfigGenerator {
       streamSettings: streamSettings,
       tag: 'proxy',
     };
+    if (connectionMode === 'tun' && options.sendThrough) {
+      outbound.sendThrough = options.sendThrough;
+    }
 
     const inboundSocks: XrayInbound = {
       tag: 'socks',
@@ -191,5 +214,19 @@ export class ConfigGenerator {
         ],
       },
     };
+  }
+
+  private static applySendThroughIfNeeded(cfg: Record<string, any>, sendThrough?: string): void {
+    if (!sendThrough || !Array.isArray(cfg.outbounds) || cfg.outbounds.length === 0) {
+      return;
+    }
+    const outbounds = cfg.outbounds as Array<Record<string, any>>;
+    const preferred =
+      outbounds.find((outbound) => outbound?.tag === 'proxy') ??
+      outbounds[0];
+    if (!preferred || preferred.sendThrough) {
+      return;
+    }
+    preferred.sendThrough = sendThrough;
   }
 }
