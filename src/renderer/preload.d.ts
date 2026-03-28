@@ -6,6 +6,7 @@ import {
   DisconnectResult,
   PingResult,
   SaveSubscriptionPayload,
+  TunCapabilityStatus,
 } from '../shared/ipc';
 
 export type ConnectionStatus = ConnectionMonitorStatus;
@@ -31,6 +32,7 @@ export interface IElectronAPI {
   setSelectedServerId: (serverId: string | null) => Promise<boolean>;
   getConnectionMode: () => Promise<ConnectionMode>;
   setConnectionMode: (mode: ConnectionMode) => Promise<boolean>;
+  getTunCapabilityStatus: () => Promise<TunCapabilityStatus>;
   getConnectionStatus: () => Promise<boolean>;
   getConnectionBusy: () => Promise<boolean>;
   getLogs: () => Promise<string>;

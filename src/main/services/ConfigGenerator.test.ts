@@ -67,5 +67,14 @@ describe('ConfigGenerator', () => {
     });
     expect(result.outbounds?.[0]?.sendThrough).toBe('192.168.1.10');
   });
+
+  it('should enable autoRoute in tun mode when requested', () => {
+    const result = ConfigGenerator.generate(mockConfig, '/tmp/log', 'tun', {
+      tunAutoRoute: true,
+    });
+    const tunInbound = result.inbounds?.find((inbound: any) => inbound.tag === 'tun-in');
+    expect(tunInbound.settings?.autoRoute).toBe(true);
+    expect(tunInbound.settings?.strictRoute).toBe(true);
+  });
 });
 

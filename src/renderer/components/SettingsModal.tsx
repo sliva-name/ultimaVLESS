@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Copy, FolderOpen, Check, Loader2, Settings, Link2, Shield, RefreshCw, AlertTriangle, X, ChevronDown } from 'lucide-react';
 import { ConnectionStatus as MonitorStatus, ConnectionMonitorEvent } from '../preload.d';
 import { ConnectionMode, VlessConfig } from '../../shared/types';
-import { SaveSubscriptionPayload } from '../../shared/ipc';
+import { SaveSubscriptionPayload, TunCapabilityStatus } from '../../shared/ipc';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -23,6 +23,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
   const [modeError, setModeError] = useState<string | null>(null);
   const [autoSwitching, setAutoSwitching] = useState(true);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('proxy');
+  const [tunCapability, setTunCapability] = useState<TunCapabilityStatus | null>(null);
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
   const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>([]);
   const loadMonitorStatusRef = useRef<(() => Promise<void>) | null>(null);
@@ -63,6 +64,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
       console.error('Failed to load connection mode:', err);
     });
 
+    window.electronAPI.getTunCapabilityStatus().then((status) => {
+      setTunCapability(status);
+    }).catch(err => {
+      console.error('Failed to load TUN capability status:', err);
+    });
+
     loadMonitorStatus();
     
     const handleMonitorEvent = (event: ConnectionMonitorEvent) => {
@@ -95,6 +102,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
   }, []);
 
   const handleConnectionModeChange = useCallback(async (mode: ConnectionMode) => {
+    if (mode === 'tun') {
+      if (tunCapability && !tunCapability.supported) {
+        setModeError(tunCapability.unsupportedReason || 'TUN mode is not supported on this operating system.');
+        return;
+      }
+      if (tunCapability && !tunCapability.hasPrivileges) {
+        setModeError(tunCapability.privilegeHint || 'Elevated privileges are required for TUN mode.');
+        return;
+      }
+    }
     try {
       await window.electronAPI.setConnectionMode(mode);
       setConnectionMode(mode);
@@ -103,7 +120,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
       console.error('Failed to set connection mode:', err);
       setModeError(err instanceof Error ? err.message : 'Failed to set connection mode');
     }
-  }, []);
+  }, [tunCapability]);
+  const tunUnavailable = !!tunCapability && !tunCapability.supported;
+  const tunNeedsPrivileges = !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
+  const tunButtonDisabled = tunUnavailable || tunNeedsPrivileges;
+
 
   const handleClearBlocked = useCallback(async () => {
     try {
@@ -271,18 +292,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
               <button
                 type="button"
                 onClick={() => handleConnectionModeChange('tun')}
+                disabled={tunButtonDisabled}
                 className={`p-4 rounded-xl border text-left transition-all duration-200 ${
                   connectionMode === 'tun'
                     ? 'border-primary/70 bg-primary/10 text-white'
+                    : tunButtonDisabled
+                    ? 'border-gray-800/80 bg-gray-900/30 text-gray-500 cursor-not-allowed opacity-70'
                     : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70'
                 }`}
               >
                 <div className="text-sm font-semibold mb-1">TUN Mode</div>
-                <div className="text-xs text-gray-400">Routes full system traffic. Requires Administrator rights.</div>
+                <div className="text-xs text-gray-400">Routes full system traffic. Requires elevated privileges.</div>
               </button>
             </div>
 
             <p className="text-xs text-gray-500 mt-3">Mode applies after reconnect.</p>
+            {tunUnavailable && (
+              <p className="text-xs text-orange-400 mt-2">{tunCapability?.unsupportedReason || 'TUN mode is unavailable on this platform.'}</p>
+            )}
+            {tunNeedsPrivileges && (
+              <p className="text-xs text-orange-400 mt-2">{tunCapability?.privilegeHint || 'Elevated privileges are required for TUN mode.'}</p>
+            )}
             {modeError && <p className="text-xs text-orange-400 mt-2">{modeError}</p>}
           </div>
 

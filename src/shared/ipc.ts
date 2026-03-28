@@ -37,6 +37,14 @@ export interface ConnectionMonitorStatus {
   autoSwitchingEnabled: boolean;
 }
 
+export interface TunCapabilityStatus {
+  platform: string;
+  supported: boolean;
+  hasPrivileges: boolean;
+  privilegeHint: string | null;
+  unsupportedReason: string | null;
+}
+
 export const IPC_INVOKE_CHANNELS = {
   connect: 'connect',
   disconnect: 'disconnect',
@@ -56,6 +64,7 @@ export const IPC_INVOKE_CHANNELS = {
   pingServer: 'ping-server',
   pingAllServers: 'ping-all-servers',
   getConnectionMonitorStatus: 'get-connection-monitor-status',
+  getTunCapabilityStatus: 'get-tun-capability-status',
   setAutoSwitching: 'set-auto-switching',
   clearBlockedServers: 'clear-blocked-servers',
 } as const;

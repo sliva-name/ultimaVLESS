@@ -2,7 +2,12 @@ import { app } from 'electron';
 import { APP_CONSTANTS } from '../../shared/constants';
 import { configService } from '../services/ConfigService';
 import { connectionMonitorService } from '../services/ConnectionMonitorService';
-import { isElevatedOnWindows, relaunchAsAdminOnWindows } from '../services/PrivilegeService';
+import {
+  isElevatedOnWindows,
+  relaunchAsAdminOnWindows,
+  hasTunPrivileges,
+  requestTunPrivilegesRelaunch,
+} from '../services/PrivilegeService';
 import { connectionStackService } from '../services/ConnectionStackService';
 import { systemProxyService } from '../services/SystemProxyService';
 import { tunRouteService } from '../services/TunRouteService';
@@ -25,6 +30,8 @@ export interface IpcDependencies {
   connectionMonitorService: typeof connectionMonitorService;
   isElevatedOnWindows: typeof isElevatedOnWindows;
   relaunchAsAdminOnWindows: typeof relaunchAsAdminOnWindows;
+  hasTunPrivileges: typeof hasTunPrivileges;
+  requestTunPrivilegesRelaunch: typeof requestTunPrivilegesRelaunch;
   systemProxyService: typeof systemProxyService;
   tunRouteService: typeof tunRouteService;
   xrayService: typeof xrayService;
@@ -45,6 +52,8 @@ export function createIpcDependencies(): IpcDependencies {
     connectionMonitorService,
     isElevatedOnWindows,
     relaunchAsAdminOnWindows,
+    hasTunPrivileges,
+    requestTunPrivilegesRelaunch,
     systemProxyService,
     tunRouteService,
     xrayService,

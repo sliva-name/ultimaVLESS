@@ -48,6 +48,7 @@ export class ConnectionStackService {
     await this.coreService.start(server, mode, {
       // Prevent outbound loop when TUN default route is enabled.
       sendThrough: routingPlan.defaultRoute.localAddress || undefined,
+      tunAutoRoute: process.platform !== 'win32',
     });
     await this.routeService.enable(server, routingPlan);
   }

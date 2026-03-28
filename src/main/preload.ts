@@ -9,6 +9,7 @@ import {
   IPC_INVOKE_CHANNELS,
   PingResult,
   SaveSubscriptionPayload,
+  TunCapabilityStatus,
 } from '../shared/ipc';
 
 function createListener<T>(channel: string) {
@@ -47,6 +48,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setSelectedServerId, serverId) as Promise<boolean>,
   getConnectionMode: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getConnectionMode) as Promise<ConnectionMode>,
   setConnectionMode: (mode: ConnectionMode) => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setConnectionMode, mode) as Promise<boolean>,
+  getTunCapabilityStatus: () =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getTunCapabilityStatus) as Promise<TunCapabilityStatus>,
   getConnectionStatus: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getConnectionStatus) as Promise<boolean>,
   getConnectionBusy: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getConnectionBusy) as Promise<boolean>,
   getLogs: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getLogs) as Promise<string>,

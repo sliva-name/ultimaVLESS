@@ -1,13 +1,14 @@
 # Ultima VLESS Client
 
-Ultima VLESS Client is a desktop VPN app for Windows with a simple interface, fast connection flow, and support for modern Xray/VLESS configurations.
+Ultima VLESS Client is a desktop VPN app with a simple interface, fast connection flow, and support for modern Xray/VLESS configurations.
+Windows is the primary supported platform. macOS/Linux support is available and currently experimental.
 
 ## Download And Install
 
 1. Open the [latest release](https://github.com/sliva-name/ultimaVLESS/releases/latest).
-2. Download `UltimaVLESS-Setup-*.exe`.
-3. Run the installer.
-4. Launch the app from the desktop or Start Menu.
+2. Download the package for your OS (`*.exe`, `*.dmg`, `*.AppImage`/`*.deb`).
+3. Install/run the package.
+4. Launch the app.
 
 Portable build (`UltimaVLESS-Portable-*.exe`) is also available.
 

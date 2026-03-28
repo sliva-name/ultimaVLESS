@@ -74,3 +74,36 @@ export async function relaunchAsAdminOnWindows(): Promise<boolean> {
     });
   });
 }
+
+async function isUnixRoot(): Promise<boolean> {
+  if (process.platform === 'win32') {
+    return false;
+  }
+  if (typeof process.getuid === 'function') {
+    return process.getuid() === 0;
+  }
+  return false;
+}
+
+/**
+ * Cross-platform privilege check for TUN mode setup.
+ * - Windows: Administrator rights
+ * - macOS/Linux: root privileges
+ */
+export async function hasTunPrivileges(): Promise<boolean> {
+  if (process.platform === 'win32') {
+    return isElevatedOnWindows();
+  }
+  return isUnixRoot();
+}
+
+/**
+ * Best-effort privilege escalation for TUN mode setup.
+ * Currently supported only on Windows (UAC relaunch).
+ */
+export async function requestTunPrivilegesRelaunch(): Promise<boolean> {
+  if (process.platform === 'win32') {
+    return relaunchAsAdminOnWindows();
+  }
+  return false;
+}
