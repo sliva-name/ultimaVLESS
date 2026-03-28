@@ -111,6 +111,7 @@
       "category": "public.app-category.utilities"
     },
     "linux": {
+      "maintainer": "UltimaVPN antyuhov2@gmail.com",
       "icon": "resources/bin",
       "target": [
         "AppImage",
