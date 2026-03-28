@@ -1,6 +1,12 @@
 import { ipcMain, IpcMainEvent, IpcMainInvokeEvent, BrowserWindow, app } from 'electron';
 import { ConnectionMode, VlessConfig } from '../../shared/types';
-import { ConnectionMonitorStatus, IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS, IpcEventChannel } from '../../shared/ipc';
+import {
+  ConnectionMonitorStatus,
+  IPC_EVENT_CHANNELS,
+  IPC_INVOKE_CHANNELS,
+  IpcEventChannel,
+  TunCapabilityStatus,
+} from '../../shared/ipc';
 import { configService } from '../services/ConfigService';
 import { subscriptionService } from '../services/SubscriptionService';
 import { logger } from '../services/LoggerService';
@@ -189,8 +195,8 @@ async function attemptPendingTunReconnect(
       throw new Error(deps.tunRouteService.getUnsupportedReason() || 'TUN mode is not supported on this operating system.');
     }
 
-    if (!(await deps.isElevatedOnWindows())) {
-      throw new Error('Pending TUN reconnect requires Administrator rights');
+    if (!(await deps.hasTunPrivileges())) {
+      throw new Error('Pending TUN reconnect requires elevated privileges');
     }
 
     logger.info('IPC', 'Applying pending TUN reconnect', {
@@ -327,6 +333,24 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_INVOKE_CHANNELS.getConnectionMode, (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
     return configService.getConnectionMode();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getTunCapabilityStatus, async (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    const supported = deps.tunRouteService.isSupported();
+    const hasPrivileges = supported ? await deps.hasTunPrivileges() : false;
+    const privilegeHint =
+      process.platform === 'win32'
+        ? 'Run UltimaVLESS as Administrator for TUN mode.'
+        : 'Run UltimaVLESS with root privileges for TUN mode.';
+    const result: TunCapabilityStatus = {
+      platform: process.platform,
+      supported,
+      hasPrivileges,
+      privilegeHint: supported && !hasPrivileges ? privilegeHint : null,
+      unsupportedReason: supported ? null : deps.tunRouteService.getUnsupportedReason(),
+    };
+    return result;
   });
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.setConnectionMode, (_event: IpcMainInvokeEvent, modeValue: unknown) => {

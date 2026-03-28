@@ -4,6 +4,7 @@ import { APP_CONSTANTS } from '../../shared/constants';
 
 export interface ConfigGeneratorOptions {
   sendThrough?: string;
+  tunAutoRoute?: boolean;
 }
 
 export class ConfigGenerator {
@@ -74,7 +75,7 @@ export class ConfigGenerator {
     }
 
     if (connectionMode === 'tun') {
-      cfg.inbounds.unshift({
+      const tunInbound: Record<string, any> = {
         tag: 'tun-in',
         port: 0,
         protocol: 'tun' as any,
@@ -83,7 +84,12 @@ export class ConfigGenerator {
           mtu: 1400,
           inet4_address: '172.19.0.1/30',
         },
-      });
+      };
+      if (options.tunAutoRoute) {
+        tunInbound.settings.autoRoute = true;
+        tunInbound.settings.strictRoute = true;
+      }
+      cfg.inbounds.unshift(tunInbound);
       this.applySendThroughIfNeeded(cfg, options.sendThrough);
     }
 
@@ -177,7 +183,7 @@ export class ConfigGenerator {
 
     const inbounds: XrayInbound[] = [inboundSocks, inboundHttp];
     if (connectionMode === 'tun') {
-      inbounds.unshift({
+      const tunInbound: Record<string, any> = {
         tag: 'tun-in',
         port: 0,
         protocol: 'tun' as any,
@@ -186,7 +192,12 @@ export class ConfigGenerator {
           mtu: 1400,
           inet4_address: '172.19.0.1/30',
         },
-      });
+      };
+      if (options.tunAutoRoute) {
+        tunInbound.settings.autoRoute = true;
+        tunInbound.settings.strictRoute = true;
+      }
+      inbounds.unshift(tunInbound as XrayInbound);
     }
 
     return {

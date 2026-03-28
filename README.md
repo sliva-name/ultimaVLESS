@@ -1,7 +1,7 @@
 # Ultima VLESS Client
 
 Ultima VLESS Client is a desktop VPN app with a simple interface, fast connection flow, and support for modern Xray/VLESS configurations.
-Windows is the primary supported platform. macOS/Linux support is available for proxy mode and is currently experimental.
+Windows is the primary supported platform. macOS/Linux support is available and currently experimental.
 
 ## Download And Install
 
@@ -18,7 +18,7 @@ Portable build (`UltimaVLESS-Portable-*.exe`) is also available.
 - Import and update server lists from subscription links.
 - Add manual links from clipboard/text (supports mixed text with `vless://`, `trojan://`, `hysteria2://` links).
 - Split servers by source (Subscription / Manual) for easier navigation.
-- Work in system proxy mode and TUN mode (TUN currently Windows-only in this project).
+- Work in system proxy mode and TUN mode.
 - Save selected server and connection mode between launches.
 - Auto-refresh server subscriptions on a timer.
 - Show server latency (ping) in the server list.

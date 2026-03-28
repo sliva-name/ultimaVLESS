@@ -74,17 +74,20 @@ export function registerConnectionHandlers({
           throw new Error(deps.tunRouteService.getUnsupportedReason() || 'TUN mode is not supported on this operating system.');
         }
 
-        if (connectionMode === 'tun' && !(await deps.isElevatedOnWindows())) {
-          deps.configService.setPendingTunReconnect(fullConfig.uuid);
-          const relaunched = await deps.relaunchAsAdminOnWindows();
-          if (relaunched) {
-            sendToRenderer(IPC_EVENT_CHANNELS.connectionError, 'Restarting UltimaVLESS with Administrator rights...');
-            deps.app.releaseSingleInstanceLock();
-            deps.app.quit();
-            return { ok: false as const, error: 'Restarting as administrator', relaunched: true as const };
+        if (connectionMode === 'tun' && !(await deps.hasTunPrivileges())) {
+          if (process.platform === 'win32') {
+            deps.configService.setPendingTunReconnect(fullConfig.uuid);
+            const relaunched = await deps.requestTunPrivilegesRelaunch();
+            if (relaunched) {
+              sendToRenderer(IPC_EVENT_CHANNELS.connectionError, 'Restarting UltimaVLESS with Administrator rights...');
+              deps.app.releaseSingleInstanceLock();
+              deps.app.quit();
+              return { ok: false as const, error: 'Restarting as administrator', relaunched: true as const };
+            }
+            deps.configService.clearPendingTunReconnect();
+            throw new Error('TUN mode requires Administrator rights. Please approve UAC prompt or run UltimaVLESS as Administrator.');
           }
-          deps.configService.clearPendingTunReconnect();
-          throw new Error('TUN mode requires Administrator rights. Please approve UAC prompt or run UltimaVLESS as Administrator.');
+          throw new Error('TUN mode requires root privileges on this operating system. Please run the app with elevated permissions.');
         }
 
         await deps.connectionStackService.resetNetworkingStack({ stopXray: true });
