@@ -71,6 +71,16 @@ export class XrayService {
       logger.error('XrayService', 'Binary not found', error);
       throw error;
     }
+    if (process.platform !== 'win32') {
+      try {
+        fs.chmodSync(binPath, 0o755);
+      } catch (error) {
+        logger.warn('XrayService', 'Failed to ensure executable mode for Xray binary', {
+          binPath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     let spawnedProcess: ChildProcess;
     try {

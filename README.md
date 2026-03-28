@@ -1,13 +1,14 @@
 # Ultima VLESS Client
 
-Ultima VLESS Client is a desktop VPN app for Windows with a simple interface, fast connection flow, and support for modern Xray/VLESS configurations.
+Ultima VLESS Client is a desktop VPN app with a simple interface, fast connection flow, and support for modern Xray/VLESS configurations.
+Windows is the primary supported platform. macOS/Linux support is available for proxy mode and is currently experimental.
 
 ## Download And Install
 
 1. Open the [latest release](https://github.com/sliva-name/ultimaVLESS/releases/latest).
-2. Download `UltimaVLESS-Setup-*.exe`.
-3. Run the installer.
-4. Launch the app from the desktop or Start Menu.
+2. Download the package for your OS (`*.exe`, `*.dmg`, `*.AppImage`/`*.deb`).
+3. Install/run the package.
+4. Launch the app.
 
 Portable build (`UltimaVLESS-Portable-*.exe`) is also available.
 
@@ -17,7 +18,7 @@ Portable build (`UltimaVLESS-Portable-*.exe`) is also available.
 - Import and update server lists from subscription links.
 - Add manual links from clipboard/text (supports mixed text with `vless://`, `trojan://`, `hysteria2://` links).
 - Split servers by source (Subscription / Manual) for easier navigation.
-- Work in system proxy mode and TUN mode.
+- Work in system proxy mode and TUN mode (TUN currently Windows-only in this project).
 - Save selected server and connection mode between launches.
 - Auto-refresh server subscriptions on a timer.
 - Show server latency (ping) in the server list.

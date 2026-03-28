@@ -185,6 +185,10 @@ async function attemptPendingTunReconnect(
       return true;
     }
 
+    if (!deps.tunRouteService.isSupported()) {
+      throw new Error(deps.tunRouteService.getUnsupportedReason() || 'TUN mode is not supported on this operating system.');
+    }
+
     if (!(await deps.isElevatedOnWindows())) {
       throw new Error('Pending TUN reconnect requires Administrator rights');
     }
@@ -328,6 +332,9 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_INVOKE_CHANNELS.setConnectionMode, (_event: IpcMainInvokeEvent, modeValue: unknown) => {
     assertTrustedSender(_event);
     const mode: ConnectionMode = assertConnectionMode(modeValue);
+    if (mode === 'tun' && !deps.tunRouteService.isSupported()) {
+      throw new Error(deps.tunRouteService.getUnsupportedReason() || 'TUN mode is not supported on this operating system.');
+    }
     if (xrayService.isRunning()) {
       throw new Error('Disconnect before changing connection mode.');
     }

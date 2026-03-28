@@ -70,6 +70,10 @@ export function registerConnectionHandlers({
           return { ok: true as const };
         }
 
+        if (connectionMode === 'tun' && !deps.tunRouteService.isSupported()) {
+          throw new Error(deps.tunRouteService.getUnsupportedReason() || 'TUN mode is not supported on this operating system.');
+        }
+
         if (connectionMode === 'tun' && !(await deps.isElevatedOnWindows())) {
           deps.configService.setPendingTunReconnect(fullConfig.uuid);
           const relaunched = await deps.relaunchAsAdminOnWindows();

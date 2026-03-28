@@ -41,7 +41,22 @@ interface RunPowerShellOptions {
 export class TunRouteService {
   private addedRoutes: { destination: string; mask: string; interfaceIndex?: number }[] = [];
 
+  public isSupported(): boolean {
+    return process.platform === 'win32';
+  }
+
+  public getUnsupportedReason(): string | null {
+    if (this.isSupported()) {
+      return null;
+    }
+    return 'TUN mode is currently supported on Windows only in this build.';
+  }
+
   public async prepareRoutingPlan(config: VlessConfig): Promise<TunRoutingPlan> {
+    const unsupportedReason = this.getUnsupportedReason();
+    if (unsupportedReason) {
+      throw new Error(unsupportedReason);
+    }
     const [defaultRoute, proxyIps] = await Promise.all([
       this.waitForDefaultRoute(),
       this.resolveProxyAddresses(config.address),
