@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 
 const RELEASE_API_URL = 'https://api.github.com/repos/XTLS/Xray-core/releases/latest';
+const RELEASE_LATEST_DOWNLOAD_BASE_URL = 'https://github.com/XTLS/Xray-core/releases/latest/download';
 const ROOT_DIR = process.cwd();
 const RESOURCES_DIR = path.join(ROOT_DIR, 'resources', 'bin');
 
@@ -58,11 +59,16 @@ function getCandidateNames(platform, arch) {
 }
 
 async function fetchLatestRelease() {
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'ultima-vless-asset-preparer',
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
   const response = await fetch(RELEASE_API_URL, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'ultima-vless-asset-preparer',
-    },
+    headers,
   });
   if (!response.ok) {
     throw new Error(`GitHub API request failed with status ${response.status}`);
@@ -79,17 +85,48 @@ function selectAsset(assets, candidates) {
 }
 
 async function downloadFile(url, destinationPath) {
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+  const headers = {
+    Accept: 'application/octet-stream',
+    'User-Agent': 'ultima-vless-asset-preparer',
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
   const response = await fetch(url, {
-    headers: {
-      Accept: 'application/octet-stream',
-      'User-Agent': 'ultima-vless-asset-preparer',
-    },
+    headers,
   });
   if (!response.ok) {
     throw new Error(`Asset download failed with status ${response.status}`);
   }
   const arrayBuffer = await response.arrayBuffer();
   fs.writeFileSync(destinationPath, Buffer.from(arrayBuffer));
+}
+
+async function downloadFromLatestRelease(candidates, destinationPath) {
+  const errors = [];
+  for (const candidate of candidates) {
+    const directUrl = `${RELEASE_LATEST_DOWNLOAD_BASE_URL}/${candidate}`;
+    try {
+      await downloadFile(directUrl, destinationPath);
+      return candidate;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${candidate}: ${message}`);
+    }
+  }
+  throw new Error(`Could not download Xray archive via latest download URLs. Attempts: ${errors.join(' | ')}`);
+}
+
+async function downloadFromApiAssets(candidates, destinationPath) {
+  const release = await fetchLatestRelease();
+  const assets = Array.isArray(release.assets) ? release.assets : [];
+  const selected = selectAsset(assets, candidates);
+  if (!selected) {
+    throw new Error(`Could not find Xray archive in API response. Tried: ${candidates.join(', ')}`);
+  }
+  await downloadFile(selected.browser_download_url, destinationPath);
+  return selected.name;
 }
 
 async function main() {
@@ -99,27 +136,27 @@ async function main() {
 
   fs.mkdirSync(RESOURCES_DIR, { recursive: true });
 
-  const release = await fetchLatestRelease();
-  const assets = Array.isArray(release.assets) ? release.assets : [];
   const candidateNames = getCandidateNames(platform, arch);
   if (candidateNames.length === 0) {
     throw new Error(`No candidate asset names for platform=${platform} arch=${arch}`);
   }
-  const selected = selectAsset(assets, candidateNames);
-  if (!selected) {
-    throw new Error(
-      `Could not find Xray archive for platform=${platform} arch=${arch}. Tried: ${candidateNames.join(', ')}`
-    );
-  }
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xray-assets-'));
-  const zipPath = path.join(tmpDir, selected.name);
+  const zipPath = path.join(tmpDir, 'xray.zip');
   const extractDir = path.join(tmpDir, 'extracted');
   fs.mkdirSync(extractDir, { recursive: true });
 
   try {
-    console.log(`Downloading ${selected.name}...`);
-    await downloadFile(selected.browser_download_url, zipPath);
+    let archiveName = '';
+    try {
+      archiveName = await downloadFromLatestRelease(candidateNames, zipPath);
+      console.log(`Downloaded ${archiveName} via latest release URL`);
+    } catch (directError) {
+      const directMessage = directError instanceof Error ? directError.message : String(directError);
+      console.warn(`Direct latest-release download failed: ${directMessage}`);
+      archiveName = await downloadFromApiAssets(candidateNames, zipPath);
+      console.log(`Downloaded ${archiveName} via GitHub API asset URL`);
+    }
 
     // Node does not provide a cross-platform ZIP extraction API directly.
     const { spawnSync } = await import('child_process');
@@ -128,7 +165,7 @@ async function main() {
         ? spawnSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -Path "${zipPath}" -DestinationPath "${extractDir}" -Force`], { stdio: 'inherit' })
         : spawnSync('unzip', ['-o', zipPath, '-d', extractDir], { stdio: 'inherit' });
     if (unzipResult.status !== 0) {
-      throw new Error(`Failed to extract archive ${selected.name}`);
+      throw new Error('Failed to extract downloaded Xray archive');
     }
 
     const required = platform === 'win32' ? ['xray.exe', 'geoip.dat', 'geosite.dat'] : ['xray', 'geoip.dat', 'geosite.dat'];
