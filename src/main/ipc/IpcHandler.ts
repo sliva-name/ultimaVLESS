@@ -341,7 +341,7 @@ export function registerIpcHandlers(
     const hasPrivileges = supported ? await deps.hasTunPrivileges() : false;
     const privilegeHint =
       process.platform === 'win32'
-        ? 'Run UltimaVLESS as Administrator for TUN mode.'
+        ? 'TUN mode needs Administrator rights. Connect in TUN mode and approve the UAC prompt (or run UltimaVLESS as Administrator).'
         : 'Run UltimaVLESS with root privileges for TUN mode.';
     const result: TunCapabilityStatus = {
       platform: process.platform,

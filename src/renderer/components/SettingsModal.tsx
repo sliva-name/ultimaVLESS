@@ -102,13 +102,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
   }, []);
 
   const handleConnectionModeChange = useCallback(async (mode: ConnectionMode) => {
+    if (monitorStatus?.isConnected) {
+      setModeError('Disconnect before changing connection mode.');
+      return;
+    }
     if (mode === 'tun') {
       if (tunCapability && !tunCapability.supported) {
         setModeError(tunCapability.unsupportedReason || 'TUN mode is not supported on this operating system.');
-        return;
-      }
-      if (tunCapability && !tunCapability.hasPrivileges) {
-        setModeError(tunCapability.privilegeHint || 'Elevated privileges are required for TUN mode.');
         return;
       }
     }
@@ -120,10 +120,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
       console.error('Failed to set connection mode:', err);
       setModeError(err instanceof Error ? err.message : 'Failed to set connection mode');
     }
-  }, [tunCapability]);
+  }, [monitorStatus?.isConnected, tunCapability]);
   const tunUnavailable = !!tunCapability && !tunCapability.supported;
   const tunNeedsPrivileges = !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
-  const tunButtonDisabled = tunUnavailable || tunNeedsPrivileges;
+  const tunButtonDisabled = tunUnavailable;
+  const modeLockedByConnection = !!monitorStatus?.isConnected;
 
 
   const handleClearBlocked = useCallback(async () => {
@@ -280,9 +281,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
               <button
                 type="button"
                 onClick={() => handleConnectionModeChange('proxy')}
+                disabled={modeLockedByConnection}
                 className={`p-4 rounded-xl border text-left transition-all duration-200 ${
                   connectionMode === 'proxy'
                     ? 'border-primary/70 bg-primary/10 text-white'
+                    : modeLockedByConnection
+                    ? 'border-gray-800/80 bg-gray-900/30 text-gray-500 cursor-not-allowed opacity-70'
                     : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70'
                 }`}
               >
@@ -292,11 +296,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
               <button
                 type="button"
                 onClick={() => handleConnectionModeChange('tun')}
-                disabled={tunButtonDisabled}
+                disabled={tunButtonDisabled || modeLockedByConnection}
                 className={`p-4 rounded-xl border text-left transition-all duration-200 ${
                   connectionMode === 'tun'
                     ? 'border-primary/70 bg-primary/10 text-white'
-                    : tunButtonDisabled
+                    : tunButtonDisabled || modeLockedByConnection
                     ? 'border-gray-800/80 bg-gray-900/30 text-gray-500 cursor-not-allowed opacity-70'
                     : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70'
                 }`}
@@ -306,12 +310,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
               </button>
             </div>
 
-            <p className="text-xs text-gray-500 mt-3">Mode applies after reconnect.</p>
+            <p className="text-xs text-gray-500 mt-3">Disconnect before changing mode. The selected mode applies on the next connection.</p>
             {tunUnavailable && (
               <p className="text-xs text-orange-400 mt-2">{tunCapability?.unsupportedReason || 'TUN mode is unavailable on this platform.'}</p>
             )}
             {tunNeedsPrivileges && (
-              <p className="text-xs text-orange-400 mt-2">{tunCapability?.privilegeHint || 'Elevated privileges are required for TUN mode.'}</p>
+              <p className="text-xs text-orange-400 mt-2">
+                {tunCapability?.privilegeHint || 'Elevated privileges are required for TUN mode.'} You can still select TUN now; elevation will be requested on connect.
+              </p>
             )}
             {modeError && <p className="text-xs text-orange-400 mt-2">{modeError}</p>}
           </div>
