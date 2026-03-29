@@ -5,7 +5,7 @@ import { logger } from './LoggerService';
 const LEGACY_DEFAULT_SUBSCRIPTION_URL =
   'https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt';
 const DEFAULT_SUBSCRIPTION_URL =
-  'https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt';
+  'https://translated.turbopages.org/proxy_u/de-de.ru.d55ffea1-69c9a15c-0e215049-74722d776562/https/raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt';
 
 interface StoreSchema {
   subscriptionUrl: string;
