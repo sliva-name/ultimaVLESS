@@ -85,16 +85,16 @@ jobs:
 
       - name: Build SHA256 checksums
         run: |
-          mapfile -t files < <(find release -type f \( -name "*.dmg" -o -name "*.zip" \))
-          if [ "${#files[@]}" -eq 0 ]; then
+          files_found="$(find release -type f \( -name "*.dmg" -o -name "*.zip" \))"
+          if [ -z "$files_found" ]; then
             echo "No .dmg/.zip artifacts were produced"
             exit 1
           fi
           > release/SHA256SUMS.txt
-          for file in "${files[@]}"; do
+          while IFS= read -r file; do
             hash="$(shasum -a 256 "$file" | awk '{print $1}')"
             echo "$hash  $file" >> release/SHA256SUMS.txt
-          done
+          done <<< "$files_found"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
