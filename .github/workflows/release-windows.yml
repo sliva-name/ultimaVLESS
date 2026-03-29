@@ -34,7 +34,14 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/XTLS/Xray-core/releases/latest"
+          $headers = @{
+            "Accept" = "application/vnd.github+json"
+            "User-Agent" = "ultima-vless-release"
+          }
+          if ($env:GITHUB_TOKEN) {
+            $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN"
+          }
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/XTLS/Xray-core/releases/latest" -Headers $headers
           $zipAsset = $release.assets | Where-Object { $_.name -eq "Xray-windows-64.zip" } | Select-Object -First 1
           if (-not $zipAsset) {
             throw "Could not find Xray-windows-64.zip in latest Xray-core release"
@@ -42,7 +49,7 @@ jobs:
 
           $zipPath = Join-Path $env:RUNNER_TEMP "xray.zip"
           $extractDir = Join-Path $env:RUNNER_TEMP "xray"
-          Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $zipPath
+          Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $zipPath -Headers $headers
           Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
 
           $required = @("xray.exe", "geoip.dat", "geosite.dat")
@@ -61,6 +68,8 @@ jobs:
               Copy-Item -Path $source -Destination (Join-Path "resources/bin" $file) -Force
             }
           }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate app icon files exist
         shell: pwsh

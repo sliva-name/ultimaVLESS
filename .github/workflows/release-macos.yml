@@ -27,6 +27,37 @@ jobs:
 
       - name: Prepare Xray assets
         run: npm run prepare:xray:mac
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate macOS icns icon when missing
+        run: |
+          if [ -f "resources/bin/logo.icns" ]; then
+            echo "logo.icns already exists"
+            exit 0
+          fi
+          if [ ! -f "resources/bin/logo-256x256.png" ]; then
+            echo "Missing source icon for icns generation: resources/bin/logo-256x256.png"
+            exit 1
+          fi
+
+          ICONSET_DIR="$RUNNER_TEMP/logo.iconset"
+          rm -rf "$ICONSET_DIR"
+          mkdir -p "$ICONSET_DIR"
+
+          sips -z 16 16 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_16x16.png"
+          sips -z 32 32 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_16x16@2x.png"
+          sips -z 32 32 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_32x32.png"
+          sips -z 64 64 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_32x32@2x.png"
+          sips -z 128 128 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_128x128.png"
+          sips -z 256 256 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_128x128@2x.png"
+          sips -z 256 256 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_256x256.png"
+          sips -z 512 512 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_256x256@2x.png"
+          sips -z 512 512 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_512x512.png"
+          sips -z 1024 1024 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_512x512@2x.png"
+
+          iconutil -c icns "$ICONSET_DIR" -o resources/bin/logo.icns
+          echo "Generated resources/bin/logo.icns"
 
       - name: Validate app icon files exist
         run: |
@@ -54,16 +85,16 @@ jobs:
 
       - name: Build SHA256 checksums
         run: |
-          mapfile -t files < <(find release -type f \( -name "*.dmg" -o -name "*.zip" \))
-          if [ "${#files[@]}" -eq 0 ]; then
+          files_found="$(find release -type f \( -name "*.dmg" -o -name "*.zip" \))"
+          if [ -z "$files_found" ]; then
             echo "No .dmg/.zip artifacts were produced"
             exit 1
           fi
           > release/SHA256SUMS.txt
-          for file in "${files[@]}"; do
+          while IFS= read -r file; do
             hash="$(shasum -a 256 "$file" | awk '{print $1}')"
             echo "$hash  $file" >> release/SHA256SUMS.txt
-          done
+          done <<< "$files_found"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

@@ -27,6 +27,8 @@ jobs:
 
       - name: Prepare Xray assets
         run: npm run prepare:xray:linux
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate app icon files exist
         run: |
