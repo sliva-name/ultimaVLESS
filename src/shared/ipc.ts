@@ -45,12 +45,20 @@ export interface TunCapabilityStatus {
   unsupportedReason: string | null;
 }
 
+export interface ImportMobileWhiteListResult {
+  ok: boolean;
+  configCount: number;
+  error?: string;
+}
+
 export const IPC_INVOKE_CHANNELS = {
   connect: 'connect',
   disconnect: 'disconnect',
   saveSubscription: 'save-subscription',
   getLogs: 'get-logs',
   openLogFolder: 'open-log-folder',
+  openExternalUrl: 'open-external-url',
+  importMobileWhiteListSubscription: 'import-mobile-white-list-subscription',
   getServers: 'get-servers',
   getSubscriptionUrl: 'get-subscription-url',
   getManualLinks: 'get-manual-links',

@@ -74,6 +74,19 @@ describe('SubscriptionService', () => {
     expect(configs[1].name).toBe('AttrTwo');
   });
 
+  it('uses browser-like headers when fetching translate.yandex.ru subscription HTML', async () => {
+    const htmlBody = `<!DOCTYPE html><html><body>${mockVlessLink}</body></html>`;
+    mockFetchText(htmlBody);
+
+    await service.fetchAndParse('https://translate.yandex.ru/translate?url=https://raw.githubusercontent.com/x/y.txt&lang=de-de');
+
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    const init = calls[calls.length - 1][1] as RequestInit | undefined;
+    expect(init?.headers).toMatchObject({
+      'User-Agent': expect.stringContaining('Chrome'),
+    });
+  });
+
   it('should throw error on invalid base64', async () => {
     mockFetchText('invalid-base-64%%');
     await expect(service.fetchAndParse('https://sub.url')).rejects.toThrow();

@@ -1,4 +1,4 @@
-import { ipcMain, IpcMainEvent, IpcMainInvokeEvent, BrowserWindow, app } from 'electron';
+import { ipcMain, IpcMainEvent, IpcMainInvokeEvent, BrowserWindow, app, shell } from 'electron';
 import { ConnectionMode, VlessConfig } from '../../shared/types';
 import {
   ConnectionMonitorStatus,
@@ -7,6 +7,7 @@ import {
   IpcEventChannel,
   TunCapabilityStatus,
 } from '../../shared/ipc';
+import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '../../shared/subscriptionUrls';
 import { configService } from '../services/ConfigService';
 import { subscriptionService } from '../services/SubscriptionService';
 import { logger } from '../services/LoggerService';
@@ -297,6 +298,40 @@ export function registerIpcHandlers(
     return true;
   });
 
+  ipcMain.handle(IPC_INVOKE_CHANNELS.openExternalUrl, async (event: IpcMainInvokeEvent, url: unknown) => {
+    assertTrustedSender(event);
+    if (typeof url !== 'string' || url.length === 0) {
+      throw new Error('Invalid URL');
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error('Invalid URL');
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Only http(s) URLs are allowed');
+    }
+    await shell.openExternal(url);
+    return true;
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.importMobileWhiteListSubscription, async (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    configService.setSubscriptionUrl(YANDEX_TRANSLATED_MOBILE_LIST_URL);
+    const manualLinks = configService.getManualLinksInput();
+    const result = await queueRefreshSubscription(YANDEX_TRANSLATED_MOBILE_LIST_URL, manualLinks);
+    restartAutoRefreshTimer();
+    if (result.configCount === 0) {
+      return {
+        ok: false,
+        configCount: 0,
+        error: result.reason || 'No valid configuration links were found',
+      };
+    }
+    return { ok: true, configCount: result.configCount };
+  });
+
   ipcMain.handle(IPC_INVOKE_CHANNELS.getServers, (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
     return stripRawConfigs(configService.getServers());
@@ -448,6 +483,26 @@ async function refreshSubscription(
         redactedUrl: redactUrl(BACKGROUND_TRANSLATED_FEED_URL),
         reason: backgroundFeedErrorMessage,
       });
+    }
+
+    const normalizedSubscriptionUrl = subscriptionUrl.trim();
+    const shouldFetchYandexMobileBackground =
+      normalizedSubscriptionUrl.length === 0 || normalizedSubscriptionUrl !== YANDEX_TRANSLATED_MOBILE_LIST_URL;
+    if (shouldFetchYandexMobileBackground) {
+      try {
+        const yandexMobileResult = await subscriptionService.fetchAndParseDetailed(YANDEX_TRANSLATED_MOBILE_LIST_URL);
+        configs.push(...yandexMobileResult.configs.map((cfg) => ({ ...cfg, source: 'manual' as const })));
+        logger.info('IPC', 'Background Yandex Mobile list refresh success', {
+          count: yandexMobileResult.configs.length,
+          redactedUrl: redactUrl(YANDEX_TRANSLATED_MOBILE_LIST_URL),
+        });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        logger.warn('IPC', 'Background Yandex Mobile list refresh failed', {
+          redactedUrl: redactUrl(YANDEX_TRANSLATED_MOBILE_LIST_URL),
+          reason: msg,
+        });
+      }
     }
 
     let fetchErrorMessage = '';

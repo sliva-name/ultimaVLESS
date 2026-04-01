@@ -4,6 +4,7 @@ import {
   ConnectionMonitorEvent,
   ConnectionMonitorStatus,
   DisconnectResult,
+  ImportMobileWhiteListResult,
   PingResult,
   SaveSubscriptionPayload,
   TunCapabilityStatus,
@@ -37,6 +38,8 @@ export interface IElectronAPI {
   getConnectionBusy: () => Promise<boolean>;
   getLogs: () => Promise<string>;
   openLogFolder: () => Promise<boolean>;
+  openExternalUrl: (url: string) => Promise<boolean>;
+  importMobileWhiteListSubscription: () => Promise<ImportMobileWhiteListResult>;
   getAppVersion: () => Promise<string>;
   pingServer: (server: VlessConfig) => Promise<PingResult>;
   pingAllServers: (force?: boolean) => Promise<PingResult[]>;

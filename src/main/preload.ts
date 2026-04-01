@@ -8,6 +8,7 @@ import {
   IPC_EVENT_CHANNELS,
   IPC_INVOKE_CHANNELS,
   PingResult,
+  ImportMobileWhiteListResult,
   SaveSubscriptionPayload,
   TunCapabilityStatus,
 } from '../shared/ipc';
@@ -54,6 +55,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getConnectionBusy: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getConnectionBusy) as Promise<boolean>,
   getLogs: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getLogs) as Promise<string>,
   openLogFolder: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.openLogFolder) as Promise<boolean>,
+  openExternalUrl: (url: string) =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.openExternalUrl, url) as Promise<boolean>,
+  importMobileWhiteListSubscription: () =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.importMobileWhiteListSubscription) as Promise<ImportMobileWhiteListResult>,
   getAppVersion: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getAppVersion) as Promise<string>,
 
   pingServer: (server: VlessConfig) => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.pingServer, server) as Promise<PingResult>,

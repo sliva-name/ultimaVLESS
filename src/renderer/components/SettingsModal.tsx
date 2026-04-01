@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Copy, FolderOpen, Check, Loader2, Settings, Link2, Shield, RefreshCw, AlertTriangle, X, ChevronDown } from 'lucide-react';
+import { Copy, FolderOpen, Check, Loader2, Settings, Link2, Shield, RefreshCw, AlertTriangle, X, ChevronDown, ExternalLink } from 'lucide-react';
 import { ConnectionStatus as MonitorStatus, ConnectionMonitorEvent } from '../preload.d';
 import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { SaveSubscriptionPayload, TunCapabilityStatus } from '../../shared/ipc';
+import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '../../shared/subscriptionUrls';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -26,6 +27,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
   const [tunCapability, setTunCapability] = useState<TunCapabilityStatus | null>(null);
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
   const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>([]);
+  const [importingMobileList, setImportingMobileList] = useState(false);
+  const [importMobileError, setImportMobileError] = useState<string | null>(null);
   const loadMonitorStatusRef = useRef<(() => Promise<void>) | null>(null);
 
   const loadMonitorStatus = useCallback(async () => {
@@ -45,6 +48,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
     setCopyError(null);
     setSaveError(null);
     setModeError(null);
+    setImportMobileError(null);
 
     window.electronAPI.getSubscriptionUrl().then((url) => {
       setSubUrl(url || '');
@@ -168,6 +172,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
     });
   }, []);
 
+  const handleOpenYandexTranslatedList = useCallback(async () => {
+    setImportMobileError(null);
+    setImportingMobileList(true);
+    try {
+      const [openResult, importResult] = await Promise.allSettled([
+        window.electronAPI.openExternalUrl(YANDEX_TRANSLATED_MOBILE_LIST_URL),
+        window.electronAPI.importMobileWhiteListSubscription(),
+      ]);
+      if (openResult.status === 'rejected') {
+        console.error('Failed to open translated list in browser', openResult.reason);
+      }
+      if (importResult.status === 'rejected') {
+        const msg =
+          importResult.reason instanceof Error ? importResult.reason.message : String(importResult.reason);
+        setImportMobileError(msg);
+        return;
+      }
+      const data = importResult.value;
+      if (!data.ok) {
+        setImportMobileError(data.error || 'Could not load configs.');
+        return;
+      }
+      const [nextSub, nextManual] = await Promise.all([
+        window.electronAPI.getSubscriptionUrl(),
+        window.electronAPI.getManualLinks(),
+      ]);
+      setSubUrl(nextSub || '');
+      setManualLinks(nextManual || '');
+    } finally {
+      setImportingMobileList(false);
+    }
+  }, []);
+
   if (!isOpen) return null;
 
   return (
@@ -213,7 +250,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
                     />
                     <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">Used for automatic updates from provider.</p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Used for automatic updates from provider. Import downloads the Yandex Translate HTML response and
+                    extracts vless/trojan/hysteria links from the page source (same as subscription fetch for that URL).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleOpenYandexTranslatedList}
+                    disabled={importingMobileList}
+                    className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-primary border border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {importingMobileList ? (
+                      <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                    ) : (
+                      <ExternalLink className="w-4 h-4 shrink-0" />
+                    )}
+                    Open preview and import Mobile list
+                  </button>
+                  {importMobileError && (
+                    <p className="text-xs text-orange-400 mt-2">{importMobileError}</p>
+                  )}
                 </div>
               )}
             </div>

@@ -1,11 +1,14 @@
 import Store from 'electron-store';
+import {
+  MOBILE_LIST_TURBOPAGES_DEFAULT_URL,
+  MOBILE_WHITE_LIST_RAW_URL,
+  YANDEX_TRANSLATED_MOBILE_LIST_URL,
+} from '../../shared/subscriptionUrls';
 import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
 
-const LEGACY_DEFAULT_SUBSCRIPTION_URL =
-  'https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt';
-const DEFAULT_SUBSCRIPTION_URL =
-  'https://translated.turbopages.org/proxy_u/de-de.ru.d55ffea1-69c9a15c-0e215049-74722d776562/https/raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt';
+const LEGACY_DEFAULT_SUBSCRIPTION_URL = MOBILE_WHITE_LIST_RAW_URL;
+const DEFAULT_SUBSCRIPTION_URL = YANDEX_TRANSLATED_MOBILE_LIST_URL;
 
 interface StoreSchema {
   subscriptionUrl: string;
@@ -52,7 +55,8 @@ export class ConfigService {
     if (!storedSubscriptionUrl?.trim()) {
       this.store.set('subscriptionUrl', DEFAULT_SUBSCRIPTION_URL);
     } else if (storedSubscriptionUrl === LEGACY_DEFAULT_SUBSCRIPTION_URL) {
-      // Seamlessly migrate users from the old built-in default feed.
+      this.store.set('subscriptionUrl', DEFAULT_SUBSCRIPTION_URL);
+    } else if (storedSubscriptionUrl === MOBILE_LIST_TURBOPAGES_DEFAULT_URL) {
       this.store.set('subscriptionUrl', DEFAULT_SUBSCRIPTION_URL);
     }
 

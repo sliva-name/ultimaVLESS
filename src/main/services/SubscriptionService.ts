@@ -5,11 +5,32 @@ import { logger } from './LoggerService';
 import { parseJsonConfigs } from './subscription/jsonParsing';
 import { extractSupportedLinks, parseDirectLinksFromText } from './subscription/linkParsing';
 
-async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+/** translate.yandex.ru often expects a browser-like client for the full HTML body. */
+const YANDEX_TRANSLATE_FETCH_HEADERS: Record<string, string> = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+};
+
+function isYandexTranslateHost(hostname: string): boolean {
+  return hostname === 'translate.yandex.ru';
+}
+
+/** Unescape common HTML entities so `vless://` and query separators survive inside markup. */
+function expandHtmlEntitiesForUrlExtraction(html: string): string {
+  return html
+    .replace(/&amp;/gi, '&')
+    .replace(/&colon;/gi, ':')
+    .replace(/&#58;/g, ':')
+    .replace(/&#x3a;/gi, ':');
+}
+
+async function fetchWithTimeout(url: string, ms: number, init?: RequestInit): Promise<Response> {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), ms);
   try {
-    return await fetch(url, { signal: ctrl.signal });
+    return await fetch(url, { ...init, signal: ctrl.signal });
   } finally {
     clearTimeout(id);
   }
@@ -96,7 +117,15 @@ export class SubscriptionService {
       }
 
       const validatedUrl = this.validateRemoteSubscriptionUrl(url);
-      const response = await fetchWithTimeout(validatedUrl.toString(), SubscriptionService.FETCH_TIMEOUT_MS);
+      const yandexHtml = isYandexTranslateHost(validatedUrl.hostname);
+      if (yandexHtml) {
+        logger.info('SubscriptionService', 'Subscription URL is Yandex Translate; fetching HTML with browser headers');
+      }
+      const response = await fetchWithTimeout(
+        validatedUrl.toString(),
+        SubscriptionService.FETCH_TIMEOUT_MS,
+        yandexHtml ? { headers: YANDEX_TRANSLATE_FETCH_HEADERS } : undefined
+      );
       if (!response.ok) {
         throw new Error(`Subscription request failed: HTTP ${response.status}`);
       }
@@ -138,11 +167,18 @@ export class SubscriptionService {
       }
 
       if (typeof body === 'string') {
-        const textBody = body.trim();
+        let textBody = body.trim();
+        if (yandexHtml) {
+          textBody = expandHtmlEntitiesForUrlExtraction(textBody);
+          logger.info('SubscriptionService', 'Parsing Yandex Translate HTML for subscription links', {
+            approxLength: textBody.length,
+          });
+        }
         const directLinksFromBody = this.extractSupportedLinksFromText(textBody);
         if (directLinksFromBody.length > 0) {
           logger.info('SubscriptionService', 'Detected direct links in response body', {
             count: directLinksFromBody.length,
+            yandexHtml,
           });
           return {
             configs: this.parseDirectLinksFromText(textBody),

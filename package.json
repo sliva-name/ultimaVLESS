@@ -30,6 +30,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "coverage": "vitest run --coverage",
+    "verify:yandex": "node scripts/verify-yandex-parse.mjs",
     "electron:start": "electron .",
     "electron:trace-deprecation": "electron --trace-deprecation ."
   },
