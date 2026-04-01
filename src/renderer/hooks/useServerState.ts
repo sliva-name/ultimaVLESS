@@ -11,6 +11,13 @@ export function useServerState() {
   const [isConnectionBusy, setIsConnectionBusy] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const toggleInFlightRef = useRef(false);
+  const selectedServerRef = useRef<VlessConfig | null>(null);
+  const connectedRef = useRef(false);
+
+  const updateSelectedServerState = useCallback((server: VlessConfig | null) => {
+    selectedServerRef.current = server;
+    setSelectedServer(server);
+  }, []);
 
   useEffect(() => {
     let pingTimer: number | null = null;
@@ -44,13 +51,14 @@ export function useServerState() {
 
       setServers(initialServers);
       setIsConnected(connectionStatus);
+      connectedRef.current = connectionStatus;
       setIsConnectionBusy(initialBusy);
 
       if (savedServerId && initialServers.length > 0) {
         const savedServer = initialServers.find(s => s.uuid === savedServerId);
-        setSelectedServer(savedServer || initialServers[0]);
+        updateSelectedServerState(savedServer || initialServers[0]);
       } else if (initialServers.length > 0) {
-        setSelectedServer(initialServers[0]);
+        updateSelectedServerState(initialServers[0]);
       }
 
       if (initialServers.length > 0) {
@@ -65,15 +73,36 @@ export function useServerState() {
 
     const handleUpdateServers = (newServers: VlessConfig[]) => {
       setServers(newServers);
+      void (async () => {
+        const currentSelected = selectedServerRef.current;
+        let nextSelected: VlessConfig | null = null;
 
-      setSelectedServer((currentSelected) => {
-        if (newServers.length === 0) return null;
         if (currentSelected) {
-          const found = newServers.find((s) => s.uuid === currentSelected.uuid);
-          if (found) return found;
+          nextSelected = newServers.find((server) => server.uuid === currentSelected.uuid) ?? null;
         }
-        return newServers[0];
-      });
+
+        if (!nextSelected && connectedRef.current) {
+          try {
+            const monitorStatus = await window.electronAPI.getConnectionMonitorStatus();
+            if (disposed) return;
+            if (monitorStatus.isConnected && monitorStatus.currentServer) {
+              nextSelected =
+                newServers.find((server) => server.uuid === monitorStatus.currentServer?.uuid) ??
+                monitorStatus.currentServer;
+            }
+          } catch (error) {
+            console.error('Failed to reconcile active server after refresh', error);
+          }
+        }
+
+        if (!nextSelected) {
+          nextSelected = newServers[0] ?? null;
+        }
+
+        if (!disposed) {
+          updateSelectedServerState(nextSelected);
+        }
+      })();
 
       if (newServers.length > 0) {
         const hasMissingPingData = newServers.some((s) => !s.pingTime || s.pingTime === 0);
@@ -85,6 +114,7 @@ export function useServerState() {
 
     const handleConnectionStatus = (status: boolean) => {
       setIsConnected(status);
+      connectedRef.current = status;
       if (status) setConnectionError(null);
     };
 
@@ -111,7 +141,7 @@ export function useServerState() {
       removeConnectionBusy();
       removeConnectionError();
     };
-  }, []);
+  }, [updateSelectedServerState]);
 
   const toggleConnection = useCallback(async () => {
     if (!selectedServer || isConnectionBusy || toggleInFlightRef.current) return;
@@ -172,11 +202,11 @@ export function useServerState() {
   }, []);
 
   const selectServer = useCallback((server: VlessConfig) => {
-    setSelectedServer(server);
+    updateSelectedServerState(server);
     void window.electronAPI.setSelectedServerId(server.uuid).catch((error) => {
       console.error('Failed to persist selected server', error);
     });
-  }, []);
+  }, [updateSelectedServerState]);
 
   return {
     servers,

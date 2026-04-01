@@ -17,6 +17,7 @@ import { xrayService } from '../services/XrayService';
 import { createIpcDependencies, IpcDependencies } from './dependencies';
 import { registerConnectionHandlers } from './handlers/connectionHandlers';
 import { registerPingHandlers } from './handlers/pingHandlers';
+import { preserveActiveServerIfNeeded } from './refreshUtils';
 import { assertBoolean, assertConnectionMode, normalizeSavePayload, redactUrl } from './validators';
 
 let windowRef: BrowserWindow | null = null;
@@ -25,10 +26,9 @@ type RefreshSubscriptionResult = { configCount: number; reason?: string; usedMan
 let refreshQueue: Promise<RefreshSubscriptionResult> = Promise.resolve({ configCount: 0 });
 let autoRefreshTimer: NodeJS.Timeout | null = null;
 const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
-const BACKGROUND_TRANSLATED_FEED_URL =
-  'https://translated.turbopages.org/proxy_u/de-de.ru.5a331ed1-69c6e3ed-67d6863b-74722d776562/https/raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt';
 let connectionBusy = false;
 let connectionBusyCounter = 0;
+let unexpectedXrayExitRecovery: Promise<void> | null = null;
 
 function getWindow(): BrowserWindow | null {
   if (windowRef && !windowRef.isDestroyed()) return windowRef;
@@ -63,6 +63,41 @@ function beginConnectionBusy(): void {
 function endConnectionBusy(): void {
   connectionBusyCounter = Math.max(0, connectionBusyCounter - 1);
   flushConnectionBusy();
+}
+
+async function handleUnexpectedXrayExit(
+  reason: string,
+  deps: IpcDependencies
+): Promise<void> {
+  if (unexpectedXrayExitRecovery) {
+    return unexpectedXrayExitRecovery;
+  }
+
+  const monitorStatus = deps.connectionMonitorService.getStatus();
+  if (!monitorStatus.isConnected || !monitorStatus.currentServer) {
+    return;
+  }
+
+  unexpectedXrayExitRecovery = (async () => {
+    const message = `Connection lost: ${reason}`;
+    logger.error('IPC', 'Handling unexpected Xray exit', {
+      reason,
+      serverId: monitorStatus.currentServer?.uuid.substring(0, 8),
+    });
+    beginConnectionBusy();
+    try {
+      deps.connectionMonitorService.handleUnexpectedDisconnect(message);
+      sendToRenderer(IPC_EVENT_CHANNELS.connectionError, message);
+      await deps.connectionStackService.cleanupAfterFailure();
+    } catch (error) {
+      logger.error('IPC', 'Failed to recover after unexpected Xray exit', error);
+    } finally {
+      endConnectionBusy();
+      unexpectedXrayExitRecovery = null;
+    }
+  })();
+
+  return unexpectedXrayExitRecovery;
 }
 
 function assertTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent): void {
@@ -245,6 +280,19 @@ export function registerIpcHandlers(
       logger.error('IPC', `Operation failed: ${operation}`, error);
     }
   };
+
+  deps.xrayService.removeAllListeners('unexpected-exit');
+  deps.xrayService.on('unexpected-exit', (event) => {
+    void handleUnexpectedXrayExit(event.reason, deps);
+  });
+  deps.connectionMonitorService.removeAllListeners('switch-operation-started');
+  deps.connectionMonitorService.removeAllListeners('switch-operation-finished');
+  deps.connectionMonitorService.on('switch-operation-started', () => {
+    beginConnectionBusy();
+  });
+  deps.connectionMonitorService.on('switch-operation-finished', () => {
+    endConnectionBusy();
+  });
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.saveSubscription, async (_event: IpcMainInvokeEvent, payload: unknown) => {
     assertTrustedSender(_event);
@@ -465,56 +513,14 @@ async function refreshSubscription(
   });
   try {
     const configs: VlessConfig[] = [];
-    let subscriptionExtractedLinks: string[] = [];
-    let effectiveManualLinksText = manualLinks.trim();
+    const effectiveManualLinksText = manualLinks.trim();
     let usedManualFallback = false;
-    let backgroundFeedErrorMessage = '';
-
-    try {
-      const backgroundResult = await subscriptionService.fetchAndParseDetailed(BACKGROUND_TRANSLATED_FEED_URL);
-      configs.push(...backgroundResult.configs.map((cfg) => ({ ...cfg, source: 'manual' as const })));
-      logger.info('IPC', 'Background translated feed refresh success', {
-        count: backgroundResult.configs.length,
-        redactedUrl: redactUrl(BACKGROUND_TRANSLATED_FEED_URL),
-      });
-    } catch (error) {
-      backgroundFeedErrorMessage = error instanceof Error ? error.message : String(error);
-      logger.warn('IPC', 'Background translated feed refresh failed', {
-        redactedUrl: redactUrl(BACKGROUND_TRANSLATED_FEED_URL),
-        reason: backgroundFeedErrorMessage,
-      });
-    }
-
-    const normalizedSubscriptionUrl = subscriptionUrl.trim();
-    const shouldFetchYandexMobileBackground =
-      normalizedSubscriptionUrl.length === 0 || normalizedSubscriptionUrl !== YANDEX_TRANSLATED_MOBILE_LIST_URL;
-    if (shouldFetchYandexMobileBackground) {
-      try {
-        const yandexMobileResult = await subscriptionService.fetchAndParseDetailed(YANDEX_TRANSLATED_MOBILE_LIST_URL);
-        configs.push(...yandexMobileResult.configs.map((cfg) => ({ ...cfg, source: 'manual' as const })));
-        logger.info('IPC', 'Background Yandex Mobile list refresh success', {
-          count: yandexMobileResult.configs.length,
-          redactedUrl: redactUrl(YANDEX_TRANSLATED_MOBILE_LIST_URL),
-        });
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        logger.warn('IPC', 'Background Yandex Mobile list refresh failed', {
-          redactedUrl: redactUrl(YANDEX_TRANSLATED_MOBILE_LIST_URL),
-          reason: msg,
-        });
-      }
-    }
 
     let fetchErrorMessage = '';
     if (subscriptionUrl.trim()) {
       try {
         const result = await subscriptionService.fetchAndParseDetailed(subscriptionUrl.trim());
-        subscriptionExtractedLinks = result.extractedLinks;
         configs.push(...result.configs.map((cfg) => ({ ...cfg, source: 'subscription' as const })));
-        if (subscriptionExtractedLinks.length > 0) {
-          // Keep manual links in sync with the latest mirror payload instead of accumulating stale entries.
-          effectiveManualLinksText = Array.from(new Set(subscriptionExtractedLinks)).join('\n');
-        }
       } catch (error) {
         fetchErrorMessage = error instanceof Error ? error.message : String(error);
         logger.error('IPC', 'Failed to fetch subscription URL, keeping manual configs if present', error);
@@ -554,31 +560,44 @@ async function refreshSubscription(
       return { ...config, ping: null };
     });
     
+    const monitorStatus = connectionMonitorService.getStatus();
+    const effectiveConfigs = preserveActiveServerIfNeeded(
+      configsWithPing,
+      existingServers,
+      monitorStatus,
+      xrayService.isRunning()
+    );
+    if (effectiveConfigs.length !== configsWithPing.length && monitorStatus.currentServer) {
+      logger.warn('IPC', 'Preserving active server during background refresh', {
+        serverId: monitorStatus.currentServer.uuid.substring(0, 8),
+        serverName: monitorStatus.currentServer.name,
+      });
+    }
+
     const hasInput = !!subscriptionUrl.trim() || !!manualLinks.trim();
-    if (configsWithPing.length === 0 && hasInput) {
+    if (effectiveConfigs.length === 0 && hasInput) {
       return {
         configCount: 0,
         usedManualFallback,
-        reason: fetchErrorMessage || backgroundFeedErrorMessage || 'No valid configuration links were found',
+        reason: fetchErrorMessage || 'No valid configuration links were found',
       };
     }
 
-    if (subscriptionExtractedLinks.length > 0) {
-      configService.setManualLinksInput(effectiveManualLinksText);
-      sendToRenderer(IPC_EVENT_CHANNELS.manualLinksUpdated, effectiveManualLinksText);
+    configService.setServers(effectiveConfigs);
+    const syncedCurrentServer = connectionMonitorService.syncCurrentServer(effectiveConfigs);
+    if (syncedCurrentServer) {
+      configService.setSelectedServerId(syncedCurrentServer.uuid);
     }
-
-    configService.setServers(configsWithPing);
-    sendToRenderer(IPC_EVENT_CHANNELS.updateServers, stripRawConfigs(configsWithPing));
-    if (configsWithPing.length === 0) {
+    sendToRenderer(IPC_EVENT_CHANNELS.updateServers, stripRawConfigs(effectiveConfigs));
+    if (effectiveConfigs.length === 0) {
       return {
         configCount: 0,
         usedManualFallback,
-        reason: fetchErrorMessage || backgroundFeedErrorMessage || 'No valid configuration links were found',
+        reason: fetchErrorMessage || 'No valid configuration links were found',
       };
     }
     return {
-      configCount: configsWithPing.length,
+      configCount: effectiveConfigs.length,
       usedManualFallback,
       reason: usedManualFallback ? fetchErrorMessage || 'Subscription fetch failed; manual fallback was used' : undefined,
     };

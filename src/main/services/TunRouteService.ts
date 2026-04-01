@@ -43,12 +43,15 @@ export class TunRouteService {
   private addedRoutes: { destination: string; mask: string; interfaceIndex?: number }[] = [];
 
   public isSupported(): boolean {
-    return process.platform === 'win32' || process.platform === 'linux' || process.platform === 'darwin';
+    return process.platform === 'win32' || process.platform === 'linux';
   }
 
   public getUnsupportedReason(): string | null {
     if (this.isSupported()) {
       return null;
+    }
+    if (process.platform === 'darwin') {
+      return 'TUN mode is currently supported only on Windows and Linux by the bundled Xray core.';
     }
     return 'TUN mode is not supported on this operating system.';
   }

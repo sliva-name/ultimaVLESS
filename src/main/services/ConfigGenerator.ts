@@ -40,6 +40,7 @@ export class ConfigGenerator {
 
     const hasSocks = cfg.inbounds.some((ib: any) => ib.protocol === 'socks');
     const hasHttp = cfg.inbounds.some((ib: any) => ib.protocol === 'http');
+    const hasTun = cfg.inbounds.some((ib: any) => ib?.protocol === 'tun' || ib?.tag === 'tun-in');
 
     for (const ib of cfg.inbounds) {
       if (ib.protocol === 'socks') {
@@ -74,7 +75,7 @@ export class ConfigGenerator {
       });
     }
 
-    if (connectionMode === 'tun') {
+    if (connectionMode === 'tun' && !hasTun) {
       const tunInbound: Record<string, any> = {
         tag: 'tun-in',
         port: 0,

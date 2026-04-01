@@ -46,6 +46,8 @@ export class ConnectionMonitorService extends EventEmitter {
   private xrayLogPath: string;
   private monitoringGeneration: number = 0;
   private switchInProgress: boolean = false;
+  private logReadOffset: number = 0;
+  private logPartialLine = '';
 
   constructor() {
     super();
@@ -79,6 +81,7 @@ export class ConnectionMonitorService extends EventEmitter {
     this.status.lastConnectionTime = Date.now();
     this.status.connectionAttempts = 0;
     this.status.lastError = null;
+    this.resetLogCursorToFileEnd();
 
     // Начинаем периодическую проверку соединения
     this.startPeriodicCheck();
@@ -93,7 +96,8 @@ export class ConnectionMonitorService extends EventEmitter {
   /**
    * Stops monitoring.
    */
-  public stopMonitoring(): void {
+  public stopMonitoring(options: { message?: string; preserveLastError?: boolean } = {}): void {
+    const { message = 'Monitoring stopped', preserveLastError = false } = options;
     this.monitoringGeneration += 1;
     this.switchInProgress = false;
     logger.info('ConnectionMonitorService', 'Stopping monitoring');
@@ -110,12 +114,51 @@ export class ConnectionMonitorService extends EventEmitter {
 
     this.status.isConnected = false;
     this.status.currentServer = null;
+    if (!preserveLastError) {
+      this.status.lastError = null;
+    }
 
     this.emit('disconnected', { 
       type: 'disconnected', 
       server: null,
-      message: 'Monitoring stopped' 
+      message,
     } as ConnectionEvent);
+  }
+
+  public handleUnexpectedDisconnect(error: string): boolean {
+    const server = this.status.currentServer;
+    if (!this.status.isConnected || !server) {
+      return false;
+    }
+
+    this.status.lastError = error;
+    this.status.connectionAttempts += 1;
+    this.emit('error', {
+      type: 'error',
+      server,
+      error,
+      message: `Connection error: ${error}`,
+    } as ConnectionEvent);
+    this.stopMonitoring({
+      message: `Connection lost: ${error}`,
+      preserveLastError: true,
+    });
+    return true;
+  }
+
+  public syncCurrentServer(servers: VlessConfig[]): VlessConfig | null {
+    const currentServer = this.status.currentServer;
+    if (!currentServer) {
+      return null;
+    }
+
+    const updatedServer = servers.find((server) => server.uuid === currentServer.uuid) ?? null;
+    if (updatedServer) {
+      this.status.currentServer = updatedServer;
+      return updatedServer;
+    }
+
+    return currentServer;
   }
 
   /**
@@ -216,8 +259,8 @@ export class ConnectionMonitorService extends EventEmitter {
     }
 
     try {
-      // Читаем последние строки лога Xray для анализа
-      const logLines = this.readRecentLogLines(50);
+      // Читаем только новые строки со времени старта текущей сессии.
+      const logLines = this.readNewLogLines(50);
       const errors = this.analyzeLogForErrors(logLines);
 
       if (errors.length > 0) {
@@ -243,7 +286,7 @@ export class ConnectionMonitorService extends EventEmitter {
   /**
    * Reads recent lines from Xray log file.
    */
-  private readRecentLogLines(count: number): string[] {
+  private readNewLogLines(count: number): string[] {
     try {
       if (!fs.existsSync(this.xrayLogPath)) {
         return [];
@@ -254,8 +297,21 @@ export class ConnectionMonitorService extends EventEmitter {
         return [];
       }
 
-      const maxTailBytes = 128 * 1024;
-      const readStart = Math.max(0, stats.size - maxTailBytes);
+      const maxChunkBytes = 128 * 1024;
+      if (stats.size < this.logReadOffset) {
+        this.logReadOffset = 0;
+        this.logPartialLine = '';
+      }
+
+      const previousOffset = this.logReadOffset;
+      const unreadLength = stats.size - previousOffset;
+      if (unreadLength <= 0) {
+        return [];
+      }
+
+      const readStart = unreadLength > maxChunkBytes
+        ? stats.size - maxChunkBytes
+        : previousOffset;
       const readLength = stats.size - readStart;
       const buffer = Buffer.alloc(readLength);
       const fd = fs.openSync(this.xrayLogPath, 'r');
@@ -266,11 +322,36 @@ export class ConnectionMonitorService extends EventEmitter {
       }
 
       const content = buffer.toString('utf-8');
-      const lines = content.split('\n').filter(line => line.trim());
+      const combined = `${readStart === previousOffset ? this.logPartialLine : ''}${content}`;
+      this.logReadOffset = stats.size;
+      const chunks = combined.split('\n');
+      this.logPartialLine = chunks.pop() ?? '';
+      const lines = chunks
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
       return lines.slice(-count);
     } catch (error) {
       logger.error('ConnectionMonitorService', 'Failed to read log file', error);
       return [];
+    }
+  }
+
+  private resetLogCursorToFileEnd(): void {
+    try {
+      if (!fs.existsSync(this.xrayLogPath)) {
+        this.logReadOffset = 0;
+        this.logPartialLine = '';
+        return;
+      }
+      const stats = fs.statSync(this.xrayLogPath);
+      this.logReadOffset = stats.size;
+      this.logPartialLine = '';
+    } catch (error) {
+      logger.warn('ConnectionMonitorService', 'Failed to reset log cursor', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.logReadOffset = 0;
+      this.logPartialLine = '';
     }
   }
 
@@ -378,6 +459,7 @@ export class ConnectionMonitorService extends EventEmitter {
         to: nextServer.name,
       });
 
+      this.emit('switch-operation-started');
       this.emit('switching', {
         type: 'switching',
         server: nextServer,
@@ -390,6 +472,7 @@ export class ConnectionMonitorService extends EventEmitter {
         await this.switchToServer(nextServer, generationAtStart);
       } finally {
         this.switchInProgress = false;
+        this.emit('switch-operation-finished');
       }
     }
   }

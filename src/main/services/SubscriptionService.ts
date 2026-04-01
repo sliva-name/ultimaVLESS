@@ -75,6 +75,7 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
 export class SubscriptionService {
   private static readonly MAX_RESPONSE_BODY_LENGTH = 5_000_000;
   private static readonly FETCH_TIMEOUT_MS = 30_000;
+  private static readonly MAX_REDIRECTS = 5;
 
   public extractSupportedLinksFromText(input: string): string[] {
     return extractSupportedLinks(input);
@@ -103,6 +104,35 @@ export class SubscriptionService {
     return parsedUrl;
   }
 
+  private async fetchValidatedResponse(url: URL, init?: RequestInit): Promise<Response> {
+    let currentUrl = url;
+
+    for (let redirectCount = 0; redirectCount <= SubscriptionService.MAX_REDIRECTS; redirectCount += 1) {
+      const response = await fetchWithTimeout(
+        currentUrl.toString(),
+        SubscriptionService.FETCH_TIMEOUT_MS,
+        {
+          ...init,
+          redirect: 'manual',
+        }
+      );
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          throw new Error(`Redirect response missing Location header: HTTP ${response.status}`);
+        }
+        const nextUrl = this.validateRemoteSubscriptionUrl(new URL(location, currentUrl).toString());
+        currentUrl = nextUrl;
+        continue;
+      }
+
+      return response;
+    }
+
+    throw new Error(`Too many redirects while fetching subscription (max ${SubscriptionService.MAX_REDIRECTS})`);
+  }
+
   public async fetchAndParseDetailed(url: string): Promise<{ configs: VlessConfig[]; extractedLinks: string[] }> {
     logger.info('SubscriptionService', 'fetchAndParse called', { redactedUrl: redactUrlForLogs(url) });
     try {
@@ -121,9 +151,8 @@ export class SubscriptionService {
       if (yandexHtml) {
         logger.info('SubscriptionService', 'Subscription URL is Yandex Translate; fetching HTML with browser headers');
       }
-      const response = await fetchWithTimeout(
-        validatedUrl.toString(),
-        SubscriptionService.FETCH_TIMEOUT_MS,
+      const response = await this.fetchValidatedResponse(
+        validatedUrl,
         yandexHtml ? { headers: YANDEX_TRANSLATE_FETCH_HEADERS } : undefined
       );
       if (!response.ok) {

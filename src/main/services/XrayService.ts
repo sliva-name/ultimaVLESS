@@ -1,21 +1,32 @@
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { EventEmitter } from 'events';
 import { app } from 'electron';
 import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { ConfigGenerator, ConfigGeneratorOptions } from './ConfigGenerator';
 import { logger } from './LoggerService';
 
+export interface XrayUnexpectedExitEvent {
+  config: VlessConfig;
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  reason: string;
+}
+
 /**
  * Service responsible for managing the Xray-core process.
  * Handles configuration generation, process spawning, and lifecycle management.
  */
-export class XrayService {
+export class XrayService extends EventEmitter {
   private process: ChildProcess | null = null;
   private resourcesPath: string;
   private static readonly STARTUP_GRACE_MS = 1200;
+  private readonly expectedExitProcesses = new WeakSet<ChildProcess>();
+  private readonly notifiedUnexpectedExitProcesses = new WeakSet<ChildProcess>();
 
   constructor() {
+    super();
     this.resourcesPath = app.isPackaged 
       ? path.join(process.resourcesPath, 'bin')
       : path.join(process.cwd(), 'resources/bin');
@@ -121,11 +132,18 @@ export class XrayService {
     });
 
     spawnedProcess.on('close', (code) => {
+      const signal = spawnedProcess.signalCode ?? null;
       logger.warn('XrayService', 'Process exited', { 
         code,
+        signal,
         server: config.name,
         serverAddress: `${config.address}:${config.port}`,
         exitCode: code,
+      });
+      this.maybeEmitUnexpectedExit(spawnedProcess, config, {
+        code,
+        signal,
+        reason: `Xray exited unexpectedly (code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
       });
       if (this.process === spawnedProcess) {
         this.process = null;
@@ -139,6 +157,11 @@ export class XrayService {
           server: config.name,
           serverAddress: `${config.address}:${config.port}`,
         });
+        this.maybeEmitUnexpectedExit(spawnedProcess, config, {
+          code: null,
+          signal: null,
+          reason: `Xray process error: ${err.message}`,
+        });
     });
 
     await this.awaitStartupGracePeriod(spawnedProcess);
@@ -150,6 +173,7 @@ export class XrayService {
   public stop(): void {
     if (this.process) {
       logger.info('XrayService', 'Stopping process...');
+      this.expectedExitProcesses.add(this.process);
       this.process.kill();
       this.process = null;
     }
@@ -161,6 +185,18 @@ export class XrayService {
    */
   public isRunning(): boolean {
     return this.process !== null;
+  }
+
+  private maybeEmitUnexpectedExit(
+    processRef: ChildProcess,
+    config: VlessConfig,
+    event: Omit<XrayUnexpectedExitEvent, 'config'>
+  ): void {
+    if (this.expectedExitProcesses.has(processRef) || this.notifiedUnexpectedExitProcesses.has(processRef)) {
+      return;
+    }
+    this.notifiedUnexpectedExitProcesses.add(processRef);
+    this.emit('unexpected-exit', { ...event, config } satisfies XrayUnexpectedExitEvent);
   }
 
   private logXrayLine(stream: 'stdout' | 'stderr', line: string, config: VlessConfig): void {

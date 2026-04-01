@@ -76,5 +76,30 @@ describe('ConfigGenerator', () => {
     expect(tunInbound.settings?.autoRoute).toBe(true);
     expect(tunInbound.settings?.strictRoute).toBe(true);
   });
+
+  it('should not add duplicate tun inbound for raw configs that already define one', () => {
+    const result = ConfigGenerator.generate(
+      {
+        ...mockConfig,
+        rawConfig: {
+          inbounds: [
+            {
+              tag: 'existing-tun',
+              protocol: 'tun',
+              settings: { name: 'existing0' },
+            },
+          ],
+          outbounds: [{ tag: 'proxy', protocol: 'vless', settings: {} }],
+        },
+      },
+      '/tmp/log',
+      'tun',
+      { tunAutoRoute: true }
+    );
+
+    const tunInbounds = result.inbounds?.filter((inbound: any) => inbound.protocol === 'tun') ?? [];
+    expect(tunInbounds).toHaveLength(1);
+    expect(tunInbounds[0].tag).toBe('existing-tun');
+  });
 });
 

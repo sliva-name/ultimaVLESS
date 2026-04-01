@@ -32,12 +32,12 @@ function normalizeLinkForParsing(link: string): string {
 }
 
 export function isSupportedLink(link: string): boolean {
-  return link.startsWith('vless://') || link.startsWith('trojan://') || link.startsWith('hysteria2://');
+  return link.startsWith('vless://') || link.startsWith('trojan://');
 }
 
 export function extractSupportedLinks(input: string): string[] {
   // Stop before common HTML delimiters so links embedded in markup are still valid.
-  const matches = input.match(/(?:vless|trojan|hysteria2):\/\/[^\s<>"'`]+/gi);
+  const matches = input.match(/(?:vless|trojan):\/\/[^\s<>"'`]+/gi);
   if (!matches) return [];
 
   return matches
@@ -190,65 +190,12 @@ function parseTrojanLink(link: string): VlessConfig | null {
   }
 }
 
-function parseHysteria2Link(link: string): VlessConfig | null {
-  try {
-    const normalizedLink = normalizeLinkForParsing(link);
-    const parsedUrl = new URL(normalizedLink);
-    if (parsedUrl.protocol !== 'hysteria2:') return null;
-
-    const password = safeDecodeComponent(parsedUrl.username || '');
-    const address = parsedUrl.hostname || '';
-    const port = Number(parsedUrl.port);
-    if (!password || !address || !Number.isInteger(port) || port < 1 || port > 65535) return null;
-
-    const name = parsedUrl.hash ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Hysteria2 Server' : 'Hysteria2 Server';
-    const params = parsedUrl.searchParams;
-
-    const allowInsecure = isTruthyQueryParam(params.get('insecure')) || isTruthyQueryParam(params.get('allowInsecure'));
-    const sni = params.get('sni') || '';
-    const rawConfig = {
-      outbounds: [{
-        tag: 'proxy',
-        protocol: 'hysteria2',
-        settings: { servers: [{ address, port }], password },
-        streamSettings: {
-          network: 'tcp',
-          security: 'tls',
-          tlsSettings: { serverName: sni, allowInsecure },
-        },
-      }],
-    };
-
-    return {
-      uuid: makeServerIdentity(password || 'hy2', address, port, [
-        'tcp',
-        'tls',
-        sni,
-        String(allowInsecure),
-      ]),
-      address,
-      port,
-      name,
-      type: 'tcp',
-      security: 'tls',
-      sni,
-      rawConfig,
-    };
-  } catch {
-    logger.error('SubscriptionService', 'Error parsing Hysteria2 link', { link: link.substring(0, 50) + '...' });
-    return null;
-  }
-}
-
 function parseLink(link: string): VlessConfig | null {
   if (link.startsWith('vless://')) {
     return parseVlessLink(link);
   }
   if (link.startsWith('trojan://')) {
     return parseTrojanLink(link);
-  }
-  if (link.startsWith('hysteria2://')) {
-    return parseHysteria2Link(link);
   }
   return null;
 }

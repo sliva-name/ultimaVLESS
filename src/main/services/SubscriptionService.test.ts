@@ -54,9 +54,8 @@ describe('SubscriptionService', () => {
     mockFetchText(textBody);
 
     const configs = await service.fetchAndParse('https://translated.turbopages.org/some/path');
-    expect(configs).toHaveLength(2);
+    expect(configs).toHaveLength(1);
     expect(configs[0].name).toBe('One');
-    expect(configs[1].name).toBe('Two');
   });
 
   it('parses links embedded in HTML attributes', async () => {
@@ -69,9 +68,8 @@ describe('SubscriptionService', () => {
     mockFetchText(htmlBody);
 
     const configs = await service.fetchAndParse('https://translated.turbopages.org/some/path');
-    expect(configs).toHaveLength(2);
+    expect(configs).toHaveLength(1);
     expect(configs[0].name).toBe('AttrOne');
-    expect(configs[1].name).toBe('AttrTwo');
   });
 
   it('uses browser-like headers when fetching translate.yandex.ru subscription HTML', async () => {
@@ -100,14 +98,25 @@ describe('SubscriptionService', () => {
     await expect(service.fetchAndParse('http://127.0.0.1/sub')).rejects.toThrow(/host is not allowed/);
   });
 
-  it('parses hysteria2 links with HTML-encoded ampersand separators', () => {
+  it('rejects redirects to localhost hosts', async () => {
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce({
+        status: 302,
+        ok: false,
+        headers: {
+          get: (name: string) => (name.toLowerCase() === 'location' ? 'http://127.0.0.1/private' : null),
+        },
+      } as Response);
+
+    await expect(service.fetchAndParse('https://safe.example/sub')).rejects.toThrow(/host is not allowed/);
+  });
+
+  it('ignores unsupported hysteria2 links with HTML-encoded ampersand separators', () => {
     const links = service.parseDirectLinksFromText(
       'hysteria2://pass@144.31.224.14:443/?insecure=1&amp;sni=www.cloudflare.com#NL'
     );
 
-    expect(links).toHaveLength(1);
-    expect(links[0].sni).toBe('www.cloudflare.com');
-    expect(links[0].security).toBe('tls');
+    expect(links).toHaveLength(0);
   });
 
   it('keeps vless fragment name even without query params', () => {

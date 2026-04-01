@@ -293,7 +293,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
                       value={manualLinks}
                       onChange={(e) => setManualLinks(e.target.value)}
                       rows={7}
-                      placeholder="Paste any text from clipboard. All vless://, trojan://, hysteria2:// links will be extracted."
+                      placeholder="Paste any text from clipboard. All vless:// and trojan:// links will be extracted."
                       className="w-full resize-y min-h-[140px] bg-black/40 backdrop-blur-sm border border-gray-600/50 rounded-xl px-4 py-3.5 text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-200 hover:border-gray-500/70"
                     />
                     <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
