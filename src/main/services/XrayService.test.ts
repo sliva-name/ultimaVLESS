@@ -5,6 +5,7 @@ import { XrayService } from './XrayService';
 import { ConfigGenerator } from './ConfigGenerator';
 import { makeServer } from '../../test/factories';
 import { createMockChildProcess } from '../../test/mockChildProcess';
+import { probeTcpPort } from './networkProbe';
 
 vi.mock('fs', () => ({
   default: {
@@ -41,6 +42,10 @@ vi.mock('./ConfigGenerator', () => ({
   },
 }));
 
+vi.mock('./networkProbe', () => ({
+  probeTcpPort: vi.fn(async () => true),
+}));
+
 describe('XrayService', () => {
   const mockConfig = makeServer({
     uuid: 'uuid',
@@ -52,6 +57,7 @@ describe('XrayService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(probeTcpPort).mockResolvedValue(true);
   });
 
   it('writes generated config and spawns Xray with the config path', async () => {
@@ -81,6 +87,12 @@ describe('XrayService', () => {
       })
     );
     expect(svc.isRunning()).toBe(true);
+    expect(svc.getHealthStatus()).toMatchObject({
+      state: 'running',
+      ready: true,
+      xrayRunning: true,
+      lastFailureReason: null,
+    });
   });
 
   it('throws when the Xray binary is missing', async () => {
@@ -88,6 +100,12 @@ describe('XrayService', () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
 
     await expect(svc.start(mockConfig)).rejects.toThrow('Xray binary not found');
+    expect(svc.getHealthStatus()).toMatchObject({
+      state: 'failed',
+      ready: false,
+      xrayRunning: false,
+      lastFailureReason: expect.stringContaining('Xray binary not found'),
+    });
   });
 
   it('stops the running child process on demand', async () => {
@@ -136,5 +154,27 @@ describe('XrayService', () => {
     mockProcess.emit('close', 0);
 
     expect(onUnexpectedExit).not.toHaveBeenCalled();
+    expect(svc.getHealthStatus()).toMatchObject({
+      state: 'stopped',
+      ready: false,
+      xrayRunning: false,
+    });
+  });
+
+  it('marks Xray as degraded when the local proxy listeners do not become reachable', async () => {
+    const svc = new XrayService();
+    const mockProcess = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(mockProcess as any);
+    vi.mocked(probeTcpPort).mockResolvedValue(false);
+
+    await svc.start(mockConfig);
+
+    expect(svc.getHealthStatus()).toMatchObject({
+      state: 'degraded',
+      ready: false,
+      xrayRunning: true,
+      localProxyReachable: false,
+      lastReadinessError: expect.stringContaining('did not become reachable'),
+    });
   });
 });

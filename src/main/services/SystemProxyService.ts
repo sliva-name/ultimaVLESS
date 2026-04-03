@@ -67,6 +67,7 @@ interface MacosProxySnapshot {
 
 interface LinuxProxySnapshot {
   platform: 'linux';
+  backend: 'gsettings' | 'unsupported';
   mode: string;
   httpHost: string;
   httpPort: number;
@@ -90,6 +91,7 @@ export class SystemProxyService {
   private readonly LINUX_TIMEOUT_MS = 8000;
   private activeSnapshot: ProxySnapshot | null = null;
   private readonly platform: NodeJS.Platform;
+  private linuxProxyBackend: 'gsettings' | 'unsupported' | null = null;
 
   constructor(platform: NodeJS.Platform = process.platform) {
     this.platform = platform;
@@ -212,14 +214,19 @@ export class SystemProxyService {
   }
 
   private async enableLinuxProxy(httpPort: number, socksPort: number): Promise<void> {
+    const backend = await this.getLinuxProxyBackend();
+    if (backend !== 'gsettings') {
+      throw new Error(this.getLinuxUnsupportedReason());
+    }
+
     try {
-      await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy', 'mode', 'manual'], this.LINUX_TIMEOUT_MS);
-      await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.http', 'host', '127.0.0.1'], this.LINUX_TIMEOUT_MS);
-      await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.http', 'port', String(httpPort)], this.LINUX_TIMEOUT_MS);
-      await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.https', 'host', '127.0.0.1'], this.LINUX_TIMEOUT_MS);
-      await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.https', 'port', String(httpPort)], this.LINUX_TIMEOUT_MS);
-      await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.socks', 'host', '127.0.0.1'], this.LINUX_TIMEOUT_MS);
-      await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.socks', 'port', String(socksPort)], this.LINUX_TIMEOUT_MS);
+      await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy', 'mode', 'manual']);
+      await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.http', 'host', '127.0.0.1']);
+      await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.http', 'port', String(httpPort)]);
+      await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.https', 'host', '127.0.0.1']);
+      await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.https', 'port', String(httpPort)]);
+      await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.socks', 'host', '127.0.0.1']);
+      await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.socks', 'port', String(socksPort)]);
       logger.info('SystemProxyService', 'Linux proxy enabled via gsettings', {
         httpPort,
         socksPort,
@@ -231,8 +238,13 @@ export class SystemProxyService {
   }
 
   private async disableLinuxProxy(): Promise<void> {
+    const backend = await this.getLinuxProxyBackend();
+    if (backend !== 'gsettings') {
+      throw new Error(this.getLinuxUnsupportedReason());
+    }
+
     try {
-      await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy', 'mode', 'none'], this.LINUX_TIMEOUT_MS);
+      await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy', 'mode', 'none']);
       logger.info('SystemProxyService', 'Linux proxy disabled via gsettings');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -468,17 +480,33 @@ export class SystemProxyService {
   }
 
   private async captureLinuxProxyState(): Promise<LinuxProxySnapshot> {
+    const backend = await this.getLinuxProxyBackend();
+    if (backend !== 'gsettings') {
+      return {
+        platform: 'linux',
+        backend: 'unsupported',
+        mode: 'none',
+        httpHost: '',
+        httpPort: 0,
+        httpsHost: '',
+        httpsPort: 0,
+        socksHost: '',
+        socksPort: 0,
+      };
+    }
+
     const [mode, httpHost, httpPort, httpsHost, httpsPort, socksHost, socksPort] = await Promise.all([
-      this.runCommand('gsettings', ['get', 'org.gnome.system.proxy', 'mode'], this.LINUX_TIMEOUT_MS),
-      this.runCommand('gsettings', ['get', 'org.gnome.system.proxy.http', 'host'], this.LINUX_TIMEOUT_MS),
-      this.runCommand('gsettings', ['get', 'org.gnome.system.proxy.http', 'port'], this.LINUX_TIMEOUT_MS),
-      this.runCommand('gsettings', ['get', 'org.gnome.system.proxy.https', 'host'], this.LINUX_TIMEOUT_MS),
-      this.runCommand('gsettings', ['get', 'org.gnome.system.proxy.https', 'port'], this.LINUX_TIMEOUT_MS),
-      this.runCommand('gsettings', ['get', 'org.gnome.system.proxy.socks', 'host'], this.LINUX_TIMEOUT_MS),
-      this.runCommand('gsettings', ['get', 'org.gnome.system.proxy.socks', 'port'], this.LINUX_TIMEOUT_MS),
+      this.runLinuxGsettingsCommand(['get', 'org.gnome.system.proxy', 'mode']),
+      this.runLinuxGsettingsCommand(['get', 'org.gnome.system.proxy.http', 'host']),
+      this.runLinuxGsettingsCommand(['get', 'org.gnome.system.proxy.http', 'port']),
+      this.runLinuxGsettingsCommand(['get', 'org.gnome.system.proxy.https', 'host']),
+      this.runLinuxGsettingsCommand(['get', 'org.gnome.system.proxy.https', 'port']),
+      this.runLinuxGsettingsCommand(['get', 'org.gnome.system.proxy.socks', 'host']),
+      this.runLinuxGsettingsCommand(['get', 'org.gnome.system.proxy.socks', 'port']),
     ]);
     return {
       platform: 'linux',
+      backend,
       mode: this.parseGsettingsString(mode),
       httpHost: this.parseGsettingsString(httpHost),
       httpPort: this.parseGsettingsNumber(httpPort),
@@ -490,13 +518,18 @@ export class SystemProxyService {
   }
 
   private async restoreLinuxProxyState(snapshot: LinuxProxySnapshot): Promise<void> {
-    await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.http', 'host', snapshot.httpHost], this.LINUX_TIMEOUT_MS);
-    await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.http', 'port', String(snapshot.httpPort)], this.LINUX_TIMEOUT_MS);
-    await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.https', 'host', snapshot.httpsHost], this.LINUX_TIMEOUT_MS);
-    await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.https', 'port', String(snapshot.httpsPort)], this.LINUX_TIMEOUT_MS);
-    await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.socks', 'host', snapshot.socksHost], this.LINUX_TIMEOUT_MS);
-    await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy.socks', 'port', String(snapshot.socksPort)], this.LINUX_TIMEOUT_MS);
-    await this.runCommand('gsettings', ['set', 'org.gnome.system.proxy', 'mode', snapshot.mode], this.LINUX_TIMEOUT_MS);
+    if (snapshot.backend === 'unsupported') {
+      logger.warn('SystemProxyService', 'Skipping Linux proxy restore because original backend was unsupported');
+      return;
+    }
+
+    await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.http', 'host', snapshot.httpHost]);
+    await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.http', 'port', String(snapshot.httpPort)]);
+    await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.https', 'host', snapshot.httpsHost]);
+    await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.https', 'port', String(snapshot.httpsPort)]);
+    await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.socks', 'host', snapshot.socksHost]);
+    await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy.socks', 'port', String(snapshot.socksPort)]);
+    await this.runLinuxGsettingsCommand(['set', 'org.gnome.system.proxy', 'mode', snapshot.mode]);
   }
 
   private async getMacosProxyDetails(service: string, kind: 'web' | 'secure' | 'socks'): Promise<{ enabled: boolean; host: string | null; port: number | null }> {
@@ -554,6 +587,33 @@ export class SystemProxyService {
   private parseGsettingsNumber(raw: string): number {
     const parsed = Number(raw.trim());
     return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private async getLinuxProxyBackend(): Promise<'gsettings' | 'unsupported'> {
+    if (this.linuxProxyBackend) {
+      return this.linuxProxyBackend;
+    }
+
+    try {
+      await this.runCommand('gsettings', ['writable', 'org.gnome.system.proxy', 'mode'], this.LINUX_TIMEOUT_MS);
+      this.linuxProxyBackend = 'gsettings';
+    } catch (error) {
+      logger.warn('SystemProxyService', 'Linux proxy backend is unsupported', {
+        error: error instanceof Error ? error.message : String(error),
+        desktop: process.env.XDG_CURRENT_DESKTOP || process.env.DESKTOP_SESSION || 'unknown',
+      });
+      this.linuxProxyBackend = 'unsupported';
+    }
+
+    return this.linuxProxyBackend;
+  }
+
+  private getLinuxUnsupportedReason(): string {
+    return 'Linux system proxy control currently requires a GNOME-compatible desktop with gsettings available.';
+  }
+
+  private runLinuxGsettingsCommand(args: string[]): Promise<string> {
+    return this.runCommand('gsettings', args, this.LINUX_TIMEOUT_MS);
   }
 
   private runPowerShellCommand(script: string): Promise<string> {

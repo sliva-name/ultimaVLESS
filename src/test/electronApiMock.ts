@@ -67,6 +67,8 @@ export function createElectronApiMock(overrides: Partial<IElectronAPI> = {}): El
       hasPrivileges: true,
       privilegeHint: null,
       unsupportedReason: null,
+      routeMode: 'windows-static-routes',
+      degradedReason: null,
     })),
     getConnectionStatus: vi.fn(async () => false),
     getConnectionBusy: vi.fn(async () => false),

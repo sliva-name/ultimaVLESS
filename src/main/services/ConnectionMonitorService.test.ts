@@ -10,6 +10,21 @@ const configServiceMock = vi.hoisted(() => ({
   getConnectionMode: vi.fn(() => 'proxy'),
   setSelectedServerId: vi.fn(),
 }));
+const probeTcpPortMock = vi.hoisted(() => vi.fn(async () => true));
+const xrayServiceMock = vi.hoisted(() => ({
+  getHealthStatus: vi.fn(() => ({
+    state: 'running',
+    ready: true,
+    xrayRunning: true,
+    lastStartAt: Date.now(),
+    lastReadyAt: Date.now(),
+    lastReadinessCheckAt: Date.now(),
+    localProxyReachable: true,
+    lastFailureAt: null,
+    lastFailureReason: null,
+    lastReadinessError: null,
+  })),
+}));
 
 vi.mock('electron', () => ({
   app: {
@@ -19,6 +34,14 @@ vi.mock('electron', () => ({
 
 vi.mock('./ConfigService', () => ({
   configService: configServiceMock,
+}));
+
+vi.mock('./networkProbe', () => ({
+  probeTcpPort: probeTcpPortMock,
+}));
+
+vi.mock('./XrayService', () => ({
+  xrayService: xrayServiceMock,
 }));
 
 describe('ConnectionMonitorService', () => {
@@ -37,13 +60,30 @@ describe('ConnectionMonitorService', () => {
     vi.useFakeTimers();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    const { logger } = await import('./LoggerService');
+    await logger.flush();
     fs.rmSync(mockState.tempDir, { recursive: true, force: true });
     configServiceMock.getServers.mockReset();
     configServiceMock.getServers.mockReturnValue([]);
     configServiceMock.getConnectionMode.mockReset();
     configServiceMock.getConnectionMode.mockReturnValue('proxy');
     configServiceMock.setSelectedServerId.mockReset();
+    probeTcpPortMock.mockReset();
+    probeTcpPortMock.mockResolvedValue(true);
+    xrayServiceMock.getHealthStatus.mockReset();
+    xrayServiceMock.getHealthStatus.mockReturnValue({
+      state: 'running',
+      ready: true,
+      xrayRunning: true,
+      lastStartAt: Date.now(),
+      lastReadyAt: Date.now(),
+      lastReadinessCheckAt: Date.now(),
+      localProxyReachable: true,
+      lastFailureAt: null,
+      lastFailureReason: null,
+      lastReadinessError: null,
+    });
     vi.useRealTimers();
     vi.resetModules();
   });
@@ -80,6 +120,8 @@ describe('ConnectionMonitorService', () => {
 
     expect(svc.getStatus().lastError).toContain('failed to dial');
     expect(svc.getStatus().blockedServers).toContain(server.uuid);
+    expect(svc.getStatus().lastHealthCheckAt).not.toBeNull();
+    expect(svc.getStatus().lastHealthState).toBe('failed');
   });
 
   it('marks the current server as blocked when recordError receives a blocking error', async () => {
@@ -93,6 +135,7 @@ describe('ConnectionMonitorService', () => {
 
     expect(svc.getStatus().blockedServers).toEqual(['blocked-server']);
     expect(svc.getStatus().lastError).toBe('connection refused by upstream');
+    expect(svc.getStatus().lastHealthState).toBe('failed');
   });
 
   it('handles unexpected disconnects through the public API', async () => {
@@ -112,5 +155,36 @@ describe('ConnectionMonitorService', () => {
     expect(disconnectedMessages).toContain('Connection lost: core exited');
     expect(svc.getStatus().isConnected).toBe(false);
     expect(svc.getStatus().lastError).toBe('core exited');
+  });
+
+  it('fails health checks when local proxy listeners are unreachable', async () => {
+    probeTcpPortMock.mockResolvedValue(false);
+    xrayServiceMock.getHealthStatus.mockReturnValue({
+      state: 'degraded',
+      ready: false,
+      xrayRunning: true,
+      lastStartAt: Date.now(),
+      lastReadyAt: null,
+      lastReadinessCheckAt: Date.now(),
+      localProxyReachable: false,
+      lastFailureAt: Date.now(),
+      lastFailureReason: 'listeners unreachable',
+      lastReadinessError: 'listeners unreachable',
+    });
+
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+    const server = makeServer({ uuid: 'server-1', name: 'Example' });
+
+    svc.on('error', () => {});
+    svc.startMonitoring(server);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(svc.getStatus()).toMatchObject({
+      lastHealthState: 'degraded',
+      localProxyReachable: false,
+      lastHealthFailureReason: 'listeners unreachable',
+      lastError: 'listeners unreachable',
+    });
   });
 });

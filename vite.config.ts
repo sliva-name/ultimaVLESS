@@ -2,9 +2,12 @@ import type { Plugin } from 'vite'
 import { defineConfig } from 'vite'
 import electron from 'vite-plugin-electron/simple'
 import react from '@vitejs/plugin-react'
+import fs from 'fs'
+import path from 'path'
 
 /** Dev server port — must match connect-src / ws: in dev CSP below. */
 const DEV_SERVER_PORT = 5173
+const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')) as { version: string }
 
 /**
  * Injects <meta http-equiv="Content-Security-Policy"> per Electron security tutorial.
@@ -54,6 +57,9 @@ function electronCspMetaPlugin(): Plugin {
 // https://vitejs.dev/config/
 export default defineConfig({
   base: './',
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(process.env.VITE_APP_VERSION || packageJson.version),
+  },
   server: {
     port: DEV_SERVER_PORT,
     strictPort: true,

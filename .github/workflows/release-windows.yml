@@ -25,6 +25,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify CI gates
+        run: npm run verify:ci
+
+      - name: Verify Windows release config
+        run: npm run verify:release:win
+
       - name: Prepare resources/bin directory
         shell: pwsh
         run: |

@@ -1,3 +1,4 @@
+/* @vitest-environment jsdom */
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useServerState } from './useServerState';
@@ -33,14 +34,21 @@ describe('useServerState.saveSubscription', () => {
     const electronApi = createElectronApiMock();
     installElectronApiMock(electronApi);
     electronApi.saveSubscription.mockRejectedValue(new Error('Subscription endpoint failed'));
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const { result } = renderHook(() => useServerState());
     await waitFor(() => expect(electronApi.getServers).toHaveBeenCalled());
 
-    await expect(result.current.saveSubscription(makeSubscriptionPayload())).resolves.toEqual({
+    let saveResult: { ok: boolean; error?: string } | undefined;
+    await act(async () => {
+      saveResult = await result.current.saveSubscription(makeSubscriptionPayload());
+    });
+
+    expect(saveResult).toEqual({
       ok: false,
       error: 'Subscription endpoint failed',
     });
+    consoleErrorSpy.mockRestore();
   });
 });
 

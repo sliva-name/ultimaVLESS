@@ -8,8 +8,10 @@ import { app } from 'electron';
  */
 export class LoggerService {
   private static readonly MAX_LOG_SIZE_BYTES = 5 * 1024 * 1024;
+  private static readonly MAX_LOG_BACKUPS = 3;
   private logPath: string;
   private readonly debugEnabled: boolean;
+  private writeQueue: Promise<void> = Promise.resolve();
 
   /**
    * @param {string} filename - The log file name (default: 'app.log').
@@ -24,16 +26,9 @@ export class LoggerService {
         logDir = path.join(process.cwd(), 'logs');
     }
 
-    if (!fs.existsSync(logDir)) {
-      try {
-        fs.mkdirSync(logDir, { recursive: true });
-      } catch (e) {
-        console.error('Failed to create log directory', e);
-      }
-    }
-    
     this.logPath = path.join(logDir, filename);
     this.debugEnabled = process.env.NODE_ENV === 'development' || process.env.ULTIMA_DEBUG === '1';
+    this.ensureLogDirExists();
   }
 
   /**
@@ -50,18 +45,38 @@ export class LoggerService {
    * @param {any} [data] - Optional data to serialize.
    */
   public log(location: string, message: string, data?: any): void {
-    try {
-      this.rotateIfNeeded();
-      const logEntry = JSON.stringify({
-        timestamp: new Date().toISOString(),
-        location,
-        message,
-        data,
-      }) + '\n';
-      fs.appendFileSync(this.logPath, logEntry);
-    } catch (e) {
-      console.error('Failed to write to log file', e);
-    }
+    const logEntry = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      location,
+      message,
+      data,
+    }) + '\n';
+
+    this.writeQueue = this.writeQueue.then(async () => {
+      try {
+        this.ensureLogDirExists();
+        this.rotateIfNeeded();
+        if (typeof fs.appendFile === 'function') {
+          await new Promise<void>((resolve, reject) => {
+            fs.appendFile(this.logPath, logEntry, (error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve();
+            });
+          });
+          return;
+        }
+        fs.appendFileSync(this.logPath, logEntry);
+      } catch (e) {
+        console.error('Failed to write to log file', e);
+      }
+    });
+  }
+
+  public flush(): Promise<void> {
+    return this.writeQueue;
   }
 
   private rotateIfNeeded(): void {
@@ -74,11 +89,29 @@ export class LoggerService {
       return;
     }
 
-    const backupPath = `${this.logPath}.1`;
-    if (fs.existsSync(backupPath)) {
-      fs.unlinkSync(backupPath);
+    for (let index = LoggerService.MAX_LOG_BACKUPS; index >= 1; index -= 1) {
+      const from = index === 1 ? this.logPath : `${this.logPath}.${index - 1}`;
+      const to = `${this.logPath}.${index}`;
+      if (!fs.existsSync(from)) {
+        continue;
+      }
+      if (fs.existsSync(to)) {
+        fs.unlinkSync(to);
+      }
+      fs.renameSync(from, to);
     }
-    fs.renameSync(this.logPath, backupPath);
+  }
+
+  private ensureLogDirExists(): void {
+    const logDir = path.dirname(this.logPath);
+    if (fs.existsSync(logDir)) {
+      return;
+    }
+    try {
+      fs.mkdirSync(logDir, { recursive: true });
+    } catch (e) {
+      console.error('Failed to create log directory', e);
+    }
   }
 
   /**

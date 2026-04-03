@@ -129,6 +129,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
   const tunNeedsPrivileges = !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
   const tunButtonDisabled = tunUnavailable;
   const modeLockedByConnection = !!monitorStatus?.isConnected;
+  const xrayStateLabel = monitorStatus?.xrayState ? monitorStatus.xrayState.replace(/^\w/, (value) => value.toUpperCase()) : null;
+  const healthStateLabel = monitorStatus?.lastHealthState ? monitorStatus.lastHealthState.replace(/^\w/, (value) => value.toUpperCase()) : null;
+  const formatTimestamp = (value: number | null | undefined) => (value ? new Date(value).toLocaleTimeString() : 'n/a');
 
 
   const handleClearBlocked = useCallback(async () => {
@@ -375,6 +378,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
                 {tunCapability?.privilegeHint || 'Elevated privileges are required for TUN mode.'} You can still select TUN now; elevation will be requested on connect.
               </p>
             )}
+            {tunCapability?.routeMode && (
+              <p className="text-xs text-gray-500 mt-2">Routing mode: {tunCapability.routeMode}</p>
+            )}
+            {tunCapability?.degradedReason && (
+              <p className="text-xs text-orange-400 mt-2">{tunCapability.degradedReason}</p>
+            )}
             {modeError && <p className="text-xs text-orange-400 mt-2">{modeError}</p>}
           </div>
 
@@ -426,6 +435,74 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, isLoading,
                     <span className="text-gray-400 flex-1 truncate" title={monitorStatus.lastError}>
                       Last Error: {monitorStatus.lastError}
                     </span>
+                  </div>
+                )}
+                {xrayStateLabel && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-400">Xray State:</span>
+                    <span className={monitorStatus.xrayRunning ? 'text-green-400 font-medium' : 'text-gray-300 font-medium'}>
+                      {xrayStateLabel}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-400">Last Health Check:</span>
+                  <span className="text-gray-300">{formatTimestamp(monitorStatus.lastHealthCheckAt)}</span>
+                </div>
+                {healthStateLabel && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-400">Health State:</span>
+                    <span className="text-gray-300">{healthStateLabel}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-400">Local Proxy Reachable:</span>
+                  <span className="text-gray-300">
+                    {monitorStatus.localProxyReachable == null ? 'n/a' : monitorStatus.localProxyReachable ? 'yes' : 'no'}
+                  </span>
+                </div>
+                {(monitorStatus.lastHealthFailureReason || monitorStatus.xrayLastFailureReason || monitorStatus.recoveryInProgress || monitorStatus.recoveryBlocked || monitorStatus.lastFatalReason) && (
+                  <div className="space-y-1 pt-1">
+                    {monitorStatus.lastHealthFailureReason && (
+                      <div className="flex items-start gap-2 text-xs">
+                        <AlertTriangle className="w-3 h-3 text-orange-400 mt-0.5 flex-shrink-0" />
+                        <span className="text-gray-400 flex-1 truncate" title={monitorStatus.lastHealthFailureReason}>
+                          Health Failure: {monitorStatus.lastHealthFailureReason}
+                        </span>
+                      </div>
+                    )}
+                    {monitorStatus.xrayLastFailureReason && (
+                      <div className="flex items-start gap-2 text-xs">
+                        <AlertTriangle className="w-3 h-3 text-orange-400 mt-0.5 flex-shrink-0" />
+                        <span className="text-gray-400 flex-1 truncate" title={monitorStatus.xrayLastFailureReason}>
+                          Xray Failure: {monitorStatus.xrayLastFailureReason}
+                        </span>
+                      </div>
+                    )}
+                    {(monitorStatus.recoveryInProgress || monitorStatus.recoveryBlocked) && (
+                      <div className="flex items-start gap-2 text-xs">
+                        <RefreshCw className={`w-3 h-3 mt-0.5 flex-shrink-0 ${monitorStatus.recoveryInProgress ? 'text-blue-400 animate-spin' : 'text-orange-400'}`} />
+                        <span className="text-gray-400 flex-1">
+                          {monitorStatus.recoveryInProgress
+                            ? `Recovery in progress (${monitorStatus.recoveryAttemptCount})`
+                            : `Recovery paused after ${monitorStatus.recoveryAttemptCount} attempts`}
+                          {monitorStatus.lastRecoveryTrigger ? ` via ${monitorStatus.lastRecoveryTrigger}` : ''}
+                          {monitorStatus.lastRecoveryReason ? `: ${monitorStatus.lastRecoveryReason}` : ''}
+                        </span>
+                      </div>
+                    )}
+                    {monitorStatus.lastFatalReason && (
+                      <div className="flex items-start gap-2 text-xs">
+                        <X className="w-3 h-3 text-red-400 mt-0.5 flex-shrink-0" />
+                        <span className="text-gray-400 flex-1 truncate" title={monitorStatus.lastFatalReason}>
+                          Last Fatal Reason: {monitorStatus.lastFatalReason}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-400">Last Recovery:</span>
+                      <span className="text-gray-300">{formatTimestamp(monitorStatus.lastRecoveryAt)}</span>
+                    </div>
                   </div>
                 )}
               </div>

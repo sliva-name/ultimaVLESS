@@ -1,3 +1,4 @@
+/* @vitest-environment jsdom */
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Sidebar } from './Sidebar';
@@ -36,7 +37,7 @@ describe('Sidebar', () => {
     expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
   });
 
-  it('exposes selected state through aria-selected', () => {
+  it('exposes selected state through aria-selected', async () => {
     render(
       <Sidebar 
         servers={mockServers}
@@ -47,13 +48,14 @@ describe('Sidebar', () => {
       />
     );
 
+    expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
     const server1 = screen.getByTestId('server-item-1');
     const server2 = screen.getByTestId('server-item-2');
     expect(server1).toHaveAttribute('aria-selected', 'true');
     expect(server2).toHaveAttribute('aria-selected', 'false');
   });
 
-  it('calls onSelectServer when clicked', () => {
+  it('calls onSelectServer when clicked', async () => {
     const handleSelect = vi.fn();
     render(
       <Sidebar 
@@ -65,11 +67,12 @@ describe('Sidebar', () => {
       />
     );
 
+    expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('server-item-1'));
     expect(handleSelect).toHaveBeenCalledWith(mockServers[0]);
   });
 
-  it('does not allow selecting another server while connected', () => {
+  it('does not allow selecting another server while connected', async () => {
     const handleSelect = vi.fn();
     render(
       <Sidebar 
@@ -81,6 +84,7 @@ describe('Sidebar', () => {
       />
     );
 
+    expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
     const otherServer = screen.getByTestId('server-item-2');
     fireEvent.click(otherServer);
 
@@ -88,7 +92,7 @@ describe('Sidebar', () => {
     expect(handleSelect).not.toHaveBeenCalled();
   });
 
-  it('shows placeholder when ping is missing', () => {
+  it('shows placeholder when ping is missing', async () => {
     render(
       <Sidebar
         servers={mockServers}
@@ -99,10 +103,11 @@ describe('Sidebar', () => {
       />
     );
 
+    expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
     expect(screen.getAllByText('—')).toHaveLength(2);
   });
 
-  it('disables ping refresh while connected', () => {
+  it('disables ping refresh while connected', async () => {
     render(
       <Sidebar
         servers={mockServers}
@@ -114,6 +119,7 @@ describe('Sidebar', () => {
       />
     );
 
+    expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
     expect(screen.getByTitle('Disconnect to refresh ping')).toBeDisabled();
   });
 });

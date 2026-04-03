@@ -14,9 +14,11 @@ import { logger } from '../services/LoggerService';
 import { logExportService } from '../services/LogExportService';
 import { connectionMonitorService } from '../services/ConnectionMonitorService';
 import { xrayService } from '../services/XrayService';
+import { appRecoveryService } from '../services/AppRecoveryService';
 import { createIpcDependencies, IpcDependencies } from './dependencies';
 import { registerConnectionHandlers } from './handlers/connectionHandlers';
 import { registerPingHandlers } from './handlers/pingHandlers';
+import { buildConnectionMonitorStatusSummary } from './connectionStatusSummary';
 import { preserveActiveServerIfNeeded } from './refreshUtils';
 import { assertBoolean, assertConnectionMode, normalizeSavePayload, redactUrl } from './validators';
 
@@ -109,6 +111,26 @@ function assertTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent): void {
 
 function stripRawConfigs(servers: VlessConfig[]): VlessConfig[] {
   return servers.map(({ rawConfig, ...rest }) => rest);
+}
+
+export function buildConnectionMonitorStatus(
+  deps: {
+    connectionMonitorService: Pick<typeof connectionMonitorService, 'getStatus' | 'getAutoSwitchingEnabled'>;
+    xrayService: Pick<typeof xrayService, 'getHealthStatus'>;
+    appRecoveryService: Pick<typeof appRecoveryService, 'getStatus'>;
+  } = {
+    connectionMonitorService,
+    xrayService,
+    appRecoveryService,
+  }
+): ConnectionMonitorStatus {
+  const status = deps.connectionMonitorService.getStatus();
+  return buildConnectionMonitorStatusSummary(
+    status,
+    deps.connectionMonitorService.getAutoSwitchingEnabled(),
+    deps.xrayService.getHealthStatus(),
+    deps.appRecoveryService.getStatus()
+  );
 }
 
 function queueRefreshSubscription(
@@ -433,6 +455,8 @@ export function registerIpcHandlers(
       hasPrivileges,
       privilegeHint: supported && !hasPrivileges ? privilegeHint : null,
       unsupportedReason: supported ? null : deps.tunRouteService.getUnsupportedReason(),
+      routeMode: supported ? deps.tunRouteService.getRouteMode() : null,
+      degradedReason: supported ? deps.tunRouteService.getDegradedReason() : null,
     };
     return result;
   });
@@ -469,11 +493,11 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.getConnectionMonitorStatus, (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
-    const status = connectionMonitorService.getStatus();
-    return {
-      ...status,
-      autoSwitchingEnabled: connectionMonitorService.getAutoSwitchingEnabled(),
-    } as ConnectionMonitorStatus;
+    return buildConnectionMonitorStatus({
+      connectionMonitorService: deps.connectionMonitorService,
+      xrayService: deps.xrayService,
+      appRecoveryService,
+    });
   });
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.setAutoSwitching, (_event: IpcMainInvokeEvent, enabledValue: unknown) => {

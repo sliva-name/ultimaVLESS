@@ -25,6 +25,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify CI gates
+        run: npm run verify:ci
+
+      - name: Verify Linux release config
+        run: npm run verify:release:linux
+
       - name: Prepare Xray assets
         run: npm run prepare:xray:linux
         env:

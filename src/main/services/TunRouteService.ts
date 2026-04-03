@@ -57,6 +57,23 @@ export class TunRouteService {
     return 'TUN mode is not supported on this operating system.';
   }
 
+  public getRouteMode(): string | null {
+    if (this.platform === 'win32') {
+      return 'windows-static-routes';
+    }
+    if (this.platform === 'linux') {
+      return 'linux-xray-auto-route';
+    }
+    return null;
+  }
+
+  public getDegradedReason(): string | null {
+    if (this.platform === 'linux') {
+      return 'Linux TUN routing currently relies on Xray auto-route behavior rather than explicit OS-level route teardown.';
+    }
+    return null;
+  }
+
   public async prepareRoutingPlan(config: VlessConfig): Promise<TunRoutingPlan> {
     const unsupportedReason = this.getUnsupportedReason();
     if (unsupportedReason) {
@@ -134,7 +151,13 @@ export class TunRouteService {
   }
 
   public async disable(): Promise<void> {
-    if (this.platform !== 'win32') return;
+    if (this.platform !== 'win32') {
+      logger.info('TunRouteService', 'Unix TUN cleanup delegated to Xray process lifecycle', {
+        platform: this.platform,
+        routeMode: this.getRouteMode(),
+      });
+      return;
+    }
 
     for (const route of [...this.addedRoutes].reverse()) {
       try {

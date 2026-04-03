@@ -83,7 +83,9 @@ describe('SystemProxyService', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    const { logger } = await import('./LoggerService');
+    await logger.flush();
     fs.rmSync(mockState.tempDir, { recursive: true, force: true });
     vi.resetModules();
   });
@@ -143,6 +145,10 @@ describe('SystemProxyService', () => {
       expect.arrayContaining([
         expect.objectContaining({
           command: 'gsettings',
+          args: ['writable', 'org.gnome.system.proxy', 'mode'],
+        }),
+        expect.objectContaining({
+          command: 'gsettings',
           args: ['set', 'org.gnome.system.proxy', 'mode', 'manual'],
         }),
         expect.objectContaining({
@@ -154,6 +160,24 @@ describe('SystemProxyService', () => {
           args: ['set', 'org.gnome.system.proxy.socks', 'port', '10808'],
         }),
       ])
+    );
+  });
+
+  it('reports Linux proxy control as unsupported when gsettings is unavailable', async () => {
+    spawnMock.mockImplementationOnce((_command: string, _args: string[]) => {
+      const child = createMockChildProcess();
+      queueMicrotask(() => {
+        child.stderr.emit('data', 'command not found');
+        child.emit('close', 1);
+      });
+      return child;
+    });
+
+    const SystemProxyService = await loadService();
+    const service = new SystemProxyService('linux');
+
+    await expect(service.enable(10809, 10808)).rejects.toThrow(
+      'Linux system proxy control currently requires a GNOME-compatible desktop with gsettings available.'
     );
   });
 

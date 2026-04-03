@@ -6,7 +6,11 @@ export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
-    environment: 'jsdom',
+    environment: 'node',
+    environmentMatchGlobs: [
+      ['**/src/renderer/**/*.test.ts', 'jsdom'],
+      ['**/src/renderer/**/*.test.tsx', 'jsdom'],
+    ],
     setupFiles: ['./src/test/setup.ts'],
     alias: {
       '@': path.resolve(__dirname, './src'),

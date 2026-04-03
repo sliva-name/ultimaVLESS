@@ -8,6 +8,9 @@ import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { extractBlockingErrors, isBlockingErrorText } from './blockingErrors';
+import { probeTcpPort } from './networkProbe';
+import { xrayService } from './XrayService';
+import { ConnectionHealthState } from '../../shared/ipc';
 
 export interface ConnectionStatus {
   isConnected: boolean;
@@ -16,6 +19,10 @@ export interface ConnectionStatus {
   connectionAttempts: number;
   lastConnectionTime: number | null;
   blockedServers: string[]; // UUID серверов, которые были заблокированы (массив для сериализации)
+  lastHealthCheckAt: number | null;
+  lastHealthState: ConnectionHealthState;
+  lastHealthFailureReason: string | null;
+  localProxyReachable: boolean | null;
 }
 
 interface InternalConnectionStatus {
@@ -25,6 +32,10 @@ interface InternalConnectionStatus {
   connectionAttempts: number;
   lastConnectionTime: number | null;
   blockedServers: Set<string>; // Внутреннее использование Set для эффективности
+  lastHealthCheckAt: number | null;
+  lastHealthState: ConnectionHealthState;
+  lastHealthFailureReason: string | null;
+  localProxyReachable: boolean | null;
 }
 
 export interface ConnectionEvent {
@@ -49,6 +60,7 @@ export class ConnectionMonitorService extends EventEmitter {
   private switchInProgress: boolean = false;
   private logReadOffset: number = 0;
   private logPartialLine = '';
+  private healthCheckInFlight: boolean = false;
 
   constructor() {
     super();
@@ -59,6 +71,10 @@ export class ConnectionMonitorService extends EventEmitter {
       connectionAttempts: 0,
       lastConnectionTime: null,
       blockedServers: new Set(),
+      lastHealthCheckAt: null,
+      lastHealthState: 'idle',
+      lastHealthFailureReason: null,
+      localProxyReachable: null,
     };
 
     const userDataPath = app.getPath('userData');
@@ -82,6 +98,10 @@ export class ConnectionMonitorService extends EventEmitter {
     this.status.lastConnectionTime = Date.now();
     this.status.connectionAttempts = 0;
     this.status.lastError = null;
+    this.status.lastHealthCheckAt = null;
+    this.status.lastHealthState = 'idle';
+    this.status.lastHealthFailureReason = null;
+    this.status.localProxyReachable = null;
     this.resetLogCursorToFileEnd();
 
     // Начинаем периодическую проверку соединения
@@ -115,6 +135,9 @@ export class ConnectionMonitorService extends EventEmitter {
 
     this.status.isConnected = false;
     this.status.currentServer = null;
+    this.status.localProxyReachable = null;
+    this.status.lastHealthState = 'idle';
+    this.status.lastHealthFailureReason = null;
     if (!preserveLastError) {
       this.status.lastError = null;
     }
@@ -134,6 +157,8 @@ export class ConnectionMonitorService extends EventEmitter {
 
     this.status.lastError = error;
     this.status.connectionAttempts += 1;
+    this.status.lastHealthState = 'failed';
+    this.status.lastHealthFailureReason = error;
     this.emit('error', {
       type: 'error',
       server,
@@ -176,6 +201,8 @@ export class ConnectionMonitorService extends EventEmitter {
 
     this.status.lastError = error;
     this.status.connectionAttempts++;
+    this.status.lastHealthState = this.isBlockingError(error) ? 'failed' : 'degraded';
+    this.status.lastHealthFailureReason = error;
 
     if (targetServer) {
       this.emit('error', {
@@ -231,40 +258,69 @@ export class ConnectionMonitorService extends EventEmitter {
     }
 
     this.checkInterval = setInterval(() => {
-      this.checkConnectionHealth();
+      void this.checkConnectionHealth();
     }, this.checkIntervalMs);
   }
 
   /**
    * Checks the health of the current connection by analyzing Xray logs.
    */
-  private checkConnectionHealth(): void {
+  private async checkConnectionHealth(): Promise<void> {
     if (!this.status.isConnected || !this.status.currentServer) {
       return;
     }
+    if (this.healthCheckInFlight) {
+      return;
+    }
 
+    this.healthCheckInFlight = true;
     try {
+      this.status.lastHealthCheckAt = Date.now();
+      const [socksReady, httpReady] = await Promise.all([
+        probeTcpPort(APP_CONSTANTS.PORTS.SOCKS),
+        probeTcpPort(APP_CONSTANTS.PORTS.HTTP),
+      ]);
+      const localProxyReachable = socksReady && httpReady;
+      this.status.localProxyReachable = localProxyReachable;
+
+      if (!localProxyReachable) {
+        const xrayState = xrayService.getHealthStatus();
+        const failureReason = xrayState.lastReadinessError || 'Local proxy listeners are unreachable';
+        this.status.lastHealthState = xrayState.state === 'failed' ? 'failed' : 'degraded';
+        this.status.lastHealthFailureReason = failureReason;
+        this.recordError(failureReason, this.status.currentServer);
+        return;
+      }
+
       // Читаем только новые строки со времени старта текущей сессии.
       const logLines = this.readNewLogLines(50);
       const errors = this.analyzeLogForErrors(logLines);
 
       if (errors.length > 0) {
+        this.status.lastHealthState = 'degraded';
+        this.status.lastHealthFailureReason = errors[0];
         logger.warn('ConnectionMonitorService', 'Health check found errors', {
           errorCount: errors.length,
           errors: errors.slice(0, 3), // Логируем первые 3 ошибки
         });
 
         // Если найдены критические ошибки, записываем их
-        const criticalErrors = errors.filter(e => this.isBlockingError(e));
-        if (criticalErrors.length > 0 && this.isAutoSwitchingEnabled) {
+        const criticalErrors = errors.filter((e) => this.isBlockingError(e));
+        if (criticalErrors.length > 0) {
           this.recordError(criticalErrors[0], this.status.currentServer);
         }
       } else {
         // Соединение выглядит здоровым
+        this.status.lastHealthState = 'healthy';
+        this.status.lastHealthFailureReason = null;
         logger.debug('ConnectionMonitorService', 'Health check passed');
       }
     } catch (error) {
+      this.status.lastHealthState = 'failed';
+      this.status.lastHealthFailureReason = error instanceof Error ? error.message : String(error);
       logger.error('ConnectionMonitorService', 'Health check failed', error);
+    } finally {
+      this.healthCheckInFlight = false;
     }
   }
 

@@ -2,6 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { app, shell } from 'electron';
 import { logger } from './LoggerService';
+import { connectionMonitorService } from './ConnectionMonitorService';
+import { xrayService } from './XrayService';
+import { appRecoveryService } from './AppRecoveryService';
+import { sanitizeSensitiveText } from '../../shared/sanitizeDiagnostics';
 
 export class LogExportService {
   
@@ -19,6 +23,16 @@ export class LogExportService {
     content += `Arch: ${process.arch}\n`;
     content += `App Version: ${app.getVersion()}\n`;
     content += `Date: ${new Date().toISOString()}\n\n`;
+    content += '=== HEALTH SUMMARY ===\n';
+    content += `${JSON.stringify(
+      {
+        connection: connectionMonitorService.getStatus(),
+        xray: xrayService.getHealthStatus(),
+        recovery: appRecoveryService.getStatus(),
+      },
+      null,
+      2
+    )}\n\n`;
 
     content += '=== APP LOGS ===\n';
     content += await this.safeReadFile(appLogPath);
@@ -68,14 +82,7 @@ export class LogExportService {
    * Removes sensitive data like UUIDs and IPs.
    */
   private sanitize(text: string): string {
-    return text
-      // UUID regex (approximate)
-      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '***-UUID-***')
-      // IP Address regex (v4) - simple check to avoid masking localhost
-      .replace(/\b(?<!127\.0\.0\.1)(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g, '***.***.***.***')
-      // Private keys usually are long base64 strings, hard to detect perfectly without context, 
-      // but ConfigGenerator doesn't log them.
-      ;
+    return sanitizeSensitiveText(text);
   }
 }
 
