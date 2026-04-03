@@ -1,7 +1,15 @@
 # Ultima VLESS Client
 
-Ultima VLESS Client is a desktop VPN app with a simple interface, fast connection flow, and support for modern Xray/VLESS configurations.
+[![GitHub stars](https://img.shields.io/github/stars/sliva-name/ultimaVLESS?style=for-the-badge)](https://github.com/sliva-name/ultimaVLESS/stargazers)
+[![GitHub downloads](https://img.shields.io/github/downloads/sliva-name/ultimaVLESS/total?style=for-the-badge)](https://github.com/sliva-name/ultimaVLESS/releases)
+[![Visits](https://hits.sh/github.com/sliva-name/ultimaVLESS.svg?style=for-the-badge&label=visits)](https://hits.sh/github.com/sliva-name/ultimaVLESS/)
+
+Ultima VLESS Client is an open-source desktop VLESS/Xray VPN client with a simple interface, fast connection flow, and support for modern Xray-based configurations.
 Windows is the primary supported platform. macOS/Linux support is available and currently experimental.
+
+## Why Ultima VLESS Client
+
+Ultima VLESS Client is designed for users who need a lightweight desktop VPN client for VLESS, Reality, Vision, and Xray configs without extra setup complexity. It works well as a Windows VLESS client, a simple Xray desktop app, and a subscription-friendly VPN client for daily use.
 
 ## Download And Install
 
@@ -27,6 +35,10 @@ Portable build (`UltimaVLESS-Portable-*.exe`) is also available.
 - Auto-switch to another server when the current one appears blocked.
 - Show blocked servers list and allow clearing it in settings.
 - Copy application logs and open log folder for troubleshooting.
+
+## Keywords
+
+VLESS client, Xray client, desktop VPN client, Windows VPN client, Reality client, Vision client, V2Ray alternative, Electron VPN app, subscription VPN client, proxy and TUN mode client
 
 ## Default Subscription Source
 

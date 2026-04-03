@@ -1,7 +1,15 @@
 {
   "name": "ultima-vless-client",
   "version": "3.4.2",
-  "description": "Desktop V2Ray Client for UltimaVPN",
+  "description": "Open-source desktop VLESS/Xray VPN client for Windows, macOS, and Linux",
+  "homepage": "https://github.com/sliva-name/ultimaVLESS",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sliva-name/ultimaVLESS.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sliva-name/ultimaVLESS/issues"
+  },
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -129,7 +137,16 @@
     "electron",
     "vpn",
     "vless",
-    "reality"
+    "reality",
+    "xray",
+    "xray-core",
+    "v2ray",
+    "vision",
+    "proxy",
+    "tun",
+    "desktop-vpn",
+    "windows-vpn",
+    "vpn-client"
   ],
   "author": "UltimaVPN",
   "license": "MIT",
