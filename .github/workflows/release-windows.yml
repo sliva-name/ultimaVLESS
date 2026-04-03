@@ -116,7 +116,7 @@ jobs:
             $relative = Resolve-Path -Relative -Path $file.FullName
             $output += "$hash  $relative"
           }
-          $output | Set-Content -Path "release/SHA256SUMS.txt" -Encoding utf8
+          $output | Set-Content -Path "release/SHA256SUMS-windows.txt" -Encoding utf8
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -125,4 +125,4 @@ jobs:
           files: |
             release/**/UltimaVLESS-Setup-*.exe
             release/**/UltimaVLESS-Portable-*.exe
-            release/SHA256SUMS.txt
+            release/SHA256SUMS-windows.txt
