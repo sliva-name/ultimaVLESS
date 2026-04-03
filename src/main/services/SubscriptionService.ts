@@ -4,6 +4,7 @@ import { VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
 import { parseJsonConfigs } from './subscription/jsonParsing';
 import { extractSupportedLinks, parseDirectLinksFromText } from './subscription/linkParsing';
+import { redactUrl } from '../utils/redactUrl';
 
 /** translate.yandex.ru often expects a browser-like client for the full HTML body. */
 const YANDEX_TRANSLATE_FETCH_HEADERS: Record<string, string> = {
@@ -33,15 +34,6 @@ async function fetchWithTimeout(url: string, ms: number, init?: RequestInit): Pr
     return await fetch(url, { ...init, signal: ctrl.signal });
   } finally {
     clearTimeout(id);
-  }
-}
-
-function redactUrlForLogs(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
-  } catch {
-    return '[invalid-url]';
   }
 }
 
@@ -134,7 +126,7 @@ export class SubscriptionService {
   }
 
   public async fetchAndParseDetailed(url: string): Promise<{ configs: VlessConfig[]; extractedLinks: string[] }> {
-    logger.info('SubscriptionService', 'fetchAndParse called', { redactedUrl: redactUrlForLogs(url) });
+    logger.info('SubscriptionService', 'fetchAndParse called', { redactedUrl: redactUrl(url) });
     try {
       const directLinksFromInput = this.extractSupportedLinksFromText(url);
       if (directLinksFromInput.length > 0) {

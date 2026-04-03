@@ -1,75 +1,88 @@
 import { describe, expect, it } from 'vitest';
-import { assertConnectionMode, assertValidServerPayload, normalizeSavePayload } from './validators';
+import { assertConnectionMode, assertValidServerPayload, normalizeSavePayload, redactUrl } from './validators';
 
 describe('normalizeSavePayload', () => {
-  it('trims subscriptionUrl and manualLinks for object payload', () => {
-    const result = normalizeSavePayload({
-      subscriptionUrl: '  https://example.com/sub  ',
-      manualLinks: '  vless://abc@example.com:443?type=tcp#Server  ',
-    });
-
-    expect(result).toEqual({
-      subscriptionUrl: 'https://example.com/sub',
-      manualLinks: 'vless://abc@example.com:443?type=tcp#Server',
-    });
+  it.each([
+    {
+      input: {
+        subscriptionUrl: '  https://example.com/sub  ',
+        manualLinks: '  vless://abc@example.com:443?type=tcp#Server  ',
+      },
+      expected: {
+        subscriptionUrl: 'https://example.com/sub',
+        manualLinks: 'vless://abc@example.com:443?type=tcp#Server',
+      },
+    },
+    {
+      input: '  https://example.com/sub  ',
+      expected: {
+        subscriptionUrl: 'https://example.com/sub',
+        manualLinks: '',
+      },
+    },
+  ])('normalizes valid payloads: $expected.subscriptionUrl', ({ input, expected }) => {
+    expect(normalizeSavePayload(input)).toEqual(expected);
   });
 
-  it('trims string payload format', () => {
-    const result = normalizeSavePayload('  https://example.com/sub  ');
-    expect(result).toEqual({
-      subscriptionUrl: 'https://example.com/sub',
-      manualLinks: '',
-    });
+  it('rejects oversized subscription urls', () => {
+    expect(() => normalizeSavePayload(`https://example.com/${'a'.repeat(5000)}`)).toThrow(
+      /Subscription URL is too long/
+    );
   });
 
-  it('rejects oversized subscriptionUrl in string payload', () => {
-    const tooLongUrl = `https://example.com/${'a'.repeat(5000)}`;
-    expect(() => normalizeSavePayload(tooLongUrl)).toThrow(/Subscription URL is too long/);
-  });
-
-  it('rejects oversized manualLinks payload', () => {
-    const tooLargeManualLinks = 'vless://x@y:443#s\n'.repeat(70_000);
+  it('rejects oversized manual links payloads', () => {
     expect(() =>
       normalizeSavePayload({
         subscriptionUrl: 'https://example.com/sub',
-        manualLinks: tooLargeManualLinks,
+        manualLinks: 'vless://x@y:443#s\n'.repeat(70_000),
       })
     ).toThrow(/Manual links payload is too large/);
   });
 });
 
 describe('assertValidServerPayload', () => {
-  it('accepts valid server payload', () => {
-    const result = assertValidServerPayload({
-      uuid: 'abcdef12-3456',
-      name: 'Server 1',
-      address: 'example.com',
-      port: 443,
-    });
-
-    expect(result.port).toBe(443);
+  it('accepts valid server payloads', () => {
+    expect(
+      assertValidServerPayload({
+        uuid: 'abcdef12-3456',
+        name: 'Server 1',
+        address: 'example.com',
+        port: 443,
+      })
+    ).toMatchObject({ port: 443, address: 'example.com' });
   });
 
-  it('rejects invalid port values', () => {
+  it.each([
+    { port: 70000 },
+    { port: 0 },
+    { port: 443.5 },
+  ])('rejects invalid port values: $port', ({ port }) => {
     expect(() =>
       assertValidServerPayload({
         uuid: 'abcdef12-3456',
         name: 'Server 1',
         address: 'example.com',
-        port: 70000,
-      })
+        port,
+      } as any)
     ).toThrow(/Invalid server payload/);
   });
 });
 
 describe('assertConnectionMode', () => {
-  it('accepts proxy and tun modes', () => {
-    expect(assertConnectionMode('proxy')).toBe('proxy');
-    expect(assertConnectionMode('tun')).toBe('tun');
+  it.each(['proxy', 'tun'] as const)('accepts %s', (mode) => {
+    expect(assertConnectionMode(mode)).toBe(mode);
   });
 
-  it('rejects invalid values', () => {
-    expect(() => assertConnectionMode('bridge')).toThrow(/Invalid connection mode/);
-    expect(() => assertConnectionMode(null)).toThrow(/Invalid connection mode/);
+  it.each(['bridge', null])('rejects invalid mode %s', (mode) => {
+    expect(() => assertConnectionMode(mode)).toThrow(/Invalid connection mode/);
+  });
+});
+
+describe('redactUrl', () => {
+  it.each([
+    ['https://example.com/path?q=secret#frag', 'https://example.com/path'],
+    ['not-a-url', '[invalid-url]'],
+  ])('redacts %s', (value, expected) => {
+    expect(redactUrl(value)).toBe(expected);
   });
 });

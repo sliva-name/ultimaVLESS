@@ -6,6 +6,7 @@ import {
 } from '../../shared/subscriptionUrls';
 import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
+import { redactUrl } from '../utils/redactUrl';
 
 const LEGACY_DEFAULT_SUBSCRIPTION_URL = MOBILE_WHITE_LIST_RAW_URL;
 const DEFAULT_SUBSCRIPTION_URL = YANDEX_TRANSLATED_MOBILE_LIST_URL;
@@ -28,15 +29,6 @@ interface StoreSchema {
  */
 export class ConfigService {
   private store: Store<StoreSchema>;
-  private redactUrl(url: string): string {
-    if (!url) return '';
-    try {
-      const parsed = new URL(url);
-      return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
-    } catch {
-      return '[invalid-url]';
-    }
-  }
 
   constructor() {
     this.store = new Store<StoreSchema>({
@@ -71,7 +63,7 @@ export class ConfigService {
     const url = this.store.get('subscriptionUrl');
     logger.debug('ConfigService', 'getSubscriptionUrl', {
       hasUrl: !!url,
-      redactedUrl: this.redactUrl(url),
+      redactedUrl: redactUrl(url),
     });
     return url;
   }
@@ -83,7 +75,7 @@ export class ConfigService {
   public setSubscriptionUrl(url: string): void {
     logger.info('ConfigService', 'setSubscriptionUrl', {
       hasUrl: !!url,
-      redactedUrl: this.redactUrl(url),
+      redactedUrl: redactUrl(url),
     });
     this.store.set('subscriptionUrl', url);
   }

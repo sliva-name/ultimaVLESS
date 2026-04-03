@@ -1,58 +1,17 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useServerState } from './useServerState';
-
-type ElectronApiMock = {
-  getServers: ReturnType<typeof vi.fn>;
-  getSelectedServerId: ReturnType<typeof vi.fn>;
-  getConnectionStatus: ReturnType<typeof vi.fn>;
-  getConnectionBusy: ReturnType<typeof vi.fn>;
-  getConnectionMonitorStatus: ReturnType<typeof vi.fn>;
-  onUpdateServers: ReturnType<typeof vi.fn>;
-  onConnectionStatus: ReturnType<typeof vi.fn>;
-  onConnectionBusy: ReturnType<typeof vi.fn>;
-  onConnectionError: ReturnType<typeof vi.fn>;
-  saveSubscription: ReturnType<typeof vi.fn>;
-  pingAllServers: ReturnType<typeof vi.fn>;
-  setSelectedServerId: ReturnType<typeof vi.fn>;
-  connect: ReturnType<typeof vi.fn>;
-  disconnect: ReturnType<typeof vi.fn>;
-};
-
-function createElectronApiMock(): ElectronApiMock {
-  return {
-    getServers: vi.fn().mockResolvedValue([]),
-    getSelectedServerId: vi.fn().mockResolvedValue(null),
-    getConnectionStatus: vi.fn().mockResolvedValue(false),
-    getConnectionBusy: vi.fn().mockResolvedValue(false),
-    getConnectionMonitorStatus: vi.fn().mockResolvedValue({
-      isConnected: false,
-      currentServer: null,
-      lastError: null,
-      connectionAttempts: 0,
-      lastConnectionTime: null,
-      blockedServers: [],
-      autoSwitchingEnabled: true,
-    }),
-    onUpdateServers: vi.fn().mockImplementation(() => vi.fn()),
-    onConnectionStatus: vi.fn().mockImplementation(() => vi.fn()),
-    onConnectionBusy: vi.fn().mockImplementation(() => vi.fn()),
-    onConnectionError: vi.fn().mockImplementation(() => vi.fn()),
-    saveSubscription: vi.fn().mockResolvedValue(true),
-    pingAllServers: vi.fn().mockResolvedValue([]),
-    setSelectedServerId: vi.fn().mockResolvedValue(true),
-    connect: vi.fn().mockResolvedValue({ ok: true }),
-    disconnect: vi.fn().mockResolvedValue({ ok: true }),
-  };
-}
+import { createElectronApiMock, installElectronApiMock } from '../../test/electronApiMock';
+import { makeMonitorStatus, makeServer, makeSubscriptionPayload } from '../../test/factories';
 
 describe('useServerState.saveSubscription', () => {
   beforeEach(() => {
-    (window as unknown as { electronAPI: ElectronApiMock }).electronAPI = createElectronApiMock();
+    installElectronApiMock(createElectronApiMock());
   });
 
   it('returns error result when electronAPI.saveSubscription resolves false', async () => {
-    const electronApi = (window as unknown as { electronAPI: ElectronApiMock }).electronAPI;
+    const electronApi = createElectronApiMock();
+    installElectronApiMock(electronApi);
     electronApi.saveSubscription.mockResolvedValue(false);
 
     const { result } = renderHook(() => useServerState());
@@ -60,10 +19,7 @@ describe('useServerState.saveSubscription', () => {
 
     let saveResult: { ok: boolean; error?: string } | undefined;
     await act(async () => {
-      saveResult = await result.current.saveSubscription({
-        subscriptionUrl: 'https://example.com/sub',
-        manualLinks: '',
-      });
+      saveResult = await result.current.saveSubscription(makeSubscriptionPayload());
     });
 
     expect(saveResult).toEqual({
@@ -72,50 +28,54 @@ describe('useServerState.saveSubscription', () => {
     });
     expect(result.current.isConfigLoading).toBe(false);
   });
+
+  it('returns thrown error messages from electronAPI.saveSubscription', async () => {
+    const electronApi = createElectronApiMock();
+    installElectronApiMock(electronApi);
+    electronApi.saveSubscription.mockRejectedValue(new Error('Subscription endpoint failed'));
+
+    const { result } = renderHook(() => useServerState());
+    await waitFor(() => expect(electronApi.getServers).toHaveBeenCalled());
+
+    await expect(result.current.saveSubscription(makeSubscriptionPayload())).resolves.toEqual({
+      ok: false,
+      error: 'Subscription endpoint failed',
+    });
+  });
 });
 
-describe('useServerState active server sync', () => {
-  it('keeps the live connected server selected after server list refresh removes it', async () => {
-    const currentServer = {
-      uuid: 'active-server',
-      address: 'active.example.com',
-      port: 443,
-      name: 'Active Server',
-    };
-    const refreshedServer = {
-      uuid: 'new-server',
-      address: 'new.example.com',
-      port: 443,
-      name: 'New Server',
-    };
+describe('useServerState', () => {
+  it('loads the saved selected server during initial state fetch', async () => {
+    const electronApi = createElectronApiMock();
+    const savedServer = makeServer({ uuid: 'active-server', name: 'Active Server', ping: 42, pingTime: 1 });
+    electronApi.getServers.mockResolvedValue([savedServer]);
+    electronApi.getSelectedServerId.mockResolvedValue(savedServer.uuid);
+    installElectronApiMock(electronApi);
 
+    const { result } = renderHook(() => useServerState());
+    await waitFor(() => expect(result.current.selectedServer?.uuid).toBe(savedServer.uuid));
+  });
+
+  it('keeps the live connected server selected after server list refresh removes it', async () => {
+    const currentServer = makeServer({ uuid: 'active-server', name: 'Active Server', ping: 42, pingTime: 1 });
+    const refreshedServer = makeServer({ uuid: 'new-server', name: 'New Server', ping: 18, pingTime: 1 });
     const electronApi = createElectronApiMock();
     electronApi.getServers.mockResolvedValue([currentServer]);
     electronApi.getSelectedServerId.mockResolvedValue(currentServer.uuid);
     electronApi.getConnectionStatus.mockResolvedValue(true);
-    electronApi.getConnectionMonitorStatus.mockResolvedValue({
-      isConnected: true,
-      currentServer,
-      lastError: null,
-      connectionAttempts: 0,
-      lastConnectionTime: null,
-      blockedServers: [],
-      autoSwitchingEnabled: true,
-    });
-
-    let updateServersListener: ((servers: Array<typeof refreshedServer>) => void) | null = null;
-    electronApi.onUpdateServers.mockImplementation((callback: (servers: Array<typeof refreshedServer>) => void) => {
-      updateServersListener = callback;
-      return vi.fn();
-    });
-
-    (window as unknown as { electronAPI: ElectronApiMock }).electronAPI = electronApi;
+    electronApi.getConnectionMonitorStatus.mockResolvedValue(
+      makeMonitorStatus({
+        isConnected: true,
+        currentServer,
+      })
+    );
+    installElectronApiMock(electronApi);
 
     const { result } = renderHook(() => useServerState());
     await waitFor(() => expect(result.current.selectedServer?.uuid).toBe(currentServer.uuid));
 
     await act(async () => {
-      updateServersListener?.([refreshedServer]);
+      electronApi.emitUpdateServers([refreshedServer]);
       await Promise.resolve();
     });
 
@@ -123,5 +83,42 @@ describe('useServerState active server sync', () => {
       expect(result.current.selectedServer?.uuid).toBe(currentServer.uuid);
       expect(result.current.selectedServer?.name).toBe(currentServer.name);
     });
+  });
+
+  it('connects the selected server when toggled while disconnected', async () => {
+    const selectedServer = makeServer({ uuid: 'server-to-connect', ping: 42, pingTime: 1 });
+    const electronApi = createElectronApiMock();
+    electronApi.getServers.mockResolvedValue([selectedServer]);
+    electronApi.getSelectedServerId.mockResolvedValue(selectedServer.uuid);
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useServerState());
+    await waitFor(() => expect(result.current.selectedServer?.uuid).toBe(selectedServer.uuid));
+
+    await act(async () => {
+      await result.current.toggleConnection();
+    });
+
+    expect(electronApi.connect).toHaveBeenCalledWith(selectedServer);
+    expect(electronApi.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('disconnects when toggled while already connected', async () => {
+    const selectedServer = makeServer({ uuid: 'server-to-disconnect', ping: 42, pingTime: 1 });
+    const electronApi = createElectronApiMock();
+    electronApi.getServers.mockResolvedValue([selectedServer]);
+    electronApi.getSelectedServerId.mockResolvedValue(selectedServer.uuid);
+    electronApi.getConnectionStatus.mockResolvedValue(true);
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useServerState());
+    await waitFor(() => expect(result.current.selectedServer?.uuid).toBe(selectedServer.uuid));
+
+    await act(async () => {
+      await result.current.toggleConnection();
+    });
+
+    expect(electronApi.disconnect).toHaveBeenCalledTimes(1);
+    expect(electronApi.connect).not.toHaveBeenCalled();
   });
 });

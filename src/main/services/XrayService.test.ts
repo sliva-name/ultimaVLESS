@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { VlessConfig } from '../../shared/types';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import { spawn } from 'child_process';
-// Import statically to ensure same mock reference
 import { XrayService } from './XrayService';
+import { ConfigGenerator } from './ConfigGenerator';
+import { makeServer } from '../../test/factories';
+import { createMockChildProcess } from '../../test/mockChildProcess';
 
-// Mock fs module
 vi.mock('fs', () => ({
   default: {
     existsSync: vi.fn(() => true),
@@ -13,15 +13,17 @@ vi.mock('fs', () => ({
     appendFileSync: vi.fn(),
     mkdirSync: vi.fn(),
     chmodSync: vi.fn(),
-  }
+    statSync: vi.fn(() => ({ size: 0 })),
+    renameSync: vi.fn(),
+    unlinkSync: vi.fn(),
+  },
 }));
 
-// Mock child_process
 vi.mock('child_process', () => {
   const spawn = vi.fn();
   return {
     spawn,
-    default: { spawn }, 
+    default: { spawn },
     __esModule: true,
   };
 });
@@ -29,111 +31,87 @@ vi.mock('child_process', () => {
 vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(() => '/tmp'),
-    isPackaged: false
-  }
+    isPackaged: false,
+  },
 }));
 
-// Mock ConfigGenerator
 vi.mock('./ConfigGenerator', () => ({
   ConfigGenerator: {
-    generate: vi.fn(() => ({ outbound: {} }))
-  }
+    generate: vi.fn(() => ({ outbound: {} })),
+  },
 }));
 
 describe('XrayService', () => {
-  const mockConfig: VlessConfig = {
+  const mockConfig = makeServer({
     uuid: 'uuid',
     address: 'addr',
-    port: 443,
     name: 'test',
-    security: 'reality'
-  };
+    security: 'reality',
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockReturnValue(true);
   });
 
-  it('should start xray process if binary exists', async () => {
+  it('writes generated config and spawns Xray with the config path', async () => {
     const svc = new XrayService();
-
-    // Setup mocks
-    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    
-    const mockProcess = {
-      pid: 123,
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
-      once: vi.fn(),
-      kill: vi.fn()
-    };
+    const mockProcess = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(mockProcess as any);
 
     await svc.start(mockConfig);
 
-    expect(fs.writeFileSync).toHaveBeenCalled();
-    expect(spawn).toHaveBeenCalled();
+    expect(ConfigGenerator.generate).toHaveBeenCalledWith(
+      mockConfig,
+      expect.stringMatching(/[\\/]tmp[\\/]xray\.log$/),
+      'proxy',
+      {}
+    );
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect.stringMatching(/[\\/]tmp[\\/]config\.json$/),
+      JSON.stringify({ outbound: {} }, null, 2)
+    );
+    expect(spawn).toHaveBeenCalledWith(
+      expect.stringMatching(/resources[\\/]+bin[\\/]+xray(\.exe)?$/),
+      ['-c', expect.stringMatching(/[\\/]tmp[\\/]config\.json$/)],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          XRAY_LOCATION_ASSET: expect.stringMatching(/resources[\\/]+bin$/),
+        }),
+      })
+    );
     expect(svc.isRunning()).toBe(true);
   });
 
-  it('should throw if binary missing', async () => {
+  it('throws when the Xray binary is missing', async () => {
     const svc = new XrayService();
-
-    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
     vi.mocked(fs.existsSync).mockReturnValue(false);
 
     await expect(svc.start(mockConfig)).rejects.toThrow('Xray binary not found');
   });
 
-  it('should stop process when requested', async () => {
+  it('stops the running child process on demand', async () => {
     const svc = new XrayService();
-
-    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    const mockProcess = {
-      pid: 123,
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
-      kill: vi.fn(() => true)
-    };
+    const mockProcess = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(mockProcess as any);
 
     await svc.start(mockConfig);
-    expect(svc.isRunning()).toBe(true);
-
     svc.stop();
-    expect(mockProcess.kill).toHaveBeenCalled();
+
+    expect(mockProcess.kill).toHaveBeenCalledTimes(1);
     expect(svc.isRunning()).toBe(false);
   });
 
-  it('emits unexpected-exit when process closes unexpectedly', async () => {
+  it('emits unexpected-exit when the child process closes unexpectedly', async () => {
     const svc = new XrayService();
-
-    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-
-    const listeners: Record<string, ((...args: any[]) => void)[]> = {};
-    const mockProcess = {
-      pid: 123,
-      signalCode: null,
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn((event: string, listener: (...args: any[]) => void) => {
-        listeners[event] ??= [];
-        listeners[event].push(listener);
-      }),
-      once: vi.fn(),
-      kill: vi.fn(),
-    };
+    const mockProcess = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(mockProcess as any);
 
     const onUnexpectedExit = vi.fn();
     svc.on('unexpected-exit', onUnexpectedExit);
 
     await svc.start(mockConfig);
-    listeners.close?.[0]?.(17);
+    mockProcess.emit('close', 17);
 
     expect(onUnexpectedExit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -143,5 +121,20 @@ describe('XrayService', () => {
       })
     );
     expect(svc.isRunning()).toBe(false);
+  });
+
+  it('does not emit unexpected-exit for an expected stop', async () => {
+    const svc = new XrayService();
+    const mockProcess = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(mockProcess as any);
+
+    const onUnexpectedExit = vi.fn();
+    svc.on('unexpected-exit', onUnexpectedExit);
+
+    await svc.start(mockConfig);
+    svc.stop();
+    mockProcess.emit('close', 0);
+
+    expect(onUnexpectedExit).not.toHaveBeenCalled();
   });
 });

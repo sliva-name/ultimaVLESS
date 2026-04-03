@@ -38,59 +38,11 @@ export class ConfigGenerator {
       cfg.inbounds = [];
     }
 
-    const hasSocks = cfg.inbounds.some((ib: any) => ib.protocol === 'socks');
-    const hasHttp = cfg.inbounds.some((ib: any) => ib.protocol === 'http');
+    this.ensureLocalProxyInbounds(cfg.inbounds);
     const hasTun = cfg.inbounds.some((ib: any) => ib?.protocol === 'tun' || ib?.tag === 'tun-in');
 
-    for (const ib of cfg.inbounds) {
-      if (ib.protocol === 'socks') {
-        ib.port = APP_CONSTANTS.PORTS.SOCKS;
-        ib.listen = '127.0.0.1';
-      }
-      if (ib.protocol === 'http') {
-        ib.port = APP_CONSTANTS.PORTS.HTTP;
-        ib.listen = '127.0.0.1';
-      }
-    }
-
-    if (!hasSocks) {
-      cfg.inbounds.push({
-        tag: 'socks',
-        port: APP_CONSTANTS.PORTS.SOCKS,
-        listen: '127.0.0.1',
-        protocol: 'socks',
-        settings: { udp: true, auth: 'noauth' },
-        sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'] },
-      });
-    }
-
-    if (!hasHttp) {
-      cfg.inbounds.push({
-        tag: 'http',
-        port: APP_CONSTANTS.PORTS.HTTP,
-        listen: '127.0.0.1',
-        protocol: 'http',
-        settings: { allowTransparent: false },
-        sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'] },
-      });
-    }
-
     if (connectionMode === 'tun' && !hasTun) {
-      const tunInbound: Record<string, any> = {
-        tag: 'tun-in',
-        port: 0,
-        protocol: 'tun' as any,
-        settings: {
-          name: 'ultima0',
-          mtu: 1400,
-          inet4_address: '172.19.0.1/30',
-        },
-      };
-      if (options.tunAutoRoute) {
-        tunInbound.settings.autoRoute = true;
-        tunInbound.settings.strictRoute = true;
-      }
-      cfg.inbounds.unshift(tunInbound);
+      cfg.inbounds.unshift(this.createTunInbound(options));
       this.applySendThroughIfNeeded(cfg, options.sendThrough);
     }
 
@@ -160,45 +112,9 @@ export class ConfigGenerator {
       outbound.sendThrough = options.sendThrough;
     }
 
-    const inboundSocks: XrayInbound = {
-      tag: 'socks',
-      port: APP_CONSTANTS.PORTS.SOCKS,
-      listen: '127.0.0.1',
-      protocol: 'socks',
-      settings: {
-        udp: true,
-      },
-      sniffing: {
-        enabled: true,
-        destOverride: ['http', 'tls', 'quic'],
-      },
-    };
-
-    const inboundHttp: XrayInbound = {
-      tag: 'http',
-      port: APP_CONSTANTS.PORTS.HTTP,
-      listen: '127.0.0.1',
-      protocol: 'http',
-      settings: {},
-    };
-
-    const inbounds: XrayInbound[] = [inboundSocks, inboundHttp];
+    const inbounds: XrayInbound[] = this.createLocalProxyInbounds();
     if (connectionMode === 'tun') {
-      const tunInbound: Record<string, any> = {
-        tag: 'tun-in',
-        port: 0,
-        protocol: 'tun' as any,
-        settings: {
-          name: 'ultima0',
-          mtu: 1400,
-          inet4_address: '172.19.0.1/30',
-        },
-      };
-      if (options.tunAutoRoute) {
-        tunInbound.settings.autoRoute = true;
-        tunInbound.settings.strictRoute = true;
-      }
-      inbounds.unshift(tunInbound as XrayInbound);
+      inbounds.unshift(this.createTunInbound(options) as XrayInbound);
     }
 
     return {
@@ -240,5 +156,95 @@ export class ConfigGenerator {
       return;
     }
     preferred.sendThrough = sendThrough;
+  }
+
+  private static createLocalProxyInbounds(): XrayInbound[] {
+    return [
+      {
+        tag: 'socks',
+        port: APP_CONSTANTS.PORTS.SOCKS,
+        listen: '127.0.0.1',
+        protocol: 'socks',
+        settings: {
+          udp: true,
+        },
+        sniffing: {
+          enabled: true,
+          destOverride: ['http', 'tls', 'quic'],
+        },
+      },
+      {
+        tag: 'http',
+        port: APP_CONSTANTS.PORTS.HTTP,
+        listen: '127.0.0.1',
+        protocol: 'http',
+        settings: {},
+      },
+    ];
+  }
+
+  private static ensureLocalProxyInbounds(inbounds: Array<Record<string, any>>): void {
+    let hasSocks = false;
+    let hasHttp = false;
+
+    for (const inbound of inbounds) {
+      if (inbound.protocol === 'socks') {
+        inbound.tag ??= 'socks';
+        inbound.port = APP_CONSTANTS.PORTS.SOCKS;
+        inbound.listen = '127.0.0.1';
+        inbound.settings = {
+          auth: 'noauth',
+          ...inbound.settings,
+          udp: true,
+        };
+        inbound.sniffing = inbound.sniffing ?? {
+          enabled: true,
+          destOverride: ['http', 'tls', 'quic'],
+        };
+        hasSocks = true;
+      }
+      if (inbound.protocol === 'http') {
+        inbound.tag ??= 'http';
+        inbound.port = APP_CONSTANTS.PORTS.HTTP;
+        inbound.listen = '127.0.0.1';
+        inbound.settings = {
+          allowTransparent: false,
+          ...inbound.settings,
+        };
+        inbound.sniffing = inbound.sniffing ?? {
+          enabled: true,
+          destOverride: ['http', 'tls', 'quic'],
+        };
+        hasHttp = true;
+      }
+    }
+
+    if (!hasSocks || !hasHttp) {
+      const defaults = this.createLocalProxyInbounds();
+      if (!hasSocks) {
+        inbounds.push(defaults[0] as Record<string, any>);
+      }
+      if (!hasHttp) {
+        inbounds.push(defaults[1] as Record<string, any>);
+      }
+    }
+  }
+
+  private static createTunInbound(options: ConfigGeneratorOptions): Record<string, any> {
+    const tunInbound: Record<string, any> = {
+      tag: 'tun-in',
+      port: 0,
+      protocol: 'tun' as any,
+      settings: {
+        name: 'ultima0',
+        mtu: 1400,
+        inet4_address: '172.19.0.1/30',
+      },
+    };
+    if (options.tunAutoRoute) {
+      tunInbound.settings.autoRoute = true;
+      tunInbound.settings.strictRoute = true;
+    }
+    return tunInbound;
   }
 }

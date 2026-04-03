@@ -1,5 +1,6 @@
 import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { SaveSubscriptionPayload } from '../../shared/ipc';
+export { redactUrl } from '../utils/redactUrl';
 
 const MAX_SUBSCRIPTION_URL_LENGTH = 4096;
 const MAX_MANUAL_LINKS_LENGTH = 1_000_000;
@@ -16,16 +17,6 @@ function normalizeAndValidatePayload(subscriptionUrl: string, manualLinks: strin
     subscriptionUrl: subscriptionUrl.trim(),
     manualLinks: manualLinks.trim(),
   };
-}
-
-export function redactUrl(url: string): string {
-  if (!url) return '';
-  try {
-    const parsed = new URL(url);
-    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
-  } catch {
-    return '[invalid-url]';
-  }
 }
 
 export function normalizeSavePayload(payload: unknown): SaveSubscriptionPayload {

@@ -16,16 +16,12 @@ if (typeof process.versions.electron !== 'string') {
 }
 
 async function stopNetworkStack(): Promise<void> {
-  const [{ systemProxyService }, { xrayService }, { tunRouteService }, { connectionMonitorService }] = await Promise.all([
-    import('./services/SystemProxyService'),
-    import('./services/XrayService'),
-    import('./services/TunRouteService'),
+  const [{ connectionStackService }, { connectionMonitorService }] = await Promise.all([
+    import('./services/ConnectionStackService'),
     import('./services/ConnectionMonitorService'),
   ]);
   connectionMonitorService.stopMonitoring();
-  await systemProxyService.disable();
-  await tunRouteService.disable();
-  xrayService.stop();
+  await connectionStackService.resetNetworkingStack({ stopXray: true });
 }
 
 /** Must match build.appId — Windows taskbar, jump lists, toasts. @see https://www.electron.build/nsis */

@@ -90,8 +90,9 @@ export function registerConnectionHandlers({
           throw new Error('TUN mode requires root privileges on this operating system. Please run the app with elevated permissions.');
         }
 
-        await deps.connectionStackService.resetNetworkingStack({ stopXray: true });
-        await deps.connectionStackService.applyConnectionMode(fullConfig, connectionMode, deps.constants.ports);
+        await deps.connectionStackService.transitionTo(fullConfig, connectionMode, deps.constants.ports, {
+          stopXray: true,
+        });
 
         deps.configService.clearPendingTunReconnect();
         deps.configService.setSelectedServerId(fullConfig.uuid);

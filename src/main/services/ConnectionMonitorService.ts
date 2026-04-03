@@ -7,6 +7,7 @@ import { EventEmitter } from 'events';
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { extractBlockingErrors, isBlockingErrorText } from './blockingErrors';
 
 export interface ConnectionStatus {
   isConnected: boolean;
@@ -199,23 +200,7 @@ export class ConnectionMonitorService extends EventEmitter {
    * Checks if an error indicates a blocking issue.
    */
   private isBlockingError(error: string): boolean {
-    const blockingIndicators = [
-      'connection refused',
-      'connection reset',
-      'timeout',
-      'network unreachable',
-      'no route to host',
-      'connection closed',
-      'handshake failure',
-      'blocked',
-      'forbidden',
-      'failed to dial',
-      'i/o timeout',
-      'context deadline exceeded',
-    ];
-
-    const lowerError = error.toLowerCase();
-    return blockingIndicators.some(indicator => lowerError.includes(indicator));
+    return isBlockingErrorText(error);
   }
 
   /**
@@ -359,28 +344,7 @@ export class ConnectionMonitorService extends EventEmitter {
    * Analyzes log lines for connection errors.
    */
   private analyzeLogForErrors(logLines: string[]): string[] {
-    const errors: string[] = [];
-    const errorPatterns = [
-      /failed to dial/i,
-      /connection refused/i,
-      /timeout/i,
-      /network unreachable/i,
-      /handshake failure/i,
-      /connection reset/i,
-      /no route to host/i,
-      /context deadline exceeded/i,
-    ];
-
-    for (const line of logLines) {
-      for (const pattern of errorPatterns) {
-        if (pattern.test(line)) {
-          errors.push(line.trim());
-          break;
-        }
-      }
-    }
-
-    return errors;
+    return extractBlockingErrors(logLines);
   }
 
   /**
@@ -485,17 +449,12 @@ export class ConnectionMonitorService extends EventEmitter {
       if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) return;
       const connectionMode = configService.getConnectionMode();
 
-      // Reuse the same stack reset path as manual connect/disconnect flows.
-      await connectionStackService.resetNetworkingStack({ stopXray: true });
-
-      // Небольшая задержка перед переподключением
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) return;
-
-      // Use shared stack application to keep mode transition logic consistent.
-      await connectionStackService.applyConnectionMode(server, connectionMode, {
+      await connectionStackService.transitionTo(server, connectionMode, {
         http: APP_CONSTANTS.PORTS.HTTP,
         socks: APP_CONSTANTS.PORTS.SOCKS,
+      }, {
+        stopXray: true,
+        delayBeforeApplyMs: 1000,
       });
       if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) {
         await connectionStackService.resetNetworkingStack({ stopXray: true });

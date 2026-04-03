@@ -9,6 +9,11 @@ interface ProxyPorts {
   socks: number;
 }
 
+interface TransitionOptions {
+  delayBeforeApplyMs?: number;
+  stopXray?: boolean;
+}
+
 /**
  * Centralizes connect/disconnect stack orchestration for Proxy/TUN modes.
  * This keeps behavior consistent between manual connect and auto-switch flows.
@@ -53,12 +58,35 @@ export class ConnectionStackService {
     await this.routeService.enable(server, routingPlan);
   }
 
+  private async transitionToUnsafe(
+    server: VlessConfig,
+    mode: ConnectionMode,
+    ports: ProxyPorts,
+    options: TransitionOptions = {}
+  ): Promise<void> {
+    const { delayBeforeApplyMs = 0, stopXray = true } = options;
+    await this.resetNetworkingStackUnsafe({ stopXray });
+    if (delayBeforeApplyMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayBeforeApplyMs));
+    }
+    await this.applyConnectionModeUnsafe(server, mode, ports);
+  }
+
   public async resetNetworkingStack(options: { stopXray?: boolean } = {}): Promise<void> {
     return this.enqueue(() => this.resetNetworkingStackUnsafe(options));
   }
 
   public async applyConnectionMode(server: VlessConfig, mode: ConnectionMode, ports: ProxyPorts): Promise<void> {
     return this.enqueue(() => this.applyConnectionModeUnsafe(server, mode, ports));
+  }
+
+  public async transitionTo(
+    server: VlessConfig,
+    mode: ConnectionMode,
+    ports: ProxyPorts,
+    options: TransitionOptions = {}
+  ): Promise<void> {
+    return this.enqueue(() => this.transitionToUnsafe(server, mode, ports, options));
   }
 
   public async cleanupAfterFailure(): Promise<void> {

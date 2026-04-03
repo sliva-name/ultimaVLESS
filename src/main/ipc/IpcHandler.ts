@@ -239,8 +239,9 @@ async function attemptPendingTunReconnect(
       serverId: serverIdPreview,
       serverName: fullConfig.name,
     });
-    await deps.connectionStackService.resetNetworkingStack({ stopXray: true });
-    await deps.connectionStackService.applyConnectionMode(fullConfig, 'tun', deps.constants.ports);
+    await deps.connectionStackService.transitionTo(fullConfig, 'tun', deps.constants.ports, {
+      stopXray: true,
+    });
     deps.configService.setSelectedServerId(fullConfig.uuid);
     deps.connectionMonitorService.startMonitoring(fullConfig);
     return true;

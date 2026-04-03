@@ -28,6 +28,9 @@ const ServerItem = React.memo<ServerItemProps>(({ server, isSelected, isConnecte
   return (
     <div
       onClick={handleClick}
+      role="button"
+      aria-selected={isSelected}
+      aria-disabled={isConnected && !isSelected}
       data-testid={`server-item-${server.uuid}`}
       className={clsx(
         "group p-3.5 rounded-xl cursor-pointer transition-all duration-200 border relative overflow-hidden",

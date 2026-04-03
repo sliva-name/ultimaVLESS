@@ -89,11 +89,13 @@ export class SystemProxyService {
   private readonly MACOS_TIMEOUT_MS = 15000;
   private readonly LINUX_TIMEOUT_MS = 8000;
   private activeSnapshot: ProxySnapshot | null = null;
+  private readonly platform: NodeJS.Platform;
 
-  constructor() {
+  constructor(platform: NodeJS.Platform = process.platform) {
+    this.platform = platform;
     this.scriptPath = path.join(app.getPath('userData'), 'proxy_manager.ps1');
     this.snapshotPath = path.join(app.getPath('userData'), 'system-proxy-state.json');
-    if (process.platform === 'win32') {
+    if (this.platform === 'win32') {
       this.initScript();
     }
   }
@@ -117,19 +119,19 @@ export class SystemProxyService {
    * @returns {Promise<void>}
    */
   public async enable(httpPort: number, socksPort: number): Promise<void> {
-    if (process.platform === 'darwin') {
+    if (this.platform === 'darwin') {
       await this.ensureSnapshotCaptured();
       await this.enableMacosProxy(httpPort, socksPort);
       return;
     }
-    if (process.platform === 'linux') {
+    if (this.platform === 'linux') {
       await this.ensureSnapshotCaptured();
       await this.enableLinuxProxy(httpPort, socksPort);
       return;
     }
-    if (process.platform !== 'win32') {
+    if (this.platform !== 'win32') {
       logger.info('SystemProxyService', 'Unsupported platform for system proxy operations', {
-        platform: process.platform,
+        platform: this.platform,
       });
       return;
     }
@@ -145,15 +147,15 @@ export class SystemProxyService {
    * @returns {Promise<void>}
    */
   public async disable(): Promise<void> {
-    if (process.platform === 'darwin') {
+    if (this.platform === 'darwin') {
       await this.restoreSnapshotOrFallback(() => this.disableMacosProxy());
       return;
     }
-    if (process.platform === 'linux') {
+    if (this.platform === 'linux') {
       await this.restoreSnapshotOrFallback(() => this.disableLinuxProxy());
       return;
     }
-    if (process.platform !== 'win32') {
+    if (this.platform !== 'win32') {
       return;
     }
     await this.restoreSnapshotOrFallback(() => this.runScript('0', ''));
@@ -314,16 +316,16 @@ export class SystemProxyService {
   }
 
   private async captureCurrentProxyState(): Promise<ProxySnapshot> {
-    if (process.platform === 'win32') {
+    if (this.platform === 'win32') {
       return this.captureWindowsProxyState();
     }
-    if (process.platform === 'darwin') {
+    if (this.platform === 'darwin') {
       return this.captureMacosProxyState();
     }
-    if (process.platform === 'linux') {
+    if (this.platform === 'linux') {
       return this.captureLinuxProxyState();
     }
-    throw new Error(`Unsupported platform for proxy snapshot: ${process.platform}`);
+    throw new Error(`Unsupported platform for proxy snapshot: ${this.platform}`);
   }
 
   private async restoreProxyState(snapshot: ProxySnapshot): Promise<void> {

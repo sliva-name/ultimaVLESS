@@ -1,21 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectionMonitorStatus } from '../../shared/ipc';
-import type { VlessConfig } from '../../shared/types';
 import { preserveActiveServerIfNeeded } from './refreshUtils';
+import { makeServer } from '../../test/factories';
 
-const activeServer: VlessConfig = {
+const activeServer = makeServer({
   uuid: 'active-server',
   address: 'active.example.com',
-  port: 443,
   name: 'Active Server',
-};
-
-const newServer: VlessConfig = {
+});
+const newServer = makeServer({
   uuid: 'new-server',
   address: 'new.example.com',
-  port: 443,
   name: 'New Server',
-};
+});
 
 function makeMonitorStatus(overrides: Partial<ConnectionMonitorStatus> = {}): ConnectionMonitorStatus {
   return {
@@ -31,25 +28,20 @@ function makeMonitorStatus(overrides: Partial<ConnectionMonitorStatus> = {}): Co
 }
 
 describe('preserveActiveServerIfNeeded', () => {
-  it('preserves the active server when refresh no longer contains it', () => {
-    const result = preserveActiveServerIfNeeded(
-      [newServer],
-      [activeServer],
-      makeMonitorStatus(),
-      true
-    );
+  it.each([
+    {
+      monitorStatus: makeMonitorStatus(),
+      isRunning: true,
+      expectedUuids: [activeServer.uuid, newServer.uuid],
+    },
+    {
+      monitorStatus: makeMonitorStatus({ isConnected: false }),
+      isRunning: false,
+      expectedUuids: [newServer.uuid],
+    },
+  ])('returns the expected refresh result for connection state %#', ({ monitorStatus, isRunning, expectedUuids }) => {
+    const result = preserveActiveServerIfNeeded([newServer], [activeServer], monitorStatus, isRunning);
 
-    expect(result.map((server) => server.uuid)).toEqual([activeServer.uuid, newServer.uuid]);
-  });
-
-  it('does not modify refresh results when disconnected', () => {
-    const result = preserveActiveServerIfNeeded(
-      [newServer],
-      [activeServer],
-      makeMonitorStatus({ isConnected: false }),
-      false
-    );
-
-    expect(result).toEqual([newServer]);
+    expect(result.map((server) => server.uuid)).toEqual(expectedUuids);
   });
 });

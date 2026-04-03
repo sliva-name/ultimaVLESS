@@ -41,16 +41,17 @@ interface RunPowerShellOptions {
 
 export class TunRouteService {
   private addedRoutes: { destination: string; mask: string; interfaceIndex?: number }[] = [];
+  constructor(private readonly platform: NodeJS.Platform = process.platform) {}
 
   public isSupported(): boolean {
-    return process.platform === 'win32' || process.platform === 'linux';
+    return this.platform === 'win32' || this.platform === 'linux';
   }
 
   public getUnsupportedReason(): string | null {
     if (this.isSupported()) {
       return null;
     }
-    if (process.platform === 'darwin') {
+    if (this.platform === 'darwin') {
       return 'TUN mode is currently supported only on Windows and Linux by the bundled Xray core.';
     }
     return 'TUN mode is not supported on this operating system.';
@@ -61,7 +62,7 @@ export class TunRouteService {
     if (unsupportedReason) {
       throw new Error(unsupportedReason);
     }
-    if (process.platform !== 'win32') {
+    if (this.platform !== 'win32') {
       return this.prepareUnixRoutingPlan(config);
     }
     const [defaultRoute, proxyIps] = await Promise.all([
@@ -80,10 +81,10 @@ export class TunRouteService {
   }
 
   public async enable(config: VlessConfig, plan?: TunRoutingPlan): Promise<void> {
-    if (process.platform !== 'win32') {
+    if (this.platform !== 'win32') {
       const routingPlan = plan ?? (await this.prepareRoutingPlan(config));
       logger.info('TunRouteService', 'Using Xray auto-route for TUN mode on Unix platform', {
-        platform: process.platform,
+        platform: this.platform,
         proxyIpCount: routingPlan.proxyIps.length,
         defaultInterface: routingPlan.defaultRoute.interfaceName,
       });
@@ -133,7 +134,7 @@ export class TunRouteService {
   }
 
   public async disable(): Promise<void> {
-    if (process.platform !== 'win32') return;
+    if (this.platform !== 'win32') return;
 
     for (const route of [...this.addedRoutes].reverse()) {
       try {
@@ -171,10 +172,10 @@ export class TunRouteService {
   }
 
   private async getUnixDefaultRouteInfo(): Promise<DefaultRouteInfo | null> {
-    if (process.platform === 'linux') {
+    if (this.platform === 'linux') {
       return this.getLinuxDefaultRouteInfo();
     }
-    if (process.platform === 'darwin') {
+    if (this.platform === 'darwin') {
       return this.getMacosDefaultRouteInfo();
     }
     return null;
