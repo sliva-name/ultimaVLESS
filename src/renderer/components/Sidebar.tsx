@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { VlessConfig } from '../../shared/types';
-import { ShieldCheck, Settings, Server, RefreshCw, ChevronDown } from 'lucide-react';
+import { Settings, Server, RefreshCw, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
+import logoUrl from '../assets/logo.svg';
 
 interface SidebarProps {
   servers: VlessConfig[];
@@ -147,8 +148,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="relative z-10 p-5 border-b border-gray-800/50 bg-gradient-to-r from-surface to-surface/95 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/30 shadow-lg shadow-primary/10">
-              <ShieldCheck className="text-primary w-5 h-5" />
+            <div className="p-1.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/30 shadow-lg shadow-primary/10">
+              <img src={logoUrl} alt="UltimaVLESS logo" className="w-8 h-8 rounded-lg" />
             </div>
             <div>
               <h1 className="font-bold text-lg text-white tracking-tight">UltimaClient</h1>

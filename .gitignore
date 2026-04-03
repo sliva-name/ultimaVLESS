@@ -15,6 +15,7 @@ resources/bin/*
 !resources/bin/logo.ico
 !resources/bin/logo.icns
 !resources/bin/logo-256x256.png
+!resources/bin/logo.svg
 !resources/bin/LICENSE
 
 # Logs
