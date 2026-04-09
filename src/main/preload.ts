@@ -1,16 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { ConnectionMode, VlessConfig } from '../shared/types';
+import { ConnectionMode, Subscription, VlessConfig } from '../shared/types';
 import {
+  AddSubscriptionPayload,
+  AddSubscriptionResult,
   ConnectResult,
   ConnectionMonitorEvent,
   ConnectionMonitorStatus,
   DisconnectResult,
   IPC_EVENT_CHANNELS,
   IPC_INVOKE_CHANNELS,
-  PingResult,
   ImportMobileWhiteListResult,
-  SaveSubscriptionPayload,
+  PingResult,
+  SaveManualLinksResult,
   TunCapabilityStatus,
+  UpdateSubscriptionPayload,
 } from '../shared/ipc';
 
 function createListener<T>(channel: string) {
@@ -26,11 +29,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.connect, server) as Promise<ConnectResult>,
   disconnect: () =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.disconnect) as Promise<DisconnectResult>,
-  saveSubscription: (payload: SaveSubscriptionPayload) =>
-    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.saveSubscription, payload) as Promise<boolean>,
 
+  // Subscriptions CRUD
+  getSubscriptions: () =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getSubscriptions) as Promise<Subscription[]>,
+  addSubscription: (payload: AddSubscriptionPayload) =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.addSubscription, payload) as Promise<AddSubscriptionResult & { subscriptionId: string }>,
+  updateSubscription: (payload: UpdateSubscriptionPayload) =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.updateSubscription, payload) as Promise<boolean>,
+  deleteSubscription: (id: string) =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.deleteSubscription, { id }) as Promise<boolean>,
+  refreshSubscriptions: () =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.refreshSubscriptions) as Promise<{ ok: boolean; configCount: number; error?: string }>,
+
+  // Manual links
+  getManualLinks: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getManualLinks) as Promise<string>,
+  saveManualLinks: (manualLinks: string) =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.saveManualLinks, manualLinks) as Promise<SaveManualLinksResult>,
+
+  // Events
   onUpdateServers: createListener<VlessConfig[]>(IPC_EVENT_CHANNELS.updateServers),
-  onManualLinksUpdated: createListener<string>(IPC_EVENT_CHANNELS.manualLinksUpdated),
+  onUpdateSubscriptions: createListener<Subscription[]>(IPC_EVENT_CHANNELS.updateSubscriptions),
   onConnectionStatus: createListener<boolean>(IPC_EVENT_CHANNELS.connectionStatus),
   onConnectionBusy: createListener<boolean>(IPC_EVENT_CHANNELS.connectionBusy),
   onConnectionError: createListener<string>(IPC_EVENT_CHANNELS.connectionError),
@@ -42,8 +61,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearBlockedServers: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.clearBlockedServers) as Promise<boolean>,
 
   getServers: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getServers) as Promise<VlessConfig[]>,
-  getSubscriptionUrl: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getSubscriptionUrl) as Promise<string>,
-  getManualLinks: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getManualLinks) as Promise<string>,
   getSelectedServerId: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getSelectedServerId) as Promise<string | null>,
   setSelectedServerId: (serverId: string | null) =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setSelectedServerId, serverId) as Promise<boolean>,

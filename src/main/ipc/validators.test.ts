@@ -1,42 +1,89 @@
 import { describe, expect, it } from 'vitest';
-import { assertConnectionMode, assertValidServerPayload, normalizeSavePayload, redactUrl } from './validators';
+import {
+  assertConnectionMode,
+  assertValidServerPayload,
+  normalizeAddSubscriptionPayload,
+  normalizeManualLinks,
+  normalizeUpdateSubscriptionPayload,
+  redactUrl,
+} from './validators';
 
-describe('normalizeSavePayload', () => {
-  it.each([
-    {
-      input: {
-        subscriptionUrl: '  https://example.com/sub  ',
-        manualLinks: '  vless://abc@example.com:443?type=tcp#Server  ',
-      },
-      expected: {
-        subscriptionUrl: 'https://example.com/sub',
-        manualLinks: 'vless://abc@example.com:443?type=tcp#Server',
-      },
-    },
-    {
-      input: '  https://example.com/sub  ',
-      expected: {
-        subscriptionUrl: 'https://example.com/sub',
-        manualLinks: '',
-      },
-    },
-  ])('normalizes valid payloads: $expected.subscriptionUrl', ({ input, expected }) => {
-    expect(normalizeSavePayload(input)).toEqual(expected);
+describe('normalizeAddSubscriptionPayload', () => {
+  it('normalizes a valid payload', () => {
+    expect(
+      normalizeAddSubscriptionPayload({ name: '  My Sub  ', url: '  https://example.com/sub  ' })
+    ).toEqual({ name: 'My Sub', url: 'https://example.com/sub' });
   });
 
-  it('rejects oversized subscription urls', () => {
-    expect(() => normalizeSavePayload(`https://example.com/${'a'.repeat(5000)}`)).toThrow(
-      /Subscription URL is too long/
+  it('rejects missing name', () => {
+    expect(() => normalizeAddSubscriptionPayload({ name: '', url: 'https://example.com' })).toThrow(/name is required/);
+  });
+
+  it('rejects missing url', () => {
+    expect(() => normalizeAddSubscriptionPayload({ name: 'Test', url: '' })).toThrow(/URL is required/);
+  });
+
+  it('rejects oversized URL', () => {
+    expect(() =>
+      normalizeAddSubscriptionPayload({ name: 'Test', url: `https://example.com/${'a'.repeat(5000)}` })
+    ).toThrow(/URL is too long/);
+  });
+
+  it('rejects non-object payload', () => {
+    expect(() => normalizeAddSubscriptionPayload('https://example.com')).toThrow(/Invalid subscription payload/);
+  });
+});
+
+describe('normalizeUpdateSubscriptionPayload', () => {
+  it('normalizes a valid patch', () => {
+    expect(
+      normalizeUpdateSubscriptionPayload({ id: 'abc', name: '  Updated  ', enabled: false })
+    ).toEqual({ id: 'abc', patch: { name: 'Updated', enabled: false } });
+  });
+
+  it('reads name, url, enabled from nested patch (renderer shape)', () => {
+    expect(
+      normalizeUpdateSubscriptionPayload({
+        id: 'sub-1',
+        patch: { enabled: false },
+      })
+    ).toEqual({ id: 'sub-1', patch: { enabled: false } });
+    expect(
+      normalizeUpdateSubscriptionPayload({
+        id: 'sub-1',
+        patch: { name: '  New  ', url: '  https://x.test/sub  ' },
+      })
+    ).toEqual({ id: 'sub-1', patch: { name: 'New', url: 'https://x.test/sub' } });
+  });
+
+  it('flat fields override nested patch when both present', () => {
+    expect(
+      normalizeUpdateSubscriptionPayload({
+        id: 'sub-1',
+        patch: { enabled: true },
+        enabled: false,
+      })
+    ).toEqual({ id: 'sub-1', patch: { enabled: false } });
+  });
+
+  it('rejects missing id', () => {
+    expect(() => normalizeUpdateSubscriptionPayload({ id: '', name: 'Test' })).toThrow(/id is required/);
+  });
+});
+
+describe('normalizeManualLinks', () => {
+  it('trims and returns string', () => {
+    expect(normalizeManualLinks('  vless://abc@x:443#s  ')).toBe('vless://abc@x:443#s');
+  });
+
+  it('rejects oversized payload', () => {
+    expect(() => normalizeManualLinks('vless://x@y:443#s\n'.repeat(70_000))).toThrow(
+      /Manual links payload is too large/
     );
   });
 
-  it('rejects oversized manual links payloads', () => {
-    expect(() =>
-      normalizeSavePayload({
-        subscriptionUrl: 'https://example.com/sub',
-        manualLinks: 'vless://x@y:443#s\n'.repeat(70_000),
-      })
-    ).toThrow(/Manual links payload is too large/);
+  it('rejects non-string', () => {
+    expect(() => normalizeManualLinks({ text: 'links' })).toThrow(/Invalid manual links payload/);
   });
 });
 

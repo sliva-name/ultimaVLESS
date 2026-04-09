@@ -1,4 +1,4 @@
-import type { ConnectionMonitorStatus, SaveSubscriptionPayload } from '../shared/ipc';
+import type { ConnectionMonitorStatus } from '../shared/ipc';
 import type { VlessConfig } from '../shared/types';
 
 export function makeServer(overrides: Partial<VlessConfig> = {}): VlessConfig {
@@ -49,12 +49,3 @@ export function makeMonitorStatus(
   };
 }
 
-export function makeSubscriptionPayload(
-  overrides: Partial<SaveSubscriptionPayload> = {}
-): SaveSubscriptionPayload {
-  return {
-    subscriptionUrl: 'https://example.com/subscription.txt',
-    manualLinks: '',
-    ...overrides,
-  };
-}

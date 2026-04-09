@@ -1,3 +1,10 @@
+export interface Subscription {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+}
+
 export interface VlessConfig {
   uuid: string;
   userId?: string; // original VLESS user UUID used for auth
@@ -5,9 +12,10 @@ export interface VlessConfig {
   port: number;
   name: string;
   source?: 'subscription' | 'manual';
+  subscriptionId?: string; // which Subscription this server came from
   flow?: string; // xtls-rprx-vision
   encryption?: string;
-  type?: 'tcp' | 'kcp' | 'ws' | 'http' | 'grpc' | 'quic';
+  type?: 'tcp' | 'raw' | 'kcp' | 'ws' | 'http' | 'grpc' | 'quic';
   security?: 'reality' | 'tls' | 'none';
   sni?: string;
   fp?: string; // chrome, firefox, safari, etc.

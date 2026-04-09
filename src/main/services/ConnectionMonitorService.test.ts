@@ -11,6 +11,7 @@ const configServiceMock = vi.hoisted(() => ({
   setSelectedServerId: vi.fn(),
 }));
 const probeTcpPortMock = vi.hoisted(() => vi.fn(async () => true));
+const probeHttpThroughProxyMock = vi.hoisted(() => vi.fn(async () => true));
 const xrayServiceMock = vi.hoisted(() => ({
   getHealthStatus: vi.fn(() => ({
     state: 'running',
@@ -38,6 +39,7 @@ vi.mock('./ConfigService', () => ({
 
 vi.mock('./networkProbe', () => ({
   probeTcpPort: probeTcpPortMock,
+  probeHttpThroughProxy: probeHttpThroughProxyMock,
 }));
 
 vi.mock('./XrayService', () => ({
@@ -71,6 +73,8 @@ describe('ConnectionMonitorService', () => {
     configServiceMock.setSelectedServerId.mockReset();
     probeTcpPortMock.mockReset();
     probeTcpPortMock.mockResolvedValue(true);
+    probeHttpThroughProxyMock.mockReset();
+    probeHttpThroughProxyMock.mockResolvedValue(true);
     xrayServiceMock.getHealthStatus.mockReset();
     xrayServiceMock.getHealthStatus.mockReturnValue({
       state: 'running',
@@ -131,10 +135,10 @@ describe('ConnectionMonitorService', () => {
 
     svc.on('error', () => {});
     svc.startMonitoring(server);
-    svc.recordError('connection refused by upstream');
+    svc.recordError('failed to dial upstream');
 
     expect(svc.getStatus().blockedServers).toEqual(['blocked-server']);
-    expect(svc.getStatus().lastError).toBe('connection refused by upstream');
+    expect(svc.getStatus().lastError).toBe('failed to dial upstream');
     expect(svc.getStatus().lastHealthState).toBe('failed');
   });
 
@@ -186,5 +190,36 @@ describe('ConnectionMonitorService', () => {
       lastHealthFailureReason: 'listeners unreachable',
       lastError: 'listeners unreachable',
     });
+  });
+
+  it('does not set lastError on the first consecutive HTTP tunnel probe failure', async () => {
+    probeHttpThroughProxyMock.mockResolvedValue(false);
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+    const server = makeServer({ uuid: 'server-1', name: 'Example' });
+
+    svc.on('error', () => {});
+    svc.startMonitoring(server);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(svc.getStatus().lastError).toBeNull();
+    expect(svc.getStatus().lastHealthState).toBe('degraded');
+    expect(svc.getStatus().lastHealthFailureReason).toContain('Remote endpoint check');
+  });
+
+  it('sets lastError after two consecutive HTTP tunnel probe failures', async () => {
+    probeHttpThroughProxyMock.mockResolvedValue(false);
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+    const server = makeServer({ uuid: 'server-1', name: 'Example' });
+
+    const errors: string[] = [];
+    svc.on('error', (e) => errors.push(e.error ?? ''));
+    svc.startMonitoring(server);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(svc.getStatus().lastError).toContain('Remote endpoint check');
+    expect(errors.length).toBeGreaterThanOrEqual(1);
   });
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { VlessConfig } from '../../shared/types';
+import { Subscription, VlessConfig } from '../../shared/types';
 import { Settings, Server, RefreshCw, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
@@ -7,6 +7,7 @@ import logoUrl from '../assets/logo.svg';
 
 interface SidebarProps {
   servers: VlessConfig[];
+  subscriptions: Subscription[];
   selectedServer: VlessConfig | null;
   isConnected: boolean;
   onSelectServer: (server: VlessConfig) => void;
@@ -88,38 +89,119 @@ const ServerItem = React.memo<ServerItemProps>(({ server, isSelected, isConnecte
   );
 });
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
-  servers, 
-  selectedServer, 
-  isConnected, 
-  onSelectServer, 
+ServerItem.displayName = 'ServerItem';
+
+// Colours cycling for subscription groups
+const SUBSCRIPTION_COLORS = [
+  { dot: 'bg-blue-400 shadow-blue-400/60', badge: 'bg-blue-500/15 text-blue-300 border-blue-500/30', border: 'border-blue-500/20', bg: 'from-blue-500/8' },
+  { dot: 'bg-emerald-400 shadow-emerald-400/60', badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', border: 'border-emerald-500/20', bg: 'from-emerald-500/8' },
+  { dot: 'bg-amber-400 shadow-amber-400/60', badge: 'bg-amber-500/15 text-amber-300 border-amber-500/30', border: 'border-amber-500/20', bg: 'from-amber-500/8' },
+  { dot: 'bg-rose-400 shadow-rose-400/60', badge: 'bg-rose-500/15 text-rose-300 border-rose-500/30', border: 'border-rose-500/20', bg: 'from-rose-500/8' },
+  { dot: 'bg-cyan-400 shadow-cyan-400/60', badge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30', border: 'border-cyan-500/20', bg: 'from-cyan-500/8' },
+];
+
+interface SubscriptionGroupProps {
+  subscription: Subscription;
+  servers: VlessConfig[];
+  selectedServer: VlessConfig | null;
+  isConnected: boolean;
+  onSelectServer: (server: VlessConfig) => void;
+  colorIdx: number;
+}
+
+const SubscriptionGroup: React.FC<SubscriptionGroupProps> = ({
+  subscription,
+  servers,
+  selectedServer,
+  isConnected,
+  onSelectServer,
+  colorIdx,
+}) => {
+  const [expanded, setExpanded] = useState(true);
+  const color = SUBSCRIPTION_COLORS[colorIdx % SUBSCRIPTION_COLORS.length];
+
+  if (servers.length === 0) return null;
+
+  return (
+    <div className={clsx('rounded-xl border p-2', color.border, `bg-gradient-to-br ${color.bg} to-transparent`)}>
+      <button
+        type="button"
+        onClick={() => setExpanded((prev) => !prev)}
+        className="w-full px-2 py-1.5 mb-1 flex items-center justify-between rounded-lg hover:bg-white/5 transition-colors"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={clsx('w-1.5 h-1.5 flex-shrink-0 rounded-full shadow-sm', color.dot)} />
+          <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider truncate min-w-0 flex-1" title={subscription.name}>
+            {subscription.name}
+          </span>
+          <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-md border flex-shrink-0', color.badge)}>
+            {servers.length}
+          </span>
+        </div>
+        <ChevronDown className={clsx('w-3.5 h-3.5 flex-shrink-0 text-gray-400 transition-transform', expanded && 'rotate-180')} />
+      </button>
+      {expanded && (
+        <div className="space-y-2">
+          {servers.map((server) => (
+            <ServerItem
+              key={server.uuid}
+              server={server}
+              isSelected={selectedServer?.uuid === server.uuid}
+              isConnected={isConnected}
+              onSelect={onSelectServer}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const Sidebar: React.FC<SidebarProps> = ({
+  servers,
+  subscriptions,
+  selectedServer,
+  isConnected,
+  onSelectServer,
   onOpenSettings,
   onPingAll
 }) => {
   const [appVersion, setAppVersion] = useState<string>('');
   const [isPinging, setIsPinging] = useState(false);
-  const [isSubscriptionExpanded, setIsSubscriptionExpanded] = useState(true);
   const [isManualExpanded, setIsManualExpanded] = useState(true);
+
   const sortByPingAvailability = useCallback((items: VlessConfig[]): VlessConfig[] => {
     return [...items].sort((a, b) => {
       const aPing = a.ping;
       const bPing = b.ping;
       const aAvailable = typeof aPing === 'number' && Number.isFinite(aPing);
       const bAvailable = typeof bPing === 'number' && Number.isFinite(bPing);
-
-      if (aAvailable && bAvailable) {
-        return aPing - bPing;
-      }
+      if (aAvailable && bAvailable) return aPing - bPing;
       if (aAvailable && !bAvailable) return -1;
       if (!aAvailable && bAvailable) return 1;
       return 0;
     });
   }, []);
 
-  const subscriptionServers = useMemo(
-    () => sortByPingAvailability(servers.filter((s) => s.source !== 'manual')),
+  // Servers per active subscription (only enabled ones)
+  const subscriptionGroups = useMemo(() => {
+    return subscriptions
+      .filter((s) => s.enabled)
+      .map((sub) => ({
+        subscription: sub,
+        servers: sortByPingAvailability(servers.filter((srv) => srv.subscriptionId === sub.id)),
+      }))
+      .filter((g) => g.servers.length > 0);
+  }, [subscriptions, servers, sortByPingAvailability]);
+
+  // Servers without a subscriptionId (legacy / unknown source) treated as subscription group
+  const orphanSubscriptionServers = useMemo(
+    () => sortByPingAvailability(
+      servers.filter((s) => s.source !== 'manual' && !s.subscriptionId)
+    ),
     [servers, sortByPingAvailability]
   );
+
   const manualServers = useMemo(
     () => sortByPingAvailability(servers.filter((s) => s.source === 'manual')),
     [servers, sortByPingAvailability]
@@ -142,7 +224,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [onPingAll, isPinging]);
 
   return (
-    <div className="w-72 bg-gradient-to-b from-surface via-surface to-surface/95 backdrop-blur-xl border-r border-gray-800/50 flex flex-col shadow-2xl shadow-black/30 relative overflow-hidden">
+    <div className="w-full md:w-72 md:shrink-0 max-h-[44vh] md:max-h-none min-h-0 bg-gradient-to-b from-surface via-surface to-surface/95 backdrop-blur-xl border-b md:border-b-0 md:border-r border-gray-800/50 flex flex-col shadow-2xl shadow-black/30 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
       
       <div className="relative z-10 p-5 border-b border-gray-800/50 bg-gradient-to-r from-surface to-surface/95 backdrop-blur-sm">
@@ -191,39 +273,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         )}
-        
-        {subscriptionServers.length > 0 && (
+
+        {/* One group per enabled subscription */}
+        {subscriptionGroups.map(({ subscription, servers: subServers }, idx) => (
+          <SubscriptionGroup
+            key={subscription.id}
+            subscription={subscription}
+            servers={subServers}
+            selectedServer={selectedServer}
+            isConnected={isConnected}
+            onSelectServer={onSelectServer}
+            colorIdx={idx}
+          />
+        ))}
+
+        {/* Orphan servers (old data without subscriptionId, source !== 'manual') */}
+        {orphanSubscriptionServers.length > 0 && (
           <div className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/8 to-transparent p-2">
-            <button
-              type="button"
-              onClick={() => setIsSubscriptionExpanded((prev) => !prev)}
-              className="w-full px-2 py-1.5 mb-1 flex items-center justify-between rounded-lg hover:bg-white/5 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-sm shadow-blue-400/60" />
-                <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Subscription</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                  {subscriptionServers.length}
-                </span>
-              </div>
-              <ChevronDown className={clsx('w-3.5 h-3.5 text-gray-400 transition-transform', isSubscriptionExpanded && 'rotate-180')} />
-            </button>
-            {isSubscriptionExpanded && (
-              <div className="space-y-2">
-                {subscriptionServers.map((server) => (
-                  <ServerItem
-                    key={server.uuid}
-                    server={server}
-                    isSelected={selectedServer?.uuid === server.uuid}
-                    isConnected={isConnected}
-                    onSelect={onSelectServer}
-                  />
-                ))}
-              </div>
-            )}
+            <div className="px-2 py-1.5 mb-1 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-sm shadow-blue-400/60" />
+              <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Subscription</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                {orphanSubscriptionServers.length}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {orphanSubscriptionServers.map((server) => (
+                <ServerItem
+                  key={server.uuid}
+                  server={server}
+                  isSelected={selectedServer?.uuid === server.uuid}
+                  isConnected={isConnected}
+                  onSelect={onSelectServer}
+                />
+              ))}
+            </div>
           </div>
         )}
 
+        {/* Manual */}
         {manualServers.length > 0 && (
           <div className="rounded-xl border border-violet-500/20 bg-gradient-to-br from-violet-500/8 to-transparent p-2">
             <button
@@ -262,7 +350,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Server className="w-8 h-8 text-gray-500" />
             </div>
             <p className="text-gray-400 text-sm font-medium mb-1">No servers found</p>
-            <p className="text-gray-500 text-xs">Add a subscription URL in settings</p>
+            <p className="text-gray-500 text-xs">Add a subscription in settings</p>
           </div>
         )}
       </div>

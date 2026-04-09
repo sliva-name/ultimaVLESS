@@ -1,5 +1,12 @@
 import { ConnectionMonitorStatus, AppRecoveryStatus, XrayHealthStatus } from '../../shared/ipc';
 import { ConnectionStatus } from '../services/ConnectionMonitorService';
+import { VlessConfig } from '../../shared/types';
+
+function stripRawConfig(server: VlessConfig | null): VlessConfig | null {
+  if (!server) return server;
+  const { rawConfig: _rawConfig, ...rest } = server;
+  return rest as VlessConfig;
+}
 
 export function buildConnectionMonitorStatusSummary(
   status: ConnectionStatus,
@@ -9,6 +16,7 @@ export function buildConnectionMonitorStatusSummary(
 ): ConnectionMonitorStatus {
   return {
     ...status,
+    currentServer: stripRawConfig(status.currentServer),
     autoSwitchingEnabled,
     lastHealthCheckAt: status.lastHealthCheckAt,
     lastHealthState: status.lastHealthState,
