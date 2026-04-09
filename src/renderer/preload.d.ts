@@ -1,13 +1,16 @@
-import { ConnectionMode, VlessConfig } from '../shared/types';
+import { ConnectionMode, Subscription, VlessConfig } from '../shared/types';
 import {
+  AddSubscriptionPayload,
+  AddSubscriptionResult,
   ConnectResult,
   ConnectionMonitorEvent,
   ConnectionMonitorStatus,
   DisconnectResult,
   ImportMobileWhiteListResult,
   PingResult,
-  SaveSubscriptionPayload,
+  SaveManualLinksResult,
   TunCapabilityStatus,
+  UpdateSubscriptionPayload,
 } from '../shared/ipc';
 
 export type ConnectionStatus = ConnectionMonitorStatus;
@@ -16,19 +19,30 @@ export type { ConnectionMonitorEvent };
 export interface IElectronAPI {
   connect: (server: VlessConfig) => Promise<ConnectResult>;
   disconnect: () => Promise<DisconnectResult>;
-  saveSubscription: (payload: SaveSubscriptionPayload) => Promise<boolean>;
+
+  // Subscriptions CRUD
+  getSubscriptions: () => Promise<Subscription[]>;
+  addSubscription: (payload: AddSubscriptionPayload) => Promise<AddSubscriptionResult & { subscriptionId: string }>;
+  updateSubscription: (payload: UpdateSubscriptionPayload) => Promise<boolean>;
+  deleteSubscription: (id: string) => Promise<boolean>;
+  refreshSubscriptions: () => Promise<{ ok: boolean; configCount: number; error?: string }>;
+
+  // Manual links
+  getManualLinks: () => Promise<string>;
+  saveManualLinks: (manualLinks: string) => Promise<SaveManualLinksResult>;
+
+  // Events
   onUpdateServers: (callback: (servers: VlessConfig[]) => void) => () => void;
-  onManualLinksUpdated: (callback: (manualLinks: string) => void) => () => void;
+  onUpdateSubscriptions: (callback: (subscriptions: Subscription[]) => void) => () => void;
   onConnectionStatus: (callback: (status: boolean) => void) => () => void;
   onConnectionBusy: (callback: (busy: boolean) => void) => () => void;
   onConnectionError: (callback: (error: string) => void) => () => void;
   onConnectionMonitorEvent: (callback: (event: ConnectionMonitorEvent) => void) => () => void;
+
   getConnectionMonitorStatus: () => Promise<ConnectionMonitorStatus>;
   setAutoSwitching: (enabled: boolean) => Promise<boolean>;
   clearBlockedServers: () => Promise<boolean>;
   getServers: () => Promise<VlessConfig[]>;
-  getSubscriptionUrl: () => Promise<string>;
-  getManualLinks: () => Promise<string>;
   getSelectedServerId: () => Promise<string | null>;
   setSelectedServerId: (serverId: string | null) => Promise<boolean>;
   getConnectionMode: () => Promise<ConnectionMode>;

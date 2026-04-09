@@ -28,7 +28,7 @@ describe('ConfigGenerator', () => {
       streamSettings: {
         security: 'reality',
         realitySettings: {
-          publicKey: 'public-key',
+          password: 'public-key',
           shortId: 'short-id',
         },
       },
@@ -61,6 +61,42 @@ describe('ConfigGenerator', () => {
     expect(result.outbounds[0].streamSettings?.realitySettings?.fingerprint).toBe('chrome');
   });
 
+  it('omits empty flow on the VLESS user object', () => {
+    const result = ConfigGenerator.generate(makeServer({ ...baseConfig, flow: undefined }), '/tmp/log');
+    const user = (result.outbounds[0] as any).settings.vnext[0].users[0];
+    expect(user.flow).toBeUndefined();
+    expect(user.encryption).toBe('none');
+  });
+
+  it('adds kcpSettings for kcp transport', () => {
+    const result = ConfigGenerator.generate(makeServer({ ...baseConfig, type: 'kcp', security: 'none' }), '/tmp/log');
+    expect(result.outbounds[0].streamSettings?.network).toBe('kcp');
+    expect(result.outbounds[0].streamSettings?.kcpSettings?.header).toEqual({ type: 'none' });
+  });
+
+  it('adds httpSettings for http transport', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        type: 'http',
+        security: 'tls',
+        path: '/p',
+        host: 'cdn.test',
+      }),
+      '/tmp/log'
+    );
+    expect(result.outbounds[0].streamSettings?.httpSettings).toEqual({
+      path: '/p',
+      host: ['cdn.test'],
+    });
+  });
+
+  it('adds quicSettings for quic transport', () => {
+    const result = ConfigGenerator.generate(makeServer({ ...baseConfig, type: 'quic', security: 'tls' }), '/tmp/log');
+    expect(result.outbounds[0].streamSettings?.network).toBe('quic');
+    expect(result.outbounds[0].streamSettings?.quicSettings?.header).toEqual({ type: 'none' });
+  });
+
   it('routes bittorrent traffic to the block outbound', () => {
     const result = ConfigGenerator.generate(baseConfig, '/tmp/log');
 
@@ -77,7 +113,7 @@ describe('ConfigGenerator', () => {
     const tunInbound = getTunInbound(result);
 
     expect(tunInbound.settings).toMatchObject({
-      mtu: 1400,
+      mtu: 1500,
       autoRoute: true,
       strictRoute: true,
     });

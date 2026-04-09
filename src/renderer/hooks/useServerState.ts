@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { VlessConfig } from '../../shared/types';
-import { SaveSubscriptionPayload } from '../../shared/ipc';
+import { Subscription, VlessConfig } from '../../shared/types';
 
 export function useServerState() {
-  type SaveSubscriptionResult = { ok: true } | { ok: false; error: string };
   const [servers, setServers] = useState<VlessConfig[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [selectedServer, setSelectedServer] = useState<VlessConfig | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [isConfigLoading, setIsConfigLoading] = useState(false);
   const [isConnectionBusy, setIsConnectionBusy] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const toggleInFlightRef = useRef(false);
@@ -41,8 +39,9 @@ export function useServerState() {
     };
 
     const loadInitialState = async () => {
-      const [initialServers, savedServerId, connectionStatus, initialBusy] = await Promise.all([
+      const [initialServers, initialSubscriptions, savedServerId, connectionStatus, initialBusy] = await Promise.all([
         window.electronAPI.getServers(),
+        window.electronAPI.getSubscriptions(),
         window.electronAPI.getSelectedServerId(),
         window.electronAPI.getConnectionStatus(),
         window.electronAPI.getConnectionBusy(),
@@ -50,6 +49,7 @@ export function useServerState() {
       if (disposed) return;
 
       setServers(initialServers);
+      setSubscriptions(initialSubscriptions);
       setIsConnected(connectionStatus);
       connectedRef.current = connectionStatus;
       setIsConnectionBusy(initialBusy);
@@ -112,6 +112,10 @@ export function useServerState() {
       }
     };
 
+    const handleUpdateSubscriptions = (newSubscriptions: Subscription[]) => {
+      setSubscriptions(newSubscriptions);
+    };
+
     const handleConnectionStatus = (status: boolean) => {
       setIsConnected(status);
       connectedRef.current = status;
@@ -127,6 +131,7 @@ export function useServerState() {
     };
 
     const removeUpdateServers = window.electronAPI.onUpdateServers(handleUpdateServers);
+    const removeUpdateSubscriptions = window.electronAPI.onUpdateSubscriptions(handleUpdateSubscriptions);
     const removeConnectionStatus = window.electronAPI.onConnectionStatus(handleConnectionStatus);
     const removeConnectionBusy = window.electronAPI.onConnectionBusy(handleConnectionBusy);
     const removeConnectionError = window.electronAPI.onConnectionError(handleConnectionError);
@@ -137,6 +142,7 @@ export function useServerState() {
         window.clearTimeout(pingTimer);
       }
       removeUpdateServers();
+      removeUpdateSubscriptions();
       removeConnectionStatus();
       removeConnectionBusy();
       removeConnectionError();
@@ -165,33 +171,16 @@ export function useServerState() {
     } catch (error) {
       console.error('Connection toggle failed', error);
       setConnectionError(error instanceof Error ? error.message : 'Connection operation failed');
-      setIsConnectionBusy(false);
     } finally {
       toggleInFlightRef.current = false;
+      try {
+        const busy = await window.electronAPI.getConnectionBusy();
+        setIsConnectionBusy(busy);
+      } catch {
+        setIsConnectionBusy(false);
+      }
     }
   }, [selectedServer, isConnected, isConnectionBusy]);
-
-  const saveSubscription = useCallback(async (payload: SaveSubscriptionPayload) => {
-    setIsConfigLoading(true);
-    try {
-      const isSaved = await window.electronAPI.saveSubscription(payload);
-      if (!isSaved) {
-        return {
-          ok: false,
-          error: 'Failed to save subscription',
-        } as SaveSubscriptionResult;
-      }
-      return { ok: true } as SaveSubscriptionResult;
-    } catch (e) {
-      console.error('Failed to save subscription', e);
-      return {
-        ok: false,
-        error: e instanceof Error ? e.message : 'Failed to save subscription',
-      } as SaveSubscriptionResult;
-    } finally {
-      setIsConfigLoading(false);
-    }
-  }, []);
 
   const pingAllServers = useCallback(async () => {
     try {
@@ -210,14 +199,13 @@ export function useServerState() {
 
   return {
     servers,
+    subscriptions,
     selectedServer,
     isConnected,
     connectionError,
     isConnectionBusy,
-    isConfigLoading,
     setSelectedServer: selectServer,
     toggleConnection,
-    saveSubscription,
-    pingAllServers
+    pingAllServers,
   };
 }

@@ -1,4 +1,4 @@
-import { ConnectionMode, VlessConfig } from './types';
+import { ConnectionMode, Subscription, VlessConfig } from './types';
 
 export interface ConnectResult {
   ok: boolean;
@@ -10,9 +10,30 @@ export interface DisconnectResult {
   ok: boolean;
 }
 
-export interface SaveSubscriptionPayload {
-  subscriptionUrl: string;
-  manualLinks: string;
+export interface AddSubscriptionPayload {
+  name: string;
+  url: string;
+}
+
+export interface UpdateSubscriptionPayload {
+  id: string;
+  patch: {
+    name?: string;
+    url?: string;
+    enabled?: boolean;
+  };
+}
+
+export interface AddSubscriptionResult {
+  ok: boolean;
+  configCount: number;
+  error?: string;
+}
+
+export interface SaveManualLinksResult {
+  ok: boolean;
+  configCount: number;
+  error?: string;
 }
 
 export interface PingResult {
@@ -114,14 +135,18 @@ export interface ImportMobileWhiteListResult {
 export const IPC_INVOKE_CHANNELS = {
   connect: 'connect',
   disconnect: 'disconnect',
-  saveSubscription: 'save-subscription',
   getLogs: 'get-logs',
   openLogFolder: 'open-log-folder',
   openExternalUrl: 'open-external-url',
   importMobileWhiteListSubscription: 'import-mobile-white-list-subscription',
   getServers: 'get-servers',
-  getSubscriptionUrl: 'get-subscription-url',
+  getSubscriptions: 'get-subscriptions',
+  addSubscription: 'add-subscription',
+  updateSubscription: 'update-subscription',
+  deleteSubscription: 'delete-subscription',
+  refreshSubscriptions: 'refresh-subscriptions',
   getManualLinks: 'get-manual-links',
+  saveManualLinks: 'save-manual-links',
   getSelectedServerId: 'get-selected-server-id',
   setSelectedServerId: 'set-selected-server-id',
   getConnectionMode: 'get-connection-mode',
@@ -139,12 +164,14 @@ export const IPC_INVOKE_CHANNELS = {
 
 export const IPC_EVENT_CHANNELS = {
   updateServers: 'update-servers',
-  manualLinksUpdated: 'manual-links-updated',
+  updateSubscriptions: 'update-subscriptions',
   connectionStatus: 'connection-status',
   connectionBusy: 'connection-busy',
   connectionError: 'connection-error',
   connectionMonitorEvent: 'connection-monitor-event',
 } as const;
+
+export type { Subscription };
 
 export type IpcInvokeChannel = typeof IPC_INVOKE_CHANNELS[keyof typeof IPC_INVOKE_CHANNELS];
 export type IpcEventChannel = typeof IPC_EVENT_CHANNELS[keyof typeof IPC_EVENT_CHANNELS];

@@ -32,6 +32,12 @@ function makeServerIdentity(
   return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
 }
 
+function isProxyOutbound(outbound: Record<string, unknown>): boolean {
+  const tag = asString(outbound.tag);
+  const protocol = asString(outbound.protocol);
+  return tag === 'proxy' || ['vless', 'vmess', 'trojan'].includes(protocol);
+}
+
 export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
   const results: VlessConfig[] = [];
 
@@ -44,10 +50,7 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
       const outbounds = asArray(root.outbounds);
       const proxyOutbound = outbounds.find((item) => {
         const outbound = asRecord(item);
-        if (!outbound) return false;
-        const tag = asString(outbound.tag);
-        const protocol = asString(outbound.protocol);
-        return tag === 'proxy' || protocol === 'vless' || protocol === 'vmess';
+        return outbound ? isProxyOutbound(outbound) : false;
       });
 
       const outbound = asRecord(proxyOutbound);
@@ -56,11 +59,13 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         continue;
       }
 
+      const protocol = asString(outbound.protocol);
       let address = '';
       let port = 0;
       let userUUID = '';
       let flow = '';
       let encryption = 'none';
+      let trojanPasswordToken = '';
 
       const settings = asRecord(outbound.settings);
       const vnext = asArray(settings?.vnext);
@@ -78,6 +83,29 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
               encryption = asString(firstUser.encryption, 'none') || 'none';
             }
           }
+        }
+      }
+
+      // Docs-style flat VLESS outbound: settings.address / settings.port / settings.id (no vnext).
+      if ((!address || !port) && settings && ['vless', 'vmess'].includes(protocol)) {
+        const flatAddr = asString(settings.address);
+        const flatPort = asNumber(settings.port);
+        if (flatAddr && flatPort) {
+          address = flatAddr;
+          port = flatPort;
+          userUUID = asString(settings.id);
+          flow = asString(settings.flow);
+          encryption = asString(settings.encryption, 'none') || 'none';
+        }
+      }
+
+      if ((!address || !port) && protocol === 'trojan' && settings) {
+        const servers = asArray(settings.servers);
+        const s0 = asRecord(servers[0]);
+        if (s0) {
+          address = asString(s0.address);
+          port = asNumber(s0.port);
+          trojanPasswordToken = asString(s0.password);
         }
       }
 
@@ -104,7 +132,7 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         if (rs) {
           sni = asString(rs.serverName);
           fp = asString(rs.fingerprint);
-          pbk = asString(rs.publicKey);
+          pbk = asString(rs.publicKey) || asString(rs.password);
           sid = asString(rs.shortId);
           spx = asString(rs.spiderX);
         }
@@ -127,11 +155,20 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         serviceName = asString(grpcSettings.serviceName);
       }
 
-      const networkType = (['tcp', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(network) ? network : undefined) as VlessConfig['type'];
+      const networkType = (['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(network)
+        ? network
+        : undefined) as VlessConfig['type'];
       const secType = (['reality', 'tls', 'none'].includes(security) ? security : undefined) as VlessConfig['security'];
-      const stableId = makeServerIdentity(userUUID || 'user', address, port, [
+
+      // Avoid embedding raw trojan password in uuid (makeServerIdentity prefixes authToken).
+      const idToken =
+        trojanPasswordToken.length > 0
+          ? `tj${createHash('sha256').update(`${trojanPasswordToken}|${address}|${port}`).digest('hex').slice(0, 14)}`
+          : userUUID || 'user';
+      const stableId = makeServerIdentity(idToken, address, port, [
         network,
         security,
+        protocol,
         sni,
         fp,
         pbk,
@@ -146,7 +183,7 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
 
       results.push({
         uuid: stableId,
-        userId: userUUID || undefined,
+        userId: trojanPasswordToken ? undefined : userUUID || undefined,
         address,
         port,
         name,

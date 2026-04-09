@@ -66,7 +66,9 @@ function parseVlessLink(link: string): VlessConfig | null {
 
     const typeValue = params.get('type') || 'tcp';
     const securityValue = params.get('security') || 'none';
-    const type = (['tcp', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(typeValue) ? typeValue : 'tcp') as VlessConfig['type'];
+    const type = (['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(typeValue)
+      ? typeValue
+      : 'tcp') as VlessConfig['type'];
     const security = (['reality', 'tls', 'none'].includes(securityValue) ? securityValue : 'none') as VlessConfig['security'];
     const flow = params.get('flow') ?? undefined;
     const encryption = params.get('encryption') ?? undefined;

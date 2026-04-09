@@ -34,14 +34,47 @@ export type XrayOutbound = {
   };
 };
 
+export type XrayKcpSettings = {
+  mtu?: number;
+  tti?: number;
+  uplinkCapacity?: number;
+  downlinkCapacity?: number;
+  congestion?: boolean;
+  readBufferSize?: number;
+  writeBufferSize?: number;
+  header?: { type: string; domain?: string };
+};
+
+export type XrayHttpObfsSettings = {
+  path?: string;
+  host?: string[];
+};
+
+export type XrayQuicSettings = {
+  security?: string;
+  key?: string;
+  header?: { type: string; domain?: string };
+};
+
+export type XrayMuxSettings = {
+  enabled: boolean;
+  concurrency?: number;
+  xudpConcurrency?: number;
+  xudpProxyUDP443?: string;
+};
+
 export type XrayStreamSettings = {
-  network: 'tcp' | 'kcp' | 'ws' | 'http' | 'domainsocket' | 'quic' | 'grpc';
+  network: 'tcp' | 'raw' | 'kcp' | 'ws' | 'http' | 'domainsocket' | 'quic' | 'grpc';
   security: 'none' | 'tls' | 'reality';
   tlsSettings?: XrayTlsSettings;
   realitySettings?: XrayRealitySettings;
   wsSettings?: XrayWsSettings;
   grpcSettings?: XrayGrpcSettings;
+  kcpSettings?: XrayKcpSettings;
+  httpSettings?: XrayHttpObfsSettings;
+  quicSettings?: XrayQuicSettings;
   tcpSettings?: XrayTcpSettings;
+  mux?: XrayMuxSettings;
   sockopt?: {
     mark?: number;
     tcpFastOpen?: boolean;
@@ -58,7 +91,8 @@ export type XrayTlsSettings = {
 };
 
 export type XrayRealitySettings = {
-  show: boolean;
+  /** Server-only debug flag; omit on client outbounds. */
+  show?: boolean;
   dest?: string;
   type?: string;
   xver?: number;
@@ -70,7 +104,10 @@ export type XrayRealitySettings = {
   shortIds?: string[];
   fingerprint?: string; // e.g. "chrome", "firefox", "safari"
   serverName?: string; // used in client outbound
-  publicKey?: string;  // used in client outbound
+  /** Client REALITY: x25519 **public** key (docs name this field `password`). */
+  password?: string;
+  /** Some configs use this name; Xray may accept it as alias — prefer `password` for clients. */
+  publicKey?: string;
   shortId?: string;    // used in client outbound
   spiderX?: string;    // used in client outbound
 };

@@ -1,56 +1,9 @@
 /* @vitest-environment jsdom */
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { useServerState } from './useServerState';
 import { createElectronApiMock, installElectronApiMock } from '../../test/electronApiMock';
-import { makeMonitorStatus, makeServer, makeSubscriptionPayload } from '../../test/factories';
-
-describe('useServerState.saveSubscription', () => {
-  beforeEach(() => {
-    installElectronApiMock(createElectronApiMock());
-  });
-
-  it('returns error result when electronAPI.saveSubscription resolves false', async () => {
-    const electronApi = createElectronApiMock();
-    installElectronApiMock(electronApi);
-    electronApi.saveSubscription.mockResolvedValue(false);
-
-    const { result } = renderHook(() => useServerState());
-    await waitFor(() => expect(electronApi.getServers).toHaveBeenCalled());
-
-    let saveResult: { ok: boolean; error?: string } | undefined;
-    await act(async () => {
-      saveResult = await result.current.saveSubscription(makeSubscriptionPayload());
-    });
-
-    expect(saveResult).toEqual({
-      ok: false,
-      error: 'Failed to save subscription',
-    });
-    expect(result.current.isConfigLoading).toBe(false);
-  });
-
-  it('returns thrown error messages from electronAPI.saveSubscription', async () => {
-    const electronApi = createElectronApiMock();
-    installElectronApiMock(electronApi);
-    electronApi.saveSubscription.mockRejectedValue(new Error('Subscription endpoint failed'));
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const { result } = renderHook(() => useServerState());
-    await waitFor(() => expect(electronApi.getServers).toHaveBeenCalled());
-
-    let saveResult: { ok: boolean; error?: string } | undefined;
-    await act(async () => {
-      saveResult = await result.current.saveSubscription(makeSubscriptionPayload());
-    });
-
-    expect(saveResult).toEqual({
-      ok: false,
-      error: 'Subscription endpoint failed',
-    });
-    consoleErrorSpy.mockRestore();
-  });
-});
+import { makeMonitorStatus, makeServer } from '../../test/factories';
 
 describe('useServerState', () => {
   it('loads the saved selected server during initial state fetch', async () => {
@@ -62,6 +15,32 @@ describe('useServerState', () => {
 
     const { result } = renderHook(() => useServerState());
     await waitFor(() => expect(result.current.selectedServer?.uuid).toBe(savedServer.uuid));
+  });
+
+  it('loads subscriptions during initial state fetch', async () => {
+    const electronApi = createElectronApiMock();
+    const subscription = { id: 'sub-1', name: 'Test Sub', url: 'https://example.com', enabled: true };
+    electronApi.getSubscriptions.mockResolvedValue([subscription]);
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useServerState());
+    await waitFor(() => expect(result.current.subscriptions).toEqual([subscription]));
+    expect(electronApi.getSubscriptions).toHaveBeenCalled();
+  });
+
+  it('updates subscriptions when onUpdateSubscriptions event fires', async () => {
+    const electronApi = createElectronApiMock();
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useServerState());
+    await waitFor(() => expect(electronApi.getSubscriptions).toHaveBeenCalled());
+
+    const newSub = { id: 'sub-2', name: 'New Sub', url: 'https://new.example.com', enabled: true };
+    await act(async () => {
+      electronApi.emitUpdateSubscriptions([newSub]);
+    });
+
+    expect(result.current.subscriptions).toEqual([newSub]);
   });
 
   it('keeps the live connected server selected after server list refresh removes it', async () => {

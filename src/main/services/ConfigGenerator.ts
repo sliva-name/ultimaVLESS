@@ -56,16 +56,17 @@ export class ConfigGenerator {
     options: ConfigGeneratorOptions
   ): XrayConfig {
     const streamSettings: XrayStreamSettings = {
-      network: config.type || 'tcp',
+      // Xray 1.8+ renamed 'tcp' to 'raw'; both are accepted but 'raw' is canonical.
+      network: (config.type === 'raw' ? 'raw' : config.type) || 'tcp',
       security: config.security || 'none',
     };
 
     if (config.security === 'reality') {
+      // Per xray-docs-next REALITY client: public key goes in `password`, not `publicKey`.
       streamSettings.realitySettings = {
-        show: false,
         fingerprint: config.fp || APP_CONSTANTS.DEFAULTS.FINGERPRINT,
         serverName: config.sni || '',
-        publicKey: config.pbk || '',
+        password: config.pbk || '',
         shortId: config.sid || '',
         spiderX: config.spx || '',
       };
@@ -74,6 +75,7 @@ export class ConfigGenerator {
         serverName: config.sni || '',
         allowInsecure: false,
         alpn: ['h2', 'http/1.1'],
+        ...(config.fp ? { fingerprint: config.fp } : {}),
       };
     }
 
@@ -90,6 +92,43 @@ export class ConfigGenerator {
       };
     }
 
+    if (config.type === 'kcp') {
+      streamSettings.kcpSettings = {
+        mtu: 1350,
+        tti: 50,
+        uplinkCapacity: 12,
+        downlinkCapacity: 100,
+        congestion: false,
+        readBufferSize: 2,
+        writeBufferSize: 2,
+        header: { type: 'none' },
+      };
+    }
+
+    if (config.type === 'http') {
+      const h = (config.host || config.sni || '').trim();
+      streamSettings.httpSettings = {
+        path: config.path || '/',
+        host: h ? [h] : [],
+      };
+    }
+
+    if (config.type === 'quic') {
+      streamSettings.quicSettings = {
+        security: 'none',
+        key: '',
+        header: { type: 'none' },
+      };
+    }
+
+    const vlessUser: { id: string; encryption: string; flow?: string } = {
+      id: config.userId || config.uuid,
+      encryption: config.encryption || 'none',
+    };
+    if (config.flow && config.flow.trim() !== '') {
+      vlessUser.flow = config.flow;
+    }
+
     const outbound: XrayOutbound = {
       protocol: 'vless',
       settings: {
@@ -97,15 +136,19 @@ export class ConfigGenerator {
           {
             address: config.address,
             port: config.port,
-            users: [{
-              id: config.userId || config.uuid,
-              encryption: config.encryption || 'none',
-              flow: config.flow || '',
-            }],
+            users: [vlessUser],
           },
         ],
       },
-      streamSettings: streamSettings,
+      streamSettings: {
+        ...streamSettings,
+        mux: {
+          enabled: true,
+          concurrency: 8,
+          xudpConcurrency: 16,
+          xudpProxyUDP443: 'reject'
+        }
+      },
       tag: 'proxy',
     };
     if (connectionMode === 'tun' && options.sendThrough) {
@@ -124,7 +167,16 @@ export class ConfigGenerator {
         error: logPath,
       },
       dns: {
-        servers: ['1.1.1.1', '1.0.0.1', 'localhost'],
+        servers: [
+          '1.1.1.1',
+          '1.0.0.1',
+          {
+            address: '223.5.5.5',
+            domains: ['geosite:cn'],
+            expectIPs: ['geoip:cn']
+          },
+          'localhost'
+        ],
         queryStrategy: 'UseIPv4',
       },
       inbounds,
@@ -136,8 +188,10 @@ export class ConfigGenerator {
       routing: {
         domainStrategy: 'IPIfNonMatch',
         rules: [
+          { type: 'field', domain: ['geosite:category-ads-all'], outboundTag: 'block' },
           { type: 'field', protocol: ['bittorrent'], outboundTag: 'block' },
-          { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
+          { type: 'field', domain: ['geosite:cn'], outboundTag: 'direct' },
+          { type: 'field', ip: ['geoip:private', 'geoip:cn'], outboundTag: 'direct' },
           { type: 'field', port: '0-65535', outboundTag: 'proxy' },
         ],
       },
@@ -237,7 +291,7 @@ export class ConfigGenerator {
       protocol: 'tun' as any,
       settings: {
         name: 'ultima0',
-        mtu: 1400,
+        mtu: 1500,
         inet4_address: '172.19.0.1/30',
       },
     };
