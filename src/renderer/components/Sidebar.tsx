@@ -4,6 +4,7 @@ import { Settings, Server, RefreshCw, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
 import logoUrl from '../assets/logo.svg';
+import { useTranslation } from 'react-i18next';
 
 interface SidebarProps {
   servers: VlessConfig[];
@@ -71,7 +72,7 @@ const ServerItem = React.memo<ServerItemProps>(({ server, isSelected, isConnecte
                 server.ping < 300 ? "text-orange-400 bg-orange-500/10" :
                 "text-red-400 bg-red-500/10"
               )}>
-                {server.ping}ms
+                {server.ping} ms
               </div>
             )}
             {server.ping == null && (
@@ -166,6 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenSettings,
   onPingAll
 }) => {
+  const { t } = useTranslation();
   const [appVersion, setAppVersion] = useState<string>('');
   const [isPinging, setIsPinging] = useState(false);
   const [isManualExpanded, setIsManualExpanded] = useState(true);
@@ -234,8 +236,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <img src={logoUrl} alt="UltimaVLESS logo" className="w-8 h-8 rounded-lg" />
             </div>
             <div>
-              <h1 className="font-bold text-lg text-white tracking-tight">UltimaClient</h1>
-              <p className="text-xs text-gray-400 mt-0.5">VLESS VPN Client</p>
+              <h1 className="font-bold text-lg text-white tracking-tight">{t('app.title')}</h1>
+              <p className="text-xs text-gray-400 mt-0.5">{t('app.subtitle')}</p>
             </div>
           </div>
           <button 
@@ -253,7 +255,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 <Server className="w-3 h-3" />
-                Servers ({servers.length})
+                {t('sidebar.servers')} ({servers.length})
               </div>
               {onPingAll && (
                 <button
@@ -265,7 +267,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       ? "text-gray-600 cursor-not-allowed"
                       : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50"
                   )}
-                  title={isConnected ? "Disconnect to refresh ping" : "Refresh ping for all servers"}
+                  title={t('sidebar.pingAll')}
                 >
                   <RefreshCw className={clsx("w-3.5 h-3.5", isPinging && "animate-spin")} />
                 </button>
@@ -292,7 +294,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/8 to-transparent p-2">
             <div className="px-2 py-1.5 mb-1 flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-sm shadow-blue-400/60" />
-              <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Subscription</span>
+              <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">{t('settings.sources.subscriptions').split(' ')[0]}</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30">
                 {orphanSubscriptionServers.length}
               </span>
@@ -321,7 +323,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-sm shadow-violet-400/60" />
-                <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Manual</span>
+                <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">{t('settings.sources.manualConfigs').split(' ')[0]}</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-300 border border-violet-500/30">
                   {manualServers.length}
                 </span>
@@ -349,8 +351,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="p-4 rounded-xl bg-gray-800/30 border border-gray-700/30 mb-4">
               <Server className="w-8 h-8 text-gray-500" />
             </div>
-            <p className="text-gray-400 text-sm font-medium mb-1">No servers found</p>
-            <p className="text-gray-500 text-xs">Add a subscription in settings</p>
+            <p className="text-gray-400 text-sm font-medium mb-1">{t('sidebar.noServers')}</p>
           </div>
         )}
       </div>

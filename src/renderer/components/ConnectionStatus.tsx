@@ -3,6 +3,7 @@ import { VlessConfig } from '../../shared/types';
 import { Power, Shield, Globe, Zap, CheckCircle2, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
+import { useTranslation } from 'react-i18next';
 
 interface ConnectionStatusProps {
   isConnected: boolean;
@@ -19,10 +20,11 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
   connectionError,
   onToggleConnection 
 }) => {
-  const busyLabel = isConnected ? 'Disconnecting...' : 'Connecting...';
+  const { t } = useTranslation();
+  const busyLabel = isConnected ? t('status.disconnecting') : t('status.connecting');
   const busyHint = isConnected
-    ? 'Applying disconnect sequence and cleaning routes.'
-    : 'Applying TUN/proxy settings and network routes. This can take a few seconds.';
+    ? t('status.disconnectingHint')
+    : t('status.connectingHint');
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 relative overflow-hidden min-h-0 min-w-0 overflow-y-auto">
@@ -46,7 +48,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
                   <CheckCircle2 className="w-6 h-6 sm:w-8 sm:h-8 text-green-400" />
                 </div>
                 <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight bg-gradient-to-r from-green-400 to-green-500 bg-clip-text text-transparent">
-                  SECURE
+                  {t('status.secure')}
                 </div>
               </>
             ) : (
@@ -55,7 +57,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
                   <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-gray-500" />
                 </div>
                 <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-gray-500">
-                  DISCONNECTED
+                  {t('status.disconnected')}
                 </div>
               </>
             )}
@@ -64,10 +66,10 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
             {isBusy
               ? busyLabel
               : isConnected 
-                ? `Connected to ${selectedServer?.name || 'server'}` 
+                ? t('status.connectedTo', { name: selectedServer?.name || 'server' })
                 : selectedServer 
-                  ? `Ready to connect to ${selectedServer.name}` 
-                  : 'Select a server to connect'}
+                  ? t('status.readyToConnect', { name: selectedServer.name })
+                  : t('status.selectServer')}
           </p>
         </div>
 
@@ -129,7 +131,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
             <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
               <div className="flex items-center gap-2 mb-3">
                 <CountryFlag server={selectedServer} size={24} className="rounded-sm" />
-                <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Country</div>
+                <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">{t('status.country')}</div>
               </div>
               <div className="text-base sm:text-lg text-white font-semibold truncate">{selectedServer.name}</div>
             </div>
@@ -137,7 +139,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
             <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
               <div className="flex items-center gap-2 mb-3">
                 <Globe className="w-4 h-4 text-gray-400" />
-                <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">IP Address</div>
+                <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">{t('status.ipAddress')}</div>
               </div>
               <div className="font-mono text-base sm:text-lg text-white font-semibold truncate">{selectedServer.address}</div>
             </div>
@@ -145,7 +147,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
             <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
               <div className="flex items-center gap-2 mb-3">
                 <Zap className="w-4 h-4 text-primary" />
-                <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Protocol</div>
+                <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">{t('status.protocol')}</div>
               </div>
               <div className="font-mono text-base sm:text-lg font-semibold bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">
                 {selectedServer.security === 'reality' ? 'REALITY' : 'VLESS'}
@@ -158,7 +160,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
         {isConnected && (
           <div className="mt-8 flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 border border-green-500/30 backdrop-blur-sm animate-[fadeIn_0.5s_ease-out]">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-lg shadow-green-500/50" />
-            <span className="text-sm text-green-400 font-medium">Connection Active</span>
+            <span className="text-sm text-green-400 font-medium">{t('status.connectionActive')}</span>
           </div>
         )}
 

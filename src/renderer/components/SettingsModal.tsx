@@ -8,6 +8,7 @@ import {
 import { ConnectionStatus as MonitorStatus, ConnectionMonitorEvent } from '../preload.d';
 import { ConnectionMode, Subscription, VlessConfig } from '../../shared/types';
 import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '../../shared/subscriptionUrls';
+import { useTranslation } from 'react-i18next';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -18,13 +19,14 @@ interface SettingsModalProps {
 
 type SettingsTabId = 'sources' | 'network' | 'diagnostics';
 
-const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: typeof Layers }[] = [
-  { id: 'sources', label: 'Sources', icon: Layers },
-  { id: 'network', label: 'Network', icon: Shield },
-  { id: 'diagnostics', label: 'Diagnostics', icon: Activity },
+const SETTINGS_TABS: { id: SettingsTabId; labelKey: string; icon: typeof Layers }[] = [
+  { id: 'sources', labelKey: 'settings.tabs.sources', icon: Layers },
+  { id: 'network', labelKey: 'settings.tabs.network', icon: Shield },
+  { id: 'diagnostics', labelKey: 'settings.tabs.diagnostics', icon: Activity },
 ];
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, subscriptions, onClose }) => {
+  const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingsTabId>('sources');
   // ---- Manual links ----
   const [manualLinks, setManualLinks] = useState('');
@@ -208,12 +210,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
 
   const handleConnectionModeChange = useCallback(async (mode: ConnectionMode) => {
     if (monitorStatus?.isConnected) {
-      setModeError('Disconnect before changing connection mode.');
+      setModeError(t('settings.network.disconnectHintError'));
       return;
     }
     if (mode === 'tun') {
       if (tunCapability && !tunCapability.supported) {
-        setModeError(tunCapability.unsupportedReason || 'TUN mode is not supported on this operating system.');
+        setModeError(tunCapability.platform === 'darwin' ? t('settings.network.tunUnsupportedDarwin') : t('settings.network.tunUnavailable'));
         return;
       }
     }
@@ -225,7 +227,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
       console.error('Failed to set connection mode:', err);
       setModeError(err instanceof Error ? err.message : 'Failed to set connection mode');
     }
-  }, [monitorStatus?.isConnected, tunCapability]);
+  }, [monitorStatus?.isConnected, tunCapability, t]);
 
   const tunUnavailable = !!tunCapability && !tunCapability.supported;
   const tunNeedsPrivileges = !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
@@ -273,17 +275,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
 
         <header className="relative z-10 shrink-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b border-gray-800/50">
           <div className="min-w-0">
-            <h2 className="text-lg sm:text-xl font-semibold text-white tracking-tight">Settings</h2>
-            <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-md">Sources, routing, and connection health</p>
+            <h2 className="text-lg sm:text-xl font-semibold text-white tracking-tight">{t('settings.title')}</h2>
+            <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-md">{t('settings.subtitle')}</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="self-end sm:self-center rounded-xl p-2.5 text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50 transition-colors"
-            aria-label="Close settings"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 self-end sm:self-center mt-2 sm:mt-0">
+            <div className="flex bg-black/40 border border-gray-700/50 rounded-xl p-1">
+              <button
+                type="button"
+                onClick={() => i18n.changeLanguage('ru')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${i18n.language === 'ru' ? 'bg-primary/20 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}
+              >
+                RU
+              </button>
+              <button
+                type="button"
+                onClick={() => i18n.changeLanguage('en')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${i18n.language.startsWith('en') ? 'bg-primary/20 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}
+              >
+                EN
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl p-2.5 text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50 transition-colors"
+              aria-label="Close settings"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </header>
 
         <nav
@@ -291,7 +311,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
           role="tablist"
           aria-label="Settings sections"
         >
-          {SETTINGS_TABS.map(({ id, label, icon: Icon }) => (
+          {SETTINGS_TABS.map(({ id, labelKey, icon: Icon }) => (
             <button
               key={id}
               type="button"
@@ -306,7 +326,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
               )}
             >
               <Icon className="w-4 h-4 opacity-90" />
-              {label}
+              {t(labelKey)}
             </button>
           ))}
         </nav>
@@ -315,11 +335,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
           {activeTab === 'sources' && (
           <div className="space-y-6">
             <div>
-            <p className="text-sm font-medium text-gray-300 mb-3">Subscriptions and imports</p>
+            <p className="text-sm font-medium text-gray-300 mb-3">{t('settings.sources.subscriptions')}</p>
             {/* Subscription list */}
             <div className="space-y-2 mb-4">
               {subscriptions.length === 0 && (
-                <p className="text-sm text-gray-500 px-0.5 leading-relaxed">No subscriptions yet. Add one below.</p>
+                <p className="text-sm text-gray-500 px-0.5 leading-relaxed">{t('settings.sources.noSubscriptions')}</p>
               )}
               {subscriptions.map((sub) => (
                 <div
@@ -365,7 +385,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
               >
                 <span className="flex items-center gap-2.5 text-sm font-medium text-gray-200">
                   <Plus className="w-5 h-5 text-primary shrink-0" />
-                  Add subscription
+                  {t('settings.sources.addSubscription')}
                 </span>
                 <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform shrink-0 ${isAddFormExpanded ? 'rotate-180' : ''}`} />
               </button>
@@ -375,7 +395,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                     type="text"
                     value={newSubName}
                     onChange={(e) => setNewSubName(e.target.value)}
-                    placeholder="Name (e.g. Work VPN)"
+                    placeholder={t('settings.sources.namePlaceholder')}
                     maxLength={100}
                     className="w-full bg-black/40 border border-gray-600/50 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                   />
@@ -383,7 +403,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                     type="text"
                     value={newSubUrl}
                     onChange={(e) => setNewSubUrl(e.target.value)}
-                    placeholder="https://example.com/sub"
+                    placeholder={t('settings.sources.urlPlaceholder')}
                     className="w-full bg-black/40 border border-gray-600/50 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                   />
                   {addError && <p className="text-xs text-orange-400 leading-relaxed">{addError}</p>}
@@ -393,7 +413,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                     className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-primary to-blue-600 text-white hover:from-blue-500 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   >
                     {isAdding ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-                    {isAdding ? 'Adding...' : 'Add and fetch'}
+                    {isAdding ? t('settings.sources.adding') : t('settings.sources.addAndFetch')}
                   </button>
                 </form>
               )}
@@ -411,7 +431,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
               ) : (
                 <ExternalLink className="w-5 h-5 shrink-0" />
               )}
-              Open preview and import mobile list
+              {t('settings.sources.openPreview')}
             </button>
             {importMobileError && (
               <p className="text-sm text-orange-400 mt-3 leading-relaxed">{importMobileError}</p>
@@ -428,7 +448,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                 >
                   <span className="flex items-center gap-2.5 text-sm font-medium text-gray-200">
                     <Link2 className="w-5 h-5 text-primary shrink-0" />
-                    Manual configs (multi-paste)
+                    {t('settings.sources.manualConfigs')}
                   </span>
                   <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform shrink-0 ${isManualExpanded ? 'rotate-180' : ''}`} />
                 </button>
@@ -439,12 +459,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                         value={manualLinks}
                         onChange={(e) => setManualLinks(e.target.value)}
                         rows={6}
-                        placeholder="Paste any text from clipboard. All vless:// and trojan:// links will be extracted."
+                        placeholder={t('settings.sources.manualPlaceholder')}
                         className="w-full resize-y min-h-[120px] bg-black/40 backdrop-blur-sm border border-gray-600/50 rounded-xl px-3 py-3 text-sm text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-200 hover:border-gray-500/70 leading-relaxed"
                       />
                       <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                     </div>
-                    <p className="text-xs text-gray-500 mt-2 leading-relaxed">Mixed clipboard text is fine; links are extracted automatically.</p>
+                    <p className="text-xs text-gray-500 mt-2 leading-relaxed">{t('settings.sources.manualHint')}</p>
                     <div className="flex justify-end mt-3">
                       <button
                         type="submit"
@@ -452,7 +472,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                         className="px-4 py-2 bg-gradient-to-r from-primary to-blue-600 rounded-lg text-white text-sm font-semibold hover:from-blue-500 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all"
                       >
                         {isSavingManual && <Loader2 className="w-5 h-5 animate-spin" />}
-                        {isSavingManual ? 'Saving...' : 'Save manual'}
+                        {isSavingManual ? t('settings.sources.saving') : t('settings.sources.saveManual')}
                       </button>
                     </div>
                     {manualSaveError && (
@@ -470,7 +490,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
           <div className="space-y-4">
             <div className="flex items-center gap-2.5 mb-1">
               <Shield className="w-4 h-4 text-primary shrink-0" />
-              <h3 className="text-sm font-semibold text-gray-200">Network mode</h3>
+              <h3 className="text-sm font-semibold text-gray-200">{t('settings.network.mode')}</h3>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -486,8 +506,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                     : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70'
                 }`}
               >
-                <div className="text-sm font-semibold mb-1">Proxy mode</div>
-                <div className="text-xs text-gray-400 leading-relaxed">System proxy for typical desktop apps.</div>
+                <div className="text-sm font-semibold mb-1">{t('settings.network.proxyMode')}</div>
+                <div className="text-xs text-gray-400 leading-relaxed">{t('settings.network.proxyDesc')}</div>
               </button>
               <button
                 type="button"
@@ -501,25 +521,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                     : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70'
                 }`}
               >
-                <div className="text-sm font-semibold mb-1">TUN mode</div>
-                <div className="text-xs text-gray-400 leading-relaxed">Full system traffic. May require elevated privileges.</div>
+                <div className="text-sm font-semibold mb-1">{t('settings.network.tunMode')}</div>
+                <div className="text-xs text-gray-400 leading-relaxed">{t('settings.network.tunDesc')}</div>
               </button>
             </div>
 
-            <p className="text-sm text-gray-500 leading-relaxed">Disconnect before changing mode. The choice applies on the next connection.</p>
+            <p className="text-sm text-gray-500 leading-relaxed">{t('settings.network.disconnectHint')}</p>
             {tunUnavailable && (
-              <p className="text-sm text-orange-400 leading-relaxed">{tunCapability?.unsupportedReason || 'TUN mode is unavailable on this platform.'}</p>
+              <p className="text-sm text-orange-400 leading-relaxed">
+                {tunCapability?.platform === 'darwin' ? t('settings.network.tunUnsupportedDarwin') : t('settings.network.tunUnavailable')}
+              </p>
             )}
             {tunNeedsPrivileges && (
               <p className="text-sm text-orange-400 leading-relaxed">
-                {tunCapability?.privilegeHint || 'Elevated privileges are required for TUN mode.'} You can still select TUN now; elevation will be requested on connect.
+                {tunCapability?.platform === 'win32' ? t('settings.network.tunElevated_win32') : t('settings.network.tunElevated')}
               </p>
             )}
             {tunCapability?.routeMode && (
-              <p className="text-sm text-gray-500 leading-relaxed">Routing mode: {tunCapability.routeMode}</p>
+              <p className="text-sm text-gray-500 leading-relaxed">{t('settings.network.routingMode', { mode: tunCapability.routeMode })}</p>
             )}
             {tunCapability?.degradedReason && (
-              <p className="text-sm text-orange-400 leading-relaxed">{tunCapability.degradedReason}</p>
+              <p className="text-sm text-orange-400 leading-relaxed">
+                {tunCapability.platform === 'linux' ? t('settings.network.tunDegradedLinux') : tunCapability.degradedReason}
+              </p>
             )}
             {modeError && <p className="text-sm text-orange-400 leading-relaxed">{modeError}</p>}
           </div>
@@ -529,14 +553,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
           <div className="space-y-6">
             <div className="flex items-center gap-2.5 mb-1">
               <RefreshCw className="w-4 h-4 text-primary shrink-0" />
-              <h3 className="text-sm font-semibold text-gray-200">Connection monitoring</h3>
+              <h3 className="text-sm font-semibold text-gray-200">{t('settings.diagnostics.monitoring')}</h3>
             </div>
 
             <div className="mb-2 p-4 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-white mb-1">Auto server switching</div>
-                  <div className="text-xs text-gray-400 leading-relaxed">Switch to another server when the current one looks blocked.</div>
+                  <div className="text-sm font-semibold text-white mb-1">{t('settings.diagnostics.autoSwitching')}</div>
+                  <div className="text-xs text-gray-400 leading-relaxed">{t('settings.diagnostics.autoSwitchingDesc')}</div>
                 </div>
                 <button
                   onClick={() => handleToggleAutoSwitching(!autoSwitching)}
@@ -550,13 +574,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                 <div className="mt-4 pt-4 border-t border-gray-700/50 space-y-3">
                   {monitorStatus.isConnected && monitorStatus.currentServer && (
                     <div className="flex items-center justify-between text-sm gap-3">
-                      <span className="text-gray-400">Current server</span>
+                      <span className="text-gray-400">{t('settings.diagnostics.currentServer')}</span>
                       <span className="text-white font-medium text-right truncate">{monitorStatus.currentServer.name}</span>
                     </div>
                   )}
                   {monitorStatus.blockedServers.length > 0 && (
                     <div className="flex items-center justify-between text-sm gap-3">
-                      <span className="text-gray-400">Blocked servers</span>
+                      <span className="text-gray-400">{t('settings.diagnostics.blockedServers')}</span>
                       <span className="text-orange-400 font-medium">{monitorStatus.blockedServers.length}</span>
                     </div>
                   )}
@@ -564,30 +588,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                     <div className="flex items-start gap-2.5 text-sm">
                       <AlertTriangle className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
                       <span className="text-gray-400 flex-1 min-w-0 break-words" title={monitorStatus.lastError}>
-                        Last error: {monitorStatus.lastError}
+                        {t('settings.diagnostics.lastError')}: {monitorStatus.lastError}
                       </span>
                     </div>
                   )}
                   {xrayStateLabel && (
                     <div className="flex items-center justify-between text-sm gap-3">
-                      <span className="text-gray-400">Xray state</span>
+                      <span className="text-gray-400">{t('settings.diagnostics.xrayState')}</span>
                       <span className={monitorStatus.xrayRunning ? 'text-green-400 font-medium' : 'text-gray-300 font-medium'}>
                         {xrayStateLabel}
                       </span>
                     </div>
                   )}
                   <div className="flex items-center justify-between text-sm gap-3">
-                    <span className="text-gray-400">Last health check</span>
+                    <span className="text-gray-400">{t('settings.diagnostics.lastHealthCheck')}</span>
                     <span className="text-gray-300">{formatTimestamp(monitorStatus.lastHealthCheckAt)}</span>
                   </div>
                   {healthStateLabel && (
                     <div className="flex items-center justify-between text-sm gap-3">
-                      <span className="text-gray-400">Health state</span>
+                      <span className="text-gray-400">{t('settings.diagnostics.healthState')}</span>
                       <span className="text-gray-300">{healthStateLabel}</span>
                     </div>
                   )}
                   <div className="flex items-center justify-between text-sm gap-3">
-                    <span className="text-gray-400">Local proxy reachable</span>
+                    <span className="text-gray-400">{t('settings.diagnostics.localProxy')}</span>
                     <span className="text-gray-300">
                       {monitorStatus.localProxyReachable == null ? 'n/a' : monitorStatus.localProxyReachable ? 'yes' : 'no'}
                     </span>
@@ -598,7 +622,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                         <div className="flex items-start gap-2.5 text-sm">
                           <AlertTriangle className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
                           <span className="text-gray-400 flex-1 min-w-0 break-words" title={monitorStatus.lastHealthFailureReason}>
-                            Health failure: {monitorStatus.lastHealthFailureReason}
+                            {t('settings.diagnostics.healthFailure')}: {monitorStatus.lastHealthFailureReason}
                           </span>
                         </div>
                       )}
@@ -606,7 +630,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                         <div className="flex items-start gap-2.5 text-sm">
                           <AlertTriangle className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
                           <span className="text-gray-400 flex-1 min-w-0 break-words" title={monitorStatus.xrayLastFailureReason}>
-                            Xray failure: {monitorStatus.xrayLastFailureReason}
+                            {t('settings.diagnostics.xrayFailure')}: {monitorStatus.xrayLastFailureReason}
                           </span>
                         </div>
                       )}
@@ -615,8 +639,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                           <RefreshCw className={`w-4 h-4 mt-0.5 flex-shrink-0 ${monitorStatus.recoveryInProgress ? 'text-blue-400 animate-spin' : 'text-orange-400'}`} />
                           <span className="text-gray-400 flex-1 leading-relaxed">
                             {monitorStatus.recoveryInProgress
-                              ? `Recovery in progress (${monitorStatus.recoveryAttemptCount})`
-                              : `Recovery paused after ${monitorStatus.recoveryAttemptCount} attempts`}
+                              ? t('settings.diagnostics.recoveryInProgress', { count: monitorStatus.recoveryAttemptCount })
+                              : t('settings.diagnostics.recoveryPaused', { count: monitorStatus.recoveryAttemptCount })}
                             {monitorStatus.lastRecoveryTrigger ? ` via ${monitorStatus.lastRecoveryTrigger}` : ''}
                             {monitorStatus.lastRecoveryReason ? `: ${monitorStatus.lastRecoveryReason}` : ''}
                           </span>
@@ -626,12 +650,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                         <div className="flex items-start gap-2.5 text-sm">
                           <X className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
                           <span className="text-gray-400 flex-1 min-w-0 break-words" title={monitorStatus.lastFatalReason}>
-                            Last fatal reason: {monitorStatus.lastFatalReason}
+                            {t('settings.diagnostics.lastFatal')}: {monitorStatus.lastFatalReason}
                           </span>
                         </div>
                       )}
                       <div className="flex items-center justify-between text-sm gap-3">
-                        <span className="text-gray-400">Last recovery</span>
+                        <span className="text-gray-400">{t('settings.diagnostics.lastRecovery')}</span>
                         <span className="text-gray-300">{formatTimestamp(monitorStatus.lastRecoveryAt)}</span>
                       </div>
                     </div>
@@ -642,14 +666,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
               {monitorStatus && monitorStatus.blockedServers.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-gray-700/50">
                   <div className="flex items-center justify-between mb-3 gap-2">
-                    <span className="text-sm text-gray-400">Blocked servers ({monitorStatus.blockedServers.length})</span>
+                    <span className="text-sm text-gray-400">{t('settings.diagnostics.blockedServers')} ({monitorStatus.blockedServers.length})</span>
                     <button
                       type="button"
                       onClick={handleClearBlocked}
                       className="text-sm text-primary hover:text-blue-400 transition-colors flex items-center gap-1.5 shrink-0"
                     >
                       <X className="w-4 h-4" />
-                      Clear
+                      {t('settings.diagnostics.clear')}
                     </button>
                   </div>
                   <div className="space-y-2 max-h-28 overflow-y-auto">
@@ -692,7 +716,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
           <div>
             <div className="flex items-center gap-2.5 mb-3">
               <Shield className="w-4 h-4 text-gray-400 shrink-0" />
-              <h3 className="text-sm font-semibold text-gray-200">Troubleshooting</h3>
+              <h3 className="text-sm font-semibold text-gray-200">{t('settings.diagnostics.troubleshooting')}</h3>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -709,7 +733,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                   )}
                 </div>
                 <span className={`text-sm font-medium ${copied ? 'text-green-400' : 'text-gray-300 group-hover:text-white'} transition-colors`}>
-                  {copied ? 'Copied!' : 'Copy logs'}
+                  {copied ? t('settings.diagnostics.copied') : t('settings.diagnostics.copyLogs')}
                 </span>
               </button>
 
@@ -722,7 +746,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                   <FolderOpen className="w-5 h-5 text-gray-300 group-hover:text-white transition-colors" />
                 </div>
                 <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">
-                  Open folder
+                  {t('settings.diagnostics.openFolder')}
                 </span>
               </button>
             </div>
@@ -730,7 +754,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
             <div className="mt-4 p-3 rounded-lg bg-gray-800/30 border border-gray-700/30">
               <p className="text-xs text-gray-500 text-center leading-relaxed">
                 <Shield className="w-3.5 h-3.5 inline-block mr-1.5 mb-0.5 align-text-bottom opacity-80" />
-                Logs are sanitized to remove sensitive personal data
+                {t('settings.diagnostics.sanitizedHint')}
               </p>
               {copyError && (
                 <p className="text-sm text-orange-400 text-center mt-3 leading-relaxed">{copyError}</p>
