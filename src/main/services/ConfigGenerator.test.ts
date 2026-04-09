@@ -113,7 +113,7 @@ describe('ConfigGenerator', () => {
     const tunInbound = getTunInbound(result);
 
     expect(tunInbound.settings).toMatchObject({
-      mtu: 1400,
+      mtu: 1500,
       autoRoute: true,
       strictRoute: true,
     });

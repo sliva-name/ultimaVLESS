@@ -8,6 +8,10 @@ import { Subscription } from '../../shared/types';
 import { createElectronApiMock, installElectronApiMock } from '../../test/electronApiMock';
 import { makeServer } from '../../test/factories';
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key })
+}));
+
 describe('Sidebar', () => {
   const mockSubscriptions: Subscription[] = [];
   const mockServers: VlessConfig[] = [
@@ -35,8 +39,8 @@ describe('Sidebar', () => {
 
     expect(screen.getByText('Server 1')).toBeInTheDocument();
     expect(screen.getByText('Server 2')).toBeInTheDocument();
-    expect(screen.getByText('Subscription')).toBeInTheDocument();
-    expect(screen.getByText('Manual')).toBeInTheDocument();
+    expect(screen.getByText('settings.sources.subscriptions')).toBeInTheDocument();
+    expect(screen.getByText('settings.sources.manualConfigs')).toBeInTheDocument();
     expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
   });
 
@@ -128,7 +132,7 @@ describe('Sidebar', () => {
     );
 
     expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
-    expect(screen.getByTitle('Disconnect to refresh ping')).toBeDisabled();
+    expect(screen.getByTitle('sidebar.pingAll')).toBeDisabled();
   });
 });
 
