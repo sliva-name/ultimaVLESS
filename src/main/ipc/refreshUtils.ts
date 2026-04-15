@@ -9,18 +9,29 @@ export function preserveActiveServerIfNeeded(
   refreshedServers: VlessConfig[],
   existingServers: VlessConfig[],
   monitorStatus: ActiveConnectionSnapshot,
-  isXrayRunning: boolean
+  isXrayRunning: boolean,
+  selectedServerId?: string | null
 ): VlessConfig[] {
+  const toPreserve = new Map<string, VlessConfig>();
+
   const activeServer = monitorStatus.currentServer;
-  if (!isXrayRunning || !monitorStatus.isConnected || !activeServer) {
-    return refreshedServers;
+  if (isXrayRunning && monitorStatus.isConnected && activeServer) {
+    if (!refreshedServers.some((server) => server.uuid === activeServer.uuid)) {
+      const preservedServer = existingServers.find((server) => server.uuid === activeServer.uuid) ?? activeServer;
+      toPreserve.set(preservedServer.uuid, preservedServer);
+    }
   }
 
-  const stillPresent = refreshedServers.some((server) => server.uuid === activeServer.uuid);
-  if (stillPresent) {
-    return refreshedServers;
+  if (selectedServerId && !refreshedServers.some((s) => s.uuid === selectedServerId)) {
+    const selected = existingServers.find((s) => s.uuid === selectedServerId);
+    if (selected) {
+      toPreserve.set(selected.uuid, selected);
+    }
   }
 
-  const preservedServer = existingServers.find((server) => server.uuid === activeServer.uuid) ?? activeServer;
-  return [preservedServer, ...refreshedServers];
+  if (toPreserve.size > 0) {
+    return [...Array.from(toPreserve.values()), ...refreshedServers];
+  }
+
+  return refreshedServers;
 }

@@ -250,6 +250,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
       setPerfDirty(false);
     } catch (err) {
       console.error('Failed to reset performance settings:', err);
+      setPerfDirty(true);
     } finally {
       setPerfSaving(false);
     }

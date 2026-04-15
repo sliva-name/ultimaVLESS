@@ -62,7 +62,7 @@ describe('preserveActiveServerIfNeeded', () => {
       expectedUuids: [newServer.uuid],
     },
   ])('returns the expected refresh result for connection state %#', ({ monitorStatus, isRunning, expectedUuids }) => {
-    const result = preserveActiveServerIfNeeded([newServer], [activeServer], monitorStatus, isRunning);
+    const result = preserveActiveServerIfNeeded([newServer], [activeServer], monitorStatus, isRunning, null);
 
     expect(result.map((server) => server.uuid)).toEqual(expectedUuids);
   });
