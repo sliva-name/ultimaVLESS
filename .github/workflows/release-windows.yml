@@ -118,10 +118,27 @@ jobs:
           }
           $output | Set-Content -Path "release/SHA256SUMS-windows.txt" -Encoding utf8
 
+      - name: Wait for GitHub Release to exist
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "${{ github.ref_name }}"
+          for ($attempt = 1; $attempt -le 24; $attempt++) {
+            try {
+              gh release view $tag | Out-Null
+              Write-Host "Release for $tag is available."
+              exit 0
+            } catch {
+              Start-Sleep -Seconds 5
+            }
+          }
+          throw "GitHub Release for $tag was not created in time."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
           files: |
             release/**/UltimaVLESS-Setup-*.exe
             release/**/UltimaVLESS-Portable-*.exe

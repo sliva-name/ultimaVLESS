@@ -102,6 +102,21 @@ jobs:
             echo "$hash  $file" >> release/SHA256SUMS-macos.txt
           done <<< "$files_found"
 
+      - name: Wait for GitHub Release to exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          for attempt in $(seq 1 24); do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "Release for $tag is available."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "GitHub Release for $tag was not created in time."
+          exit 1
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
