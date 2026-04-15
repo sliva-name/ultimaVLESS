@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Subscription, VlessConfig } from '../../shared/types';
+import { hasMissingPingData, reconcileSelection } from './useServerStateUtils';
 
 export function useServerState() {
   const [servers, setServers] = useState<VlessConfig[]>([]);
@@ -11,6 +12,8 @@ export function useServerState() {
   const toggleInFlightRef = useRef(false);
   const selectedServerRef = useRef<VlessConfig | null>(null);
   const connectedRef = useRef(false);
+  const busyRef = useRef(false);
+  const initialLoadDoneRef = useRef(false);
 
   const updateSelectedServerState = useCallback((server: VlessConfig | null) => {
     selectedServerRef.current = server;
@@ -22,14 +25,18 @@ export function useServerState() {
     let disposed = false;
     const schedulePingAll = (force: boolean) => {
       if (disposed) return;
+      if (connectedRef.current || busyRef.current) return;
       if (pingTimer !== null) {
         window.clearTimeout(pingTimer);
       }
       pingTimer = window.setTimeout(() => {
         if (disposed) return;
         void (async () => {
-          const connectedNow = await window.electronAPI.getConnectionStatus();
-          if (connectedNow) return;
+          const [connectedNow, busyNow] = await Promise.all([
+            window.electronAPI.getConnectionStatus(),
+            window.electronAPI.getConnectionBusy(),
+          ]);
+          if (connectedNow || busyNow) return;
           await window.electronAPI.pingAllServers(force);
         })().catch((error) => {
           console.error('Failed to ping servers', error);
@@ -53,6 +60,7 @@ export function useServerState() {
       setIsConnected(connectionStatus);
       connectedRef.current = connectionStatus;
       setIsConnectionBusy(initialBusy);
+      busyRef.current = initialBusy;
 
       if (savedServerId && initialServers.length > 0) {
         const savedServer = initialServers.find(s => s.uuid === savedServerId);
@@ -61,9 +69,10 @@ export function useServerState() {
         updateSelectedServerState(initialServers[0]);
       }
 
-      if (initialServers.length > 0) {
-        const hasMissingPingData = initialServers.some((s) => !s.pingTime || s.pingTime === 0);
-        if (hasMissingPingData) {
+      initialLoadDoneRef.current = true;
+
+      if (!connectionStatus && !initialBusy && initialServers.length > 0) {
+        if (hasMissingPingData(initialServers)) {
           schedulePingAll(true);
         }
       }
@@ -73,40 +82,50 @@ export function useServerState() {
 
     const handleUpdateServers = (newServers: VlessConfig[]) => {
       setServers(newServers);
-      void (async () => {
-        const currentSelected = selectedServerRef.current;
-        let nextSelected: VlessConfig | null = null;
 
-        if (currentSelected) {
-          nextSelected = newServers.find((server) => server.uuid === currentSelected.uuid) ?? null;
-        }
-
-        if (!nextSelected && connectedRef.current) {
-          try {
-            const monitorStatus = await window.electronAPI.getConnectionMonitorStatus();
-            if (disposed) return;
-            if (monitorStatus.isConnected && monitorStatus.currentServer) {
-              nextSelected =
-                newServers.find((server) => server.uuid === monitorStatus.currentServer?.uuid) ??
-                monitorStatus.currentServer;
+      const currentSelected = selectedServerRef.current;
+      if (currentSelected) {
+        const updated = newServers.find((server) => server.uuid === currentSelected.uuid);
+        if (updated) {
+          updateSelectedServerState(updated);
+        } else if (!initialLoadDoneRef.current) {
+          // Initial load hasn't finished selecting; don't override yet
+        } else if (connectedRef.current) {
+          void (async () => {
+            try {
+              const monitorStatus = await window.electronAPI.getConnectionMonitorStatus();
+              if (disposed) return;
+              if (monitorStatus.isConnected && monitorStatus.currentServer) {
+                const fromList =
+                  newServers.find((server) => server.uuid === monitorStatus.currentServer?.uuid) ??
+                  monitorStatus.currentServer;
+                updateSelectedServerState(fromList);
+              }
+            } catch (error) {
+              console.error('Failed to reconcile active server after refresh', error);
             }
-          } catch (error) {
-            console.error('Failed to reconcile active server after refresh', error);
+          })();
+        } else {
+          void reconcileSelection(newServers, currentSelected, window.electronAPI).then((nextServer) => {
+            if (!disposed) {
+              updateSelectedServerState(nextServer);
+            }
+          }).catch(() => {
+            updateSelectedServerState(newServers[0] ?? null);
+          });
+        }
+      } else if (initialLoadDoneRef.current) {
+        void reconcileSelection(newServers, null, window.electronAPI).then((nextServer) => {
+          if (!disposed) {
+            updateSelectedServerState(nextServer);
           }
-        }
+        }).catch(() => {
+          updateSelectedServerState(newServers[0] ?? null);
+        });
+      }
 
-        if (!nextSelected) {
-          nextSelected = newServers[0] ?? null;
-        }
-
-        if (!disposed) {
-          updateSelectedServerState(nextSelected);
-        }
-      })();
-
-      if (newServers.length > 0) {
-        const hasMissingPingData = newServers.some((s) => !s.pingTime || s.pingTime === 0);
-        if (hasMissingPingData) {
+      if (newServers.length > 0 && !connectedRef.current && !busyRef.current) {
+        if (hasMissingPingData(newServers)) {
           schedulePingAll(false);
         }
       }
@@ -124,6 +143,7 @@ export function useServerState() {
 
     const handleConnectionBusy = (busy: boolean) => {
       setIsConnectionBusy(busy);
+      busyRef.current = busy;
     };
 
     const handleConnectionError = (error: string) => {
@@ -183,6 +203,7 @@ export function useServerState() {
   }, [selectedServer, isConnected, isConnectionBusy]);
 
   const pingAllServers = useCallback(async () => {
+    if (connectedRef.current || busyRef.current) return;
     try {
       await window.electronAPI.pingAllServers(true);
     } catch (error) {

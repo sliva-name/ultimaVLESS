@@ -1,4 +1,4 @@
-import { ConnectionMode, Subscription, VlessConfig } from './types';
+import { ConnectionMode, PerformanceSettings, Subscription, VlessConfig } from './types';
 
 export interface ConnectResult {
   ok: boolean;
@@ -31,6 +31,12 @@ export interface AddSubscriptionResult {
 }
 
 export interface SaveManualLinksResult {
+  ok: boolean;
+  configCount: number;
+  error?: string;
+}
+
+export interface RefreshSubscriptionsResult {
   ok: boolean;
   configCount: number;
   error?: string;
@@ -160,6 +166,8 @@ export const IPC_INVOKE_CHANNELS = {
   getTunCapabilityStatus: 'get-tun-capability-status',
   setAutoSwitching: 'set-auto-switching',
   clearBlockedServers: 'clear-blocked-servers',
+  getPerformanceSettings: 'get-performance-settings',
+  setPerformanceSettings: 'set-performance-settings',
 } as const;
 
 export const IPC_EVENT_CHANNELS = {
@@ -171,7 +179,7 @@ export const IPC_EVENT_CHANNELS = {
   connectionMonitorEvent: 'connection-monitor-event',
 } as const;
 
-export type { Subscription };
+export type { Subscription, PerformanceSettings };
 
 export type IpcInvokeChannel = typeof IPC_INVOKE_CHANNELS[keyof typeof IPC_INVOKE_CHANNELS];
 export type IpcEventChannel = typeof IPC_EVENT_CHANNELS[keyof typeof IPC_EVENT_CHANNELS];

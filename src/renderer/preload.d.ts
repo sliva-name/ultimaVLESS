@@ -7,7 +7,9 @@ import {
   ConnectionMonitorStatus,
   DisconnectResult,
   ImportMobileWhiteListResult,
+  PerformanceSettings,
   PingResult,
+  RefreshSubscriptionsResult,
   SaveManualLinksResult,
   TunCapabilityStatus,
   UpdateSubscriptionPayload,
@@ -25,7 +27,7 @@ export interface IElectronAPI {
   addSubscription: (payload: AddSubscriptionPayload) => Promise<AddSubscriptionResult & { subscriptionId: string }>;
   updateSubscription: (payload: UpdateSubscriptionPayload) => Promise<boolean>;
   deleteSubscription: (id: string) => Promise<boolean>;
-  refreshSubscriptions: () => Promise<{ ok: boolean; configCount: number; error?: string }>;
+  refreshSubscriptions: () => Promise<RefreshSubscriptionsResult>;
 
   // Manual links
   getManualLinks: () => Promise<string>;
@@ -57,6 +59,8 @@ export interface IElectronAPI {
   getAppVersion: () => Promise<string>;
   pingServer: (server: VlessConfig) => Promise<PingResult>;
   pingAllServers: (force?: boolean) => Promise<PingResult[]>;
+  getPerformanceSettings: () => Promise<PerformanceSettings>;
+  setPerformanceSettings: (settings: PerformanceSettings) => Promise<boolean>;
 }
 
 declare global {

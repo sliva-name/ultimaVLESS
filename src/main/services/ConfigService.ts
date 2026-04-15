@@ -5,7 +5,7 @@ import {
   MOBILE_WHITE_LIST_RAW_URL,
   YANDEX_TRANSLATED_MOBILE_LIST_URL,
 } from '../../shared/subscriptionUrls';
-import { ConnectionMode, Subscription, VlessConfig } from '../../shared/types';
+import { ConnectionMode, DEFAULT_PERFORMANCE_SETTINGS, PerformanceSettings, Subscription, VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
 import { redactUrl } from '../utils/redactUrl';
 
@@ -23,6 +23,7 @@ interface StoreSchema {
     serverId: string;
     createdAt: number;
   } | null;
+  performanceSettings: PerformanceSettings;
 }
 
 /**
@@ -42,6 +43,7 @@ export class ConfigService {
         selectedServerId: null,
         connectionMode: 'proxy',
         pendingTunReconnect: null,
+        performanceSettings: DEFAULT_PERFORMANCE_SETTINGS,
       }
     });
 
@@ -228,6 +230,20 @@ export class ConfigService {
 
   public clearPendingTunReconnect(): void {
     this.store.set('pendingTunReconnect', null);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Performance settings
+  // ---------------------------------------------------------------------------
+
+  public getPerformanceSettings(): PerformanceSettings {
+    const stored = this.store.get('performanceSettings');
+    return { ...DEFAULT_PERFORMANCE_SETTINGS, ...stored };
+  }
+
+  public setPerformanceSettings(settings: PerformanceSettings): void {
+    this.store.set('performanceSettings', settings);
+    logger.info('ConfigService', 'setPerformanceSettings', settings);
   }
 }
 

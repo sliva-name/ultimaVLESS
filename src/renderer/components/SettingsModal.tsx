@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import clsx from 'clsx';
 import {
   Copy, FolderOpen, Check, Loader2, Link2, Shield,
   RefreshCw, AlertTriangle, X, ChevronDown, ExternalLink, Plus, Trash2,
   Layers, Activity,
 } from 'lucide-react';
-import { ConnectionStatus as MonitorStatus, ConnectionMonitorEvent } from '../preload.d';
-import { ConnectionMode, Subscription, VlessConfig } from '../../shared/types';
+import { ConnectionMode, DEFAULT_PERFORMANCE_SETTINGS, DomainStrategy, LogLevel, PerformanceSettings, Subscription, TlsFingerprint, VlessConfig, XudpProxyUDP443 } from '../../shared/types';
 import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '../../shared/subscriptionUrls';
 import { useTranslation } from 'react-i18next';
+import { useSettingsMonitor } from '../hooks/useSettingsMonitor';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -45,29 +45,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
   const [importingMobileList, setImportingMobileList] = useState(false);
   const [importMobileError, setImportMobileError] = useState<string | null>(null);
 
+  // ---- Performance settings ----
+  const [perfSettings, setPerfSettings] = useState<PerformanceSettings>(DEFAULT_PERFORMANCE_SETTINGS);
+  const [perfDirty, setPerfDirty] = useState(false);
+  const [perfSaving, setPerfSaving] = useState(false);
+
   // ---- Connection / mode ----
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
-  const [autoSwitching, setAutoSwitching] = useState(true);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('proxy');
   const [tunCapability, setTunCapability] = useState<import('../../shared/ipc').TunCapabilityStatus | null>(null);
-  const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
-  const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>([]);
-
-  const loadMonitorStatusRef = useRef<(() => Promise<void>) | null>(null);
-
-  const loadMonitorStatus = useCallback(async () => {
-    try {
-      const status = await window.electronAPI.getConnectionMonitorStatus();
-      setMonitorStatus(status);
-      setAutoSwitching(status.autoSwitchingEnabled ?? true);
-    } catch (err) {
-      console.error('Failed to load monitor status:', err);
-    }
-  }, []);
-
-  loadMonitorStatusRef.current = loadMonitorStatus;
+  const {
+    monitorStatus,
+    recentEvents,
+    autoSwitching,
+    setAutoSwitching,
+    loadMonitorStatus,
+  } = useSettingsMonitor({ isOpen });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -89,27 +84,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
       console.error('Failed to load connection mode:', err);
     });
 
+    window.electronAPI.getPerformanceSettings().then((settings) => {
+      setPerfSettings(settings);
+      setPerfDirty(false);
+    }).catch(err => {
+      console.error('Failed to load performance settings:', err);
+    });
+
     window.electronAPI.getTunCapabilityStatus().then((status) => {
       setTunCapability(status);
     }).catch(err => {
       console.error('Failed to load TUN capability status:', err);
     });
 
-    loadMonitorStatus();
-
-    const handleMonitorEvent = (event: ConnectionMonitorEvent) => {
-      setRecentEvents(prev => [event, ...prev].slice(0, 10));
-      loadMonitorStatusRef.current?.();
-    };
-
-    const removeMonitorListener = window.electronAPI.onConnectionMonitorEvent(handleMonitorEvent);
-    const interval = setInterval(loadMonitorStatus, 5000);
-
-    return () => {
-      removeMonitorListener();
-      clearInterval(interval);
-    };
-  }, [isOpen, loadMonitorStatus]);
+  }, [isOpen]);
 
   // ---- Subscription actions ----
 
@@ -206,7 +194,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
     } catch (err) {
       console.error('Failed to toggle auto-switching:', err);
     }
-  }, []);
+  }, [setAutoSwitching]);
 
   const handleConnectionModeChange = useCallback(async (mode: ConnectionMode) => {
     if (monitorStatus?.isConnected) {
@@ -236,6 +224,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
   const xrayStateLabel = monitorStatus?.xrayState ? monitorStatus.xrayState.replace(/^\w/, (v) => v.toUpperCase()) : null;
   const healthStateLabel = monitorStatus?.lastHealthState ? monitorStatus.lastHealthState.replace(/^\w/, (v) => v.toUpperCase()) : null;
   const formatTimestamp = (value: number | null | undefined) => (value ? new Date(value).toLocaleTimeString() : 'n/a');
+
+  const updatePerfField = useCallback(<K extends keyof PerformanceSettings>(key: K, value: PerformanceSettings[K]) => {
+    setPerfSettings(prev => ({ ...prev, [key]: value }));
+    setPerfDirty(true);
+  }, []);
+
+  const handleSavePerfSettings = useCallback(async () => {
+    setPerfSaving(true);
+    try {
+      await window.electronAPI.setPerformanceSettings(perfSettings);
+      setPerfDirty(false);
+    } catch (err) {
+      console.error('Failed to save performance settings:', err);
+    } finally {
+      setPerfSaving(false);
+    }
+  }, [perfSettings]);
+
+  const handleResetPerfDefaults = useCallback(async () => {
+    setPerfSettings(DEFAULT_PERFORMANCE_SETTINGS);
+    setPerfSaving(true);
+    try {
+      await window.electronAPI.setPerformanceSettings(DEFAULT_PERFORMANCE_SETTINGS);
+      setPerfDirty(false);
+    } catch (err) {
+      console.error('Failed to reset performance settings:', err);
+    } finally {
+      setPerfSaving(false);
+    }
+  }, []);
 
   const handleClearBlocked = useCallback(async () => {
     try {
@@ -546,6 +564,222 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
               </p>
             )}
             {modeError && <p className="text-sm text-orange-400 leading-relaxed">{modeError}</p>}
+
+            {/* Performance tuning */}
+            <div className="mt-6 pt-6 border-t border-gray-700/50 space-y-4">
+              <div className="flex items-center gap-2.5 mb-1">
+                <Activity className="w-4 h-4 text-primary shrink-0" />
+                <h3 className="text-sm font-semibold text-gray-200">{t('settings.network.performance')}</h3>
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed">{t('settings.network.performanceHint')}</p>
+
+              <div className="space-y-3">
+                {/* TCP Mux toggle */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.muxEnabled')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.muxEnabledHint')}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => updatePerfField('muxEnabled', !perfSettings.muxEnabled)}
+                    className={`relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${perfSettings.muxEnabled ? 'bg-primary' : 'bg-gray-700'}`}
+                  >
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${perfSettings.muxEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
+                {/* Mux concurrency */}
+                {perfSettings.muxEnabled && (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.muxConcurrency')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.muxConcurrencyHint')}</div>
+                  </div>
+                  <input
+                    type="number"
+                    min={1}
+                    max={128}
+                    value={perfSettings.muxConcurrency}
+                    onChange={e => updatePerfField('muxConcurrency', Math.max(1, Math.min(128, parseInt(e.target.value) || 1)))}
+                    className="w-20 bg-black/40 border border-gray-600/50 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none"
+                  />
+                </div>
+                )}
+
+                {/* XUDP concurrency */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.xudpConcurrency')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.xudpConcurrencyHint')}</div>
+                  </div>
+                  <input
+                    type="number"
+                    min={1}
+                    max={1024}
+                    value={perfSettings.xudpConcurrency}
+                    onChange={e => updatePerfField('xudpConcurrency', Math.max(1, Math.min(1024, parseInt(e.target.value) || 1)))}
+                    className="w-20 bg-black/40 border border-gray-600/50 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none"
+                  />
+                </div>
+
+                {/* xudpProxyUDP443 */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.xudpProxyUDP443')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.xudpProxyUDP443Hint')}</div>
+                  </div>
+                  <select
+                    value={perfSettings.xudpProxyUDP443}
+                    onChange={e => updatePerfField('xudpProxyUDP443', e.target.value as XudpProxyUDP443)}
+                    className="bg-black/40 border border-gray-600/50 rounded-lg px-2 py-1.5 text-sm text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none"
+                  >
+                    <option value="reject">{t('settings.network.udp443Reject')}</option>
+                    <option value="allow">{t('settings.network.udp443Allow')}</option>
+                    <option value="skip">{t('settings.network.udp443Skip')}</option>
+                  </select>
+                </div>
+
+                {/* TCP Fast Open */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.tcpFastOpen')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.tcpFastOpenHint')}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => updatePerfField('tcpFastOpen', !perfSettings.tcpFastOpen)}
+                    className={`relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${perfSettings.tcpFastOpen ? 'bg-primary' : 'bg-gray-700'}`}
+                  >
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${perfSettings.tcpFastOpen ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
+                {/* Sniffing route-only */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.sniffingRouteOnly')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.sniffingRouteOnlyHint')}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => updatePerfField('sniffingRouteOnly', !perfSettings.sniffingRouteOnly)}
+                    className={`relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${perfSettings.sniffingRouteOnly ? 'bg-primary' : 'bg-gray-700'}`}
+                  >
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${perfSettings.sniffingRouteOnly ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
+                <div className="border-t border-gray-700/40 my-1" />
+
+                {/* Log level */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.logLevel')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.logLevelHint')}</div>
+                  </div>
+                  <select
+                    value={perfSettings.logLevel}
+                    onChange={e => updatePerfField('logLevel', e.target.value as LogLevel)}
+                    className="bg-black/40 border border-gray-600/50 rounded-lg px-2 py-1.5 text-sm text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none"
+                  >
+                    <option value="debug">debug</option>
+                    <option value="info">info</option>
+                    <option value="warning">warning</option>
+                    <option value="error">error</option>
+                    <option value="none">none</option>
+                  </select>
+                </div>
+
+                {/* TLS fingerprint */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.fingerprint')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.fingerprintHint')}</div>
+                  </div>
+                  <select
+                    value={perfSettings.fingerprint}
+                    onChange={e => updatePerfField('fingerprint', e.target.value as TlsFingerprint)}
+                    className="bg-black/40 border border-gray-600/50 rounded-lg px-2 py-1.5 text-sm text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none"
+                  >
+                    <option value="chrome">Chrome</option>
+                    <option value="firefox">Firefox</option>
+                    <option value="safari">Safari</option>
+                    <option value="edge">Edge</option>
+                    <option value="random">Random</option>
+                    <option value="randomized">Randomized</option>
+                  </select>
+                </div>
+
+                {/* Block ads */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.blockAds')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.blockAdsHint')}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => updatePerfField('blockAds', !perfSettings.blockAds)}
+                    className={`relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${perfSettings.blockAds ? 'bg-primary' : 'bg-gray-700'}`}
+                  >
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${perfSettings.blockAds ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
+                {/* Block BitTorrent */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.blockBittorrent')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.blockBittorrentHint')}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => updatePerfField('blockBittorrent', !perfSettings.blockBittorrent)}
+                    className={`relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${perfSettings.blockBittorrent ? 'bg-primary' : 'bg-gray-700'}`}
+                  >
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${perfSettings.blockBittorrent ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
+                {/* Domain strategy */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-gray-200">{t('settings.network.domainStrategy')}</div>
+                    <div className="text-xs text-gray-500 leading-relaxed mt-0.5">{t('settings.network.domainStrategyHint')}</div>
+                  </div>
+                  <select
+                    value={perfSettings.domainStrategy}
+                    onChange={e => updatePerfField('domainStrategy', e.target.value as DomainStrategy)}
+                    className="bg-black/40 border border-gray-600/50 rounded-lg px-2 py-1.5 text-sm text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none"
+                  >
+                    <option value="AsIs">AsIs</option>
+                    <option value="IPIfNonMatch">IPIfNonMatch</option>
+                    <option value="IPOnDemand">IPOnDemand</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Save / Reset buttons */}
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleSavePerfSettings}
+                  disabled={!perfDirty || perfSaving}
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-primary to-blue-600 rounded-lg text-white text-sm font-semibold hover:from-blue-500 hover:to-blue-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+                >
+                  {perfSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {perfDirty ? (perfSaving ? t('settings.sources.saving') : t('settings.sources.saveManual')) : <Check className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetPerfDefaults}
+                  disabled={perfSaving}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-gray-400 border border-gray-700/50 hover:text-gray-200 hover:border-gray-600/70 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  {t('settings.network.resetDefaults')}
+                </button>
+              </div>
+            </div>
           </div>
           )}
 

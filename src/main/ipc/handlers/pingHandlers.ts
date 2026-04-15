@@ -4,15 +4,17 @@ import { IpcEventChannel, IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '../../
 import { logger } from '../../services/LoggerService';
 import { IpcDependencies } from '../dependencies';
 import { assertBoolean, assertValidServerPayload } from '../validators';
+import { createSerialQueue } from '../serialQueue';
 
 interface RegisterPingHandlersParams {
   deps: IpcDependencies;
   sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
-  stripRawConfigs: (servers: VlessConfig[]) => VlessConfig[];
+  toSafeServerList: (servers: VlessConfig[]) => VlessConfig[];
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
+  isConnectionBusy: () => boolean;
 }
 
-export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, assertTrustedSender }: RegisterPingHandlersParams): void {
+export function registerPingHandlers({ deps, sendToRenderer, toSafeServerList, assertTrustedSender, isConnectionBusy }: RegisterPingHandlersParams): void {
   const INITIAL_TIMEOUT_MS = 1800;
   const RETRY_TIMEOUT_MS = 3500;
   const RETRY_DELAY_MS = 250;
@@ -21,7 +23,7 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
   const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
   /** Serialize ping-all-servers so overlapping invokes are not invalidated as "stale". */
-  let pingAllQueue: Promise<unknown> = Promise.resolve();
+  const pingAllQueue = createSerialQueue();
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.pingServer, async (_event: IpcMainInvokeEvent, serverPayload: unknown) => {
     assertTrustedSender(_event);
@@ -46,8 +48,8 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
   async function runPingAllServers(force: boolean): Promise<Array<{ uuid: string; latency: number | null }>> {
     const servers = deps.configService.getServers();
     const monitorStatus = deps.connectionMonitorService.getStatus();
-    if (deps.xrayService.isRunning() || monitorStatus.isConnected) {
-      logger.debug('IPC', 'Skipping ping-all-servers while VPN is connected');
+    if (deps.xrayService.isRunning() || monitorStatus.isConnected || isConnectionBusy()) {
+      logger.debug('IPC', 'Skipping ping-all-servers while VPN is connected or busy');
       return servers.map((s) => ({ uuid: s.uuid, latency: s.ping ?? null }));
     }
     const startFingerprint = buildServersFingerprint(servers);
@@ -101,7 +103,7 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
     });
 
     deps.configService.setServers(updatedServers);
-    sendToRenderer(IPC_EVENT_CHANNELS.updateServers, stripRawConfigs(updatedServers));
+    sendToRenderer(IPC_EVENT_CHANNELS.updateServers, toSafeServerList(updatedServers));
 
     if (failedServers.length > 0) {
       void (async () => {
@@ -137,7 +139,7 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
         });
 
         deps.configService.setServers(mergedServers);
-        sendToRenderer(IPC_EVENT_CHANNELS.updateServers, stripRawConfigs(mergedServers));
+        sendToRenderer(IPC_EVENT_CHANNELS.updateServers, toSafeServerList(mergedServers));
       })().catch((error) => {
         logger.error('IPC', 'Background retry ping failed', error);
       });
@@ -155,11 +157,7 @@ export function registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, as
   ipcMain.handle(IPC_INVOKE_CHANNELS.pingAllServers, async (_event: IpcMainInvokeEvent, force: boolean = false) => {
     assertTrustedSender(_event);
     const forcePing = typeof force === 'undefined' ? false : assertBoolean(force, 'force');
-    const job = pingAllQueue.then(() => runPingAllServers(forcePing));
-    pingAllQueue = job.then(
-      () => undefined,
-      () => undefined
-    );
+    const job = pingAllQueue.enqueue(() => runPingAllServers(forcePing));
     try {
       return await job;
     } catch (error) {

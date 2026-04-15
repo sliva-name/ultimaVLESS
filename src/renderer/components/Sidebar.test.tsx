@@ -39,8 +39,8 @@ describe('Sidebar', () => {
 
     expect(screen.getByText('Server 1')).toBeInTheDocument();
     expect(screen.getByText('Server 2')).toBeInTheDocument();
-    expect(screen.getByText('settings.sources.subscriptions')).toBeInTheDocument();
-    expect(screen.getByText('settings.sources.manualConfigs')).toBeInTheDocument();
+    expect(screen.getByText('sidebar.subscriptionShort')).toBeInTheDocument();
+    expect(screen.getByText('sidebar.manualShort')).toBeInTheDocument();
     expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
   });
 

@@ -9,6 +9,8 @@ import {
   SaveManualLinksResult,
   TunCapabilityStatus,
 } from '../../shared/ipc';
+import { normalizePerformanceSettings } from '../../shared/performanceSettings';
+import { toSafeServerList } from '../../shared/serverView';
 import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '../../shared/subscriptionUrls';
 import { configService } from '../services/ConfigService';
 import { subscriptionService } from '../services/SubscriptionService';
@@ -21,7 +23,8 @@ import { createIpcDependencies, IpcDependencies } from './dependencies';
 import { registerConnectionHandlers } from './handlers/connectionHandlers';
 import { registerPingHandlers } from './handlers/pingHandlers';
 import { buildConnectionMonitorStatusSummary } from './connectionStatusSummary';
-import { preserveActiveServerIfNeeded } from './refreshUtils';
+import { createSubscriptionRefreshManager } from './subscriptionRefresh';
+import { loadInitialState as loadInitialStateRuntime } from './initialState';
 import {
   assertBoolean,
   assertConnectionMode,
@@ -33,10 +36,6 @@ import {
 
 let windowRef: BrowserWindow | null = null;
 let handlersRegistered = false;
-type RefreshSubscriptionResult = { configCount: number; reason?: string; partialErrors?: string[] };
-let refreshQueue: Promise<RefreshSubscriptionResult> = Promise.resolve({ configCount: 0 });
-let autoRefreshTimer: NodeJS.Timeout | null = null;
-const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 let connectionBusy = false;
 let connectionBusyCounter = 0;
 let unexpectedXrayExitRecovery: Promise<void> | null = null;
@@ -51,12 +50,6 @@ function sendToRenderer(channel: IpcEventChannel, ...args: unknown[]) {
   if (win) {
     win.webContents.send(channel, ...args);
   }
-}
-
-function reportSubscriptionRefreshIssue(reason: string): void {
-  const message = `Subscription update failed: ${reason}`;
-  logger.warn('IPC', message);
-  sendToRenderer(IPC_EVENT_CHANNELS.connectionError, message);
 }
 
 function flushConnectionBusy(): void {
@@ -118,10 +111,6 @@ function assertTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent): void {
   }
 }
 
-function stripRawConfigs(servers: VlessConfig[]): VlessConfig[] {
-  return servers.map(({ rawConfig: _rawConfig, ...rest }) => rest);
-}
-
 export function buildConnectionMonitorStatus(
   deps: {
     connectionMonitorService: Pick<typeof connectionMonitorService, 'getStatus' | 'getAutoSwitchingEnabled'>;
@@ -142,85 +131,20 @@ export function buildConnectionMonitorStatus(
   );
 }
 
-function queueRefreshAllSubscriptions(
-  manualLinks: string
-): Promise<RefreshSubscriptionResult> {
-  const job = refreshQueue.then(() => refreshAllSubscriptions(manualLinks));
-  refreshQueue = job.catch(() => ({ configCount: 0 }));
-  return job;
-}
+const subscriptionRefreshManager = createSubscriptionRefreshManager({
+  getWindow,
+  configService,
+  subscriptionService,
+  connectionMonitorService,
+  xrayService,
+});
 
-function stopAutoRefreshTimer(): void {
-  if (autoRefreshTimer) {
-    clearInterval(autoRefreshTimer);
-    autoRefreshTimer = null;
-    logger.info('IPC', 'Auto-refresh timer stopped');
-  }
-}
-
-function restartAutoRefreshTimer(): void {
-  const subscriptions = configService.getSubscriptions();
-  const manualLinks = configService.getManualLinksInput();
-  const hasInput = subscriptions.some((s) => s.enabled) || !!manualLinks.trim();
-
-  stopAutoRefreshTimer();
-  if (!hasInput) {
-    logger.info('IPC', 'Auto-refresh timer not started: no subscription input');
-    return;
-  }
-
-  autoRefreshTimer = setInterval(() => {
-    const latestManualLinks = configService.getManualLinksInput();
-    const latestSubs = configService.getSubscriptions();
-    const hasLatestInput = latestSubs.some((s) => s.enabled) || !!latestManualLinks.trim();
-
-    if (!hasLatestInput) {
-      stopAutoRefreshTimer();
-      return;
-    }
-
-    void queueRefreshAllSubscriptions(latestManualLinks)
-      .then((result) => {
-        if (result.configCount === 0) {
-          reportSubscriptionRefreshIssue(result.reason || 'No valid configuration links were found');
-        } else if (result.partialErrors && result.partialErrors.length > 0) {
-          logger.warn('IPC', 'Some subscriptions failed during auto-refresh', {
-            errors: result.partialErrors,
-          });
-        }
-      })
-      .catch((error) => {
-        const reason = error instanceof Error ? error.message : String(error);
-        reportSubscriptionRefreshIssue(reason);
-      });
-  }, AUTO_REFRESH_INTERVAL_MS);
-
-  logger.info('IPC', 'Auto-refresh timer started', {
-    intervalMs: AUTO_REFRESH_INTERVAL_MS,
-    subscriptionCount: subscriptions.filter((s) => s.enabled).length,
-    hasManualLinks: !!manualLinks.trim(),
-  });
-}
-
-function getDedupKey(config: VlessConfig): string {
-  return [
-    config.uuid || '',
-    config.address || '',
-    String(config.port || 0),
-    config.type || '',
-    config.security || '',
-    config.sni || '',
-    config.fp || '',
-    config.pbk || '',
-    config.sid || '',
-    config.spx || '',
-    config.path || '',
-    config.host || '',
-    config.serviceName || '',
-    config.flow || '',
-    config.encryption || '',
-  ].join('|');
-}
+const {
+  queueRefreshAllSubscriptions,
+  restartAutoRefreshTimer,
+  stopAutoRefreshTimer,
+  reportSubscriptionRefreshIssue,
+} = subscriptionRefreshManager;
 
 async function attemptPendingTunReconnect(
   serverId: string,
@@ -381,7 +305,7 @@ export function registerIpcHandlers(
       const existing = configService.getServers();
       const without = existing.filter((s) => s.subscriptionId !== id);
       configService.setServers(without);
-      sendToRenderer(IPC_EVENT_CHANNELS.updateServers, stripRawConfigs(without));
+      sendToRenderer(IPC_EVENT_CHANNELS.updateServers, toSafeServerList(without));
       restartAutoRefreshTimer();
     }
 
@@ -402,7 +326,7 @@ export function registerIpcHandlers(
     const existing = configService.getServers();
     const without = existing.filter((s) => s.subscriptionId !== id);
     configService.setServers(without);
-    sendToRenderer(IPC_EVENT_CHANNELS.updateServers, stripRawConfigs(without));
+    sendToRenderer(IPC_EVENT_CHANNELS.updateServers, toSafeServerList(without));
 
     restartAutoRefreshTimer();
     return true;
@@ -524,7 +448,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.getServers, (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
-    return stripRawConfigs(configService.getServers());
+    return toSafeServerList(configService.getServers());
   });
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.getSelectedServerId, (event: IpcMainInvokeEvent) => {
@@ -598,7 +522,19 @@ export function registerIpcHandlers(
     return app.getVersion();
   });
 
-  registerPingHandlers({ deps, sendToRenderer, stripRawConfigs, assertTrustedSender });
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getPerformanceSettings, (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    return configService.getPerformanceSettings();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.setPerformanceSettings, (_event: IpcMainInvokeEvent, payload: unknown) => {
+    assertTrustedSender(_event);
+    const settings = normalizePerformanceSettings(payload);
+    configService.setPerformanceSettings(settings);
+    return true;
+  });
+
+  registerPingHandlers({ deps, sendToRenderer, toSafeServerList, assertTrustedSender, isConnectionBusy: () => connectionBusy });
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.getConnectionMonitorStatus, (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
@@ -642,207 +578,26 @@ export function registerIpcHandlers(
 }
 
 // ---------------------------------------------------------------------------
-// Core refresh logic
-// ---------------------------------------------------------------------------
-
-async function refreshAllSubscriptions(
-  manualLinks: string
-): Promise<RefreshSubscriptionResult> {
-  const subscriptions = configService.getSubscriptions();
-  const enabled = subscriptions.filter((s) => s.enabled);
-
-  logger.info('IPC', 'refreshAllSubscriptions start', {
-    enabledCount: enabled.length,
-    hasManualLinks: !!manualLinks?.trim(),
-  });
-
-  const configs: VlessConfig[] = [];
-  const partialErrors: string[] = [];
-  const failedSubscriptionIds = new Set<string>();
-
-  for (const sub of enabled) {
-    try {
-      const result = await subscriptionService.fetchAndParseDetailed(sub.url.trim());
-      configs.push(
-        ...result.configs.map((cfg) => ({
-          ...cfg,
-          source: 'subscription' as const,
-          subscriptionId: sub.id,
-        }))
-      );
-      logger.info('IPC', `Fetched subscription "${sub.name}"`, {
-        count: result.configs.length,
-        redactedUrl: redactUrl(sub.url),
-      });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      partialErrors.push(`${sub.name}: ${msg}`);
-      failedSubscriptionIds.add(sub.id);
-      logger.error('IPC', `Failed to fetch subscription "${sub.name}"`, error);
-    }
-  }
-
-  const effectiveManualLinksText = manualLinks.trim();
-  if (effectiveManualLinksText) {
-    const manualConfigs = subscriptionService.parseDirectLinksFromText(effectiveManualLinksText);
-    configs.push(...manualConfigs.map((cfg) => ({ ...cfg, source: 'manual' as const })));
-  }
-
-  const uniqueConfigs = Array.from(new Map(configs.map((cfg) => [getDedupKey(cfg), cfg])).values());
-  logger.info('IPC', 'refreshAllSubscriptions dedup', { total: uniqueConfigs.length });
-
-  const existingServers = configService.getServers();
-
-  // When some subscriptions fail to fetch, preserve their existing servers so they don't
-  // disappear from the list just because of a temporary network error.
-  let mergedConfigs = uniqueConfigs;
-  if (failedSubscriptionIds.size > 0) {
-    const freshKeys = new Set(uniqueConfigs.map(getDedupKey));
-    const preservedFromFailed = existingServers.filter(
-      (s) => s.subscriptionId && failedSubscriptionIds.has(s.subscriptionId) && !freshKeys.has(getDedupKey(s))
-    );
-    if (preservedFromFailed.length > 0) {
-      logger.warn('IPC', 'Preserving servers from failed subscriptions to prevent data loss', {
-        preserved: preservedFromFailed.length,
-        failedCount: failedSubscriptionIds.size,
-      });
-      mergedConfigs = [...uniqueConfigs, ...preservedFromFailed];
-    }
-  }
-
-  const pingDataMap = new Map<string, { ping: number | null; pingTime: number | undefined }>();
-  existingServers.forEach((server) => {
-    if (server.ping !== undefined || server.pingTime !== undefined) {
-      pingDataMap.set(server.uuid, {
-        ping: server.ping ?? null,
-        pingTime: server.pingTime,
-      });
-    }
-  });
-
-  const configsWithPing = mergedConfigs.map((config) => {
-    const pingData = pingDataMap.get(config.uuid);
-    if (pingData) {
-      return { ...config, ping: pingData.ping, pingTime: pingData.pingTime };
-    }
-    return { ...config, ping: null };
-  });
-
-  const monitorStatus = connectionMonitorService.getStatus();
-  const effectiveConfigs = preserveActiveServerIfNeeded(
-    configsWithPing,
-    existingServers,
-    monitorStatus,
-    xrayService.isRunning()
-  );
-  if (effectiveConfigs.length !== configsWithPing.length && monitorStatus.currentServer) {
-    logger.warn('IPC', 'Preserving active server during background refresh', {
-      serverId: monitorStatus.currentServer.uuid.substring(0, 8),
-      serverName: monitorStatus.currentServer.name,
-    });
-  }
-
-  const hasInput = enabled.length > 0 || !!manualLinks.trim();
-  if (effectiveConfigs.length === 0 && hasInput) {
-    return {
-      configCount: 0,
-      partialErrors,
-      reason: partialErrors.length > 0
-        ? partialErrors.join('; ')
-        : 'No valid configuration links were found',
-    };
-  }
-
-  configService.setServers(effectiveConfigs);
-  const syncedCurrentServer = connectionMonitorService.syncCurrentServer(effectiveConfigs);
-  if (syncedCurrentServer) {
-    configService.setSelectedServerId(syncedCurrentServer.uuid);
-  }
-  sendToRenderer(IPC_EVENT_CHANNELS.updateServers, stripRawConfigs(effectiveConfigs));
-
-  return {
-    configCount: effectiveConfigs.length,
-    partialErrors,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Initial state loader
 // ---------------------------------------------------------------------------
 
 export async function loadInitialState(window: BrowserWindow) {
   windowRef = window;
-  const deps = createIpcDependencies();
-  logger.info('IPC', 'loadInitialState called');
-
-  const subscriptions = configService.getSubscriptions();
-  const manualLinks = configService.getManualLinksInput();
-  const pendingTunReconnectServerId = configService.consumePendingTunReconnect();
-
-  logger.info('IPC', 'loadInitialState', {
-    subscriptionCount: subscriptions.length,
-    enabledCount: subscriptions.filter((s) => s.enabled).length,
-    hasManualLinks: !!manualLinks,
-    hasPendingTunReconnect: !!pendingTunReconnectServerId,
-  });
-
-  const savedServers = configService.getServers();
-  sendToRenderer(IPC_EVENT_CHANNELS.updateServers, stripRawConfigs(savedServers));
-  sendToRenderer(IPC_EVENT_CHANNELS.updateSubscriptions, subscriptions);
-
-  let pendingTunReconnectJob: Promise<boolean> | null = null;
-  if (pendingTunReconnectServerId) {
-    pendingTunReconnectJob = attemptPendingTunReconnect(pendingTunReconnectServerId, deps, {
-      emitErrorOnFailure: !(subscriptions.some((s) => s.enabled) || manualLinks),
-    });
-  }
-
-  const hasInput = subscriptions.some((s) => s.enabled) || !!manualLinks.trim();
-  if (hasInput) {
-    const refreshJob = queueRefreshAllSubscriptions(manualLinks);
-    void refreshJob
-      .then((result) => {
-        if (result.configCount === 0) {
-          reportSubscriptionRefreshIssue(result.reason || 'No valid configuration links were found');
-        } else if (result.partialErrors && result.partialErrors.length > 0) {
-          logger.warn('IPC', 'Some subscriptions failed on initial load', {
-            errors: result.partialErrors,
-          });
-        }
-      })
-      .catch((error) => {
-        const reason = error instanceof Error ? error.message : String(error);
-        reportSubscriptionRefreshIssue(reason);
-      });
-
-    if (pendingTunReconnectServerId) {
-      void refreshJob.then(async () => {
-        if (pendingTunReconnectJob) {
-          try {
-            await pendingTunReconnectJob;
-          } catch {
-            // attemptPendingTunReconnect already logs and handles errors
-          }
-        }
-        const monitorStatus = deps.connectionMonitorService.getStatus();
-        const alreadyConnected =
-          deps.xrayService.isRunning() &&
-          monitorStatus.isConnected &&
-          monitorStatus.currentServer?.uuid === pendingTunReconnectServerId;
-        if (alreadyConnected) {
-          logger.info('IPC', 'Skipping pending TUN reconnect retry: already connected', {
-            serverId: pendingTunReconnectServerId.substring(0, 8),
-          });
-          return;
-        }
-        return attemptPendingTunReconnect(pendingTunReconnectServerId, deps, { emitErrorOnFailure: true });
-      }).catch((error) => {
-        logger.error('IPC', 'Pending TUN reconnect retry after refresh failed', error);
-      });
+  await loadInitialStateRuntime(
+    window,
+    {
+      sendToRenderer,
+      queueRefreshAllSubscriptions,
+      reportSubscriptionRefreshIssue,
+      restartAutoRefreshTimer,
+      attemptPendingTunReconnect,
+    },
+    {
+      configService,
+      connectionMonitorService,
+      xrayService,
+      createRuntimeDependencies: createIpcDependencies,
+      stopAutoRefreshTimer,
     }
-    restartAutoRefreshTimer();
-  } else {
-    logger.info('IPC', 'No enabled subscriptions or manual links saved');
-    stopAutoRefreshTimer();
-  }
+  );
 }

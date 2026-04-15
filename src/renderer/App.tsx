@@ -47,14 +47,7 @@ function App() {
           style={dragRegionStyle}
         />
 
-        {isSettingsOpen ? (
-           <SettingsModal
-             isOpen={isSettingsOpen}
-             servers={servers}
-             subscriptions={subscriptions}
-             onClose={handleCloseSettings}
-           />
-        ) : (
+        <div className={isSettingsOpen ? 'hidden' : 'contents'}>
           <ConnectionStatus 
             isConnected={isConnected}
             isBusy={isConnectionBusy}
@@ -62,7 +55,14 @@ function App() {
             connectionError={connectionError}
             onToggleConnection={toggleConnection}
           />
-        )}
+        </div>
+
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          servers={servers}
+          subscriptions={subscriptions}
+          onClose={handleCloseSettings}
+        />
       </div>
     </div>
   );

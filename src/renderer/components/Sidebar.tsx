@@ -1,10 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Subscription, VlessConfig } from '../../shared/types';
 import { Settings, Server, RefreshCw, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
 import logoUrl from '../assets/logo.svg';
 import { useTranslation } from 'react-i18next';
+import {
+  buildManualServers,
+  buildOrphanSubscriptionServers,
+  buildSubscriptionGroups,
+} from './sidebarModel';
 
 interface SidebarProps {
   servers: VlessConfig[];
@@ -35,6 +40,7 @@ const ServerItem = React.memo<ServerItemProps>(({ server, isSelected, isConnecte
       aria-selected={isSelected}
       aria-disabled={isConnected && !isSelected}
       data-testid={`server-item-${server.uuid}`}
+      data-server-uuid={server.uuid}
       className={clsx(
         "group p-3.5 rounded-xl cursor-pointer transition-all duration-200 border relative overflow-hidden",
         isSelected 
@@ -171,42 +177,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [appVersion, setAppVersion] = useState<string>('');
   const [isPinging, setIsPinging] = useState(false);
   const [isManualExpanded, setIsManualExpanded] = useState(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const didScrollToSelectedRef = useRef(false);
 
-  const sortByPingAvailability = useCallback((items: VlessConfig[]): VlessConfig[] => {
-    return [...items].sort((a, b) => {
-      const aPing = a.ping;
-      const bPing = b.ping;
-      const aAvailable = typeof aPing === 'number' && Number.isFinite(aPing);
-      const bAvailable = typeof bPing === 'number' && Number.isFinite(bPing);
-      if (aAvailable && bAvailable) return aPing - bPing;
-      if (aAvailable && !bAvailable) return -1;
-      if (!aAvailable && bAvailable) return 1;
-      return 0;
-    });
-  }, []);
-
-  // Servers per active subscription (only enabled ones)
   const subscriptionGroups = useMemo(() => {
-    return subscriptions
-      .filter((s) => s.enabled)
-      .map((sub) => ({
-        subscription: sub,
-        servers: sortByPingAvailability(servers.filter((srv) => srv.subscriptionId === sub.id)),
-      }))
-      .filter((g) => g.servers.length > 0);
-  }, [subscriptions, servers, sortByPingAvailability]);
+    return buildSubscriptionGroups(subscriptions, servers);
+  }, [subscriptions, servers]);
 
-  // Servers without a subscriptionId (legacy / unknown source) treated as subscription group
   const orphanSubscriptionServers = useMemo(
-    () => sortByPingAvailability(
-      servers.filter((s) => s.source !== 'manual' && !s.subscriptionId)
-    ),
-    [servers, sortByPingAvailability]
+    () => buildOrphanSubscriptionServers(servers),
+    [servers]
   );
 
   const manualServers = useMemo(
-    () => sortByPingAvailability(servers.filter((s) => s.source === 'manual')),
-    [servers, sortByPingAvailability]
+    () => buildManualServers(servers),
+    [servers]
   );
 
   useEffect(() => {
@@ -214,6 +199,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       setAppVersion('');
     });
   }, []);
+
+  useEffect(() => {
+    if (!selectedServer || didScrollToSelectedRef.current) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const el = container.querySelector(`[data-server-uuid="${selectedServer.uuid}"]`);
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest' });
+      didScrollToSelectedRef.current = true;
+    }
+  }, [selectedServer, servers]);
 
   const handlePingAll = useCallback(async () => {
     if (!onPingAll || isPinging) return;
@@ -249,7 +245,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
       
-      <div className="flex-1 overflow-y-auto p-3 space-y-2 relative z-10">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 space-y-2 relative z-10">
         {servers.length > 0 && (
           <div className="px-2 mb-3">
             <div className="flex items-center justify-between">
@@ -294,7 +290,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/8 to-transparent p-2">
             <div className="px-2 py-1.5 mb-1 flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-sm shadow-blue-400/60" />
-              <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">{t('settings.sources.subscriptions').split(' ')[0]}</span>
+              <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">{t('sidebar.subscriptionShort')}</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30">
                 {orphanSubscriptionServers.length}
               </span>
@@ -323,7 +319,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-sm shadow-violet-400/60" />
-                <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">{t('settings.sources.manualConfigs').split(' ')[0]}</span>
+                <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">{t('sidebar.manualShort')}</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-300 border border-violet-500/30">
                   {manualServers.length}
                 </span>
@@ -366,7 +362,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isConnected && (
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-lg shadow-green-500/50" />
-              <span className="text-xs text-green-400 font-medium">Connected</span>
+              <span className="text-xs text-green-400 font-medium">{t('sidebar.connected')}</span>
             </div>
           )}
         </div>

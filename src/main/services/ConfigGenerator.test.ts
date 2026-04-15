@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigGenerator } from './ConfigGenerator';
 import { makeServer } from '../../test/factories';
+import { DEFAULT_PERFORMANCE_SETTINGS } from '../../shared/types';
 
 describe('ConfigGenerator', () => {
   const baseConfig = makeServer({
@@ -68,6 +69,38 @@ describe('ConfigGenerator', () => {
     expect(user.encryption).toBe('none');
   });
 
+  it('disables TCP mux but enables XUDP when xtls-rprx-vision flow is set', () => {
+    const result = ConfigGenerator.generate(baseConfig, '/tmp/log');
+    const mux = result.outbounds[0].mux;
+
+    expect(mux).toEqual({ enabled: true, concurrency: -1, xudpConcurrency: 16, xudpProxyUDP443: 'reject' });
+  });
+
+  it('enables full mux when no flow is set', () => {
+    const result = ConfigGenerator.generate(makeServer({ ...baseConfig, flow: undefined }), '/tmp/log');
+    const mux = result.outbounds[0].mux;
+
+    expect(mux).toMatchObject({ enabled: true, concurrency: 8, xudpConcurrency: 16 });
+  });
+
+  it('places mux at outbound level, not inside streamSettings', () => {
+    const result = ConfigGenerator.generate(baseConfig, '/tmp/log');
+
+    expect(result.outbounds[0].mux).toBeDefined();
+    expect((result.outbounds[0].streamSettings as any)?.mux).toBeUndefined();
+  });
+
+  it('includes sockopt with tcpFastOpen on outbound', () => {
+    const result = ConfigGenerator.generate(baseConfig, '/tmp/log');
+    expect(result.outbounds[0].streamSettings?.sockopt?.tcpFastOpen).toBe(true);
+  });
+
+  it('sets routeOnly on socks inbound sniffing', () => {
+    const result = ConfigGenerator.generate(baseConfig, '/tmp/log');
+    const socksInbound = result.inbounds?.find((ib: any) => ib.protocol === 'socks');
+    expect(socksInbound?.sniffing?.routeOnly).toBe(true);
+  });
+
   it('adds kcpSettings for kcp transport', () => {
     const result = ConfigGenerator.generate(makeServer({ ...baseConfig, type: 'kcp', security: 'none' }), '/tmp/log');
     expect(result.outbounds[0].streamSettings?.network).toBe('kcp');
@@ -103,6 +136,53 @@ describe('ConfigGenerator', () => {
     expect(
       result.routing.rules.some((rule: any) => rule.protocol?.includes('bittorrent') && rule.outboundTag === 'block')
     ).toBe(true);
+  });
+
+  it('omits bittorrent block rule when blockBittorrent is false', () => {
+    const result = ConfigGenerator.generate(baseConfig, '/tmp/log', 'proxy', {
+      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, blockBittorrent: false },
+    });
+    expect(
+      result.routing.rules.some((rule: any) => rule.protocol?.includes('bittorrent'))
+    ).toBe(false);
+  });
+
+  it('omits ad-block rule when blockAds is false', () => {
+    const result = ConfigGenerator.generate(baseConfig, '/tmp/log', 'proxy', {
+      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, blockAds: false },
+    });
+    expect(
+      result.routing.rules.some((rule: any) => rule.domain?.includes('geosite:category-ads-all'))
+    ).toBe(false);
+  });
+
+  it('uses custom log level from performance settings', () => {
+    const result = ConfigGenerator.generate(baseConfig, '/tmp/log', 'proxy', {
+      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, logLevel: 'debug' },
+    });
+    expect(result.log.loglevel).toBe('debug');
+  });
+
+  it('uses custom domain strategy from performance settings', () => {
+    const result = ConfigGenerator.generate(baseConfig, '/tmp/log', 'proxy', {
+      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, domainStrategy: 'AsIs' },
+    });
+    expect(result.routing.domainStrategy).toBe('AsIs');
+  });
+
+  it('uses custom fingerprint when server fp is not set', () => {
+    const noFpConfig = makeServer({ ...baseConfig, fp: undefined });
+    const result = ConfigGenerator.generate(noFpConfig, '/tmp/log', 'proxy', {
+      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, fingerprint: 'firefox' },
+    });
+    expect(result.outbounds[0].streamSettings?.realitySettings?.fingerprint).toBe('firefox');
+  });
+
+  it('prefers server fp over default fingerprint setting', () => {
+    const result = ConfigGenerator.generate(baseConfig, '/tmp/log', 'proxy', {
+      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, fingerprint: 'firefox' },
+    });
+    expect(result.outbounds[0].streamSettings?.realitySettings?.fingerprint).toBe('chrome');
   });
 
   it('adds tun-specific settings when tun mode is enabled', () => {
@@ -144,6 +224,117 @@ describe('ConfigGenerator', () => {
     const tunInbounds = result.inbounds.filter((inbound: any) => inbound.protocol === 'tun');
     expect(tunInbounds).toHaveLength(1);
     expect(tunInbounds[0].tag).toBe('existing-tun');
+  });
+
+  it('applies sockopt and mux to raw config outbounds', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        rawConfig: {
+          inbounds: [],
+          outbounds: [
+            { tag: 'proxy', protocol: 'vless', settings: { vnext: [{ users: [{ id: 'x', encryption: 'none' }] }] } },
+            { tag: 'direct', protocol: 'freedom' },
+          ],
+        },
+      }),
+      '/tmp/log'
+    );
+
+    const proxy = result.outbounds.find((o: any) => o.tag === 'proxy');
+    expect(proxy.streamSettings.sockopt.tcpFastOpen).toBe(true);
+    expect(proxy.mux).toBeDefined();
+    expect(proxy.mux.enabled).toBe(true);
+    expect(proxy.mux.concurrency).toBe(8);
+
+    const direct = result.outbounds.find((o: any) => o.tag === 'direct');
+    expect(direct.mux).toBeUndefined();
+  });
+
+  it('disables TCP mux for raw config outbounds with Vision flow', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        rawConfig: {
+          inbounds: [],
+          outbounds: [
+            { tag: 'proxy', protocol: 'vless', settings: { vnext: [{ users: [{ id: 'x', encryption: 'none', flow: 'xtls-rprx-vision' }] }] } },
+          ],
+        },
+      }),
+      '/tmp/log'
+    );
+
+    const proxy = result.outbounds[0];
+    expect(proxy.mux.concurrency).toBe(-1);
+  });
+
+  it('does not overwrite existing mux/sockopt in raw configs', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        rawConfig: {
+          inbounds: [],
+          outbounds: [
+            {
+              tag: 'proxy', protocol: 'vless',
+              settings: { vnext: [{ users: [{ id: 'x', encryption: 'none' }] }] },
+              streamSettings: { sockopt: { tcpFastOpen: false, mark: 255 } },
+              mux: { enabled: false, concurrency: 1 },
+            },
+          ],
+        },
+      }),
+      '/tmp/log'
+    );
+
+    const proxy = result.outbounds[0];
+    expect(proxy.streamSettings.sockopt.tcpFastOpen).toBe(false);
+    expect(proxy.streamSettings.sockopt.mark).toBe(255);
+    expect(proxy.mux.enabled).toBe(false);
+  });
+
+  it('applies sniffingRouteOnly to raw config inbounds', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        rawConfig: {
+          inbounds: [
+            { protocol: 'socks', port: 1080, listen: '0.0.0.0', sniffing: { enabled: true, destOverride: ['http', 'tls'] } },
+            { protocol: 'http', port: 8080, listen: '0.0.0.0' },
+          ],
+          outbounds: [{ tag: 'proxy', protocol: 'vless', settings: {} }],
+        },
+      }),
+      '/tmp/log'
+    );
+
+    const socks = result.inbounds.find((ib: any) => ib.protocol === 'socks');
+    expect(socks.sniffing.routeOnly).toBe(true);
+    const http = result.inbounds.find((ib: any) => ib.protocol === 'http');
+    expect(http.sniffing.routeOnly).toBe(true);
+  });
+
+  it('adds ad-block rule to raw configs when blockAds is true', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        rawConfig: {
+          inbounds: [],
+          outbounds: [{ tag: 'proxy', protocol: 'vless', settings: {} }],
+          routing: { rules: [{ type: 'field', domain: ['example.com'], outboundTag: 'direct' }] },
+        },
+      }),
+      '/tmp/log',
+      'proxy',
+      { performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, blockAds: true } }
+    );
+
+    expect(result.routing.rules[0]).toMatchObject({
+      type: 'field',
+      domain: ['geosite:category-ads-all'],
+      outboundTag: 'block',
+    });
   });
 
   it('normalizes raw local proxy inbounds to the app ports', () => {
