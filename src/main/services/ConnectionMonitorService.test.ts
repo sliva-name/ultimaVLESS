@@ -222,4 +222,31 @@ describe('ConnectionMonitorService', () => {
     expect(svc.getStatus().lastError).toContain('Remote endpoint check');
     expect(errors.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('ignores in-flight health check results after monitoring stops', async () => {
+    let releaseProbe: (() => void) | null = null;
+    probeTcpPortMock.mockImplementation(() => new Promise<boolean>((resolve) => {
+      releaseProbe = () => resolve(false);
+    }));
+
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+    const server = makeServer({ uuid: 'server-1', name: 'Example' });
+
+    svc.on('error', () => {});
+    svc.startMonitoring(server);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    svc.stopMonitoring();
+    releaseProbe?.();
+    await Promise.resolve();
+
+    expect(svc.getStatus()).toMatchObject({
+      isConnected: false,
+      currentServer: null,
+      lastHealthState: 'idle',
+      lastHealthFailureReason: null,
+      lastError: null,
+    });
+  });
 });

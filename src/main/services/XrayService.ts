@@ -29,8 +29,10 @@ export class XrayService extends EventEmitter {
   private static readonly STARTUP_GRACE_MS = 1200;
   private static readonly READINESS_TIMEOUT_MS = 2000;
   private static readonly READINESS_RETRY_MS = 250;
+  private static readonly STOP_TIMEOUT_MS = 3000;
   private readonly expectedExitProcesses = new WeakSet<ChildProcess>();
   private readonly notifiedUnexpectedExitProcesses = new WeakSet<ChildProcess>();
+  private stopWaitPromise: Promise<void> | null = null;
   private healthStatus: XrayHealthStatus = {
     state: 'stopped',
     ready: false,
@@ -64,7 +66,10 @@ export class XrayService extends EventEmitter {
     connectionMode: ConnectionMode = 'proxy',
     options: ConfigGeneratorOptions = {}
   ): Promise<void> {
-    this.stop();
+    if (this.process) {
+      this.stop();
+    }
+    await this.awaitPendingStop();
     this.setHealthStatus({
       state: 'starting',
       ready: false,
@@ -180,7 +185,7 @@ export class XrayService extends EventEmitter {
       if (this.process === spawnedProcess) {
         this.process = null;
       }
-      if (wasExpectedExit) {
+      if (wasExpectedExit && this.process === null) {
         this.setHealthStatus({
           state: 'stopped',
           ready: false,
@@ -238,15 +243,29 @@ export class XrayService extends EventEmitter {
    */
   public stop(): void {
     if (this.process) {
+      const processToStop = this.process;
       logger.info('XrayService', 'Stopping process...');
       this.setHealthStatus({
         state: 'stopping',
         ready: false,
         xrayRunning: false,
       });
-      this.expectedExitProcesses.add(this.process);
-      this.process.kill();
+      this.expectedExitProcesses.add(processToStop);
+      const waitForExit = this.waitForProcessExit(processToStop);
+      this.stopWaitPromise = waitForExit;
+      void waitForExit.finally(() => {
+        if (this.stopWaitPromise === waitForExit) {
+          this.stopWaitPromise = null;
+        }
+      });
       this.process = null;
+      try {
+        processToStop.kill();
+      } catch (error) {
+        logger.warn('XrayService', 'Failed to stop Xray process cleanly', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 
@@ -374,6 +393,60 @@ export class XrayService extends EventEmitter {
     }
 
     logger.debug('XrayService', 'Xray runtime output', metadata);
+  }
+
+  private async awaitPendingStop(): Promise<void> {
+    const waitForExit = this.stopWaitPromise;
+    if (!waitForExit) {
+      return;
+    }
+    await waitForExit;
+  }
+
+  private waitForProcessExit(processRef: ChildProcess): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false;
+      let timeoutId: NodeJS.Timeout | null = null;
+      type ProcessEventHandler = (...args: any[]) => void;
+
+      const cleanup = (onClose: ProcessEventHandler, onError: ProcessEventHandler): void => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        const withOff = processRef as ChildProcess & { off?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+        if (typeof withOff.off === 'function') {
+          withOff.off('close', onClose);
+          withOff.off('error', onError);
+          return;
+        }
+        const withRemove = processRef as ChildProcess & { removeListener?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+        if (typeof withRemove.removeListener === 'function') {
+          withRemove.removeListener('close', onClose);
+          withRemove.removeListener('error', onError);
+        }
+      };
+
+      const finish = (onClose: ProcessEventHandler, onError: ProcessEventHandler): void => {
+        if (settled) return;
+        settled = true;
+        cleanup(onClose, onError);
+        resolve();
+      };
+
+      const onClose = () => finish(onClose, onError);
+      const onError = () => finish(onClose, onError);
+
+      processRef.once('close', onClose);
+      processRef.once('error', onError);
+      timeoutId = setTimeout(() => {
+        logger.warn('XrayService', 'Timed out waiting for Xray to exit', {
+          timeoutMs: XrayService.STOP_TIMEOUT_MS,
+          pid: processRef.pid ?? null,
+        });
+        finish(onClose, onError);
+      }, XrayService.STOP_TIMEOUT_MS);
+    });
   }
 
   private awaitStartupGracePeriod(processRef: ChildProcess): Promise<void> {

@@ -231,14 +231,6 @@ export function registerIpcHandlers(
   }
   handlersRegistered = true;
 
-  const handleAsync = async (operation: string, fn: () => Promise<void>) => {
-    try {
-      await fn();
-    } catch (error) {
-      logger.error('IPC', `Operation failed: ${operation}`, error);
-    }
-  };
-
   deps.xrayService.removeAllListeners('unexpected-exit');
   deps.xrayService.on('unexpected-exit', (event) => {
     void handleUnexpectedXrayExit(event.reason, deps);
@@ -405,7 +397,6 @@ export function registerIpcHandlers(
 
   registerConnectionHandlers({
     deps,
-    handleAsync,
     assertTrustedSender,
     sendToRenderer,
     beginConnectionBusy,
@@ -509,7 +500,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.getConnectionStatus, (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
-    return xrayService.isRunning();
+    return deps.connectionMonitorService.getStatus().isConnected;
   });
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.getConnectionBusy, (event: IpcMainInvokeEvent) => {

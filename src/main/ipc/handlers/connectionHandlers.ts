@@ -7,7 +7,6 @@ import { createSerialQueue } from '../serialQueue';
 
 interface RegisterConnectionHandlersParams {
   deps: IpcDependencies;
-  handleAsync: (operation: string, fn: () => Promise<void>) => Promise<void>;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
   sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
   beginConnectionBusy: () => void;
@@ -16,7 +15,6 @@ interface RegisterConnectionHandlersParams {
 
 export function registerConnectionHandlers({
   deps,
-  handleAsync,
   assertTrustedSender,
   sendToRenderer,
   beginConnectionBusy,
@@ -116,19 +114,18 @@ export function registerConnectionHandlers({
   ipcMain.handle(IPC_INVOKE_CHANNELS.disconnect, async (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
     return runConnectionOperation('disconnect', async () => {
-      let ok = true;
-      await handleAsync('disconnect', async () => {
-        logger.info('IPC', 'disconnect');
-        try {
-          deps.configService.clearPendingTunReconnect();
-          deps.connectionMonitorService.stopMonitoring();
-          await deps.connectionStackService.resetNetworkingStack({ stopXray: true });
-        } catch (error) {
-          ok = false;
-          throw error;
-        }
-      });
-      return { ok };
+      logger.info('IPC', 'disconnect');
+      try {
+        deps.configService.clearPendingTunReconnect();
+        await deps.connectionStackService.resetNetworkingStack({ stopXray: true });
+        deps.connectionMonitorService.stopMonitoring({
+          message: 'Disconnected',
+        });
+        return { ok: true as const };
+      } catch (error) {
+        logger.error('IPC', 'Failed to disconnect', error);
+        return { ok: false as const };
+      }
     });
   });
 }

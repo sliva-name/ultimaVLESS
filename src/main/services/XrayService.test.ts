@@ -195,4 +195,35 @@ describe('XrayService', () => {
       lastReadinessError: expect.stringContaining('did not become reachable'),
     });
   });
+
+  it('waits for the previous process to exit before spawning a new one', async () => {
+    const svc = new XrayService();
+    const firstProcess = createMockChildProcess();
+    const secondProcess = createMockChildProcess();
+    vi.mocked(spawn)
+      .mockReturnValueOnce(firstProcess as any)
+      .mockReturnValueOnce(secondProcess as any);
+
+    await svc.start(mockConfig);
+
+    const restartPromise = svc.start(makeServer({
+      uuid: 'uuid-2',
+      address: 'addr-2',
+      name: 'second',
+      security: 'reality',
+    }));
+
+    await Promise.resolve();
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    firstProcess.emit('close', 0);
+    await restartPromise;
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(svc.getHealthStatus()).toMatchObject({
+      state: 'running',
+      ready: true,
+      xrayRunning: true,
+    });
+  });
 });

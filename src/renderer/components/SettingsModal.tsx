@@ -60,6 +60,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
     monitorStatus,
     recentEvents,
     autoSwitching,
+    hasLoadedMonitorStatus,
     setAutoSwitching,
     loadMonitorStatus,
   } = useSettingsMonitor({ isOpen });
@@ -197,6 +198,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
   }, [setAutoSwitching]);
 
   const handleConnectionModeChange = useCallback(async (mode: ConnectionMode) => {
+    if (!hasLoadedMonitorStatus) {
+      return;
+    }
     if (monitorStatus?.isConnected) {
       setModeError(t('settings.network.disconnectHintError'));
       return;
@@ -215,11 +219,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
       console.error('Failed to set connection mode:', err);
       setModeError(err instanceof Error ? err.message : 'Failed to set connection mode');
     }
-  }, [monitorStatus?.isConnected, tunCapability, t]);
+  }, [hasLoadedMonitorStatus, monitorStatus?.isConnected, tunCapability, t]);
 
   const tunUnavailable = !!tunCapability && !tunCapability.supported;
   const tunNeedsPrivileges = !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
   const tunButtonDisabled = tunUnavailable;
+  const modeControlsDisabled = !hasLoadedMonitorStatus;
   const modeLockedByConnection = !!monitorStatus?.isConnected;
   const xrayStateLabel = monitorStatus?.xrayState ? monitorStatus.xrayState.replace(/^\w/, (v) => v.toUpperCase()) : null;
   const healthStateLabel = monitorStatus?.lastHealthState ? monitorStatus.lastHealthState.replace(/^\w/, (v) => v.toUpperCase()) : null;
@@ -516,11 +521,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
               <button
                 type="button"
                 onClick={() => handleConnectionModeChange('proxy')}
-                disabled={modeLockedByConnection}
+                disabled={modeControlsDisabled || modeLockedByConnection}
                 className={`p-4 rounded-xl border text-left transition-all duration-200 ${
                   connectionMode === 'proxy'
                     ? 'border-primary/70 bg-primary/10 text-white'
-                    : modeLockedByConnection
+                    : modeControlsDisabled || modeLockedByConnection
                     ? 'border-gray-800/80 bg-gray-900/30 text-gray-500 cursor-not-allowed opacity-70'
                     : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70'
                 }`}
@@ -531,11 +536,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
               <button
                 type="button"
                 onClick={() => handleConnectionModeChange('tun')}
-                disabled={tunButtonDisabled || modeLockedByConnection}
+                disabled={modeControlsDisabled || tunButtonDisabled || modeLockedByConnection}
                 className={`p-4 rounded-xl border text-left transition-all duration-200 ${
                   connectionMode === 'tun'
                     ? 'border-primary/70 bg-primary/10 text-white'
-                    : tunButtonDisabled || modeLockedByConnection
+                    : modeControlsDisabled || tunButtonDisabled || modeLockedByConnection
                     ? 'border-gray-800/80 bg-gray-900/30 text-gray-500 cursor-not-allowed opacity-70'
                     : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70'
                 }`}

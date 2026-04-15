@@ -94,6 +94,10 @@ export class ConnectionMonitorService extends EventEmitter {
       serverAddress: server.address 
     });
 
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
     this.monitoringGeneration += 1;
     this.status.currentServer = server;
     this.status.isConnected = true;
@@ -277,6 +281,10 @@ export class ConnectionMonitorService extends EventEmitter {
       return;
     }
 
+    const generationAtStart = this.monitoringGeneration;
+    const isStale = () =>
+      this.monitoringGeneration !== generationAtStart || !this.status.isConnected || !this.status.currentServer;
+
     this.healthCheckInFlight = true;
     try {
       this.status.lastHealthCheckAt = Date.now();
@@ -284,6 +292,9 @@ export class ConnectionMonitorService extends EventEmitter {
         probeTcpPort(APP_CONSTANTS.PORTS.SOCKS),
         probeTcpPort(APP_CONSTANTS.PORTS.HTTP),
       ]);
+      if (isStale()) {
+        return;
+      }
       const localProxyReachable = socksReady && httpReady;
       this.status.localProxyReachable = localProxyReachable;
 
@@ -308,6 +319,9 @@ export class ConnectionMonitorService extends EventEmitter {
 
       // Verify end-to-end connectivity through the tunnel via a lightweight HTTP probe.
       const tunnelOk = await probeHttpThroughProxy(APP_CONSTANTS.PORTS.HTTP);
+      if (isStale()) {
+        return;
+      }
       if (!tunnelOk) {
         const failureReason =
           'Remote endpoint check via proxy failed after retries (tunnel may be slow or blocked)';
@@ -329,6 +343,9 @@ export class ConnectionMonitorService extends EventEmitter {
 
       // Читаем только новые строки со времени старта текущей сессии.
       const logLines = this.readNewLogLines(50);
+      if (isStale()) {
+        return;
+      }
       const errors = this.analyzeLogForErrors(logLines);
 
       if (errors.length > 0) {
@@ -351,6 +368,9 @@ export class ConnectionMonitorService extends EventEmitter {
         logger.debug('ConnectionMonitorService', 'Health check passed');
       }
     } catch (error) {
+      if (isStale()) {
+        return;
+      }
       this.status.lastHealthState = 'failed';
       this.status.lastHealthFailureReason = error instanceof Error ? error.message : String(error);
       logger.error('ConnectionMonitorService', 'Health check failed', error);

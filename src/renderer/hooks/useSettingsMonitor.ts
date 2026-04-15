@@ -9,6 +9,7 @@ export function useSettingsMonitor({ isOpen }: UseSettingsMonitorOptions) {
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
   const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>([]);
   const [autoSwitching, setAutoSwitching] = useState(true);
+  const [hasLoadedMonitorStatus, setHasLoadedMonitorStatus] = useState(false);
   const loadMonitorStatusRef = useRef<(() => Promise<void>) | null>(null);
 
   const loadMonitorStatus = useCallback(async () => {
@@ -18,6 +19,8 @@ export function useSettingsMonitor({ isOpen }: UseSettingsMonitorOptions) {
       setAutoSwitching(status.autoSwitchingEnabled ?? true);
     } catch (err) {
       console.error('Failed to load monitor status:', err);
+    } finally {
+      setHasLoadedMonitorStatus(true);
     }
   }, []);
 
@@ -25,6 +28,7 @@ export function useSettingsMonitor({ isOpen }: UseSettingsMonitorOptions) {
 
   useEffect(() => {
     if (!isOpen) return;
+    setHasLoadedMonitorStatus(false);
 
     void loadMonitorStatus();
 
@@ -46,6 +50,7 @@ export function useSettingsMonitor({ isOpen }: UseSettingsMonitorOptions) {
     monitorStatus,
     recentEvents,
     autoSwitching,
+    hasLoadedMonitorStatus,
     setAutoSwitching,
     loadMonitorStatus,
   };
