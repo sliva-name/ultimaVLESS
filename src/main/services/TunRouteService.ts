@@ -39,8 +39,14 @@ interface RunPowerShellOptions {
   allowNonZeroExit?: boolean;
 }
 
+interface AddedRoute {
+  destination: string;
+  mask: string;
+  interfaceIndex?: number;
+}
+
 export class TunRouteService {
-  private addedRoutes: { destination: string; mask: string; interfaceIndex?: number }[] = [];
+  private addedRoutes: AddedRoute[] = [];
   constructor(private readonly platform: NodeJS.Platform = process.platform) {}
 
   public isSupported(): boolean {
@@ -519,7 +525,7 @@ export class TunRouteService {
     gateway: string,
     metric: number,
     interfaceIndex?: number
-  ): Promise<void> {
+  ): Promise<boolean> {
     const prefixLen = this.maskToPrefix(mask);
     const destPrefix = `${destination}/${prefixLen}`;
     const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
@@ -527,10 +533,15 @@ export class TunRouteService {
       $existing = Get-NetRoute -DestinationPrefix "${destPrefix}"${ifPart} -ErrorAction SilentlyContinue | Select-Object -First 1
       if (-not $existing) {
         New-NetRoute -DestinationPrefix "${destPrefix}" -NextHop "${gateway}"${ifPart} -RouteMetric ${metric} -ErrorAction Stop
+        Write-Output "CREATED"
       }
     `;
-    await this.runPowerShell(script);
-    this.addedRoutes.push({ destination, mask, interfaceIndex });
+    const out = await this.runPowerShell(script);
+    const created = out.includes('CREATED');
+    if (created) {
+      this.addedRoutes.push({ destination, mask, interfaceIndex });
+    }
+    return created;
   }
 
   private maskToPrefix(mask: string): number {
@@ -553,10 +564,13 @@ export class TunRouteService {
           $existing = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
           if (-not $existing) {
             New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "${TUN_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
+            Write-Output "CREATED"
           }
         `;
-        await this.runPowerShell(script);
-        this.addedRoutes.push({ destination: '0.0.0.0', mask: '0.0.0.0', interfaceIndex: tunIdx });
+        const out = await this.runPowerShell(script);
+        if (out.includes('CREATED')) {
+          this.addedRoutes.push({ destination: '0.0.0.0', mask: '0.0.0.0', interfaceIndex: tunIdx });
+        }
         return;
       } catch (error) {
         lastError = error;
@@ -589,7 +603,7 @@ export class TunRouteService {
   }
 
   private async cleanupStaleTunRoutes(): Promise<void> {
-    const knownServerIps = this.getKnownServerIps();
+    const knownServerIps = await this.getKnownServerIps();
     const tunIndex = await this.getTunInterfaceIndex();
     if (tunIndex != null) {
       await this.deleteRouteByPrefixAndMetric('0.0.0.0/0', TUN_ROUTE_METRIC, tunIndex).catch((error) => {
@@ -629,12 +643,12 @@ export class TunRouteService {
     });
   }
 
-  private getKnownServerIps(): string[] {
+  private async getKnownServerIps(): Promise<string[]> {
     const servers = configService.getServers();
-    const ips = servers
-      .map((server) => server.address)
-      .filter((address) => this.isIp(address));
-    return [...new Set(ips)];
+    const resolved = await Promise.all(
+      servers.map((server) => this.resolveProxyAddresses(server.address))
+    );
+    return [...new Set(resolved.flat())];
   }
 
   private async deleteRouteByPrefixAndMetric(

@@ -135,6 +135,41 @@ describe('SystemProxyService', () => {
     expect(hasFileInvocation('0', '')).toBe(true);
   });
 
+  it('treats PowerShell stderr from the proxy script as a failure', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => {
+      const child = createMockChildProcess();
+
+      queueMicrotask(() => {
+        if (args.includes('-File')) {
+          child.stderr.emit('data', 'Set-ItemProperty failed');
+          child.emit('close', 1);
+          return;
+        }
+        if (args.includes('-Command')) {
+          child.stdout.emit(
+            'data',
+            JSON.stringify({
+              platform: 'win32',
+              proxyEnable: 0,
+              proxyServer: null,
+              proxyOverride: null,
+              autoConfigUrl: null,
+              autoDetect: 0,
+            })
+          );
+        }
+        child.emit('close', 0);
+      });
+
+      return child;
+    });
+
+    const SystemProxyService = await loadService();
+    const service = new SystemProxyService('win32');
+
+    await expect(service.enable(10809, 10808)).rejects.toThrow('Proxy script exited with code 1');
+  });
+
   it('configures Linux proxy commands through gsettings', async () => {
     const SystemProxyService = await loadService();
     const service = new SystemProxyService('linux');
