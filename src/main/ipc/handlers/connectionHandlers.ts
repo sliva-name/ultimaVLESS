@@ -74,6 +74,7 @@ export function registerConnectionHandlers({
 
         if (connectionMode === 'tun' && !(await deps.hasTunPrivileges())) {
           if (process.platform === 'win32') {
+            deps.configService.setSelectedServerId(fullConfig.uuid);
             deps.configService.setPendingTunReconnect(fullConfig.uuid);
             const relaunched = await deps.requestTunPrivilegesRelaunch();
             if (relaunched) {

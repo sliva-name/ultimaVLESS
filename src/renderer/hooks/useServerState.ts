@@ -85,27 +85,47 @@ export function useServerState() {
 
       const currentSelected = selectedServerRef.current;
       if (currentSelected) {
+        // Try to find the exact currently selected server in the new list
         const updated = newServers.find((server) => server.uuid === currentSelected.uuid);
+        
         if (updated) {
           updateSelectedServerState(updated);
         } else if (!initialLoadDoneRef.current) {
           // Initial load hasn't finished selecting; don't override yet
-        } else if (connectedRef.current) {
+        } else if (connectedRef.current || busyRef.current) {
+          // We are connected/connecting, but our selected server disappeared.
+          // Fall back to what the monitor thinks is running, or what we saved last, or newServers[0]
           void (async () => {
             try {
               const monitorStatus = await window.electronAPI.getConnectionMonitorStatus();
+              const savedId = await window.electronAPI.getSelectedServerId();
               if (disposed) return;
-              if (monitorStatus.isConnected && monitorStatus.currentServer) {
+              
+              if (savedId) {
+                const fromSaved = newServers.find((server) => server.uuid === savedId);
+                if (fromSaved) {
+                  updateSelectedServerState(fromSaved);
+                  return;
+                }
+              }
+
+              if ((monitorStatus.isConnected || busyRef.current) && monitorStatus.currentServer) {
                 const fromList =
                   newServers.find((server) => server.uuid === monitorStatus.currentServer?.uuid) ??
                   monitorStatus.currentServer;
                 updateSelectedServerState(fromList);
+              } else {
+                updateSelectedServerState(newServers[0] ?? null);
               }
             } catch (error) {
               console.error('Failed to reconcile active server after refresh', error);
+              if (!disposed) {
+                updateSelectedServerState(newServers[0] ?? null);
+              }
             }
           })();
         } else {
+          // Not connected, server disappeared -> reconcile
           void reconcileSelection(newServers, currentSelected, window.electronAPI).then((nextServer) => {
             if (!disposed) {
               updateSelectedServerState(nextServer);
@@ -115,6 +135,7 @@ export function useServerState() {
           });
         }
       } else if (initialLoadDoneRef.current) {
+        // No current selection, try to reconcile from saved
         void reconcileSelection(newServers, null, window.electronAPI).then((nextServer) => {
           if (!disposed) {
             updateSelectedServerState(nextServer);
@@ -150,11 +171,46 @@ export function useServerState() {
       setConnectionError(error);
     };
 
+    const handleConnectionMonitorEvent = (event: import('../../shared/ipc').ConnectionMonitorEvent) => {
+      if (event.type === 'connected' && event.server) {
+        setServers((currentServers) => {
+          const fromList = currentServers.find((s) => s.uuid === event.server!.uuid);
+          let targetServer = fromList;
+          if (!targetServer) {
+            // Fallback to fuzzy match by address, port, and name
+            const fuzzy = currentServers.find(
+              (s) =>
+                s.address === event.server!.address &&
+                s.port === event.server!.port &&
+                s.name === event.server!.name
+            );
+            if (fuzzy) {
+              targetServer = fuzzy;
+            } else {
+              // Last resort: just IP and Port
+              const fuzzyIp = currentServers.find(
+                (s) => s.address === event.server!.address && s.port === event.server!.port
+              );
+              targetServer = fuzzyIp ?? event.server!;
+            }
+          }
+          
+          updateSelectedServerState(targetServer);
+          // Always persist the actual selected server ID immediately, 
+          // to ensure it isn't lost on the next render cycle or app restart.
+          window.electronAPI.setSelectedServerId(targetServer.uuid).catch(console.error);
+          
+          return currentServers;
+        });
+      }
+    };
+
     const removeUpdateServers = window.electronAPI.onUpdateServers(handleUpdateServers);
     const removeUpdateSubscriptions = window.electronAPI.onUpdateSubscriptions(handleUpdateSubscriptions);
     const removeConnectionStatus = window.electronAPI.onConnectionStatus(handleConnectionStatus);
     const removeConnectionBusy = window.electronAPI.onConnectionBusy(handleConnectionBusy);
     const removeConnectionError = window.electronAPI.onConnectionError(handleConnectionError);
+    const removeConnectionMonitorEvent = window.electronAPI.onConnectionMonitorEvent(handleConnectionMonitorEvent);
 
     return () => {
       disposed = true;
@@ -166,6 +222,7 @@ export function useServerState() {
       removeConnectionStatus();
       removeConnectionBusy();
       removeConnectionError();
+      removeConnectionMonitorEvent();
     };
   }, [updateSelectedServerState]);
 

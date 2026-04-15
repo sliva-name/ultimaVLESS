@@ -2,7 +2,7 @@ import { VlessConfig } from '../../shared/types';
 import { IElectronAPI } from '../preload.d';
 
 export function findServerFuzzy(servers: VlessConfig[], target: VlessConfig): VlessConfig | null {
-  return servers.find((server) => server.address === target.address && server.port === target.port) ?? null;
+  return servers.find((server) => server.address === target.address && server.port === target.port && server.name === target.name) ?? null;
 }
 
 export function hasMissingPingData(servers: VlessConfig[]): boolean {

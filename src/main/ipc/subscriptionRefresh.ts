@@ -153,11 +153,13 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
     });
 
     const monitorStatus = deps.connectionMonitorService.getStatus();
+    const currentSelectedId = deps.configService.getSelectedServerId();
     const effectiveConfigs = preserveActiveServerIfNeeded(
       configsWithPing,
       existingServers,
       monitorStatus,
-      deps.xrayService.isRunning()
+      deps.xrayService.isRunning(),
+      currentSelectedId
     );
     if (effectiveConfigs.length !== configsWithPing.length && monitorStatus.currentServer) {
       logger.warn('IPC', 'Preserving active server during background refresh', {
@@ -186,9 +188,15 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
       if (currentSelectedId && !effectiveConfigs.some((s) => s.uuid === currentSelectedId)) {
         const oldServer = existingServers.find((s) => s.uuid === currentSelectedId);
         if (oldServer) {
-          const fuzzy = effectiveConfigs.find((s) => s.address === oldServer.address && s.port === oldServer.port);
+          const fuzzy = effectiveConfigs.find((s) => s.address === oldServer.address && s.port === oldServer.port && s.name === oldServer.name);
           if (fuzzy) {
             deps.configService.setSelectedServerId(fuzzy.uuid);
+          } else {
+            // fallback if exact name doesn't match
+            const fuzzyIp = effectiveConfigs.find((s) => s.address === oldServer.address && s.port === oldServer.port);
+            if (fuzzyIp) {
+              deps.configService.setSelectedServerId(fuzzyIp.uuid);
+            }
           }
         }
       }
