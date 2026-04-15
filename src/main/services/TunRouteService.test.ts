@@ -73,4 +73,59 @@ describe('TunRouteService support policy', () => {
       })
     ).rejects.toThrow('TUN mode is currently supported only on Windows and Linux by the bundled Xray core.');
   });
+
+  it('does not track routes that already existed before enable', async () => {
+    const TunRouteService = await loadService();
+    const service = new TunRouteService('win32');
+    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
+    vi.spyOn(service as any, 'prepareRoutingPlan').mockResolvedValue({
+      defaultRoute: {
+        gateway: '192.168.1.1',
+        interfaceIndex: 7,
+        interfaceName: 'Ethernet',
+        localAddress: '192.168.1.10',
+      },
+      proxyIps: ['1.2.3.4'],
+    });
+    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(42);
+    vi.spyOn(service as any, 'ensureTunAddress').mockResolvedValue(undefined);
+
+    runPowerShell
+      .mockResolvedValueOnce('')
+      .mockResolvedValueOnce('')
+      .mockResolvedValueOnce('');
+
+    await service.enable({
+      uuid: 'server-1',
+      name: 'Server 1',
+      address: '1.2.3.4',
+      port: 443,
+    });
+
+    const callsBeforeDisable = runPowerShell.mock.calls.length;
+    await service.disable();
+
+    const deleteCalls = runPowerShell.mock.calls.slice(callsBeforeDisable).filter(([script]) =>
+      String(script).includes('Remove-NetRoute')
+    );
+    expect(deleteCalls).toHaveLength(1);
+    expect(String(deleteCalls[0][0])).toContain('Get-NetRoute -DestinationPrefix "0.0.0.0/0"');
+  });
+
+  it('includes resolved domain IPs when cleaning up stale routes', async () => {
+    configServiceMock.getServers.mockReturnValue([
+      { uuid: 'server-1', name: 'Server 1', address: 'example.com', port: 443 },
+    ]);
+
+    const TunRouteService = await loadService();
+    const service = new TunRouteService('win32');
+    vi.spyOn(service as any, 'resolveProxyAddresses').mockResolvedValue(['203.0.113.10']);
+    vi.spyOn(service as any, 'getTunInterfaceIndex').mockResolvedValue(null);
+    const deleteHostRoutes = vi.spyOn(service as any, 'deleteHostRoutesByPrefixesAndMetric').mockResolvedValue(1);
+    vi.spyOn(service as any, 'deleteTunDefaultRoutesByNextHop').mockResolvedValue(undefined);
+
+    await service.disable();
+
+    expect(deleteHostRoutes).toHaveBeenCalledWith(['203.0.113.10/32'], 1);
+  });
 });

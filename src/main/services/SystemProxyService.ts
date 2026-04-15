@@ -6,6 +6,7 @@ import { logger } from './LoggerService';
 
 const PROXY_SCRIPT = `
 param($enable, $proxy)
+$ErrorActionPreference = "Stop"
 $reg = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"
 try {
     if ($enable -eq "1") {
@@ -35,7 +36,9 @@ try {
     [InternetSettings]::Refresh()
 } catch {
     Write-Error $_
+    exit 1
 }
+exit 0
 `;
 
 interface WindowsProxySnapshot {
