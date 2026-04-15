@@ -540,6 +540,8 @@ export class ConnectionMonitorService extends EventEmitter {
       if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) return;
       const connectionMode = configService.getConnectionMode();
 
+      configService.setSelectedServerId(server.uuid);
+
       await connectionStackService.transitionTo(server, connectionMode, {
         http: APP_CONSTANTS.PORTS.HTTP,
         socks: APP_CONSTANTS.PORTS.SOCKS,
@@ -551,8 +553,6 @@ export class ConnectionMonitorService extends EventEmitter {
         await connectionStackService.resetNetworkingStack({ stopXray: true });
         return;
       }
-      
-      configService.setSelectedServerId(server.uuid);
       
       // Обновляем статус мониторинга
       this.startMonitoring(server);
