@@ -5,6 +5,8 @@ export interface Subscription {
   enabled: boolean;
 }
 
+import type { XrayConfig } from './xray-types';
+
 export interface VlessConfig {
   uuid: string;
   userId?: string; // original VLESS user UUID used for auth
@@ -35,10 +37,55 @@ export interface VlessConfig {
   pingTime?: number;
 
   // Full Xray config from JSON subscription
-  rawConfig?: Record<string, any>;
+  rawConfig?: XrayConfig;
 }
 
 export type ConnectionMode = 'proxy' | 'tun';
+
+export type XudpProxyUDP443 = 'reject' | 'allow' | 'skip';
+export type LogLevel = 'debug' | 'info' | 'warning' | 'error' | 'none';
+export type DomainStrategy = 'AsIs' | 'IPIfNonMatch' | 'IPOnDemand';
+export type TlsFingerprint = 'chrome' | 'firefox' | 'safari' | 'edge' | 'random' | 'randomized';
+
+export const VALID_XUDP_PROXY_UDP_443_VALUES: readonly XudpProxyUDP443[] = ['reject', 'allow', 'skip'] as const;
+export const VALID_LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warning', 'error', 'none'] as const;
+export const VALID_DOMAIN_STRATEGIES: readonly DomainStrategy[] = ['AsIs', 'IPIfNonMatch', 'IPOnDemand'] as const;
+export const VALID_TLS_FINGERPRINTS: readonly TlsFingerprint[] = [
+  'chrome',
+  'firefox',
+  'safari',
+  'edge',
+  'random',
+  'randomized',
+] as const;
+
+export interface PerformanceSettings {
+  muxEnabled: boolean;
+  muxConcurrency: number;
+  xudpConcurrency: number;
+  xudpProxyUDP443: XudpProxyUDP443;
+  tcpFastOpen: boolean;
+  sniffingRouteOnly: boolean;
+  logLevel: LogLevel;
+  fingerprint: TlsFingerprint;
+  blockAds: boolean;
+  blockBittorrent: boolean;
+  domainStrategy: DomainStrategy;
+}
+
+export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
+  muxEnabled: true,
+  muxConcurrency: 8,
+  xudpConcurrency: 16,
+  xudpProxyUDP443: 'reject',
+  tcpFastOpen: true,
+  sniffingRouteOnly: true,
+  logLevel: 'warning',
+  fingerprint: 'chrome',
+  blockAds: true,
+  blockBittorrent: true,
+  domainStrategy: 'IPIfNonMatch',
+};
 
 export interface AppState {
   isConnected: boolean;

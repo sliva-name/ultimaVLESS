@@ -42,6 +42,24 @@ vi.mock('./ConfigGenerator', () => ({
   },
 }));
 
+vi.mock('./ConfigService', () => ({
+  configService: {
+    getPerformanceSettings: vi.fn(() => ({
+      muxEnabled: true,
+      muxConcurrency: 8,
+      xudpConcurrency: 16,
+      xudpProxyUDP443: 'reject',
+      tcpFastOpen: true,
+      sniffingRouteOnly: true,
+      logLevel: 'warning',
+      fingerprint: 'chrome',
+      blockAds: true,
+      blockBittorrent: true,
+      domainStrategy: 'IPIfNonMatch',
+    })),
+  },
+}));
+
 vi.mock('./networkProbe', () => ({
   probeTcpPort: vi.fn(async () => true),
 }));
@@ -71,7 +89,7 @@ describe('XrayService', () => {
       mockConfig,
       expect.stringMatching(/[\\/]tmp[\\/]xray\.log$/),
       'proxy',
-      {}
+      expect.objectContaining({ performanceSettings: expect.any(Object) })
     );
     expect(fs.writeFileSync).toHaveBeenCalledWith(
       expect.stringMatching(/[\\/]tmp[\\/]config\.json$/),

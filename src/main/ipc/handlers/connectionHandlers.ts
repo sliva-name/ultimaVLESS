@@ -3,6 +3,7 @@ import { logger } from '../../services/LoggerService';
 import { IpcDependencies } from '../dependencies';
 import { assertValidServerPayload } from '../validators';
 import { IpcEventChannel, IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '../../../shared/ipc';
+import { createSerialQueue } from '../serialQueue';
 
 interface RegisterConnectionHandlersParams {
   deps: IpcDependencies;
@@ -21,9 +22,9 @@ export function registerConnectionHandlers({
   beginConnectionBusy,
   endConnectionBusy,
 }: RegisterConnectionHandlersParams): void {
-  let connectionOperationQueue: Promise<void> = Promise.resolve();
+  const connectionOperationQueue = createSerialQueue();
   const runConnectionOperation = <T>(operationName: string, fn: () => Promise<T>): Promise<T> => {
-    const run = async (): Promise<T> => {
+    return connectionOperationQueue.enqueue(async () => {
       logger.info('IPC', 'connection operation started', { operationName });
       beginConnectionBusy();
       try {
@@ -32,10 +33,7 @@ export function registerConnectionHandlers({
         endConnectionBusy();
         logger.info('IPC', 'connection operation finished', { operationName });
       }
-    };
-    const operation = connectionOperationQueue.then(run, run);
-    connectionOperationQueue = operation.then(() => undefined, () => undefined);
-    return operation;
+    });
   };
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.connect, async (event: IpcMainInvokeEvent, configPayload: unknown) => {

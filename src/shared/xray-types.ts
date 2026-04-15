@@ -12,26 +12,24 @@ export type XrayInbound = {
   tag?: string;
   port: number;
   listen?: string;
-  protocol: 'socks' | 'http' | 'dokodemo-door' | 'vless' | 'vmess' | 'trojan' | 'shadowsocks';
-  settings?: any;
-  streamSettings?: XrayStreamSettings;
+  protocol: string;
+  settings?: Record<string, unknown>;
+  streamSettings?: XrayStreamSettings | Record<string, unknown>;
   sniffing?: {
     enabled: boolean;
     destOverride: string[];
     metadataOnly?: boolean;
+    routeOnly?: boolean;
   };
 };
 
 export type XrayOutbound = {
   tag?: string;
   sendThrough?: string;
-  protocol: 'freedom' | 'blackhole' | 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'dns';
-  settings?: any;
-  streamSettings?: XrayStreamSettings;
-  mux?: {
-    enabled: boolean;
-    concurrency?: number;
-  };
+  protocol: string;
+  settings?: Record<string, unknown>;
+  streamSettings?: XrayStreamSettings | Record<string, unknown>;
+  mux?: XrayMuxSettings;
 };
 
 export type XrayKcpSettings = {
@@ -74,7 +72,6 @@ export type XrayStreamSettings = {
   httpSettings?: XrayHttpObfsSettings;
   quicSettings?: XrayQuicSettings;
   tcpSettings?: XrayTcpSettings;
-  mux?: XrayMuxSettings;
   sockopt?: {
     mark?: number;
     tcpFastOpen?: boolean;
@@ -86,7 +83,7 @@ export type XrayTlsSettings = {
   serverName?: string;
   allowInsecure?: boolean;
   alpn?: string[];
-  certificates?: any[];
+  certificates?: Array<Record<string, unknown>>;
   fingerprint?: string;
 };
 
@@ -125,8 +122,8 @@ export type XrayGrpcSettings = {
 export type XrayTcpSettings = {
   header?: {
     type: 'none' | 'http';
-    request?: any;
-    response?: any;
+    request?: Record<string, unknown>;
+    response?: Record<string, unknown>;
   };
 };
 
@@ -148,19 +145,19 @@ export type XrayRoutingRule = {
 export type XrayRouting = {
   domainStrategy: 'AsIs' | 'IPIfNonMatch' | 'IPOnDemand';
   rules: XrayRoutingRule[];
-  balancers?: any[];
+  balancers?: Array<Record<string, unknown>>;
 };
 
 export type XrayConfig = {
   log?: XrayLogConfig;
-  api?: any;
-  dns?: any;
+  api?: Record<string, unknown>;
+  dns?: Record<string, unknown>;
   routing?: XrayRouting;
-  policy?: any;
+  policy?: Record<string, unknown>;
   inbounds?: XrayInbound[];
   outbounds?: XrayOutbound[];
-  stats?: any;
-  reverse?: any;
-  fakedns?: any;
+  stats?: Record<string, unknown>;
+  reverse?: Record<string, unknown>;
+  fakedns?: Record<string, unknown>;
 };
 

@@ -7,6 +7,7 @@ import { ConnectionMode, VlessConfig } from '../../shared/types';
 import { XrayHealthStatus } from '../../shared/ipc';
 import { APP_CONSTANTS } from '../../shared/constants';
 import { ConfigGenerator, ConfigGeneratorOptions } from './ConfigGenerator';
+import { configService } from './ConfigService';
 import { logger } from './LoggerService';
 import { probeTcpPort } from './networkProbe';
 import { getBinResourcesPath } from '../utils/runtimePaths';
@@ -88,7 +89,10 @@ export class XrayService extends EventEmitter {
       sendThrough: options.sendThrough || null,
     });
     
-    const xrayConfig = ConfigGenerator.generate(config, logPath, connectionMode, options);
+    const xrayConfig = ConfigGenerator.generate(config, logPath, connectionMode, {
+      ...options,
+      performanceSettings: configService.getPerformanceSettings(),
+    });
     try {
       fs.writeFileSync(configPath, JSON.stringify(xrayConfig, null, 2));
       logger.info('XrayService', 'Config written to disk');

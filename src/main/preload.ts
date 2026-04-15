@@ -10,7 +10,9 @@ import {
   IPC_EVENT_CHANNELS,
   IPC_INVOKE_CHANNELS,
   ImportMobileWhiteListResult,
+  PerformanceSettings,
   PingResult,
+  RefreshSubscriptionsResult,
   SaveManualLinksResult,
   TunCapabilityStatus,
   UpdateSubscriptionPayload,
@@ -40,7 +42,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteSubscription: (id: string) =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.deleteSubscription, { id }) as Promise<boolean>,
   refreshSubscriptions: () =>
-    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.refreshSubscriptions) as Promise<{ ok: boolean; configCount: number; error?: string }>,
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.refreshSubscriptions) as Promise<RefreshSubscriptionsResult>,
 
   // Manual links
   getManualLinks: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getManualLinks) as Promise<string>,
@@ -80,4 +82,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   pingServer: (server: VlessConfig) => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.pingServer, server) as Promise<PingResult>,
   pingAllServers: (force?: boolean) => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.pingAllServers, force) as Promise<PingResult[]>,
+
+  getPerformanceSettings: () =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getPerformanceSettings) as Promise<PerformanceSettings>,
+  setPerformanceSettings: (settings: PerformanceSettings) =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setPerformanceSettings, settings) as Promise<boolean>,
 });

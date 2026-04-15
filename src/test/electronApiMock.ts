@@ -9,7 +9,7 @@ import type {
   DisconnectResult,
   SaveManualLinksResult,
 } from '../shared/ipc';
-import type { ConnectionMode, Subscription, VlessConfig } from '../shared/types';
+import type { ConnectionMode, PerformanceSettings, Subscription, VlessConfig } from '../shared/types';
 import { makeMonitorStatus } from './factories';
 
 type ListenerMap = {
@@ -102,6 +102,20 @@ export function createElectronApiMock(overrides: Partial<IElectronAPI> = {}): El
     getAppVersion: vi.fn(async () => '0.0.0-test'),
     pingServer: vi.fn(async (_server: VlessConfig) => ({ uuid: _server.uuid, latency: null })),
     pingAllServers: vi.fn(async (_force?: boolean) => []),
+    getPerformanceSettings: vi.fn(async (): Promise<PerformanceSettings> => ({
+      muxEnabled: true,
+      muxConcurrency: 8,
+      xudpConcurrency: 16,
+      xudpProxyUDP443: 'reject',
+      tcpFastOpen: true,
+      sniffingRouteOnly: true,
+      logLevel: 'warning',
+      fingerprint: 'chrome',
+      blockAds: true,
+      blockBittorrent: true,
+      domainStrategy: 'IPIfNonMatch',
+    })),
+    setPerformanceSettings: vi.fn(async (_settings: PerformanceSettings) => true),
 
     emitUpdateServers: (servers: VlessConfig[]) => {
       listeners.updateServers.forEach((listener) => listener(servers));
