@@ -91,6 +91,8 @@ function clearUnresponsiveRecoveryTimer(): void {
   unresponsiveRecoveryTimer = null;
 }
 
+let fatalExitTimer: NodeJS.Timeout | null = null;
+
 function scheduleFatalExit(trigger: AppRecoveryTrigger, error: unknown): void {
   if (isShuttingDown) {
     return;
@@ -104,7 +106,15 @@ function scheduleFatalExit(trigger: AppRecoveryTrigger, error: unknown): void {
     recoveryAttemptCount: recoveryStatus.recoveryAttemptCount,
   });
 
-  setTimeout(() => {
+  // Guard against overlapping timers that would otherwise call
+  // app.exit(1) more than once (e.g. an uncaughtException followed by
+  // an unhandledRejection in the same tick).
+  if (fatalExitTimer) {
+    return;
+  }
+
+  fatalExitTimer = setTimeout(() => {
+    fatalExitTimer = null;
     if (!isShuttingDown) {
       isQuitting = true;
       app.exit(1);

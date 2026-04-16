@@ -200,14 +200,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
     });
   }, []);
 
+  const lastScrolledUuidRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!selectedServer || didScrollToSelectedRef.current) return;
+    if (!selectedServer) return;
+    // Re-scroll whenever the selected server actually changes, not only on the
+    // very first render — otherwise keyboard/remote navigation that switches
+    // to a server that's offscreen will leave it out of view.
+    if (lastScrolledUuidRef.current === selectedServer.uuid && didScrollToSelectedRef.current) {
+      return;
+    }
     const container = scrollContainerRef.current;
     if (!container) return;
     const el = container.querySelector(`[data-server-uuid="${selectedServer.uuid}"]`);
     if (el && typeof el.scrollIntoView === 'function') {
       el.scrollIntoView({ block: 'nearest' });
       didScrollToSelectedRef.current = true;
+      lastScrolledUuidRef.current = selectedServer.uuid;
     }
   }, [selectedServer, servers]);
 

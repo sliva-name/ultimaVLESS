@@ -14,6 +14,8 @@ interface SettingsModalProps {
   isOpen: boolean;
   servers: VlessConfig[];
   subscriptions: Subscription[];
+  isConnected: boolean;
+  isConnectionBusy: boolean;
   onClose: () => void;
 }
 
@@ -25,7 +27,7 @@ const SETTINGS_TABS: { id: SettingsTabId; labelKey: string; icon: typeof Layers 
   { id: 'diagnostics', labelKey: 'settings.tabs.diagnostics', icon: Activity },
 ];
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, subscriptions, onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, subscriptions, isConnected, isConnectionBusy, onClose }) => {
   const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingsTabId>('sources');
   // ---- Manual links ----
@@ -225,7 +227,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
   const tunNeedsPrivileges = !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
   const tunButtonDisabled = tunUnavailable;
   const modeControlsDisabled = !hasLoadedMonitorStatus;
-  const modeLockedByConnection = !!monitorStatus?.isConnected;
+  // Prefer the authoritative renderer-side connection state (ws-fast updates)
+  // and only fall back to the polled monitor status so the lock reacts the
+  // moment a user (dis)connects, even before the next monitor poll.
+  const networkLocked = isConnected || isConnectionBusy || !!monitorStatus?.isConnected;
+  const modeLockedByConnection = networkLocked;
   const xrayStateLabel = monitorStatus?.xrayState ? monitorStatus.xrayState.replace(/^\w/, (v) => v.toUpperCase()) : null;
   const healthStateLabel = monitorStatus?.lastHealthState ? monitorStatus.lastHealthState.replace(/^\w/, (v) => v.toUpperCase()) : null;
   const formatTimestamp = (value: number | null | undefined) => (value ? new Date(value).toLocaleTimeString() : 'n/a');
@@ -242,6 +248,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
       setPerfDirty(false);
     } catch (err) {
       console.error('Failed to save performance settings:', err);
+      // Keep the form marked dirty so the user can retry instead of
+      // silently believing the change was persisted.
+      setPerfDirty(true);
     } finally {
       setPerfSaving(false);
     }
@@ -579,7 +588,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
               </div>
               <p className="text-xs text-gray-500 leading-relaxed">{t('settings.network.performanceHint')}</p>
 
-              <div className="space-y-3">
+              {networkLocked && (
+                <div
+                  role="status"
+                  className="flex items-start gap-2.5 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-xs text-orange-200 leading-relaxed"
+                >
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{t('settings.network.performanceLocked')}</span>
+                </div>
+              )}
+
+              <fieldset
+                disabled={networkLocked}
+                aria-disabled={networkLocked}
+                className={clsx(
+                  'space-y-3 transition-opacity duration-200',
+                  networkLocked && 'opacity-60 pointer-events-none select-none'
+                )}
+              >
                 {/* TCP Mux toggle */}
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -763,14 +789,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                     <option value="IPOnDemand">IPOnDemand</option>
                   </select>
                 </div>
-              </div>
+              </fieldset>
 
               {/* Save / Reset buttons */}
               <div className="flex items-center gap-3 pt-2">
                 <button
                   type="button"
                   onClick={handleSavePerfSettings}
-                  disabled={!perfDirty || perfSaving}
+                  disabled={!perfDirty || perfSaving || networkLocked}
                   className="flex-1 px-4 py-2 bg-gradient-to-r from-primary to-blue-600 rounded-lg text-white text-sm font-semibold hover:from-blue-500 hover:to-blue-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
                 >
                   {perfSaving && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -779,7 +805,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, servers, s
                 <button
                   type="button"
                   onClick={handleResetPerfDefaults}
-                  disabled={perfSaving}
+                  disabled={perfSaving || networkLocked}
                   className="px-4 py-2 rounded-lg text-sm font-medium text-gray-400 border border-gray-700/50 hover:text-gray-200 hover:border-gray-600/70 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   {t('settings.network.resetDefaults')}

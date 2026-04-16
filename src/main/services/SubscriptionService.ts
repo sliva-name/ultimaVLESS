@@ -179,10 +179,19 @@ export class SubscriptionService {
         body = rawText;
       }
 
-      if (typeof body === 'object' && Array.isArray(body)) {
+      if (Array.isArray(body)) {
         logger.info('SubscriptionService', 'Detected JSON array format', { count: body.length });
         return {
           configs: parseJsonConfigs(body),
+          extractedLinks: [],
+        };
+      }
+
+      // Single Xray configuration object (e.g. a full `{ outbounds: [...] }` export).
+      if (typeof body === 'object' && body !== null) {
+        logger.info('SubscriptionService', 'Detected single JSON object format');
+        return {
+          configs: parseJsonConfigs([body]),
           extractedLinks: [],
         };
       }

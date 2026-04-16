@@ -137,32 +137,10 @@ function parseTrojanLink(link: string): VlessConfig | null {
     const network = (['tcp', 'ws', 'grpc'].includes(typeParam) ? typeParam : 'tcp') as 'tcp' | 'ws' | 'grpc';
     const security = ((params.get('security') || 'tls') === 'none' ? 'none' : 'tls') as 'tls' | 'none';
 
-    const streamSettings: Record<string, unknown> = { network, security };
-    if (security === 'tls') {
-      streamSettings.tlsSettings = {
-        serverName: params.get('sni') || '',
-        allowInsecure: isTruthyQueryParam(params.get('insecure')) || isTruthyQueryParam(params.get('allowInsecure')),
-        fingerprint: params.get('fp') || undefined,
-      };
-    }
-    if (network === 'ws') {
-      streamSettings.wsSettings = {
-        path: params.get('path') || '/',
-        headers: { Host: params.get('host') || params.get('sni') || '' },
-      };
-    } else if (network === 'grpc') {
-      streamSettings.grpcSettings = { serviceName: params.get('serviceName') || '' };
-    }
-
-    const rawConfig = {
-      outbounds: [{
-        tag: 'proxy',
-        protocol: 'trojan',
-        settings: { servers: [{ address, port, password }] },
-        streamSettings,
-      }],
-    };
-
+    // Structured fields only — rely on ConfigGenerator to produce a complete
+    // Xray configuration (inbounds, block/direct outbounds, routing rules)
+    // instead of a half-baked rawConfig that would crash Xray once routing
+    // references `outboundTag: "block"` / `"direct"`.
     return {
       uuid: makeServerIdentity(password || 'trojan', address, port, [
         network,
@@ -177,6 +155,8 @@ function parseTrojanLink(link: string): VlessConfig | null {
       address,
       port,
       name,
+      protocol: 'trojan',
+      password,
       type: network,
       security,
       sni: params.get('sni') ?? undefined,
@@ -184,7 +164,9 @@ function parseTrojanLink(link: string): VlessConfig | null {
       path: params.get('path') ?? undefined,
       host: params.get('host') ?? undefined,
       serviceName: params.get('serviceName') ?? undefined,
-      rawConfig,
+      allowInsecure:
+        isTruthyQueryParam(params.get('insecure')) ||
+        isTruthyQueryParam(params.get('allowInsecure')),
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing Trojan link', { link: link.substring(0, 50) + '...' });

@@ -61,6 +61,8 @@ function App() {
           isOpen={isSettingsOpen}
           servers={servers}
           subscriptions={subscriptions}
+          isConnected={isConnected}
+          isConnectionBusy={isConnectionBusy}
           onClose={handleCloseSettings}
         />
       </div>
