@@ -180,16 +180,51 @@ export class ConnectionMonitorService extends EventEmitter {
     return true;
   }
 
+  /**
+   * Returns the up-to-date reference of the currently tracked server after a
+   * server list refresh, or `null` if monitoring isn't tracking anything.
+   * When the tracked server is no longer present in the list we keep the
+   * original reference (so callers can react) but leave internal state alone.
+   *
+   * The match is tolerant to `uuid` rotation: providers that rotate VLESS
+   * credentials (or Trojan passwords) produce a new stable-id hash for the
+   * same endpoint between fetches, so we fall back to matching on
+   * protocol + address + port when uuids don't line up. Without this the
+   * refreshed list ends up with a ghost copy of the active server next to
+   * its rotated twin.
+   */
   public syncCurrentServer(servers: VlessConfig[]): VlessConfig | null {
     const currentServer = this.status.currentServer;
     if (!currentServer) {
       return null;
     }
 
-    const updatedServer = servers.find((server) => server.uuid === currentServer.uuid) ?? null;
-    if (updatedServer) {
-      this.status.currentServer = updatedServer;
-      return updatedServer;
+    const exact = servers.find((server) => server.uuid === currentServer.uuid);
+    if (exact) {
+      this.status.currentServer = exact;
+      return exact;
+    }
+
+    const currentProtocol = currentServer.protocol ?? 'vless';
+    const fuzzy = servers.find((server) => {
+      if (server.address !== currentServer.address || server.port !== currentServer.port) {
+        return false;
+      }
+      if ((server.protocol ?? 'vless') !== currentProtocol) {
+        return false;
+      }
+      return true;
+    });
+
+    if (fuzzy) {
+      logger.info('ConnectionMonitorService', 'Tracked server matched by address/port after uuid rotation', {
+        from: currentServer.uuid.substring(0, 12),
+        to: fuzzy.uuid.substring(0, 12),
+        address: currentServer.address,
+        port: currentServer.port,
+      });
+      this.status.currentServer = fuzzy;
+      return fuzzy;
     }
 
     return currentServer;
@@ -467,11 +502,25 @@ export class ConnectionMonitorService extends EventEmitter {
     }
 
     logger.info('ConnectionMonitorService', 'Scheduling auto-switch');
-    
+    const scheduledGeneration = this.monitoringGeneration;
+
     // Переключаемся через 5 секунд после обнаружения проблемы
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
-      this.attemptAutoSwitch();
+      // Bail out when the monitoring session changed (stop/new connection) —
+      // otherwise we would switch a session we no longer own.
+      if (this.monitoringGeneration !== scheduledGeneration) {
+        logger.debug('ConnectionMonitorService', 'Auto-switch skipped (stale generation)', {
+          scheduled: scheduledGeneration,
+          current: this.monitoringGeneration,
+        });
+        return;
+      }
+      if (!this.status.isConnected || !this.status.currentServer) {
+        logger.debug('ConnectionMonitorService', 'Auto-switch skipped (not connected)');
+        return;
+      }
+      void this.attemptAutoSwitch();
     }, 5000);
   }
 

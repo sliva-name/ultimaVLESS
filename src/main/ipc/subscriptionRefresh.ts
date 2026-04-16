@@ -39,6 +39,7 @@ const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 function getDedupKey(config: VlessConfig): string {
   return [
     config.uuid || '',
+    config.protocol || 'vless',
     config.address || '',
     String(config.port || 0),
     config.type || '',
@@ -153,13 +154,13 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
     });
 
     const monitorStatus = deps.connectionMonitorService.getStatus();
-    const currentSelectedId = deps.configService.getSelectedServerId();
+    const selectedIdBeforeRefresh = deps.configService.getSelectedServerId();
     const effectiveConfigs = preserveActiveServerIfNeeded(
       configsWithPing,
       existingServers,
       monitorStatus,
       deps.xrayService.isRunning(),
-      currentSelectedId
+      selectedIdBeforeRefresh
     );
     if (effectiveConfigs.length !== configsWithPing.length && monitorStatus.currentServer) {
       logger.warn('IPC', 'Preserving active server during background refresh', {
@@ -170,6 +171,9 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
 
     const hasInput = enabled.length > 0 || !!manualLinks.trim();
     if (effectiveConfigs.length === 0 && hasInput) {
+      // Do NOT mutate the persisted server list when the remote subscription
+      // returned nothing usable — keep the previously known servers intact so
+      // the user doesn't lose their selection just because a refresh failed.
       return {
         configCount: 0,
         partialErrors,
@@ -183,21 +187,16 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
     const syncedCurrentServer = deps.connectionMonitorService.syncCurrentServer(effectiveConfigs);
     if (syncedCurrentServer) {
       deps.configService.setSelectedServerId(syncedCurrentServer.uuid);
-    } else {
-      const currentSelectedId = deps.configService.getSelectedServerId();
-      if (currentSelectedId && !effectiveConfigs.some((s) => s.uuid === currentSelectedId)) {
-        const oldServer = existingServers.find((s) => s.uuid === currentSelectedId);
-        if (oldServer) {
-          const fuzzy = effectiveConfigs.find((s) => s.address === oldServer.address && s.port === oldServer.port && s.name === oldServer.name);
-          if (fuzzy) {
-            deps.configService.setSelectedServerId(fuzzy.uuid);
-          } else {
-            // fallback if exact name doesn't match
-            const fuzzyIp = effectiveConfigs.find((s) => s.address === oldServer.address && s.port === oldServer.port);
-            if (fuzzyIp) {
-              deps.configService.setSelectedServerId(fuzzyIp.uuid);
-            }
-          }
+    } else if (selectedIdBeforeRefresh && !effectiveConfigs.some((s) => s.uuid === selectedIdBeforeRefresh)) {
+      const oldServer = existingServers.find((s) => s.uuid === selectedIdBeforeRefresh);
+      if (oldServer) {
+        const fuzzy =
+          effectiveConfigs.find(
+            (s) => s.address === oldServer.address && s.port === oldServer.port && s.name === oldServer.name
+          ) ??
+          effectiveConfigs.find((s) => s.address === oldServer.address && s.port === oldServer.port);
+        if (fuzzy) {
+          deps.configService.setSelectedServerId(fuzzy.uuid);
         }
       }
     }

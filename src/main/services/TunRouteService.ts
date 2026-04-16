@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import { promisify } from 'util';
 import dns from 'dns';
+import net from 'net';
 import { VlessConfig } from '../../shared/types';
 import { logger } from './LoggerService';
 import { configService } from './ConfigService';
@@ -501,10 +502,14 @@ export class TunRouteService {
 
   private async resolveProxyAddresses(address: string): Promise<string[]> {
     if (this.isIp(address)) return [address];
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error('DNS lookup timeout')), DNS_TIMEOUT);
+    });
     try {
       const result = await Promise.race<dns.LookupAddress[] | dns.LookupAddress>([
         dnsLookup(address, { family: 4, all: true }),
-        this.sleep(DNS_TIMEOUT).then(() => Promise.reject(new Error('DNS lookup timeout'))),
+        timeoutPromise,
       ]);
       const addresses = Array.isArray(result)
         ? result.map((r) => r.address)
@@ -512,11 +517,16 @@ export class TunRouteService {
       return [...new Set(addresses)];
     } catch {
       return [];
+    } finally {
+      if (timeoutHandle !== null) {
+        clearTimeout(timeoutHandle);
+      }
     }
   }
 
+  /** Accepts both IPv4 and IPv6 literals. Used to skip DNS lookups. */
   private isIp(str: string): boolean {
-    return /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(str);
+    return net.isIP(str) !== 0;
   }
 
   private async addRoute(
@@ -526,6 +536,18 @@ export class TunRouteService {
     metric: number,
     interfaceIndex?: number
   ): Promise<boolean> {
+    if (net.isIP(destination) === 0) {
+      throw new Error(`Refusing to add route for non-IP destination: ${destination}`);
+    }
+    if (net.isIP(gateway) === 0) {
+      throw new Error(`Refusing to add route with non-IP gateway: ${gateway}`);
+    }
+    if (!Number.isInteger(metric) || metric < 0 || metric > 65535) {
+      throw new Error(`Invalid route metric: ${metric}`);
+    }
+    if (interfaceIndex != null && !Number.isInteger(interfaceIndex)) {
+      throw new Error(`Invalid interface index: ${interfaceIndex}`);
+    }
     const prefixLen = this.maskToPrefix(mask);
     const destPrefix = `${destination}/${prefixLen}`;
     const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';

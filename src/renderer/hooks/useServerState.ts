@@ -78,7 +78,9 @@ export function useServerState() {
       }
     };
 
-    void loadInitialState();
+    void loadInitialState().catch((error) => {
+      console.error('Failed to load initial renderer state', error);
+    });
 
     const handleUpdateServers = (newServers: VlessConfig[]) => {
       setServers(newServers);
@@ -159,7 +161,17 @@ export function useServerState() {
     const handleConnectionStatus = (status: boolean) => {
       setIsConnected(status);
       connectedRef.current = status;
-      if (status) setConnectionError(null);
+      if (status) {
+        setConnectionError(null);
+      } else {
+        // Ensure the renderer doesn't stay stuck in a "connecting" spinner when
+        // a session drops; the main process will re-emit busy=true as soon as
+        // the next operation begins.
+        if (busyRef.current) {
+          busyRef.current = false;
+          setIsConnectionBusy(false);
+        }
+      }
     };
 
     const handleConnectionBusy = (busy: boolean) => {

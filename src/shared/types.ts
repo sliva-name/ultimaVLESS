@@ -15,6 +15,15 @@ export interface VlessConfig {
   name: string;
   source?: 'subscription' | 'manual';
   subscriptionId?: string; // which Subscription this server came from
+  /**
+   * Outbound protocol for this server. Defaults to 'vless' when absent for
+   * backwards compatibility. Set to 'trojan' for Trojan links.
+   */
+  protocol?: 'vless' | 'trojan';
+  /** Trojan password (only used when protocol === 'trojan'). */
+  password?: string;
+  /** Allow self-signed / mismatched TLS certificates (from link params). */
+  allowInsecure?: boolean;
   flow?: string; // xtls-rprx-vision
   encryption?: string;
   type?: 'tcp' | 'raw' | 'kcp' | 'ws' | 'http' | 'grpc' | 'quic';

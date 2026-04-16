@@ -95,6 +95,8 @@ export class SystemProxyService {
   private activeSnapshot: ProxySnapshot | null = null;
   private readonly platform: NodeJS.Platform;
   private linuxProxyBackend: 'gsettings' | 'unsupported' | null = null;
+  /** Serializes enable()/disable() so concurrent callers cannot interleave and corrupt snapshot. */
+  private operationChain: Promise<unknown> = Promise.resolve();
 
   constructor(platform: NodeJS.Platform = process.platform) {
     this.platform = platform;
@@ -103,6 +105,12 @@ export class SystemProxyService {
     if (this.platform === 'win32') {
       this.initScript();
     }
+  }
+
+  private runSerialized<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.operationChain.then(() => operation(), () => operation());
+    this.operationChain = next.catch(() => undefined);
+    return next;
   }
 
   /**
@@ -123,47 +131,65 @@ export class SystemProxyService {
    * @param {number} socksPort - The SOCKS proxy port.
    * @returns {Promise<void>}
    */
-  public async enable(httpPort: number, socksPort: number): Promise<void> {
-    if (this.platform === 'darwin') {
-      await this.ensureSnapshotCaptured();
-      await this.enableMacosProxy(httpPort, socksPort);
-      return;
-    }
-    if (this.platform === 'linux') {
-      await this.ensureSnapshotCaptured();
-      await this.enableLinuxProxy(httpPort, socksPort);
-      return;
-    }
-    if (this.platform !== 'win32') {
-      logger.info('SystemProxyService', 'Unsupported platform for system proxy operations', {
-        platform: this.platform,
-      });
-      return;
-    }
+  public enable(httpPort: number, socksPort: number): Promise<void> {
+    return this.runSerialized(async () => {
+      if (this.platform === 'darwin') {
+        const snapshot = await this.captureCurrentProxyState();
+        await this.enableMacosProxy(httpPort, socksPort);
+        this.commitSnapshot(snapshot);
+        return;
+      }
+      if (this.platform === 'linux') {
+        const snapshot = await this.captureCurrentProxyState();
+        await this.enableLinuxProxy(httpPort, socksPort);
+        this.commitSnapshot(snapshot);
+        return;
+      }
+      if (this.platform !== 'win32') {
+        logger.info('SystemProxyService', 'Unsupported platform for system proxy operations', {
+          platform: this.platform,
+        });
+        return;
+      }
 
-    await this.ensureSnapshotCaptured();
-    // Format: http=127.0.0.1:10809;https=127.0.0.1:10809;socks=127.0.0.1:10808
-    const proxyString = `http=127.0.0.1:${httpPort};https=127.0.0.1:${httpPort};socks=127.0.0.1:${socksPort}`;
-    await this.runScript('1', proxyString);
+      const snapshot = await this.captureCurrentProxyState();
+      // Format: http=127.0.0.1:10809;https=127.0.0.1:10809;socks=127.0.0.1:10808
+      const proxyString = `http=127.0.0.1:${httpPort};https=127.0.0.1:${httpPort};socks=127.0.0.1:${socksPort}`;
+      await this.runScript('1', proxyString);
+      this.commitSnapshot(snapshot);
+    });
   }
 
   /**
    * Disables the system proxy.
    * @returns {Promise<void>}
    */
-  public async disable(): Promise<void> {
-    if (this.platform === 'darwin') {
-      await this.restoreSnapshotOrFallback(() => this.disableMacosProxy());
+  public disable(): Promise<void> {
+    return this.runSerialized(async () => {
+      if (this.platform === 'darwin') {
+        await this.restoreSnapshotOrFallback(() => this.disableMacosProxy());
+        return;
+      }
+      if (this.platform === 'linux') {
+        await this.restoreSnapshotOrFallback(() => this.disableLinuxProxy());
+        return;
+      }
+      if (this.platform !== 'win32') {
+        return;
+      }
+      await this.restoreSnapshotOrFallback(() => this.runScript('0', ''));
+    });
+  }
+
+  /** Only persist the pre-change state *after* enable succeeds, so a failed enable cannot corrupt the restore path. */
+  private commitSnapshot(snapshot: ProxySnapshot): void {
+    // If a previous snapshot is still active (e.g. enable called twice without
+    // a disable between), preserve the earliest known-good pre-enable state.
+    if (this.activeSnapshot) {
       return;
     }
-    if (this.platform === 'linux') {
-      await this.restoreSnapshotOrFallback(() => this.disableLinuxProxy());
-      return;
-    }
-    if (this.platform !== 'win32') {
-      return;
-    }
-    await this.restoreSnapshotOrFallback(() => this.runScript('0', ''));
+    this.activeSnapshot = snapshot;
+    this.saveSnapshot(snapshot);
   }
 
   private async enableMacosProxy(httpPort: number, socksPort: number): Promise<void> {
@@ -300,22 +326,6 @@ export class SystemProxyService {
         reject(error);
       });
     });
-  }
-
-  private async ensureSnapshotCaptured(): Promise<void> {
-    if (this.activeSnapshot) {
-      return;
-    }
-
-    const persisted = this.loadSnapshot();
-    if (persisted) {
-      this.activeSnapshot = persisted;
-      return;
-    }
-
-    const snapshot = await this.captureCurrentProxyState();
-    this.activeSnapshot = snapshot;
-    this.saveSnapshot(snapshot);
   }
 
   private async restoreSnapshotOrFallback(fallback: () => Promise<void>): Promise<void> {

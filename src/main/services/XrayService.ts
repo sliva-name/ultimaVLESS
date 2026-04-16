@@ -82,22 +82,32 @@ export class XrayService extends EventEmitter {
     const userDataPath = app.getPath('userData');
     const configPath = path.join(userDataPath, 'config.json');
     const logPath = path.join(userDataPath, 'xray.log');
-    
-    logger.info('XrayService', 'Starting Xray', { 
-      configPath, 
+
+    logger.info('XrayService', 'Starting Xray', {
+      configPath,
       logPath,
       serverName: config.name,
       serverAddress: `${config.address}:${config.port}`,
-      protocol: config.type || 'tcp',
+      protocol: config.protocol || 'vless',
+      transport: config.type || 'tcp',
       security: config.security || 'none',
       connectionMode,
       sendThrough: options.sendThrough || null,
     });
-    
-    const xrayConfig = ConfigGenerator.generate(config, logPath, connectionMode, {
-      ...options,
-      performanceSettings: configService.getPerformanceSettings(),
-    });
+
+    let xrayConfig;
+    try {
+      xrayConfig = ConfigGenerator.generate(config, logPath, connectionMode, {
+        ...options,
+        performanceSettings: configService.getPerformanceSettings(),
+      });
+    } catch (e) {
+      const error = e instanceof Error ? e : new Error(String(e));
+      this.markFailed(`Config generation failed: ${error.message}`);
+      logger.error('XrayService', 'Failed to generate Xray config', error);
+      throw error;
+    }
+
     try {
       fs.writeFileSync(configPath, JSON.stringify(xrayConfig, null, 2));
       logger.info('XrayService', 'Config written to disk');
@@ -258,7 +268,6 @@ export class XrayService extends EventEmitter {
           this.stopWaitPromise = null;
         }
       });
-      this.process = null;
       try {
         processToStop.kill();
       } catch (error) {
@@ -266,6 +275,9 @@ export class XrayService extends EventEmitter {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+      // Flip to null only after the kill() signal is sent to avoid a window
+      // where isRunning() returns false while the OS process is still alive.
+      this.process = null;
     }
   }
 

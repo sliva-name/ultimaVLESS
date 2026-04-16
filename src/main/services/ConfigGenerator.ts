@@ -52,10 +52,29 @@ export class ConfigGenerator {
       this.applySendThroughIfNeeded(cfg, options.sendThrough);
     }
 
+    // Raw subscriptions often omit the `block` / `direct` outbounds that are
+    // mandatory once routing rules reference them (either from the raw config
+    // itself or from the ad/bittorrent blockers injected below). Xray refuses
+    // to start with "outboundTag not found" otherwise.
+    this.ensureAuxiliaryOutbounds(cfg);
     this.applyPerfToOutbounds(cfg, perf);
     this.applyPerfToRouting(cfg, perf);
 
     return cfg;
+  }
+
+  private static ensureAuxiliaryOutbounds(cfg: XrayConfig): void {
+    if (!Array.isArray(cfg.outbounds)) {
+      cfg.outbounds = [];
+    }
+    const outbounds = cfg.outbounds as MutableOutbound[];
+    const hasTag = (tag: string): boolean => outbounds.some((o) => o?.tag === tag);
+    if (!hasTag('direct')) {
+      outbounds.push({ tag: 'direct', protocol: 'freedom', settings: {} });
+    }
+    if (!hasTag('block')) {
+      outbounds.push({ tag: 'block', protocol: 'blackhole', settings: {} });
+    }
   }
 
   private static applyPerfToOutbounds(cfg: XrayConfig, perf: PerformanceSettings): void {
@@ -103,13 +122,12 @@ export class ConfigGenerator {
     const hasAdBlock = rules.some((r) =>
       Array.isArray(r.domain) && r.domain.some((d: unknown) => typeof d === 'string' && d.includes('category-ads'))
     );
-    if (perf.blockAds && !hasAdBlock) {
-      rules.unshift({ type: 'field', domain: ['geosite:category-ads-all'], outboundTag: 'block' });
-    }
-
     const hasBtBlock = rules.some((r) =>
       Array.isArray(r.protocol) && r.protocol.includes('bittorrent') && r.outboundTag === 'block'
     );
+
+    // Prepend block rules in reverse priority so the final order is:
+    //   [ads?, bittorrent?, ...existing rules]
     if (perf.blockBittorrent && !hasBtBlock) {
       const btIndex = rules.findIndex((r) =>
         Array.isArray(r.protocol) && r.protocol.includes('bittorrent')
@@ -117,9 +135,11 @@ export class ConfigGenerator {
       if (btIndex >= 0) {
         rules[btIndex].outboundTag = 'block';
       } else {
-        const insertIdx = hasAdBlock || (perf.blockAds && !hasAdBlock) ? 1 : 0;
-        rules.splice(insertIdx, 0, { type: 'field', protocol: ['bittorrent'], outboundTag: 'block' });
+        rules.unshift({ type: 'field', protocol: ['bittorrent'], outboundTag: 'block' });
       }
+    }
+    if (perf.blockAds && !hasAdBlock) {
+      rules.unshift({ type: 'field', domain: ['geosite:category-ads-all'], outboundTag: 'block' });
     }
 
     cfg.routing.rules = rules as XrayRoutingRule[];
@@ -132,15 +152,16 @@ export class ConfigGenerator {
     options: ConfigGeneratorOptions
   ): XrayConfig {
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
+    const protocol: 'vless' | 'trojan' = config.protocol === 'trojan' ? 'trojan' : 'vless';
 
     const streamSettings: XrayStreamSettings = {
       network: (config.type === 'raw' ? 'raw' : config.type) || 'tcp',
-      security: config.security || 'none',
+      security: config.security || (protocol === 'trojan' ? 'tls' : 'none'),
     };
 
     const defaultFp = perf.fingerprint;
 
-    if (config.security === 'reality') {
+    if (streamSettings.security === 'reality') {
       streamSettings.realitySettings = {
         fingerprint: config.fp || defaultFp,
         serverName: config.sni || '',
@@ -148,29 +169,29 @@ export class ConfigGenerator {
         shortId: config.sid || '',
         spiderX: config.spx || '',
       };
-    } else if (config.security === 'tls') {
+    } else if (streamSettings.security === 'tls') {
       streamSettings.tlsSettings = {
         serverName: config.sni || '',
-        allowInsecure: false,
+        allowInsecure: !!config.allowInsecure,
         alpn: ['h2', 'http/1.1'],
         fingerprint: config.fp || defaultFp,
       };
     }
 
-    if (config.type === 'ws') {
+    if (streamSettings.network === 'ws') {
       streamSettings.wsSettings = {
         path: config.path || '/',
         headers: { Host: config.host || config.sni || '' },
       };
     }
 
-    if (config.type === 'grpc') {
+    if (streamSettings.network === 'grpc') {
       streamSettings.grpcSettings = {
         serviceName: config.serviceName || '',
       };
     }
 
-    if (config.type === 'kcp') {
+    if (streamSettings.network === 'kcp') {
       streamSettings.kcpSettings = {
         mtu: 1350,
         tti: 20,
@@ -183,7 +204,7 @@ export class ConfigGenerator {
       };
     }
 
-    if (config.type === 'http') {
+    if (streamSettings.network === 'http') {
       const h = (config.host || config.sni || '').trim();
       streamSettings.httpSettings = {
         path: config.path || '/',
@@ -191,7 +212,7 @@ export class ConfigGenerator {
       };
     }
 
-    if (config.type === 'quic') {
+    if (streamSettings.network === 'quic') {
       streamSettings.quicSettings = {
         security: 'none',
         key: '',
@@ -199,30 +220,14 @@ export class ConfigGenerator {
       };
     }
 
-    const vlessUser: { id: string; encryption: string; flow?: string } = {
-      id: config.userId || config.uuid,
-      encryption: config.encryption || 'none',
-    };
-    const hasVisionFlow = !!(config.flow && config.flow.trim() !== '');
-    if (hasVisionFlow) {
-      vlessUser.flow = config.flow;
-    }
-
+    const hasVisionFlow = protocol === 'vless' && !!(config.flow && config.flow.trim() !== '');
     const mux: XrayMuxSettings = hasVisionFlow
       ? { enabled: true, concurrency: -1, xudpConcurrency: perf.xudpConcurrency, xudpProxyUDP443: perf.xudpProxyUDP443 }
       : { enabled: perf.muxEnabled, concurrency: perf.muxConcurrency, xudpConcurrency: perf.xudpConcurrency, xudpProxyUDP443: perf.xudpProxyUDP443 };
 
     const outbound: XrayOutbound = {
-      protocol: 'vless',
-      settings: {
-        vnext: [
-          {
-            address: config.address,
-            port: config.port,
-            users: [vlessUser],
-          },
-        ],
-      },
+      protocol,
+      settings: this.buildOutboundSettings(config, protocol, hasVisionFlow),
       streamSettings: {
         ...streamSettings,
         sockopt: { tcpFastOpen: perf.tcpFastOpen },
@@ -261,13 +266,44 @@ export class ConfigGenerator {
       inbounds,
       outbounds: [
         outbound,
-        { protocol: 'freedom', tag: 'direct' },
-        { protocol: 'blackhole', tag: 'block' },
+        { protocol: 'freedom', tag: 'direct', settings: {} },
+        { protocol: 'blackhole', tag: 'block', settings: {} },
       ],
       routing: {
         domainStrategy: perf.domainStrategy,
         rules: this.buildRoutingRules(perf),
       },
+    };
+  }
+
+  private static buildOutboundSettings(
+    config: VlessConfig,
+    protocol: 'vless' | 'trojan',
+    hasVisionFlow: boolean
+  ): Record<string, unknown> {
+    if (protocol === 'trojan') {
+      const server: Record<string, unknown> = {
+        address: config.address,
+        port: config.port,
+        password: config.password || '',
+      };
+      return { servers: [server] };
+    }
+    const vlessUser: { id: string; encryption: string; flow?: string } = {
+      id: config.userId || config.uuid,
+      encryption: config.encryption || 'none',
+    };
+    if (hasVisionFlow && config.flow) {
+      vlessUser.flow = config.flow;
+    }
+    return {
+      vnext: [
+        {
+          address: config.address,
+          port: config.port,
+          users: [vlessUser],
+        },
+      ],
     };
   }
 
