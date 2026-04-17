@@ -1,5 +1,5 @@
 import React from 'react';
-import { VlessConfig } from '../../shared/types';
+import { VlessConfig } from '@/shared/types';
 import { Power, Shield, Globe, Zap, CheckCircle2, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
@@ -29,7 +29,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 relative overflow-hidden min-h-0 min-w-0 overflow-y-auto">
       {/* Background decorative elements */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
+      <div className="absolute inset-0 bg-linear-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
       <div className={clsx(
         "absolute inset-0 opacity-0 transition-opacity duration-1000 pointer-events-none",
         isConnected && "opacity-100"
@@ -47,7 +47,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
                 <div className="p-2 sm:p-3 rounded-xl bg-green-500/20 border border-green-500/30 shadow-lg shadow-green-500/20">
                   <CheckCircle2 className="w-6 h-6 sm:w-8 sm:h-8 text-green-400" />
                 </div>
-                <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight bg-gradient-to-r from-green-400 to-green-500 bg-clip-text text-transparent">
+                <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight bg-linear-to-r from-green-400 to-green-500 bg-clip-text text-transparent">
                   {t('status.secure')}
                 </div>
               </>
@@ -89,13 +89,13 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
             className={clsx(
               "relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 rounded-full border-[6px] sm:border-8 flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-105 active:scale-95",
               isConnected 
-                ? "bg-gradient-to-br from-green-500/20 to-green-600/10 border-green-500 shadow-green-500/30 hover:shadow-green-500/40" 
-                : "bg-gradient-to-br from-gray-800/50 to-gray-800/30 border-gray-700 hover:border-gray-600 hover:from-gray-700/60 hover:to-gray-700/40 shadow-black/30 hover:shadow-black/40",
+                ? "bg-linear-to-br from-green-500/20 to-green-600/10 border-green-500 shadow-green-500/30 hover:shadow-green-500/40" 
+                : "bg-linear-to-br from-gray-800/50 to-gray-800/30 border-gray-700 hover:border-gray-600 hover:from-gray-700/60 hover:to-gray-700/40 shadow-black/30 hover:shadow-black/40",
               (!selectedServer || isBusy) && "opacity-50 cursor-not-allowed hover:scale-100"
             )}
           >
             <div className={clsx(
-              "absolute inset-0 rounded-full bg-gradient-to-br opacity-0 transition-opacity duration-300",
+              "absolute inset-0 rounded-full bg-linear-to-br opacity-0 transition-opacity duration-300",
               isConnected ? "from-green-500/10 to-transparent" : "from-primary/10 to-transparent",
               "hover:opacity-100"
             )} />
@@ -128,7 +128,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
             "grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl transition-all duration-500 animate-[fadeIn_0.5s_ease-out]",
             isConnected ? "opacity-100" : "opacity-60"
           )}>
-            <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
+            <div className="p-4 sm:p-5 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
               <div className="flex items-center gap-2 mb-3">
                 <CountryFlag server={selectedServer} size={24} className="rounded-sm" />
                 <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">{t('status.country')}</div>
@@ -136,7 +136,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
               <div className="text-base sm:text-lg text-white font-semibold truncate">{selectedServer.name}</div>
             </div>
             
-            <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
+            <div className="p-4 sm:p-5 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
               <div className="flex items-center gap-2 mb-3">
                 <Globe className="w-4 h-4 text-gray-400" />
                 <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">{t('status.ipAddress')}</div>
@@ -144,12 +144,12 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
               <div className="font-mono text-base sm:text-lg text-white font-semibold truncate">{selectedServer.address}</div>
             </div>
             
-            <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
+            <div className="p-4 sm:p-5 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
               <div className="flex items-center gap-2 mb-3">
                 <Zap className="w-4 h-4 text-primary" />
                 <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">{t('status.protocol')}</div>
               </div>
-              <div className="font-mono text-base sm:text-lg font-semibold bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">
+              <div className="font-mono text-base sm:text-lg font-semibold bg-linear-to-r from-primary to-blue-400 bg-clip-text text-transparent">
                 {selectedServer.security === 'reality' ? 'REALITY' : 'VLESS'}
               </div>
             </div>

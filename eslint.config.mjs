@@ -62,5 +62,14 @@ export default tseslint.config(
         version: 'detect',
       },
     },
+  },
+  {
+    // Tests frequently need `vi.spyOn(service as any, 'privateMember')` to stub
+    // or observe private/internal behavior. Treating `any` as an error here just
+    // forces clumsy shim types with no real type-safety gain.
+    files: ['**/*.test.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
   }
 );

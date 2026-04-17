@@ -1,10 +1,10 @@
 import { decode, isValid } from 'js-base64';
 import net from 'net';
-import { VlessConfig } from '../../shared/types';
+import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { parseJsonConfigs } from './subscription/jsonParsing';
 import { extractSupportedLinks, parseDirectLinksFromText } from './subscription/linkParsing';
-import { redactUrl } from '../utils/redactUrl';
+import { redactUrl } from '@/main/utils/redactUrl';
 
 /** translate.yandex.ru often expects a browser-like client for the full HTML body. */
 const YANDEX_TRANSLATE_FETCH_HEADERS: Record<string, string> = {
@@ -114,8 +114,7 @@ export class SubscriptionService {
         if (!location) {
           throw new Error(`Redirect response missing Location header: HTTP ${response.status}`);
         }
-        const nextUrl = this.validateRemoteSubscriptionUrl(new URL(location, currentUrl).toString());
-        currentUrl = nextUrl;
+        currentUrl = this.validateRemoteSubscriptionUrl(new URL(location, currentUrl).toString());
         continue;
       }
 
@@ -188,7 +187,9 @@ export class SubscriptionService {
       }
 
       // Single Xray configuration object (e.g. a full `{ outbounds: [...] }` export).
-      if (typeof body === 'object' && body !== null) {
+      // `body` is typed as `string | unknown[] | Record<string, unknown>` — the array case
+      // is handled above, so `typeof === 'object'` uniquely identifies the Record branch.
+      if (typeof body === 'object') {
         logger.info('SubscriptionService', 'Detected single JSON object format');
         return {
           configs: parseJsonConfigs([body]),
@@ -196,52 +197,49 @@ export class SubscriptionService {
         };
       }
 
-      if (typeof body === 'string') {
-        let textBody = body.trim();
-        if (yandexHtml) {
-          textBody = expandHtmlEntitiesForUrlExtraction(textBody);
-          logger.info('SubscriptionService', 'Parsing Yandex Translate HTML for subscription links', {
-            approxLength: textBody.length,
-          });
-        }
-        const directLinksFromBody = this.extractSupportedLinksFromText(textBody);
-        if (directLinksFromBody.length > 0) {
-          logger.info('SubscriptionService', 'Detected direct links in response body', {
-            count: directLinksFromBody.length,
-            yandexHtml,
-          });
-          return {
-            configs: this.parseDirectLinksFromText(textBody),
-            extractedLinks: directLinksFromBody,
-          };
-        }
-
-        if (textBody.startsWith('[') || textBody.startsWith('{')) {
-          try {
-            const parsed = JSON.parse(textBody);
-            const arr = Array.isArray(parsed) ? parsed : [parsed];
-            logger.info('SubscriptionService', 'Detected JSON string format', { count: arr.length });
-            return {
-              configs: parseJsonConfigs(arr),
-              extractedLinks: [],
-            };
-          } catch {
-            // Not valid JSON, try base64
-          }
-        }
-
-        const cleanBase64 = textBody.replace(/\s/g, '');
-        if (!isValid(cleanBase64)) {
-          throw new Error('Invalid Base64 response');
-        }
-        const decoded = decode(cleanBase64);
+      // Reaching here means `body` was not array/object, so it is the raw text response.
+      let textBody = body.trim();
+      if (yandexHtml) {
+        textBody = expandHtmlEntitiesForUrlExtraction(textBody);
+        logger.info('SubscriptionService', 'Parsing Yandex Translate HTML for subscription links', {
+          approxLength: textBody.length,
+        });
+      }
+      const directLinksFromBody = this.extractSupportedLinksFromText(textBody);
+      if (directLinksFromBody.length > 0) {
+        logger.info('SubscriptionService', 'Detected direct links in response body', {
+          count: directLinksFromBody.length,
+          yandexHtml,
+        });
         return {
-          configs: this.parseBase64(textBody),
-          extractedLinks: this.extractSupportedLinksFromText(decoded),
+          configs: this.parseDirectLinksFromText(textBody),
+          extractedLinks: directLinksFromBody,
         };
       }
 
-      throw new Error(`Unsupported response type: ${typeof body}`);
+      if (textBody.startsWith('[') || textBody.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(textBody);
+          const arr = Array.isArray(parsed) ? parsed : [parsed];
+          logger.info('SubscriptionService', 'Detected JSON string format', { count: arr.length });
+          return {
+            configs: parseJsonConfigs(arr),
+            extractedLinks: [],
+          };
+        } catch {
+          // Not valid JSON, try base64
+        }
+      }
+
+      const cleanBase64 = textBody.replace(/\s/g, '');
+      if (!isValid(cleanBase64)) {
+        throw new Error('Invalid Base64 response');
+      }
+      const decoded = decode(cleanBase64);
+      return {
+        configs: this.parseBase64(textBody),
+        extractedLinks: this.extractSupportedLinksFromText(decoded),
+      };
     } catch (error) {
       const e = error instanceof Error ? error : new Error(String(error));
       logger.error('SubscriptionService', 'fetchAndParse failed', e);

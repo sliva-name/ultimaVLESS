@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { IElectronAPI } from '../renderer/preload';
+import type { IElectronAPI } from '@/renderer/preload';
 import type {
   AddSubscriptionPayload,
   AddSubscriptionResult,
@@ -8,8 +8,8 @@ import type {
   ConnectResult,
   DisconnectResult,
   SaveManualLinksResult,
-} from '../shared/ipc';
-import type { ConnectionMode, PerformanceSettings, Subscription, VlessConfig } from '../shared/types';
+} from '@/shared/ipc';
+import type { ConnectionMode, PerformanceSettings, Subscription, VlessConfig } from '@/shared/types';
 import { makeMonitorStatus } from './factories';
 
 type ListenerMap = {

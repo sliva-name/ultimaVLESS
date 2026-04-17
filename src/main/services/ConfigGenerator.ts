@@ -1,10 +1,33 @@
-import { ConnectionMode, DEFAULT_PERFORMANCE_SETTINGS, PerformanceSettings, VlessConfig } from '../../shared/types';
-import { XrayConfig, XrayOutbound, XrayInbound, XrayStreamSettings, XrayMuxSettings, XrayRoutingRule } from '../../shared/xray-types';
-import { APP_CONSTANTS } from '../../shared/constants';
+import { ConnectionMode, DEFAULT_PERFORMANCE_SETTINGS, PerformanceSettings, VlessConfig } from '@/shared/types';
+import { XrayConfig, XrayOutbound, XrayInbound, XrayStreamSettings, XrayMuxSettings, XrayRoutingRule } from '@/shared/xray-types';
+import { APP_CONSTANTS } from '@/shared/constants';
 
-type MutableConfigNode = Record<string, any>;
-type MutableInbound = MutableConfigNode & { protocol?: string; tag?: string };
-type MutableOutbound = MutableConfigNode & { protocol?: string; tag?: string };
+type MutableConfigNode = Record<string, unknown>;
+
+type MutableSockopt = MutableConfigNode & { tcpFastOpen?: boolean };
+type MutableStreamSettings = MutableConfigNode & { sockopt?: MutableSockopt };
+type MutableSniffing = MutableConfigNode & {
+  enabled?: boolean;
+  destOverride?: string[];
+  routeOnly?: boolean;
+};
+
+type MutableInbound = MutableConfigNode & {
+  protocol?: string;
+  tag?: string;
+  port?: number;
+  listen?: string;
+  settings?: MutableConfigNode;
+  sniffing?: MutableSniffing;
+};
+
+type MutableOutbound = MutableConfigNode & {
+  protocol?: string;
+  tag?: string;
+  settings?: MutableConfigNode;
+  streamSettings?: MutableStreamSettings;
+  mux?: MutableConfigNode;
+};
 
 export interface ConfigGeneratorOptions {
   sendThrough?: string;
@@ -117,13 +140,13 @@ export class ConfigGenerator {
       cfg.routing = { domainStrategy: perf.domainStrategy, rules: [] };
     }
 
-    const rules: Array<Record<string, any>> = Array.isArray(cfg.routing.rules) ? cfg.routing.rules : [];
+    const rules: Array<Record<string, unknown>> = Array.isArray(cfg.routing.rules) ? cfg.routing.rules : [];
 
     const hasAdBlock = rules.some((r) =>
       Array.isArray(r.domain) && r.domain.some((d: unknown) => typeof d === 'string' && d.includes('category-ads'))
     );
     const hasBtBlock = rules.some((r) =>
-      Array.isArray(r.protocol) && r.protocol.includes('bittorrent') && r.outboundTag === 'block'
+      Array.isArray(r.protocol) && (r.protocol as unknown[]).includes('bittorrent') && r.outboundTag === 'block'
     );
 
     // Prepend block rules in reverse priority so the final order is:

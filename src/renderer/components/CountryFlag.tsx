@@ -1,5 +1,5 @@
 import React from 'react';
-import { getCountryCode } from '../utils/countryFlags';
+import { getCountryCode } from '@/renderer/utils/countryFlags';
 import { Globe } from 'lucide-react';
 import * as Flags from 'country-flag-icons/react/3x2';
 
@@ -17,8 +17,8 @@ export const CountryFlag: React.FC<CountryFlagProps> = ({ server, className = ''
     return <Globe className={className} style={{ width: size, height: size }} />;
   }
   
-  // Get the flag component dynamically
-  const FlagComponent = (Flags as any)[countryCode] as React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  const flagRegistry = Flags as Record<string, React.ComponentType<React.SVGProps<SVGSVGElement>>>;
+  const FlagComponent = flagRegistry[countryCode];
   
   if (!FlagComponent) {
     // Fallback to globe icon if flag component doesn't exist

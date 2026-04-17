@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
-import { VlessConfig } from '../../../shared/types';
-import { logger } from '../LoggerService';
+import { VlessConfig } from '@/shared/types';
+import { logger } from '@/main/services/LoggerService';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

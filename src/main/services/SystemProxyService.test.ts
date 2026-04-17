@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { createMockChildProcess } from '../../test/mockChildProcess';
+import { createMockChildProcess } from '@/test/mockChildProcess';
 
 const mockState = vi.hoisted(() => ({
   tempDir: '',

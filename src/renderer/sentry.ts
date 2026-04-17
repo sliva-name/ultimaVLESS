@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/electron/renderer';
-import { sanitizeDiagnosticPayload } from '../shared/sanitizeDiagnostics';
+import { sanitizeDiagnosticPayload } from '@/shared/sanitizeDiagnostics';
 
 let sentryInitialized = false;
 

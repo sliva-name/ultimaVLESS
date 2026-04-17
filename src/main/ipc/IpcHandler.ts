@@ -1,5 +1,5 @@
 import { ipcMain, IpcMainEvent, IpcMainInvokeEvent, BrowserWindow, app, shell } from 'electron';
-import { ConnectionMode, VlessConfig } from '../../shared/types';
+import { ConnectionMode, VlessConfig } from '@/shared/types';
 import {
   AddSubscriptionResult,
   ConnectionMonitorStatus,
@@ -8,17 +8,17 @@ import {
   IpcEventChannel,
   SaveManualLinksResult,
   TunCapabilityStatus,
-} from '../../shared/ipc';
-import { normalizePerformanceSettings } from '../../shared/performanceSettings';
-import { toSafeServerList } from '../../shared/serverView';
-import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '../../shared/subscriptionUrls';
-import { configService } from '../services/ConfigService';
-import { subscriptionService } from '../services/SubscriptionService';
-import { logger } from '../services/LoggerService';
-import { logExportService } from '../services/LogExportService';
-import { connectionMonitorService } from '../services/ConnectionMonitorService';
-import { xrayService } from '../services/XrayService';
-import { appRecoveryService } from '../services/AppRecoveryService';
+} from '@/shared/ipc';
+import { normalizePerformanceSettings } from '@/shared/performanceSettings';
+import { toSafeServerList } from '@/shared/serverView';
+import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '@/shared/subscriptionUrls';
+import { configService } from '@/main/services/ConfigService';
+import { subscriptionService } from '@/main/services/SubscriptionService';
+import { logger } from '@/main/services/LoggerService';
+import { logExportService } from '@/main/services/LogExportService';
+import { connectionMonitorService } from '@/main/services/ConnectionMonitorService';
+import { xrayService } from '@/main/services/XrayService';
+import { appRecoveryService } from '@/main/services/AppRecoveryService';
 import { createIpcDependencies, IpcDependencies } from './dependencies';
 import { registerConnectionHandlers } from './handlers/connectionHandlers';
 import { registerPingHandlers } from './handlers/pingHandlers';

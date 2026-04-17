@@ -1,8 +1,8 @@
-import { VlessConfig } from '../../shared/types';
+import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { configService } from './ConfigService';
 import { connectionStackService } from './ConnectionStackService';
-import { APP_CONSTANTS } from '../../shared/constants';
+import { APP_CONSTANTS } from '@/shared/constants';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
 import path from 'path';
@@ -10,7 +10,7 @@ import fs from 'fs';
 import { extractBlockingErrors, isBlockingErrorText } from './blockingErrors';
 import { probeTcpPort, probeHttpThroughProxy } from './networkProbe';
 import { xrayService } from './XrayService';
-import { ConnectionHealthState } from '../../shared/ipc';
+import { ConnectionHealthState } from '@/shared/ipc';
 
 export interface ConnectionStatus {
   isConnected: boolean;
@@ -210,10 +210,7 @@ export class ConnectionMonitorService extends EventEmitter {
       if (server.address !== currentServer.address || server.port !== currentServer.port) {
         return false;
       }
-      if ((server.protocol ?? 'vless') !== currentProtocol) {
-        return false;
-      }
-      return true;
+      return (server.protocol ?? 'vless') === currentProtocol;
     });
 
     if (fuzzy) {

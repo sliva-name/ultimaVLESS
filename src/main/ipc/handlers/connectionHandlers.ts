@@ -1,9 +1,9 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
-import { logger } from '../../services/LoggerService';
-import { IpcDependencies } from '../dependencies';
-import { assertValidServerPayload } from '../validators';
-import { IpcEventChannel, IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '../../../shared/ipc';
-import { createSerialQueue } from '../serialQueue';
+import { logger } from '@/main/services/LoggerService';
+import { IpcDependencies } from '@/main/ipc/dependencies';
+import { assertValidServerPayload } from '@/main/ipc/validators';
+import { IpcEventChannel, IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '@/shared/ipc';
+import { createSerialQueue } from '@/main/ipc/serialQueue';
 
 interface RegisterConnectionHandlersParams {
   deps: IpcDependencies;

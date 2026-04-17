@@ -36,6 +36,8 @@ const resources = {
       "settings": {
         "title": "Settings",
         "subtitle": "Sources, routing, and connection health",
+        "close": "Close settings",
+        "navAria": "Settings sections",
         "tabs": {
           "sources": "Sources",
           "network": "Network",
@@ -54,7 +56,18 @@ const resources = {
           "manualPlaceholder": "Paste any text from clipboard. All vless:// and trojan:// links will be extracted.",
           "manualHint": "Mixed clipboard text is fine; links are extracted automatically.",
           "saveManual": "Save manual",
-          "saving": "Saving..."
+          "saving": "Saving...",
+          "removeSubscription": "Remove subscription",
+          "enableSubscription": "Enable subscription",
+          "disableSubscription": "Disable subscription",
+          "errors": {
+            "nameRequired": "Name is required",
+            "urlRequired": "URL is required",
+            "fetchFailed": "Failed to fetch subscription",
+            "addFailed": "Failed to add subscription",
+            "loadFailed": "Could not load configs.",
+            "saveManualFailed": "Failed to save manual links"
+          }
         },
         "network": {
           "mode": "Network mode",
@@ -162,6 +175,8 @@ const resources = {
       "settings": {
         "title": "Настройки",
         "subtitle": "Источники, маршрутизация и состояние подключения",
+        "close": "Закрыть настройки",
+        "navAria": "Разделы настроек",
         "tabs": {
           "sources": "Источники",
           "network": "Сеть",
@@ -180,7 +195,18 @@ const resources = {
           "manualPlaceholder": "Вставьте любой текст из буфера обмена. Все ссылки vless:// и trojan:// будут извлечены.",
           "manualHint": "Можно вставлять любой текст; ссылки извлекаются автоматически.",
           "saveManual": "Сохранить",
-          "saving": "Сохранение..."
+          "saving": "Сохранение...",
+          "removeSubscription": "Удалить подписку",
+          "enableSubscription": "Включить подписку",
+          "disableSubscription": "Отключить подписку",
+          "errors": {
+            "nameRequired": "Укажите название",
+            "urlRequired": "Укажите URL",
+            "fetchFailed": "Не удалось загрузить подписку",
+            "addFailed": "Не удалось добавить подписку",
+            "loadFailed": "Не удалось загрузить конфигурации.",
+            "saveManualFailed": "Не удалось сохранить ручные ссылки"
+          }
         },
         "network": {
           "mode": "Режим сети",

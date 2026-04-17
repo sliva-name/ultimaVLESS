@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { ConnectionMonitorStatus } from '../../shared/ipc';
+import type { ConnectionMonitorStatus } from '@/shared/ipc';
 import { preserveActiveServerIfNeeded } from './refreshUtils';
-import { makeServer } from '../../test/factories';
+import { makeServer } from '@/test/factories';
 
 const activeServer = makeServer({
   uuid: 'active-server',

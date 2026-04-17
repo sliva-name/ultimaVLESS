@@ -42,9 +42,9 @@ export class LoggerService {
    * Writes a raw log entry.
    * @param {string} location - The source file or module name.
    * @param {string} message - The log message.
-   * @param {any} [data] - Optional data to serialize.
+   * @param {unknown} [data] - Optional data to serialize.
    */
-  public log(location: string, message: string, data?: any): void {
+  public log(location: string, message: string, data?: unknown): void {
     const logEntry = JSON.stringify({
       timestamp: new Date().toISOString(),
       location,
@@ -118,9 +118,9 @@ export class LoggerService {
    * Logs an informational message.
    * @param {string} location - The source location.
    * @param {string} message - The info message.
-   * @param {any} [data] - Optional context data.
+   * @param {unknown} [data] - Optional context data.
    */
-  public info(location: string, message: string, data?: any): void {
+  public info(location: string, message: string, data?: unknown): void {
     this.log(location, `[INFO] ${message}`, data);
   }
 
@@ -128,9 +128,9 @@ export class LoggerService {
    * Logs a warning message.
    * @param {string} location - The source location.
    * @param {string} message - The warning message.
-   * @param {any} [data] - Optional context data.
+   * @param {unknown} [data] - Optional context data.
    */
-  public warn(location: string, message: string, data?: any): void {
+  public warn(location: string, message: string, data?: unknown): void {
     this.log(location, `[WARN] ${message}`, data);
   }
 
@@ -138,9 +138,9 @@ export class LoggerService {
    * Logs an error message.
    * @param {string} location - The source location.
    * @param {string} message - The error description.
-   * @param {any} [error] - The error object or data.
+   * @param {unknown} [error] - The error object or data.
    */
-  public error(location: string, message: string, error?: any): void {
+  public error(location: string, message: string, error?: unknown): void {
     this.log(location, `[ERROR] ${message}`, error instanceof Error ? { message: error.message, stack: error.stack } : error);
   }
 
@@ -148,9 +148,9 @@ export class LoggerService {
    * Logs a debug message.
    * @param {string} location - The source location.
    * @param {string} message - The debug message.
-   * @param {any} [data] - Optional context data.
+   * @param {unknown} [data] - Optional context data.
    */
-  public debug(location: string, message: string, data?: any): void {
+  public debug(location: string, message: string, data?: unknown): void {
     if (!this.debugEnabled) {
       return;
     }

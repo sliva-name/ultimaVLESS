@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Subscription, VlessConfig } from '../../shared/types';
-import { Settings, Server, RefreshCw, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
-import { CountryFlag } from './CountryFlag';
-import logoUrl from '../assets/logo.svg';
+import { Settings, Server, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Subscription, VlessConfig } from '@/shared/types';
+import logoUrl from '@/renderer/assets/logo.svg';
 import {
+  ORPHAN_GROUP_COLOR,
+  MANUAL_GROUP_COLOR,
   buildManualServers,
   buildOrphanSubscriptionServers,
   buildSubscriptionGroups,
+  getSubscriptionColor,
 } from './sidebarModel';
+import { ServerGroup } from './sidebar/ServerGroup';
 
 interface SidebarProps {
   servers: VlessConfig[];
@@ -21,149 +24,6 @@ interface SidebarProps {
   onPingAll?: () => Promise<void>;
 }
 
-interface ServerItemProps {
-  server: VlessConfig;
-  isSelected: boolean;
-  isConnected: boolean;
-  onSelect: (server: VlessConfig) => void;
-}
-
-const ServerItem = React.memo<ServerItemProps>(({ server, isSelected, isConnected, onSelect }) => {
-  const handleClick = useCallback(() => {
-    if (!isConnected) onSelect(server);
-  }, [isConnected, onSelect, server]);
-
-  return (
-    <div
-      onClick={handleClick}
-      role="button"
-      aria-selected={isSelected}
-      aria-disabled={isConnected && !isSelected}
-      data-testid={`server-item-${server.uuid}`}
-      data-server-uuid={server.uuid}
-      className={clsx(
-        "group p-3.5 rounded-xl cursor-pointer transition-all duration-200 border relative overflow-hidden",
-        isSelected 
-          ? "bg-gradient-to-br from-primary/20 via-primary/15 to-primary/10 border-primary/40 text-white shadow-lg shadow-primary/20" 
-          : "bg-gradient-to-br from-gray-800/30 to-gray-800/20 hover:from-gray-700/40 hover:to-gray-700/30 text-gray-300 border-gray-700/30 hover:border-gray-600/50",
-        isConnected && !isSelected && "opacity-50 cursor-not-allowed"
-      )}
-    >
-      {!isSelected && (
-        <div className="absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-      )}
-      
-      <div className="flex items-center gap-3 relative z-10">
-        <div className={clsx(
-          "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 shadow-lg overflow-hidden",
-          isSelected
-            ? "bg-gradient-to-br from-primary/30 to-primary/20 border border-primary/40 ring-2 ring-primary/30"
-            : "bg-gradient-to-br from-gray-700/50 to-gray-800/50 border border-gray-600/30 group-hover:from-gray-600/50 group-hover:to-gray-700/50 group-hover:ring-1 group-hover:ring-gray-500/30"
-        )}>
-          <CountryFlag server={server} size={28} className="rounded-sm" />
-        </div>
-        <div className="flex-1 overflow-hidden min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className={clsx(
-              "font-semibold truncate text-sm mb-0.5 transition-colors",
-              isSelected ? "text-white" : "text-gray-200 group-hover:text-white"
-            )}>
-              {server.name}
-            </div>
-            {server.ping != null && (
-              <div className={clsx(
-                "text-xs font-semibold px-1.5 py-0.5 rounded flex-shrink-0",
-                server.ping < 100 ? "text-green-400 bg-green-500/10" :
-                server.ping < 200 ? "text-yellow-400 bg-yellow-500/10" :
-                server.ping < 300 ? "text-orange-400 bg-orange-500/10" :
-                "text-red-400 bg-red-500/10"
-              )}>
-                {server.ping} ms
-              </div>
-            )}
-            {server.ping == null && (
-              <div className="text-xs text-gray-500 flex-shrink-0">
-                —
-              </div>
-            )}
-          </div>
-          <div className="text-xs text-gray-500 truncate font-mono">
-            {server.address}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-ServerItem.displayName = 'ServerItem';
-
-// Colours cycling for subscription groups
-const SUBSCRIPTION_COLORS = [
-  { dot: 'bg-blue-400 shadow-blue-400/60', badge: 'bg-blue-500/15 text-blue-300 border-blue-500/30', border: 'border-blue-500/20', bg: 'from-blue-500/8' },
-  { dot: 'bg-emerald-400 shadow-emerald-400/60', badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', border: 'border-emerald-500/20', bg: 'from-emerald-500/8' },
-  { dot: 'bg-amber-400 shadow-amber-400/60', badge: 'bg-amber-500/15 text-amber-300 border-amber-500/30', border: 'border-amber-500/20', bg: 'from-amber-500/8' },
-  { dot: 'bg-rose-400 shadow-rose-400/60', badge: 'bg-rose-500/15 text-rose-300 border-rose-500/30', border: 'border-rose-500/20', bg: 'from-rose-500/8' },
-  { dot: 'bg-cyan-400 shadow-cyan-400/60', badge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30', border: 'border-cyan-500/20', bg: 'from-cyan-500/8' },
-];
-
-interface SubscriptionGroupProps {
-  subscription: Subscription;
-  servers: VlessConfig[];
-  selectedServer: VlessConfig | null;
-  isConnected: boolean;
-  onSelectServer: (server: VlessConfig) => void;
-  colorIdx: number;
-}
-
-const SubscriptionGroup: React.FC<SubscriptionGroupProps> = ({
-  subscription,
-  servers,
-  selectedServer,
-  isConnected,
-  onSelectServer,
-  colorIdx,
-}) => {
-  const [expanded, setExpanded] = useState(true);
-  const color = SUBSCRIPTION_COLORS[colorIdx % SUBSCRIPTION_COLORS.length];
-
-  if (servers.length === 0) return null;
-
-  return (
-    <div className={clsx('rounded-xl border p-2', color.border, `bg-gradient-to-br ${color.bg} to-transparent`)}>
-      <button
-        type="button"
-        onClick={() => setExpanded((prev) => !prev)}
-        className="w-full px-2 py-1.5 mb-1 flex items-center justify-between rounded-lg hover:bg-white/5 transition-colors"
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={clsx('w-1.5 h-1.5 flex-shrink-0 rounded-full shadow-sm', color.dot)} />
-          <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider truncate min-w-0 flex-1" title={subscription.name}>
-            {subscription.name}
-          </span>
-          <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-md border flex-shrink-0', color.badge)}>
-            {servers.length}
-          </span>
-        </div>
-        <ChevronDown className={clsx('w-3.5 h-3.5 flex-shrink-0 text-gray-400 transition-transform', expanded && 'rotate-180')} />
-      </button>
-      {expanded && (
-        <div className="space-y-2">
-          {servers.map((server) => (
-            <ServerItem
-              key={server.uuid}
-              server={server}
-              isSelected={selectedServer?.uuid === server.uuid}
-              isConnected={isConnected}
-              onSelect={onSelectServer}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 export const Sidebar: React.FC<SidebarProps> = ({
   servers,
   subscriptions,
@@ -171,36 +31,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isConnected,
   onSelectServer,
   onOpenSettings,
-  onPingAll
+  onPingAll,
 }) => {
   const { t } = useTranslation();
   const [appVersion, setAppVersion] = useState<string>('');
   const [isPinging, setIsPinging] = useState(false);
-  const [isManualExpanded, setIsManualExpanded] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const didScrollToSelectedRef = useRef(false);
+  const lastScrolledUuidRef = useRef<string | null>(null);
 
-  const subscriptionGroups = useMemo(() => {
-    return buildSubscriptionGroups(subscriptions, servers);
-  }, [subscriptions, servers]);
-
+  const subscriptionGroups = useMemo(
+    () => buildSubscriptionGroups(subscriptions, servers),
+    [subscriptions, servers]
+  );
   const orphanSubscriptionServers = useMemo(
     () => buildOrphanSubscriptionServers(servers),
     [servers]
   );
-
   const manualServers = useMemo(
     () => buildManualServers(servers),
     [servers]
   );
 
   useEffect(() => {
-    window.electronAPI.getAppVersion().then(setAppVersion).catch(() => {
-      setAppVersion('');
-    });
+    window.electronAPI.getAppVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion(''));
   }, []);
 
-  const lastScrolledUuidRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedServer) return;
     // Re-scroll whenever the selected server actually changes, not only on the
@@ -230,13 +88,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [onPingAll, isPinging]);
 
   return (
-    <div className="w-full md:w-72 md:shrink-0 max-h-[44vh] md:max-h-none min-h-0 bg-gradient-to-b from-surface via-surface to-surface/95 backdrop-blur-xl border-b md:border-b-0 md:border-r border-gray-800/50 flex flex-col shadow-2xl shadow-black/30 relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
-      
-      <div className="relative z-10 p-5 border-b border-gray-800/50 bg-gradient-to-r from-surface to-surface/95 backdrop-blur-sm">
+    <div className="w-full md:w-72 md:shrink-0 max-h-[44vh] md:max-h-none min-h-0 bg-linear-to-b from-surface via-surface to-surface/95 backdrop-blur-xl border-b md:border-b-0 md:border-r border-gray-800/50 flex flex-col shadow-2xl shadow-black/30 relative overflow-hidden">
+      <div className="absolute inset-0 bg-linear-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
+
+      <div className="relative z-10 p-5 border-b border-gray-800/50 bg-linear-to-r from-surface to-surface/95 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-1.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/30 shadow-lg shadow-primary/10">
+            <div className="p-1.5 rounded-xl bg-linear-to-br from-primary/20 to-primary/10 border border-primary/30 shadow-lg shadow-primary/10">
               <img src={logoUrl} alt="UltimaVLESS logo" className="w-8 h-8 rounded-lg" />
             </div>
             <div>
@@ -244,15 +102,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <p className="text-xs text-gray-400 mt-0.5">{t('app.subtitle')}</p>
             </div>
           </div>
-          <button 
-            onClick={onOpenSettings} 
-            className="p-2 rounded-lg hover:bg-white/5 hover:text-white text-gray-400 transition-all duration-200 border border-transparent hover:border-gray-700/50 group"
+          <button
+            onClick={onOpenSettings}
+            aria-label={t('sidebar.settings')}
+            className="p-2 rounded-lg hover:bg-white/5 hover:text-white text-gray-400 transition-all duration-200 border border-transparent hover:border-gray-700/50 group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
           </button>
         </div>
       </div>
-      
+
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 space-y-2 relative z-10">
         {servers.length > 0 && (
           <div className="px-2 mb-3">
@@ -266,88 +125,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={handlePingAll}
                   disabled={isPinging || isConnected}
                   className={clsx(
-                    "p-1.5 rounded-lg transition-all duration-200",
+                    'p-1.5 rounded-lg transition-all duration-200',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                     isPinging || isConnected
-                      ? "text-gray-600 cursor-not-allowed"
-                      : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50"
+                      ? 'text-gray-600 cursor-not-allowed'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50'
                   )}
                   title={t('sidebar.pingAll')}
                 >
-                  <RefreshCw className={clsx("w-3.5 h-3.5", isPinging && "animate-spin")} />
+                  <RefreshCw className={clsx('w-3.5 h-3.5', isPinging && 'animate-spin')} />
                 </button>
               )}
             </div>
           </div>
         )}
 
-        {/* One group per enabled subscription */}
-        {subscriptionGroups.map(({ subscription, servers: subServers }, idx) => (
-          <SubscriptionGroup
+        {subscriptionGroups.map(({ subscription, servers: subServers }) => (
+          <ServerGroup
             key={subscription.id}
-            subscription={subscription}
+            title={subscription.name}
+            color={getSubscriptionColor(subscription.id)}
             servers={subServers}
             selectedServer={selectedServer}
             isConnected={isConnected}
             onSelectServer={onSelectServer}
-            colorIdx={idx}
           />
         ))}
 
-        {/* Orphan servers (old data without subscriptionId, source !== 'manual') */}
         {orphanSubscriptionServers.length > 0 && (
-          <div className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/8 to-transparent p-2">
-            <div className="px-2 py-1.5 mb-1 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-sm shadow-blue-400/60" />
-              <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">{t('sidebar.subscriptionShort')}</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                {orphanSubscriptionServers.length}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {orphanSubscriptionServers.map((server) => (
-                <ServerItem
-                  key={server.uuid}
-                  server={server}
-                  isSelected={selectedServer?.uuid === server.uuid}
-                  isConnected={isConnected}
-                  onSelect={onSelectServer}
-                />
-              ))}
-            </div>
-          </div>
+          <ServerGroup
+            title={t('sidebar.subscriptionShort')}
+            color={ORPHAN_GROUP_COLOR}
+            servers={orphanSubscriptionServers}
+            selectedServer={selectedServer}
+            isConnected={isConnected}
+            onSelectServer={onSelectServer}
+            collapsible={false}
+          />
         )}
 
-        {/* Manual */}
         {manualServers.length > 0 && (
-          <div className="rounded-xl border border-violet-500/20 bg-gradient-to-br from-violet-500/8 to-transparent p-2">
-            <button
-              type="button"
-              onClick={() => setIsManualExpanded((prev) => !prev)}
-              className="w-full px-2 py-1.5 mb-1 flex items-center justify-between rounded-lg hover:bg-white/5 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-sm shadow-violet-400/60" />
-                <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">{t('sidebar.manualShort')}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-300 border border-violet-500/30">
-                  {manualServers.length}
-                </span>
-              </div>
-              <ChevronDown className={clsx('w-3.5 h-3.5 text-gray-400 transition-transform', isManualExpanded && 'rotate-180')} />
-            </button>
-            {isManualExpanded && (
-              <div className="space-y-2">
-                {manualServers.map((server) => (
-                  <ServerItem
-                    key={server.uuid}
-                    server={server}
-                    isSelected={selectedServer?.uuid === server.uuid}
-                    isConnected={isConnected}
-                    onSelect={onSelectServer}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+          <ServerGroup
+            title={t('sidebar.manualShort')}
+            color={MANUAL_GROUP_COLOR}
+            servers={manualServers}
+            selectedServer={selectedServer}
+            isConnected={isConnected}
+            onSelectServer={onSelectServer}
+          />
         )}
 
         {servers.length === 0 && (
@@ -360,7 +185,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      <div className="relative z-10 p-4 border-t border-gray-800/50 bg-gradient-to-r from-surface to-surface/95 backdrop-blur-sm">
+      <div className="relative z-10 p-4 border-t border-gray-800/50 bg-linear-to-r from-surface to-surface/95 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           {appVersion && (
             <div className="text-xs text-gray-500 font-medium">

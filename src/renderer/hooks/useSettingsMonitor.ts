@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ConnectionMonitorEvent, ConnectionStatus as MonitorStatus } from '../preload.d';
+import { ConnectionMonitorEvent, ConnectionStatus as MonitorStatus } from '@/renderer/preload.d';
 
 interface UseSettingsMonitorOptions {
   isOpen: boolean;

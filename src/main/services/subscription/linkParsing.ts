@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
-import { VlessConfig } from '../../../shared/types';
-import { logger } from '../LoggerService';
+import { VlessConfig } from '@/shared/types';
+import { logger } from '@/main/services/LoggerService';
 
 function safeDecodeComponent(value: string): string {
   try {

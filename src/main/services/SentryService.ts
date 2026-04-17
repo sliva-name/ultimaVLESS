@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/electron/main';
 import { app } from 'electron';
 import { logger } from './LoggerService';
-import { sanitizeDiagnosticPayload } from '../../shared/sanitizeDiagnostics';
+import { sanitizeDiagnosticPayload } from '@/shared/sanitizeDiagnostics';
 
 let sentryInitialized = false;
 const DEFAULT_ENVIRONMENT = process.env.NODE_ENV || (app.isPackaged ? 'production' : 'development');

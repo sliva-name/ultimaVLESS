@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
-import { makeServer } from '../../test/factories';
+import { makeServer } from '@/test/factories';
 
 const mockState = vi.hoisted(() => ({
   tempDir: '',

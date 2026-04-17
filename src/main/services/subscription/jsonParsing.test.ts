@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseJsonConfigs } from './jsonParsing';
 
-vi.mock('../LoggerService', () => ({
+vi.mock('@/main/services/LoggerService', () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),

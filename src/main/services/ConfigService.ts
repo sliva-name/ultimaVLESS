@@ -4,10 +4,10 @@ import {
   MOBILE_LIST_TURBOPAGES_DEFAULT_URL,
   MOBILE_WHITE_LIST_RAW_URL,
   YANDEX_TRANSLATED_MOBILE_LIST_URL,
-} from '../../shared/subscriptionUrls';
-import { ConnectionMode, DEFAULT_PERFORMANCE_SETTINGS, PerformanceSettings, Subscription, VlessConfig } from '../../shared/types';
+} from '@/shared/subscriptionUrls';
+import { ConnectionMode, DEFAULT_PERFORMANCE_SETTINGS, PerformanceSettings, Subscription, VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
-import { redactUrl } from '../utils/redactUrl';
+import { redactUrl } from '@/main/utils/redactUrl';
 
 const LEGACY_DEFAULT_SUBSCRIPTION_URL = MOBILE_WHITE_LIST_RAW_URL;
 const DEFAULT_SUBSCRIPTION_URL = YANDEX_TRANSLATED_MOBILE_LIST_URL;

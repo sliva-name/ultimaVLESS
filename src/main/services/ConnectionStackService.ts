@@ -1,4 +1,4 @@
-import { ConnectionMode, VlessConfig } from '../../shared/types';
+import { ConnectionMode, VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { systemProxyService, SystemProxyService } from './SystemProxyService';
 import { tunRouteService, TunRouteService } from './TunRouteService';

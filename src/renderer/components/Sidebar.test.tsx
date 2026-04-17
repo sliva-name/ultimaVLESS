@@ -2,18 +2,16 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Sidebar } from './Sidebar';
-import { VlessConfig } from '../../shared/types';
+import { VlessConfig } from '@/shared/types';
 import { vi, beforeEach } from 'vitest';
-import { Subscription } from '../../shared/types';
-import { createElectronApiMock, installElectronApiMock } from '../../test/electronApiMock';
-import { makeServer } from '../../test/factories';
+import { createElectronApiMock, installElectronApiMock } from '@/test/electronApiMock';
+import { makeServer } from '@/test/factories';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key })
 }));
 
 describe('Sidebar', () => {
-  const mockSubscriptions: Subscription[] = [];
   const mockServers: VlessConfig[] = [
     makeServer({ uuid: '1', address: 'server1.com', name: 'Server 1', security: 'reality', source: 'subscription' }),
     makeServer({ uuid: '2', address: 'server2.com', name: 'Server 2', security: 'tls', source: 'manual' }),
@@ -29,7 +27,7 @@ describe('Sidebar', () => {
     render(
       <Sidebar 
         servers={mockServers}
-        subscriptions={mockSubscriptions}
+        subscriptions={[]}
         selectedServer={null}
         isConnected={false}
         onSelectServer={() => {}}
@@ -48,7 +46,7 @@ describe('Sidebar', () => {
     render(
       <Sidebar 
         servers={mockServers}
-        subscriptions={mockSubscriptions}
+        subscriptions={[]}
         selectedServer={mockServers[0]}
         isConnected={false}
         onSelectServer={() => {}}
@@ -68,7 +66,7 @@ describe('Sidebar', () => {
     render(
       <Sidebar 
         servers={mockServers}
-        subscriptions={mockSubscriptions}
+        subscriptions={[]}
         selectedServer={null}
         isConnected={false}
         onSelectServer={handleSelect}
@@ -86,7 +84,7 @@ describe('Sidebar', () => {
     render(
       <Sidebar 
         servers={mockServers}
-        subscriptions={mockSubscriptions}
+        subscriptions={[]}
         selectedServer={mockServers[0]}
         isConnected={true}
         onSelectServer={handleSelect}
@@ -106,7 +104,7 @@ describe('Sidebar', () => {
     render(
       <Sidebar
         servers={mockServers}
-        subscriptions={mockSubscriptions}
+        subscriptions={[]}
         selectedServer={null}
         isConnected={false}
         onSelectServer={() => {}}
@@ -122,7 +120,7 @@ describe('Sidebar', () => {
     render(
       <Sidebar
         servers={mockServers}
-        subscriptions={mockSubscriptions}
+        subscriptions={[]}
         selectedServer={mockServers[0]}
         isConnected={true}
         onSelectServer={() => {}}
