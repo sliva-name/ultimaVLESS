@@ -8,6 +8,7 @@ import type {
   ConnectResult,
   DisconnectResult,
   SaveManualLinksResult,
+  TrafficSnapshot,
 } from '@/shared/ipc';
 import type { ConnectionMode, PerformanceSettings, Subscription, VlessConfig } from '@/shared/types';
 import { makeMonitorStatus } from './factories';
@@ -19,6 +20,7 @@ type ListenerMap = {
   connectionBusy: Set<(busy: boolean) => void>;
   connectionError: Set<(error: string) => void>;
   connectionMonitorEvent: Set<(event: ConnectionMonitorEvent) => void>;
+  trafficStats: Set<(snapshot: TrafficSnapshot | null) => void>;
 };
 
 export interface ElectronApiMock extends IElectronAPI {
@@ -28,6 +30,7 @@ export interface ElectronApiMock extends IElectronAPI {
   emitConnectionBusy: (busy: boolean) => void;
   emitConnectionError: (error: string) => void;
   emitConnectionMonitorEvent: (event: ConnectionMonitorEvent) => void;
+  emitTrafficStats: (snapshot: TrafficSnapshot | null) => void;
 }
 
 function createListenerRegistration<T>(listeners: Set<(value: T) => void>) {
@@ -47,6 +50,7 @@ export function createElectronApiMock(overrides: Partial<IElectronAPI> = {}): El
     connectionBusy: new Set(),
     connectionError: new Set(),
     connectionMonitorEvent: new Set(),
+    trafficStats: new Set(),
   };
 
   const api: ElectronApiMock = {
@@ -75,6 +79,7 @@ export function createElectronApiMock(overrides: Partial<IElectronAPI> = {}): El
     onConnectionBusy: createListenerRegistration(listeners.connectionBusy),
     onConnectionError: createListenerRegistration(listeners.connectionError),
     onConnectionMonitorEvent: createListenerRegistration(listeners.connectionMonitorEvent),
+    onTrafficStats: createListenerRegistration(listeners.trafficStats),
 
     getConnectionMonitorStatus: vi.fn(async (): Promise<ConnectionMonitorStatus> => makeMonitorStatus()),
     setAutoSwitching: vi.fn(async (_enabled: boolean) => true),
@@ -119,6 +124,7 @@ export function createElectronApiMock(overrides: Partial<IElectronAPI> = {}): El
 
     getUiLanguage: vi.fn(async (): Promise<'en' | 'ru'> => 'en'),
     setUiLanguage: vi.fn(async (_language: 'en' | 'ru') => true),
+    getTrafficStats: vi.fn(async (): Promise<TrafficSnapshot | null> => null),
 
     emitUpdateServers: (servers: VlessConfig[]) => {
       listeners.updateServers.forEach((listener) => listener(servers));
@@ -137,6 +143,9 @@ export function createElectronApiMock(overrides: Partial<IElectronAPI> = {}): El
     },
     emitConnectionMonitorEvent: (event: ConnectionMonitorEvent) => {
       listeners.connectionMonitorEvent.forEach((listener) => listener(event));
+    },
+    emitTrafficStats: (snapshot: TrafficSnapshot | null) => {
+      listeners.trafficStats.forEach((listener) => listener(snapshot));
     },
   };
 

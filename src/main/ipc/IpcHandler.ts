@@ -21,6 +21,7 @@ import { xrayService } from '@/main/services/XrayService';
 import { appRecoveryService } from '@/main/services/AppRecoveryService';
 import { trayService } from '@/main/services/TrayService';
 import { mainLocaleService } from '@/main/services/MainLocaleService';
+import { trafficStatsService, TrafficSnapshot } from '@/main/services/TrafficStatsService';
 import { createIpcDependencies, IpcDependencies } from './dependencies';
 import { registerConnectionHandlers } from './handlers/connectionHandlers';
 import { registerPingHandlers } from './handlers/pingHandlers';
@@ -244,6 +245,15 @@ export function registerIpcHandlers(
   });
   deps.connectionMonitorService.on('switch-operation-finished', () => {
     endConnectionBusy();
+  });
+
+  trafficStatsService.removeAllListeners('snapshot');
+  trafficStatsService.on('snapshot', (snapshot: TrafficSnapshot) => {
+    sendToRenderer(IPC_EVENT_CHANNELS.trafficStats, snapshot);
+  });
+  trafficStatsService.removeAllListeners('stopped');
+  trafficStatsService.on('stopped', () => {
+    sendToRenderer(IPC_EVENT_CHANNELS.trafficStats, null);
   });
 
   // -------------------------------------------------------------------------
@@ -563,10 +573,13 @@ export function registerIpcHandlers(
       if (eventName === 'connected' && event.server) {
         sendToRenderer(IPC_EVENT_CHANNELS.connectionStatus, true);
         trayService.setConnected(event.server.name, event.server.ping ?? null);
+        const connectedAt = deps.connectionMonitorService.getStatus().lastConnectionTime ?? Date.now();
+        trafficStatsService.start(connectedAt);
       }
       if (eventName === 'disconnected') {
         sendToRenderer(IPC_EVENT_CHANNELS.connectionStatus, false);
         trayService.setDisconnected();
+        trafficStatsService.stop();
       }
       if (eventName === 'error') {
         const message = (event as { error?: string; message?: string }).error
@@ -581,6 +594,11 @@ export function registerIpcHandlers(
       }
     });
   }
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getTrafficStats, (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    return trafficStatsService.getLastSnapshot();
+  });
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.getUiLanguage, (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);

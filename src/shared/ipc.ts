@@ -132,6 +132,16 @@ export interface TunCapabilityStatus {
   degradedReason: string | null;
 }
 
+export interface TrafficSnapshot {
+  uploadBytes: number;
+  downloadBytes: number;
+  uploadBps: number;
+  downloadBps: number;
+  sessionDurationMs: number;
+  connectedAt: number;
+  sampledAt: number;
+}
+
 export interface ImportMobileWhiteListResult {
   ok: boolean;
   configCount: number;
@@ -170,6 +180,7 @@ export const IPC_INVOKE_CHANNELS = {
   setPerformanceSettings: 'set-performance-settings',
   getUiLanguage: 'get-ui-language',
   setUiLanguage: 'set-ui-language',
+  getTrafficStats: 'get-traffic-stats',
 } as const;
 
 export const IPC_EVENT_CHANNELS = {
@@ -179,6 +190,7 @@ export const IPC_EVENT_CHANNELS = {
   connectionBusy: 'connection-busy',
   connectionError: 'connection-error',
   connectionMonitorEvent: 'connection-monitor-event',
+  trafficStats: 'traffic-stats',
 } as const;
 
 export type { Subscription, PerformanceSettings };

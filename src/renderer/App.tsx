@@ -15,6 +15,7 @@ function App() {
     isConnected,
     isConnectionBusy,
     connectionError,
+    trafficSnapshot,
     setSelectedServer,
     toggleConnection,
     pingAllServers
@@ -53,6 +54,7 @@ function App() {
             isBusy={isConnectionBusy}
             selectedServer={selectedServer}
             connectionError={connectionError}
+            trafficSnapshot={trafficSnapshot}
             onToggleConnection={toggleConnection}
           />
         </div>

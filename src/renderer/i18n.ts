@@ -31,7 +31,13 @@ const resources = {
         "country": "Country",
         "ipAddress": "IP Address",
         "protocol": "Protocol",
-        "connectionActive": "Connection Active"
+        "connectionActive": "Connection Active",
+        "session": {
+          "label": "Session statistics",
+          "duration": "Session",
+          "download": "Downloaded",
+          "upload": "Uploaded"
+        }
       },
       "settings": {
         "title": "Settings",
@@ -178,7 +184,13 @@ const resources = {
         "country": "Страна",
         "ipAddress": "IP Адрес",
         "protocol": "Протокол",
-        "connectionActive": "Соединение активно"
+        "connectionActive": "Соединение активно",
+        "session": {
+          "label": "Статистика сессии",
+          "duration": "Сессия",
+          "download": "Загружено",
+          "upload": "Отправлено"
+        }
       },
       "settings": {
         "title": "Настройки",

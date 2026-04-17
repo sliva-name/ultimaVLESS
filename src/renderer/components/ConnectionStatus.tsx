@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { VlessConfig } from '@/shared/types';
-import { Power, Shield, Globe, Zap, CheckCircle2, Loader2 } from 'lucide-react';
+import type { TrafficSnapshot } from '@/shared/ipc';
+import { Power, Shield, Globe, Zap, CheckCircle2, Loader2, ArrowDown, ArrowUp, Clock } from 'lucide-react';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
 import { useTranslation } from 'react-i18next';
@@ -10,7 +11,38 @@ interface ConnectionStatusProps {
   isBusy?: boolean;
   selectedServer: VlessConfig | null;
   connectionError?: string | null;
+  trafficSnapshot?: TrafficSnapshot | null;
   onToggleConnection: () => void;
+}
+
+const padZero = (value: number) => value.toString().padStart(2, '0');
+
+function formatDuration(totalMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(totalMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${padZero(hours)}:${padZero(minutes)}:${padZero(seconds)}`;
+  }
+  return `${padZero(minutes)}:${padZero(seconds)}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const fractionDigits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
+}
+
+function formatRate(bytesPerSecond: number): string {
+  return `${formatBytes(bytesPerSecond)}/s`;
 }
 
 export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ 
@@ -18,6 +50,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
   isBusy = false,
   selectedServer, 
   connectionError,
+  trafficSnapshot = null,
   onToggleConnection 
 }) => {
   const { t } = useTranslation();
@@ -25,6 +58,20 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
   const busyHint = isConnected
     ? t('status.disconnectingHint')
     : t('status.connectingHint');
+
+  // Tick every second so the session timer keeps running even when the main
+  // process throttles traffic snapshots to every ~1.5s.
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isConnected || !trafficSnapshot) return;
+    const interval = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [isConnected, trafficSnapshot]);
+
+  const sessionActive = isConnected && !!trafficSnapshot;
+  const sessionDurationMs = sessionActive
+    ? Math.max(trafficSnapshot.sessionDurationMs, tick - trafficSnapshot.connectedAt)
+    : 0;
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 relative overflow-hidden min-h-0 min-w-0 overflow-y-auto">
@@ -87,11 +134,17 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
             onClick={onToggleConnection}
             disabled={!selectedServer || isBusy}
             className={clsx(
-              "relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 rounded-full border-[6px] sm:border-8 flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-105 active:scale-95",
-              isConnected 
-                ? "bg-linear-to-br from-green-500/20 to-green-600/10 border-green-500 shadow-green-500/30 hover:shadow-green-500/40" 
-                : "bg-linear-to-br from-gray-800/50 to-gray-800/30 border-gray-700 hover:border-gray-600 hover:from-gray-700/60 hover:to-gray-700/40 shadow-black/30 hover:shadow-black/40",
-              (!selectedServer || isBusy) && "opacity-50 cursor-not-allowed hover:scale-100"
+              "relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 rounded-full border-[6px] sm:border-8 flex items-center justify-center transition-all duration-500 shadow-2xl transform",
+              !(!selectedServer || isBusy) && "hover:scale-105 active:scale-95",
+              isConnected
+                ? "bg-linear-to-br from-green-500/20 to-green-600/10 border-green-500 shadow-green-500/30"
+                : "bg-linear-to-br from-gray-800/50 to-gray-800/30 border-gray-700 shadow-black/30",
+              !(!selectedServer || isBusy) && (
+                isConnected
+                  ? "hover:shadow-green-500/40"
+                  : "hover:border-gray-600 hover:from-gray-700/60 hover:to-gray-700/40 hover:shadow-black/40"
+              ),
+              (!selectedServer || isBusy) && "opacity-50 cursor-not-allowed"
             )}
           >
             <div className={clsx(
@@ -164,6 +217,31 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           </div>
         )}
 
+        {sessionActive && (
+          <div
+            className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl animate-[fadeIn_0.4s_ease-out]"
+            aria-label={t('status.session.label')}
+          >
+            <StatTile
+              icon={<Clock className="w-4 h-4 text-green-400" />}
+              label={t('status.session.duration')}
+              primary={formatDuration(sessionDurationMs)}
+            />
+            <StatTile
+              icon={<ArrowDown className="w-4 h-4 text-sky-400" />}
+              label={t('status.session.download')}
+              primary={formatBytes(trafficSnapshot.downloadBytes)}
+              secondary={formatRate(trafficSnapshot.downloadBps)}
+            />
+            <StatTile
+              icon={<ArrowUp className="w-4 h-4 text-purple-400" />}
+              label={t('status.session.upload')}
+              primary={formatBytes(trafficSnapshot.uploadBytes)}
+              secondary={formatRate(trafficSnapshot.uploadBps)}
+            />
+          </div>
+        )}
+
         {connectionError && (
           <div className="mt-6 w-full max-w-2xl p-4 rounded-xl bg-orange-500/10 border border-orange-500/30 animate-[fadeIn_0.3s_ease-out]">
             <div className="text-sm text-orange-300 font-medium break-words">
@@ -175,4 +253,24 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
     </div>
   );
 };
+
+interface StatTileProps {
+  icon: React.ReactNode;
+  label: string;
+  primary: string;
+  secondary?: string;
+}
+
+const StatTile: React.FC<StatTileProps> = ({ icon, label, primary, secondary }) => (
+  <div className="p-4 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm">
+    <div className="flex items-center gap-2 mb-2">
+      {icon}
+      <div className="text-[11px] text-gray-400 uppercase tracking-wider font-semibold">{label}</div>
+    </div>
+    <div className="font-mono text-base sm:text-lg text-white font-semibold tabular-nums">{primary}</div>
+    {secondary && (
+      <div className="mt-0.5 text-xs text-gray-400 font-mono tabular-nums">{secondary}</div>
+    )}
+  </div>
+);
 
