@@ -1,6 +1,6 @@
-import { ConnectionMonitorStatus, AppRecoveryStatus, XrayHealthStatus } from '../../shared/ipc';
-import { ConnectionStatus } from '../services/ConnectionMonitorService';
-import { VlessConfig } from '../../shared/types';
+import { ConnectionMonitorStatus, AppRecoveryStatus, XrayHealthStatus } from '@/shared/ipc';
+import { ConnectionStatus } from '@/main/services/ConnectionMonitorService';
+import { VlessConfig } from '@/shared/types';
 
 function stripRawConfig(server: VlessConfig | null): VlessConfig | null {
   if (!server) return server;

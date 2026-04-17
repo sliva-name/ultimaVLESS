@@ -1,18 +1,18 @@
 import { app } from 'electron';
-import { APP_CONSTANTS } from '../../shared/constants';
-import { configService } from '../services/ConfigService';
-import { connectionMonitorService } from '../services/ConnectionMonitorService';
+import { APP_CONSTANTS } from '@/shared/constants';
+import { configService } from '@/main/services/ConfigService';
+import { connectionMonitorService } from '@/main/services/ConnectionMonitorService';
 import {
   isElevatedOnWindows,
   relaunchAsAdminOnWindows,
   hasTunPrivileges,
   requestTunPrivilegesRelaunch,
-} from '../services/PrivilegeService';
-import { connectionStackService } from '../services/ConnectionStackService';
-import { systemProxyService } from '../services/SystemProxyService';
-import { tunRouteService } from '../services/TunRouteService';
-import { xrayService } from '../services/XrayService';
-import { pingService } from '../services/PingService';
+} from '@/main/services/PrivilegeService';
+import { connectionStackService } from '@/main/services/ConnectionStackService';
+import { systemProxyService } from '@/main/services/SystemProxyService';
+import { tunRouteService } from '@/main/services/TunRouteService';
+import { xrayService } from '@/main/services/XrayService';
+import { pingService } from '@/main/services/PingService';
 
 export interface IpcDependencies {
   app: {

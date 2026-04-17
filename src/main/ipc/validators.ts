@@ -1,6 +1,6 @@
-import { ConnectionMode, VlessConfig } from '../../shared/types';
-import { AddSubscriptionPayload, UpdateSubscriptionPayload } from '../../shared/ipc';
-export { redactUrl } from '../utils/redactUrl';
+import { ConnectionMode, VlessConfig } from '@/shared/types';
+import { AddSubscriptionPayload, UpdateSubscriptionPayload } from '@/shared/ipc';
+export { redactUrl } from '@/main/utils/redactUrl';
 
 const MAX_SUBSCRIPTION_URL_LENGTH = 4096;
 const MAX_SUBSCRIPTION_NAME_LENGTH = 100;
@@ -33,7 +33,7 @@ export function normalizeUpdateSubscriptionPayload(payload: unknown): UpdateSubs
   if (!id) throw new Error('Subscription id is required');
 
   const nested =
-    p.patch && typeof p.patch === 'object' && p.patch !== null
+    p.patch && typeof p.patch === 'object'
       ? (p.patch as Record<string, unknown>)
       : {};
 

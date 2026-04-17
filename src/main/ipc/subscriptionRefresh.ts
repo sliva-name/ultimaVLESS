@@ -1,8 +1,8 @@
 import { BrowserWindow } from 'electron';
-import { VlessConfig } from '../../shared/types';
-import { IpcEventChannel, IPC_EVENT_CHANNELS } from '../../shared/ipc';
-import { toSafeServerList } from '../../shared/serverView';
-import { logger } from '../services/LoggerService';
+import { VlessConfig } from '@/shared/types';
+import { IpcEventChannel, IPC_EVENT_CHANNELS } from '@/shared/ipc';
+import { toSafeServerList } from '@/shared/serverView';
+import { logger } from '@/main/services/LoggerService';
 import { preserveActiveServerIfNeeded } from './refreshUtils';
 import { redactUrl } from './validators';
 

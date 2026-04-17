@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron';
-import { IPC_EVENT_CHANNELS } from '../../shared/ipc';
-import { toSafeServerList } from '../../shared/serverView';
-import { logger } from '../services/LoggerService';
+import { IPC_EVENT_CHANNELS } from '@/shared/ipc';
+import { toSafeServerList } from '@/shared/serverView';
+import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from './dependencies';
 
 interface InitialStateDeps {

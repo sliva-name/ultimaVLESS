@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigGenerator } from './ConfigGenerator';
-import { makeServer } from '../../test/factories';
-import { DEFAULT_PERFORMANCE_SETTINGS } from '../../shared/types';
+import { makeServer } from '@/test/factories';
+import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
 
 describe('ConfigGenerator', () => {
   const baseConfig = makeServer({

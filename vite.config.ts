@@ -71,6 +71,9 @@ export default defineConfig({
       main: {
         entry: 'src/main/main.ts',
         vite: {
+          // Sub-builds for main/preload are isolated from the root config,
+          // so tsconfig path resolution must be enabled here too.
+          resolve: { tsconfigPaths: true },
           build: {
             codeSplitting: false,
             rollupOptions: {
@@ -86,6 +89,7 @@ export default defineConfig({
         // Shortcut of `build.rollupOptions.input`.
         input: 'src/main/preload.ts',
         vite: {
+          resolve: { tsconfigPaths: true },
           build: {
             codeSplitting: false,
           },
@@ -93,6 +97,8 @@ export default defineConfig({
       },
     }),
   ],
+  // Resolves `@/*` (and any other `paths` entries in tsconfig.json) natively
+  // in Vite >= 7.1. No external plugin needed.
   resolve: {
     tsconfigPaths: true,
   },

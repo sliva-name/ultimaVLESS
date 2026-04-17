@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Subscription, VlessConfig } from '../../shared/types';
+import { Subscription, VlessConfig } from '@/shared/types';
 import { hasMissingPingData, reconcileSelection } from './useServerStateUtils';
 
 export function useServerState() {
@@ -183,11 +183,10 @@ export function useServerState() {
       setConnectionError(error);
     };
 
-    const handleConnectionMonitorEvent = (event: import('../../shared/ipc').ConnectionMonitorEvent) => {
+    const handleConnectionMonitorEvent = (event: import('@/shared/ipc').ConnectionMonitorEvent) => {
       if (event.type === 'connected' && event.server) {
         setServers((currentServers) => {
-          const fromList = currentServers.find((s) => s.uuid === event.server!.uuid);
-          let targetServer = fromList;
+          let targetServer = currentServers.find((s) => s.uuid === event.server!.uuid);
           if (!targetServer) {
             // Fallback to fuzzy match by address, port, and name
             const fuzzy = currentServers.find(

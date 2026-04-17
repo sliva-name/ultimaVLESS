@@ -10,7 +10,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../../services/LoggerService', () => ({
+vi.mock('@/main/services/LoggerService', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),

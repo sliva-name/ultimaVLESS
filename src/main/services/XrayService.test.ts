@@ -3,8 +3,8 @@ import fs from 'fs';
 import { spawn } from 'child_process';
 import { XrayService } from './XrayService';
 import { ConfigGenerator } from './ConfigGenerator';
-import { makeServer } from '../../test/factories';
-import { createMockChildProcess } from '../../test/mockChildProcess';
+import { makeServer } from '@/test/factories';
+import { createMockChildProcess } from '@/test/mockChildProcess';
 import { probeTcpPort } from './networkProbe';
 
 vi.mock('fs', () => ({

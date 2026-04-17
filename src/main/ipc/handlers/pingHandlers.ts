@@ -1,10 +1,10 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
-import { VlessConfig } from '../../../shared/types';
-import { IpcEventChannel, IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '../../../shared/ipc';
-import { logger } from '../../services/LoggerService';
-import { IpcDependencies } from '../dependencies';
-import { assertBoolean, assertValidServerPayload } from '../validators';
-import { createSerialQueue } from '../serialQueue';
+import { VlessConfig } from '@/shared/types';
+import { IpcEventChannel, IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '@/shared/ipc';
+import { logger } from '@/main/services/LoggerService';
+import { IpcDependencies } from '@/main/ipc/dependencies';
+import { assertBoolean, assertValidServerPayload } from '@/main/ipc/validators';
+import { createSerialQueue } from '@/main/ipc/serialQueue';
 
 interface RegisterPingHandlersParams {
   deps: IpcDependencies;

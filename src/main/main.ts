@@ -6,10 +6,12 @@ import { logger } from './services/LoggerService';
 import { appRecoveryService } from './services/AppRecoveryService';
 import { initMainSentry } from './services/SentryService';
 import { getAppIconPath } from './utils/runtimePaths';
-import type { AppRecoveryTrigger } from '../shared/ipc';
+import type { AppRecoveryTrigger } from '@/shared/ipc';
 
-if (typeof process.versions.electron !== 'string') {
+if (!process.versions.electron) {
   // `node .` loads package.json "main" but `require("electron")` is not the real API outside Electron.
+  // Node typings declare `process.versions.electron` as `string`, so use a falsy check
+  // instead of `typeof`: when run under plain Node it's `undefined`.
   console.error(
     'Run this app with Electron, not Node:\n' +
       '  npx electron .\n' +

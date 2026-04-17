@@ -2,8 +2,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { useServerState } from './useServerState';
-import { createElectronApiMock, installElectronApiMock } from '../../test/electronApiMock';
-import { makeMonitorStatus, makeServer } from '../../test/factories';
+import { createElectronApiMock, installElectronApiMock } from '@/test/electronApiMock';
+import { makeMonitorStatus, makeServer } from '@/test/factories';
 
 describe('useServerState', () => {
   it('loads the saved selected server during initial state fetch', async () => {

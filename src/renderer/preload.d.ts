@@ -1,4 +1,4 @@
-import { ConnectionMode, Subscription, VlessConfig } from '../shared/types';
+import { ConnectionMode, Subscription, VlessConfig } from '@/shared/types';
 import {
   AddSubscriptionPayload,
   AddSubscriptionResult,
@@ -13,7 +13,7 @@ import {
   SaveManualLinksResult,
   TunCapabilityStatus,
   UpdateSubscriptionPayload,
-} from '../shared/ipc';
+} from '@/shared/ipc';
 
 export type ConnectionStatus = ConnectionMonitorStatus;
 export type { ConnectionMonitorEvent };

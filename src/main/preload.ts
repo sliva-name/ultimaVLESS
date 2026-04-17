@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { ConnectionMode, Subscription, VlessConfig } from '../shared/types';
+import { ConnectionMode, Subscription, VlessConfig } from '@/shared/types';
 import {
   AddSubscriptionPayload,
   AddSubscriptionResult,
@@ -16,7 +16,7 @@ import {
   SaveManualLinksResult,
   TunCapabilityStatus,
   UpdateSubscriptionPayload,
-} from '../shared/ipc';
+} from '@/shared/ipc';
 
 function createListener<T>(channel: string) {
   return (callback: (data: T) => void): (() => void) => {

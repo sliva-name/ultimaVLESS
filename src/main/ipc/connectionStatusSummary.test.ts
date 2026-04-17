@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildConnectionMonitorStatusSummary } from './connectionStatusSummary';
-import { makeMonitorStatus } from '../../test/factories';
+import { makeMonitorStatus } from '@/test/factories';
 
 describe('buildConnectionMonitorStatusSummary', () => {
   it('merges connection, xray, and recovery state into the IPC summary', () => {

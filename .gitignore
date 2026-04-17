@@ -20,9 +20,7 @@ resources/bin/*
 
 # Logs
 *.log
+logs/
 
-
-
-
-
-
+# Coverage reports
+coverage/

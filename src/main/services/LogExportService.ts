@@ -5,7 +5,7 @@ import { logger } from './LoggerService';
 import { connectionMonitorService } from './ConnectionMonitorService';
 import { xrayService } from './XrayService';
 import { appRecoveryService } from './AppRecoveryService';
-import { sanitizeSensitiveText } from '../../shared/sanitizeDiagnostics';
+import { sanitizeSensitiveText } from '@/shared/sanitizeDiagnostics';
 
 export class LogExportService {
   

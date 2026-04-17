@@ -1,6 +1,5 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
-import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
@@ -12,18 +11,14 @@ export default defineConfig({
       ['**/src/renderer/**/*.test.tsx', 'jsdom'],
     ],
     setupFiles: ['./src/test/setup.ts'],
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
     coverage: {
-        provider: 'v8',
-        reporter: ['text', 'json', 'html'],
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
     },
   },
+  // Vite >= 7.1 resolves tsconfig `paths` natively. Vitest inherits this.
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    tsconfigPaths: true,
   },
 });
 

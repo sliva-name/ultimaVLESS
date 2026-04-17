@@ -1,5 +1,5 @@
-import type { ConnectionMonitorStatus } from '../shared/ipc';
-import type { VlessConfig } from '../shared/types';
+import type { ConnectionMonitorStatus } from '@/shared/ipc';
+import type { VlessConfig } from '@/shared/types';
 
 export function makeServer(overrides: Partial<VlessConfig> = {}): VlessConfig {
   const uuid = overrides.uuid ?? 'server-1';

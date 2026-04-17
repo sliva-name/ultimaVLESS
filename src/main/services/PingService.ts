@@ -1,5 +1,5 @@
 import * as net from 'net';
-import { VlessConfig } from '../../shared/types';
+import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { probeTlsHandshake } from './networkProbe';
 

@@ -1,4 +1,4 @@
-import type { VlessConfig } from '../../shared/types';
+import type { VlessConfig } from '@/shared/types';
 
 interface ActiveConnectionSnapshot {
   isConnected: boolean;
@@ -32,10 +32,7 @@ function isSameServerRepresented(refreshedServers: VlessConfig[], target: VlessC
     if (server.address !== target.address || server.port !== target.port) {
       return false;
     }
-    if ((server.protocol ?? 'vless') !== targetProtocol) {
-      return false;
-    }
-    return true;
+    return (server.protocol ?? 'vless') === targetProtocol;
   });
 }
 

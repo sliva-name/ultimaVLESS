@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { AppRecoveryOutcome, AppRecoveryStatus, AppRecoveryTrigger } from '../../shared/ipc';
+import { AppRecoveryOutcome, AppRecoveryStatus, AppRecoveryTrigger } from '@/shared/ipc';
 
 const RECOVERY_WINDOW_MS = 60_000;
 const MAX_RECOVERY_ATTEMPTS = 3;

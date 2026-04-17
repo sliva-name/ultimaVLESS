@@ -13,7 +13,7 @@ vi.mock('./XrayService', () => ({
 }));
 
 import { ConnectionStackService } from './ConnectionStackService';
-import { makeServer } from '../../test/factories';
+import { makeServer } from '@/test/factories';
 
 describe('ConnectionStackService', () => {
   function createDeferred() {

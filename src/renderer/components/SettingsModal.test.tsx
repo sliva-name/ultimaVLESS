@@ -3,8 +3,8 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsModal } from './SettingsModal';
-import { createElectronApiMock, installElectronApiMock } from '../../test/electronApiMock';
-import { makeMonitorStatus } from '../../test/factories';
+import { createElectronApiMock, installElectronApiMock } from '@/test/electronApiMock';
+import { makeMonitorStatus } from '@/test/factories';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({

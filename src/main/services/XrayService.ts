@@ -3,14 +3,14 @@ import path from 'path';
 import fs from 'fs';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
-import { ConnectionMode, VlessConfig } from '../../shared/types';
-import { XrayHealthStatus } from '../../shared/ipc';
-import { APP_CONSTANTS } from '../../shared/constants';
+import { ConnectionMode, VlessConfig } from '@/shared/types';
+import { XrayHealthStatus } from '@/shared/ipc';
+import { APP_CONSTANTS } from '@/shared/constants';
 import { ConfigGenerator, ConfigGeneratorOptions } from './ConfigGenerator';
 import { configService } from './ConfigService';
 import { logger } from './LoggerService';
 import { probeTcpPort } from './networkProbe';
-import { getBinResourcesPath } from '../utils/runtimePaths';
+import { getBinResourcesPath } from '@/main/utils/runtimePaths';
 
 export interface XrayUnexpectedExitEvent {
   config: VlessConfig;
@@ -56,8 +56,10 @@ export class XrayService extends EventEmitter {
   /**
    * Starts the Xray process with the provided configuration.
    * Stops any existing process before starting a new one.
-   * 
+   *
    * @param {VlessConfig} config - The VLESS server configuration.
+   * @param {ConnectionMode} [connectionMode='proxy'] - Whether Xray runs in SOCKS/HTTP proxy mode or TUN mode.
+   * @param {ConfigGeneratorOptions} [options={}] - Extra options forwarded to the config generator (TUN, performance, etc.).
    * @throws {Error} If config generation fails or binary is missing.
    * @returns {Promise<void>} Resolves when process is successfully spawned.
    */
@@ -419,7 +421,7 @@ export class XrayService extends EventEmitter {
     return new Promise((resolve) => {
       let settled = false;
       let timeoutId: NodeJS.Timeout | null = null;
-      type ProcessEventHandler = (...args: any[]) => void;
+      type ProcessEventHandler = () => void;
 
       const cleanup = (onClose: ProcessEventHandler, onError: ProcessEventHandler): void => {
         if (timeoutId) {
@@ -465,7 +467,9 @@ export class XrayService extends EventEmitter {
     return new Promise((resolve, reject) => {
       let settled = false;
       let timeoutId: NodeJS.Timeout | null = null;
-      type ProcessEventHandler = (...args: any[]) => void;
+      // Child process emits heterogeneous events ('close' has code/signal, 'error' has Error),
+      // and we forward listeners opaquely. Contravariant `never[]` lets both signatures assign.
+      type ProcessEventHandler = (...args: never[]) => void;
 
       const addListener = (event: 'close' | 'error', handler: ProcessEventHandler): boolean => {
         const withOnce = processRef as ChildProcess & { once?: (event: string, listener: ProcessEventHandler) => ChildProcess };
