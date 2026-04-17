@@ -87,4 +87,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getPerformanceSettings) as Promise<PerformanceSettings>,
   setPerformanceSettings: (settings: PerformanceSettings) =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setPerformanceSettings, settings) as Promise<boolean>,
+
+  getUiLanguage: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getUiLanguage) as Promise<'en' | 'ru'>,
+  setUiLanguage: (language: 'en' | 'ru') =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setUiLanguage, language) as Promise<boolean>,
 });

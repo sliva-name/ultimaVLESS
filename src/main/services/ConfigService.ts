@@ -12,6 +12,8 @@ import { redactUrl } from '@/main/utils/redactUrl';
 const LEGACY_DEFAULT_SUBSCRIPTION_URL = MOBILE_WHITE_LIST_RAW_URL;
 const DEFAULT_SUBSCRIPTION_URL = YANDEX_TRANSLATED_MOBILE_LIST_URL;
 
+export type UiLanguage = 'en' | 'ru';
+
 interface StoreSchema {
   subscriptionUrl?: string; // legacy field — migrated on first init and then deleted
   subscriptions: Subscription[];
@@ -24,6 +26,7 @@ interface StoreSchema {
     createdAt: number;
   } | null;
   performanceSettings: PerformanceSettings;
+  uiLanguage?: UiLanguage;
 }
 
 /**
@@ -244,6 +247,21 @@ export class ConfigService {
   public setPerformanceSettings(settings: PerformanceSettings): void {
     this.store.set('performanceSettings', settings);
     logger.info('ConfigService', 'setPerformanceSettings', settings);
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI language (shared between main and renderer so the tray / notifications
+  // can be localized without round-tripping through the renderer first).
+  // ---------------------------------------------------------------------------
+
+  public getUiLanguage(): UiLanguage {
+    const stored = this.store.get('uiLanguage');
+    return stored === 'en' || stored === 'ru' ? stored : 'ru';
+  }
+
+  public setUiLanguage(language: UiLanguage): void {
+    this.store.set('uiLanguage', language);
+    logger.info('ConfigService', 'setUiLanguage', { language });
   }
 }
 

@@ -117,6 +117,9 @@ export function createElectronApiMock(overrides: Partial<IElectronAPI> = {}): El
     })),
     setPerformanceSettings: vi.fn(async (_settings: PerformanceSettings) => true),
 
+    getUiLanguage: vi.fn(async (): Promise<'en' | 'ru'> => 'en'),
+    setUiLanguage: vi.fn(async (_language: 'en' | 'ru') => true),
+
     emitUpdateServers: (servers: VlessConfig[]) => {
       listeners.updateServers.forEach((listener) => listener(servers));
     },

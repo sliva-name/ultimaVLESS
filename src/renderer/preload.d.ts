@@ -61,6 +61,9 @@ export interface IElectronAPI {
   pingAllServers: (force?: boolean) => Promise<PingResult[]>;
   getPerformanceSettings: () => Promise<PerformanceSettings>;
   setPerformanceSettings: (settings: PerformanceSettings) => Promise<boolean>;
+
+  getUiLanguage: () => Promise<'en' | 'ru'>;
+  setUiLanguage: (language: 'en' | 'ru') => Promise<boolean>;
 }
 
 declare global {

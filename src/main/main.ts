@@ -1,10 +1,11 @@
-import { app, BrowserWindow, Menu, Tray } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { performance } from 'perf_hooks';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { logger } from './services/LoggerService';
 import { appRecoveryService } from './services/AppRecoveryService';
 import { initMainSentry } from './services/SentryService';
+import { trayService } from './services/TrayService';
 import { getAppIconPath } from './utils/runtimePaths';
 import type { AppRecoveryTrigger } from '@/shared/ipc';
 
@@ -36,7 +37,6 @@ if (process.platform === 'win32') {
 }
 
 let mainWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
 let isQuitting = false;
 let isShuttingDown = false;
 const startupPerfOriginMs = performance.now();
@@ -194,49 +194,21 @@ function hideMainWindow(reason: string = 'unspecified') {
 }
 
 async function ensureTray() {
-  if (tray) return;
-
-  tray = new Tray(getAppIconPath(process.platform));
-  tray.setToolTip('UltimaVLESS');
-
-  const contextMenu = Menu.buildFromTemplate([
+  trayService.init(
     {
-      label: 'Показать',
-      click: () => {
+      onShow: () => {
         void showMainWindow('tray-menu-show');
       },
-    },
-    {
-      label: 'Скрыть',
-      click: () => hideMainWindow('tray-menu-hide'),
-    },
-    { type: 'separator' },
-    {
-      label: 'Выход',
-      click: () => {
+      onHide: () => hideMainWindow('tray-menu-hide'),
+      onQuit: () => {
         isQuitting = true;
         app.quit();
       },
+      isWindowVisible: () =>
+        !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible(),
     },
-  ]);
-
-  tray.setContextMenu(contextMenu);
-
-  // Common Windows behavior: click tray icon to toggle the window.
-  tray.on('click', () => {
-    void (async () => {
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        await showMainWindow('tray-click-create-or-show');
-        return;
-      }
-      if (mainWindow.isVisible()) hideMainWindow('tray-click-toggle-hide');
-      else await showMainWindow('tray-click-toggle-show');
-    })();
-  });
-
-  tray.on('double-click', () => {
-    void showMainWindow('tray-double-click');
-  });
+    () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null)
+  );
   logStartupStep('Tray initialized');
 }
 

@@ -19,6 +19,8 @@ import { logExportService } from '@/main/services/LogExportService';
 import { connectionMonitorService } from '@/main/services/ConnectionMonitorService';
 import { xrayService } from '@/main/services/XrayService';
 import { appRecoveryService } from '@/main/services/AppRecoveryService';
+import { trayService } from '@/main/services/TrayService';
+import { mainLocaleService } from '@/main/services/MainLocaleService';
 import { createIpcDependencies, IpcDependencies } from './dependencies';
 import { registerConnectionHandlers } from './handlers/connectionHandlers';
 import { registerPingHandlers } from './handlers/pingHandlers';
@@ -560,12 +562,39 @@ export function registerIpcHandlers(
       sendToRenderer(IPC_EVENT_CHANNELS.connectionMonitorEvent, safeEvent);
       if (eventName === 'connected' && event.server) {
         sendToRenderer(IPC_EVENT_CHANNELS.connectionStatus, true);
+        trayService.setConnected(event.server.name, event.server.ping ?? null);
       }
       if (eventName === 'disconnected') {
         sendToRenderer(IPC_EVENT_CHANNELS.connectionStatus, false);
+        trayService.setDisconnected();
+      }
+      if (eventName === 'error') {
+        const message = (event as { error?: string; message?: string }).error
+          ?? (event as { message?: string }).message
+          ?? '';
+        if (message) {
+          trayService.reportError(message);
+        }
+      }
+      if (eventName === 'switching') {
+        trayService.reportSwitching();
       }
     });
   }
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getUiLanguage, (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    return mainLocaleService.getLanguage();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.setUiLanguage, (event: IpcMainInvokeEvent, language: unknown) => {
+    assertTrustedSender(event);
+    if (language !== 'en' && language !== 'ru') {
+      throw new Error(`Unsupported UI language: ${String(language)}`);
+    }
+    mainLocaleService.setLanguage(language);
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------

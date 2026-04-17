@@ -168,6 +168,8 @@ export const IPC_INVOKE_CHANNELS = {
   clearBlockedServers: 'clear-blocked-servers',
   getPerformanceSettings: 'get-performance-settings',
   setPerformanceSettings: 'set-performance-settings',
+  getUiLanguage: 'get-ui-language',
+  setUiLanguage: 'set-ui-language',
 } as const;
 
 export const IPC_EVENT_CHANNELS = {

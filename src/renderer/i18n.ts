@@ -132,6 +132,14 @@ const resources = {
           "lastRecovery": "Last recovery",
           "clear": "Clear",
           "recentEvents": "Recent events",
+          "serverShort": "Server {{id}}…",
+          "eventTypes": {
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "error": "Error",
+            "blocked": "Blocked",
+            "switching": "Switching server"
+          },
           "troubleshooting": "Troubleshooting",
           "copyLogs": "Copy logs",
           "copied": "Copied!",
@@ -271,6 +279,14 @@ const resources = {
           "lastRecovery": "Последнее восстановление",
           "clear": "Очистить",
           "recentEvents": "Последние события",
+          "serverShort": "Сервер {{id}}…",
+          "eventTypes": {
+            "connected": "Подключение",
+            "disconnected": "Отключение",
+            "error": "Ошибка",
+            "blocked": "Заблокирован",
+            "switching": "Переключение сервера"
+          },
           "troubleshooting": "Решение проблем",
           "copyLogs": "Скопировать логи",
           "copied": "Скопировано!",
@@ -288,15 +304,36 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: savedLanguage, // default language
+    lng: savedLanguage,
     fallbackLng: "en",
     interpolation: {
       escapeValue: false // React already escapes values
     }
   });
 
+// Hydrate from the main-process stored language (if available) and keep both
+// persisted stores in sync so the tray, window title, and native notifications
+// can use the same locale without the renderer being open.
+if (typeof window !== 'undefined' && window.electronAPI?.getUiLanguage) {
+  void window.electronAPI
+    .getUiLanguage()
+    .then((mainLang) => {
+      if (mainLang && mainLang !== i18n.language) {
+        void i18n.changeLanguage(mainLang);
+      }
+    })
+    .catch(() => {
+      /* ignore — renderer already has a sensible default */
+    });
+}
+
 i18n.on('languageChanged', (lng) => {
   localStorage.setItem('language', lng);
+  if (typeof window !== 'undefined' && window.electronAPI?.setUiLanguage && (lng === 'en' || lng === 'ru')) {
+    void window.electronAPI.setUiLanguage(lng).catch(() => {
+      /* non-fatal: main process will pick up the language on next launch */
+    });
+  }
 });
 
 export default i18n;
