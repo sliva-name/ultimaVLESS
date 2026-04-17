@@ -87,26 +87,17 @@ export class PingService {
   }
 
   /**
-   * Generates a unique key for a server (address:port or uuid if unique).
-   * @param server - The server configuration.
-   * @returns Unique identifier string.
-   */
-  private getServerKey(server: VlessConfig): string {
-    return server.uuid;
-  }
-
-  /**
    * Pings multiple servers with concurrency control.
    * @param servers - Array of server configurations to ping.
    * @param timeout - Connection timeout in milliseconds (default: 5000ms).
-   * @returns Promise resolving to a map of server keys (address:port) to their latency values.
+   * @returns Promise resolving to a map keyed by server uuid with measured latency.
    */
   public async pingServers(
     servers: VlessConfig[],
     timeout: number = this.DEFAULT_TIMEOUT
   ): Promise<Map<string, number | null>> {
     const results = new Map<string, number | null>();
-    
+
     if (servers.length === 0) {
       return results;
     }
@@ -122,29 +113,22 @@ export class PingService {
         if (!server) break;
 
         const latency = await this.pingServer(server, timeout);
-        const key = this.getServerKey(server);
         logger.debug('PingService', `Ping result for ${server.name}`, {
-          key,
           uuid: server.uuid.substring(0, 8) + '...',
           address: server.address,
           port: server.port,
           latency
         });
-        results.set(key, latency);
+        results.set(server.uuid, latency);
       }
     };
 
     await Promise.all(Array.from({ length: workersCount }, () => runWorker()));
-    
+
     logger.debug('PingService', 'All ping results', {
       totalServers: servers.length,
       resultsCount: results.size,
       uniqueUUIDs: new Set(servers.map(s => s.uuid)).size,
-      uniqueKeys: results.size,
-      results: Array.from(results.entries()).map(([key, latency]) => ({
-        key,
-        latency
-      }))
     });
 
     return results;

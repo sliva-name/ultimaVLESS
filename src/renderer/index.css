@@ -56,24 +56,6 @@ body {
   background-clip: padding-box;
 }
 
-/* Scrollbar для светлых элементов */
-.scrollbar-light::-webkit-scrollbar-thumb {
-  background: rgba(107, 114, 128, 0.4);
-}
-
-.scrollbar-light::-webkit-scrollbar-thumb:hover {
-  background: rgba(107, 114, 128, 0.6);
-}
-
-/* Scrollbar для темных элементов */
-.scrollbar-dark::-webkit-scrollbar-thumb {
-  background: rgba(55, 65, 81, 0.6);
-}
-
-.scrollbar-dark::-webkit-scrollbar-thumb:hover {
-  background: rgba(75, 85, 99, 0.8);
-}
-
 /* Drag region для перемещения окна */
 .app-drag-region {
   -webkit-app-region: drag;
