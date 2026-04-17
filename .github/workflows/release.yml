@@ -1,0 +1,320 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ github.ref_name }}
+    steps:
+      - name: Create GitHub Release with generated notes
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          make_latest: true
+
+  build-linux:
+    name: Build & Publish Linux
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify CI gates
+        run: npm run verify:ci
+
+      - name: Verify Linux release config
+        run: npm run verify:release:linux
+
+      - name: Prepare Xray assets
+        run: npm run prepare:xray:linux
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate app icon files exist
+        run: |
+          required_icons=("resources/bin/logo-256x256.png")
+          for icon_path in "${required_icons[@]}"; do
+            if [ ! -f "$icon_path" ]; then
+              echo "Missing required icon asset in repository: $icon_path"
+              exit 1
+            fi
+          done
+
+      - name: Validate tag matches package version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json version ($PACKAGE_VERSION)"
+            exit 1
+          fi
+
+      - name: Build Linux artifacts
+        run: |
+          npm run build:electron
+          npx electron-builder --linux AppImage deb --x64 --publish never
+
+      - name: Build SHA256 checksums
+        run: |
+          mapfile -t files < <(find release -type f \( -name "*.AppImage" -o -name "*.deb" \))
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No .AppImage/.deb artifacts were produced"
+            exit 1
+          fi
+          > release/SHA256SUMS-linux.txt
+          for file in "${files[@]}"; do
+            hash="$(sha256sum "$file" | awk '{print $1}')"
+            echo "$hash  $file" >> release/SHA256SUMS-linux.txt
+          done
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          files: |
+            release/**/*.AppImage
+            release/**/*.deb
+            release/SHA256SUMS-linux.txt
+
+  build-macos:
+    name: Build & Publish macOS
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify CI gates
+        run: npm run verify:ci
+
+      - name: Verify macOS release config
+        run: npm run verify:release:mac
+
+      - name: Prepare Xray assets
+        run: npm run prepare:xray:mac
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate macOS icns icon when missing
+        run: |
+          if [ -f "resources/bin/logo.icns" ]; then
+            echo "logo.icns already exists"
+            exit 0
+          fi
+          if [ ! -f "resources/bin/logo-256x256.png" ]; then
+            echo "Missing source icon for icns generation: resources/bin/logo-256x256.png"
+            exit 1
+          fi
+
+          ICONSET_DIR="$RUNNER_TEMP/logo.iconset"
+          rm -rf "$ICONSET_DIR"
+          mkdir -p "$ICONSET_DIR"
+
+          sips -z 16 16 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_16x16.png"
+          sips -z 32 32 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_16x16@2x.png"
+          sips -z 32 32 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_32x32.png"
+          sips -z 64 64 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_32x32@2x.png"
+          sips -z 128 128 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_128x128.png"
+          sips -z 256 256 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_128x128@2x.png"
+          sips -z 256 256 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_256x256.png"
+          sips -z 512 512 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_256x256@2x.png"
+          sips -z 512 512 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_512x512.png"
+          sips -z 1024 1024 resources/bin/logo-256x256.png --out "$ICONSET_DIR/icon_512x512@2x.png"
+
+          iconutil -c icns "$ICONSET_DIR" -o resources/bin/logo.icns
+          echo "Generated resources/bin/logo.icns"
+
+      - name: Validate app icon files exist
+        run: |
+          required_icons=("resources/bin/logo.icns" "resources/bin/logo-256x256.png")
+          for icon_path in "${required_icons[@]}"; do
+            if [ ! -f "$icon_path" ]; then
+              echo "Missing required icon asset in repository: $icon_path"
+              exit 1
+            fi
+          done
+
+      - name: Validate tag matches package version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json version ($PACKAGE_VERSION)"
+            exit 1
+          fi
+
+      - name: Build macOS artifacts
+        run: |
+          npm run build:electron
+          npx electron-builder --mac dmg zip --x64 --arm64 --publish never
+
+      - name: Build SHA256 checksums
+        run: |
+          files_found="$(find release -type f \( -name "*.dmg" -o -name "*.zip" \))"
+          if [ -z "$files_found" ]; then
+            echo "No .dmg/.zip artifacts were produced"
+            exit 1
+          fi
+          > release/SHA256SUMS-macos.txt
+          while IFS= read -r file; do
+            hash="$(shasum -a 256 "$file" | awk '{print $1}')"
+            echo "$hash  $file" >> release/SHA256SUMS-macos.txt
+          done <<< "$files_found"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          files: |
+            release/**/*.dmg
+            release/**/*.zip
+            release/SHA256SUMS-macos.txt
+
+  build-windows:
+    name: Build & Publish Windows
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify CI gates
+        run: npm run verify:ci
+
+      - name: Verify Windows release config
+        run: npm run verify:release:win
+
+      - name: Prepare resources/bin directory
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "resources/bin" -Force | Out-Null
+
+      - name: Download Xray core assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $headers = @{
+            "Accept" = "application/vnd.github+json"
+            "User-Agent" = "ultima-vless-release"
+          }
+          if ($env:GITHUB_TOKEN) {
+            $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN"
+          }
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/XTLS/Xray-core/releases/latest" -Headers $headers
+          $zipAsset = $release.assets | Where-Object { $_.name -eq "Xray-windows-64.zip" } | Select-Object -First 1
+          if (-not $zipAsset) {
+            throw "Could not find Xray-windows-64.zip in latest Xray-core release"
+          }
+
+          $zipPath = Join-Path $env:RUNNER_TEMP "xray.zip"
+          $extractDir = Join-Path $env:RUNNER_TEMP "xray"
+          Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $zipPath -Headers $headers
+          Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+          $required = @("xray.exe", "geoip.dat", "geosite.dat")
+          foreach ($file in $required) {
+            $source = Join-Path $extractDir $file
+            if (-not (Test-Path $source)) {
+              throw "Required Xray asset missing after extraction: $file"
+            }
+            Copy-Item -Path $source -Destination (Join-Path "resources/bin" $file) -Force
+          }
+
+          $optional = @("wintun.dll")
+          foreach ($file in $optional) {
+            $source = Join-Path $extractDir $file
+            if (Test-Path $source) {
+              Copy-Item -Path $source -Destination (Join-Path "resources/bin" $file) -Force
+            }
+          }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate app icon files exist
+        shell: pwsh
+        run: |
+          $requiredIcons = @("resources/bin/logo.ico", "resources/bin/logo-256x256.png")
+          foreach ($iconPath in $requiredIcons) {
+            if (-not (Test-Path $iconPath)) {
+              throw "Missing required icon asset in repository: $iconPath"
+            }
+          }
+
+      - name: Validate tag matches package version
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json version ($PACKAGE_VERSION)"
+            exit 1
+          fi
+
+      - name: Build Windows artifacts
+        shell: pwsh
+        run: |
+          npm run build:electron
+          npx electron-builder --win nsis portable --x64 --publish never
+
+      - name: Build SHA256 checksums
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path "release" -Recurse -File -Include *.exe
+          if (-not $files) {
+            throw "No .exe artifacts were produced"
+          }
+          $output = @()
+          foreach ($file in $files) {
+            $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLower()
+            $relative = Resolve-Path -Relative -Path $file.FullName
+            $output += "$hash  $relative"
+          }
+          $output | Set-Content -Path "release/SHA256SUMS-windows.txt" -Encoding utf8
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          files: |
+            release/**/UltimaVLESS-Setup-*.exe
+            release/**/UltimaVLESS-Portable-*.exe
+            release/SHA256SUMS-windows.txt
