@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectionStatus } from './components/ConnectionStatus';
+import { UpdateBanner } from './components/UpdateBanner';
 import { useServerState } from './hooks/useServerState';
 
 type DragRegionStyle = React.CSSProperties & { WebkitAppRegion: 'drag' | 'no-drag' };
@@ -49,6 +50,7 @@ function App() {
         />
 
         <div className={isSettingsOpen ? 'hidden' : 'contents'}>
+          <UpdateBanner />
           <ConnectionStatus 
             isConnected={isConnected}
             isBusy={isConnectionBusy}

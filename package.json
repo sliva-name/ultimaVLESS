@@ -80,6 +80,14 @@
         ]
       }
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "sliva-name",
+        "repo": "ultimaVLESS",
+        "releaseType": "release"
+      }
+    ],
     "win": {
       "forceCodeSigning": false,
       "signAndEditExecutable": true,
@@ -183,6 +191,7 @@
     "clsx": "^2.1.1",
     "country-flag-icons": "^1.6.15",
     "electron-store": "^11.0.2",
+    "electron-updater": "^6.8.3",
     "i18next": "^26.0.4",
     "js-base64": "^3.7.8",
     "lucide-react": "^1.7.0",

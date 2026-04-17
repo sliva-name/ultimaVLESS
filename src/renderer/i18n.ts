@@ -37,6 +37,14 @@ const resources = {
           "duration": "Session",
           "download": "Downloaded",
           "upload": "Uploaded"
+        },
+        "update": {
+          "available": "Update {{version}} is downloading…",
+          "downloading": "Downloading update {{version}} — {{percent}}%",
+          "ready": "Update {{version}} ready. Restart to install.",
+          "restart": "Restart now",
+          "error": "Update check failed",
+          "dismiss": "Dismiss"
         }
       },
       "settings": {
@@ -190,6 +198,14 @@ const resources = {
           "duration": "Сессия",
           "download": "Загружено",
           "upload": "Отправлено"
+        },
+        "update": {
+          "available": "Обновление {{version}} загружается…",
+          "downloading": "Загрузка обновления {{version}} — {{percent}}%",
+          "ready": "Обновление {{version}} готово. Перезапустите для установки.",
+          "restart": "Перезапустить",
+          "error": "Не удалось проверить обновления",
+          "dismiss": "Скрыть"
         }
       },
       "settings": {

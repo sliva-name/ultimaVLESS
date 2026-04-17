@@ -22,6 +22,7 @@ import { appRecoveryService } from '@/main/services/AppRecoveryService';
 import { trayService } from '@/main/services/TrayService';
 import { mainLocaleService } from '@/main/services/MainLocaleService';
 import { trafficStatsService, TrafficSnapshot } from '@/main/services/TrafficStatsService';
+import { appUpdaterService } from '@/main/services/AppUpdaterService';
 import { createIpcDependencies, IpcDependencies } from './dependencies';
 import { registerConnectionHandlers } from './handlers/connectionHandlers';
 import { registerPingHandlers } from './handlers/pingHandlers';
@@ -254,6 +255,11 @@ export function registerIpcHandlers(
   trafficStatsService.removeAllListeners('stopped');
   trafficStatsService.on('stopped', () => {
     sendToRenderer(IPC_EVENT_CHANNELS.trafficStats, null);
+  });
+
+  appUpdaterService.removeAllListeners('status');
+  appUpdaterService.on('status', (status) => {
+    sendToRenderer(IPC_EVENT_CHANNELS.updateStatus, status);
   });
 
   // -------------------------------------------------------------------------
@@ -598,6 +604,23 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_INVOKE_CHANNELS.getTrafficStats, (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event);
     return trafficStatsService.getLastSnapshot();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getUpdateStatus, (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    return appUpdaterService.getStatus();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.checkForUpdates, async (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    await appUpdaterService.checkForUpdates();
+    return appUpdaterService.getStatus();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.installUpdate, (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    appUpdaterService.quitAndInstall();
+    return true;
   });
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.getUiLanguage, (event: IpcMainInvokeEvent) => {

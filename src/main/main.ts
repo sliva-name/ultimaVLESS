@@ -6,6 +6,7 @@ import { logger } from './services/LoggerService';
 import { appRecoveryService } from './services/AppRecoveryService';
 import { initMainSentry } from './services/SentryService';
 import { trayService } from './services/TrayService';
+import { appUpdaterService } from './services/AppUpdaterService';
 import { getAppIconPath } from './utils/runtimePaths';
 import type { AppRecoveryTrigger } from '@/shared/ipc';
 
@@ -387,6 +388,9 @@ void app.whenReady().then(async () => {
   logStartupStep('createWindow finished');
   await ensureTray();
   logStartupStep('ensureTray finished');
+  void appUpdaterService.start().catch((error) => {
+    logger.warn('Main', 'Auto-updater failed to start', error);
+  });
   // loadInitialState runs from did-finish-load so the renderer has subscribed to
   // update-servers; calling it here as well duplicated refresh/ping work and
   // caused overlapping ping-all-servers requests to be discarded as stale.
