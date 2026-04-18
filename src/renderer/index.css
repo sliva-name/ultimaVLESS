@@ -70,3 +70,20 @@ body {
     opacity: 1;
   }
 }
+
+/* Softer pulsing ring that doesn't expand far enough to overlap
+   surrounding UI (e.g. the "ЗАЩИЩЕНО" status text above the button). */
+@keyframes ping-soft {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  75%, 100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+
+.animate-ping-soft {
+  animation: ping-soft 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
