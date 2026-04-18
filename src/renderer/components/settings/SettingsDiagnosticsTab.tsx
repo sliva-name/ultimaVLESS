@@ -193,7 +193,7 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
                 const serverName = server?.name
                   ?? (monitorStatus.currentServer?.uuid === serverId
                     ? monitorStatus.currentServer.name
-                    : `Server ${serverId.substring(0, 8)}...`);
+                    : t('settings.diagnostics.serverShort', { id: serverId.substring(0, 8) }));
                 return (
                   <div
                     key={serverId}
@@ -210,7 +210,7 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
 
       {recentEvents.length > 0 && (
         <div className="mb-2 p-4 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50">
-          <div className="text-xs font-medium text-gray-300 mb-2">Recent events</div>
+          <div className="text-xs font-medium text-gray-300 mb-2">{t('settings.diagnostics.recentEvents')}</div>
           <div className="space-y-2 max-h-32 overflow-y-auto">
             {recentEvents.map((event, idx) => (
               <div key={idx} className="text-sm p-3 rounded-xl bg-gray-900/50 border border-gray-700/30">
@@ -219,7 +219,9 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
                   {event.type === 'blocked' && <X className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
                   {event.type === 'switching' && <RefreshCw className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />}
                   {event.type === 'connected' && <Check className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />}
-                  <span className="text-gray-300 flex-1 min-w-0 leading-relaxed">{event.message || event.type}</span>
+                  <span className="text-gray-300 flex-1 min-w-0 leading-relaxed">
+                    {event.message || t(`settings.diagnostics.eventTypes.${event.type}`, { defaultValue: event.type })}
+                  </span>
                 </div>
               </div>
             ))}

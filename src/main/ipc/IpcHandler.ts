@@ -19,6 +19,10 @@ import { logExportService } from '@/main/services/LogExportService';
 import { connectionMonitorService } from '@/main/services/ConnectionMonitorService';
 import { xrayService } from '@/main/services/XrayService';
 import { appRecoveryService } from '@/main/services/AppRecoveryService';
+import { trayService } from '@/main/services/TrayService';
+import { mainLocaleService } from '@/main/services/MainLocaleService';
+import { trafficStatsService, TrafficSnapshot } from '@/main/services/TrafficStatsService';
+import { appUpdaterService } from '@/main/services/AppUpdaterService';
 import { createIpcDependencies, IpcDependencies } from './dependencies';
 import { registerConnectionHandlers } from './handlers/connectionHandlers';
 import { registerPingHandlers } from './handlers/pingHandlers';
@@ -242,6 +246,20 @@ export function registerIpcHandlers(
   });
   deps.connectionMonitorService.on('switch-operation-finished', () => {
     endConnectionBusy();
+  });
+
+  trafficStatsService.removeAllListeners('snapshot');
+  trafficStatsService.on('snapshot', (snapshot: TrafficSnapshot) => {
+    sendToRenderer(IPC_EVENT_CHANNELS.trafficStats, snapshot);
+  });
+  trafficStatsService.removeAllListeners('stopped');
+  trafficStatsService.on('stopped', () => {
+    sendToRenderer(IPC_EVENT_CHANNELS.trafficStats, null);
+  });
+
+  appUpdaterService.removeAllListeners('status');
+  appUpdaterService.on('status', (status) => {
+    sendToRenderer(IPC_EVENT_CHANNELS.updateStatus, status);
   });
 
   // -------------------------------------------------------------------------
@@ -560,12 +578,64 @@ export function registerIpcHandlers(
       sendToRenderer(IPC_EVENT_CHANNELS.connectionMonitorEvent, safeEvent);
       if (eventName === 'connected' && event.server) {
         sendToRenderer(IPC_EVENT_CHANNELS.connectionStatus, true);
+        trayService.setConnected(event.server.name, event.server.ping ?? null);
+        const connectedAt = deps.connectionMonitorService.getStatus().lastConnectionTime ?? Date.now();
+        trafficStatsService.start(connectedAt);
       }
       if (eventName === 'disconnected') {
         sendToRenderer(IPC_EVENT_CHANNELS.connectionStatus, false);
+        trayService.setDisconnected();
+        trafficStatsService.stop();
+      }
+      if (eventName === 'error') {
+        const message = (event as { error?: string; message?: string }).error
+          ?? (event as { message?: string }).message
+          ?? '';
+        if (message) {
+          trayService.reportError(message);
+        }
+      }
+      if (eventName === 'switching') {
+        trayService.reportSwitching();
       }
     });
   }
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getTrafficStats, (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    return trafficStatsService.getLastSnapshot();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getUpdateStatus, (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    return appUpdaterService.getStatus();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.checkForUpdates, async (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    await appUpdaterService.checkForUpdates();
+    return appUpdaterService.getStatus();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.installUpdate, (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    appUpdaterService.quitAndInstall();
+    return true;
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getUiLanguage, (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    return mainLocaleService.getLanguage();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.setUiLanguage, (event: IpcMainInvokeEvent, language: unknown) => {
+    assertTrustedSender(event);
+    if (language !== 'en' && language !== 'ru') {
+      throw new Error(`Unsupported UI language: ${String(language)}`);
+    }
+    mainLocaleService.setLanguage(language);
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------

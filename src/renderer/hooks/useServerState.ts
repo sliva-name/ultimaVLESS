@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Subscription, VlessConfig } from '@/shared/types';
+import type { TrafficSnapshot } from '@/shared/ipc';
 import { hasMissingPingData, reconcileSelection } from './useServerStateUtils';
 
 export function useServerState() {
@@ -9,6 +10,7 @@ export function useServerState() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnectionBusy, setIsConnectionBusy] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [trafficSnapshot, setTrafficSnapshot] = useState<TrafficSnapshot | null>(null);
   const toggleInFlightRef = useRef(false);
   const selectedServerRef = useRef<VlessConfig | null>(null);
   const connectedRef = useRef(false);
@@ -164,6 +166,7 @@ export function useServerState() {
       if (status) {
         setConnectionError(null);
       } else {
+        setTrafficSnapshot(null);
         // Ensure the renderer doesn't stay stuck in a "connecting" spinner when
         // a session drops; the main process will re-emit busy=true as soon as
         // the next operation begins.
@@ -216,12 +219,28 @@ export function useServerState() {
       }
     };
 
+    const handleTrafficStats = (snapshot: TrafficSnapshot | null) => {
+      setTrafficSnapshot(snapshot);
+    };
+
     const removeUpdateServers = window.electronAPI.onUpdateServers(handleUpdateServers);
     const removeUpdateSubscriptions = window.electronAPI.onUpdateSubscriptions(handleUpdateSubscriptions);
     const removeConnectionStatus = window.electronAPI.onConnectionStatus(handleConnectionStatus);
     const removeConnectionBusy = window.electronAPI.onConnectionBusy(handleConnectionBusy);
     const removeConnectionError = window.electronAPI.onConnectionError(handleConnectionError);
     const removeConnectionMonitorEvent = window.electronAPI.onConnectionMonitorEvent(handleConnectionMonitorEvent);
+    const removeTrafficStats = window.electronAPI.onTrafficStats?.(handleTrafficStats);
+
+    // Hydrate the existing traffic snapshot on first mount so we don't wait for
+    // the next poll tick to start drawing the session counters.
+    if (window.electronAPI.getTrafficStats) {
+      void window.electronAPI
+        .getTrafficStats()
+        .then((snapshot) => {
+          if (!disposed) setTrafficSnapshot(snapshot);
+        })
+        .catch(() => undefined);
+    }
 
     return () => {
       disposed = true;
@@ -234,6 +253,7 @@ export function useServerState() {
       removeConnectionBusy();
       removeConnectionError();
       removeConnectionMonitorEvent();
+      removeTrafficStats?.();
     };
   }, [updateSelectedServerState]);
 
@@ -293,6 +313,7 @@ export function useServerState() {
     isConnected,
     connectionError,
     isConnectionBusy,
+    trafficSnapshot,
     setSelectedServer: selectServer,
     toggleConnection,
     pingAllServers,

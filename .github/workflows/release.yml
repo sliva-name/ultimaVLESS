@@ -38,7 +38,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Verify CI gates
         run: npm run verify:ci
@@ -95,6 +95,8 @@ jobs:
           files: |
             release/**/*.AppImage
             release/**/*.deb
+            release/**/latest-linux*.yml
+            release/**/*.AppImage.blockmap
             release/SHA256SUMS-linux.txt
 
   build-macos:
@@ -112,7 +114,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Verify CI gates
         run: npm run verify:ci
@@ -198,6 +200,9 @@ jobs:
           files: |
             release/**/*.dmg
             release/**/*.zip
+            release/**/latest-mac*.yml
+            release/**/*.dmg.blockmap
+            release/**/*.zip.blockmap
             release/SHA256SUMS-macos.txt
 
   build-windows:
@@ -215,7 +220,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Verify CI gates
         run: npm run verify:ci
@@ -317,4 +322,6 @@ jobs:
           files: |
             release/**/UltimaVLESS-Setup-*.exe
             release/**/UltimaVLESS-Portable-*.exe
+            release/**/latest.yml
+            release/**/*.exe.blockmap
             release/SHA256SUMS-windows.txt

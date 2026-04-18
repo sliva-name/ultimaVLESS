@@ -95,11 +95,3 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   blockBittorrent: true,
   domainStrategy: 'IPIfNonMatch',
 };
-
-export interface AppState {
-  isConnected: boolean;
-  selectedServerId: string | null;
-  subscriptionUrl: string;
-  servers: VlessConfig[];
-  logs: string[];
-}

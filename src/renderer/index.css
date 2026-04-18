@@ -56,24 +56,6 @@ body {
   background-clip: padding-box;
 }
 
-/* Scrollbar для светлых элементов */
-.scrollbar-light::-webkit-scrollbar-thumb {
-  background: rgba(107, 114, 128, 0.4);
-}
-
-.scrollbar-light::-webkit-scrollbar-thumb:hover {
-  background: rgba(107, 114, 128, 0.6);
-}
-
-/* Scrollbar для темных элементов */
-.scrollbar-dark::-webkit-scrollbar-thumb {
-  background: rgba(55, 65, 81, 0.6);
-}
-
-.scrollbar-dark::-webkit-scrollbar-thumb:hover {
-  background: rgba(75, 85, 99, 0.8);
-}
-
 /* Drag region для перемещения окна */
 .app-drag-region {
   -webkit-app-region: drag;
@@ -87,4 +69,21 @@ body {
   to {
     opacity: 1;
   }
+}
+
+/* Softer pulsing ring that doesn't expand far enough to overlap
+   surrounding UI (e.g. the "ЗАЩИЩЕНО" status text above the button). */
+@keyframes ping-soft {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  75%, 100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+
+.animate-ping-soft {
+  animation: ping-soft 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
 }

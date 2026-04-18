@@ -132,6 +132,39 @@ export interface TunCapabilityStatus {
   degradedReason: string | null;
 }
 
+export interface TrafficSnapshot {
+  uploadBytes: number;
+  downloadBytes: number;
+  uploadBps: number;
+  downloadBps: number;
+  sessionDurationMs: number;
+  connectedAt: number;
+  sampledAt: number;
+}
+
+export type UpdateStage =
+  | 'idle'
+  | 'checking'
+  | 'not-available'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+  | 'disabled';
+
+export interface UpdateStatus {
+  stage: UpdateStage;
+  version: string | null;
+  releaseNotes: string | null;
+  /** Download progress in percent (0-100). Only meaningful while downloading. */
+  percent: number;
+  /** Bytes/sec of download progress. Only meaningful while downloading. */
+  bytesPerSecond: number;
+  error: string | null;
+  /** Epoch ms when this status was produced. */
+  updatedAt: number;
+}
+
 export interface ImportMobileWhiteListResult {
   ok: boolean;
   configCount: number;
@@ -168,6 +201,12 @@ export const IPC_INVOKE_CHANNELS = {
   clearBlockedServers: 'clear-blocked-servers',
   getPerformanceSettings: 'get-performance-settings',
   setPerformanceSettings: 'set-performance-settings',
+  getUiLanguage: 'get-ui-language',
+  setUiLanguage: 'set-ui-language',
+  getTrafficStats: 'get-traffic-stats',
+  getUpdateStatus: 'get-update-status',
+  checkForUpdates: 'check-for-updates',
+  installUpdate: 'install-update',
 } as const;
 
 export const IPC_EVENT_CHANNELS = {
@@ -177,6 +216,8 @@ export const IPC_EVENT_CHANNELS = {
   connectionBusy: 'connection-busy',
   connectionError: 'connection-error',
   connectionMonitorEvent: 'connection-monitor-event',
+  trafficStats: 'traffic-stats',
+  updateStatus: 'update-status',
 } as const;
 
 export type { Subscription, PerformanceSettings };

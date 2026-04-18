@@ -1,5 +1,6 @@
 import React, { useCallback, KeyboardEvent } from 'react';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { VlessConfig } from '@/shared/types';
 import { CountryFlag } from '@/renderer/components/CountryFlag';
 
@@ -17,6 +18,7 @@ const pingBadgeClass = (ping: number) =>
   'text-red-400 bg-red-500/10';
 
 export const ServerItem = React.memo<ServerItemProps>(({ server, isSelected, isConnected, onSelect }) => {
+  const { t } = useTranslation();
   const disabled = isConnected && !isSelected;
 
   const handleSelect = useCallback(() => {
@@ -76,7 +78,7 @@ export const ServerItem = React.memo<ServerItemProps>(({ server, isSelected, isC
                 'text-xs font-semibold px-1.5 py-0.5 rounded shrink-0',
                 pingBadgeClass(server.ping)
               )}>
-                {server.ping} ms
+                {server.ping} {t('sidebar.ms')}
               </div>
             ) : (
               <div className="text-xs text-gray-500 shrink-0">—</div>

@@ -11,7 +11,9 @@ import {
   PingResult,
   RefreshSubscriptionsResult,
   SaveManualLinksResult,
+  TrafficSnapshot,
   TunCapabilityStatus,
+  UpdateStatus,
   UpdateSubscriptionPayload,
 } from '@/shared/ipc';
 
@@ -40,6 +42,8 @@ export interface IElectronAPI {
   onConnectionBusy: (callback: (busy: boolean) => void) => () => void;
   onConnectionError: (callback: (error: string) => void) => () => void;
   onConnectionMonitorEvent: (callback: (event: ConnectionMonitorEvent) => void) => () => void;
+  onTrafficStats: (callback: (snapshot: TrafficSnapshot | null) => void) => () => void;
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
 
   getConnectionMonitorStatus: () => Promise<ConnectionMonitorStatus>;
   setAutoSwitching: (enabled: boolean) => Promise<boolean>;
@@ -61,6 +65,15 @@ export interface IElectronAPI {
   pingAllServers: (force?: boolean) => Promise<PingResult[]>;
   getPerformanceSettings: () => Promise<PerformanceSettings>;
   setPerformanceSettings: (settings: PerformanceSettings) => Promise<boolean>;
+
+  getUiLanguage: () => Promise<'en' | 'ru'>;
+  setUiLanguage: (language: 'en' | 'ru') => Promise<boolean>;
+
+  getTrafficStats: () => Promise<TrafficSnapshot | null>;
+
+  getUpdateStatus: () => Promise<UpdateStatus>;
+  checkForUpdates: () => Promise<UpdateStatus>;
+  installUpdate: () => Promise<boolean>;
 }
 
 declare global {

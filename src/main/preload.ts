@@ -14,7 +14,9 @@ import {
   PingResult,
   RefreshSubscriptionsResult,
   SaveManualLinksResult,
+  TrafficSnapshot,
   TunCapabilityStatus,
+  UpdateStatus,
   UpdateSubscriptionPayload,
 } from '@/shared/ipc';
 
@@ -56,6 +58,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onConnectionBusy: createListener<boolean>(IPC_EVENT_CHANNELS.connectionBusy),
   onConnectionError: createListener<string>(IPC_EVENT_CHANNELS.connectionError),
   onConnectionMonitorEvent: createListener<ConnectionMonitorEvent>(IPC_EVENT_CHANNELS.connectionMonitorEvent),
+  onTrafficStats: createListener<TrafficSnapshot | null>(IPC_EVENT_CHANNELS.trafficStats),
+  onUpdateStatus: createListener<UpdateStatus>(IPC_EVENT_CHANNELS.updateStatus),
 
   getConnectionMonitorStatus: () =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getConnectionMonitorStatus) as Promise<ConnectionMonitorStatus>,
@@ -87,4 +91,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getPerformanceSettings) as Promise<PerformanceSettings>,
   setPerformanceSettings: (settings: PerformanceSettings) =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setPerformanceSettings, settings) as Promise<boolean>,
+
+  getUiLanguage: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getUiLanguage) as Promise<'en' | 'ru'>,
+  setUiLanguage: (language: 'en' | 'ru') =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.setUiLanguage, language) as Promise<boolean>,
+
+  getTrafficStats: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getTrafficStats) as Promise<TrafficSnapshot | null>,
+
+  getUpdateStatus: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getUpdateStatus) as Promise<UpdateStatus>,
+  checkForUpdates: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.checkForUpdates) as Promise<UpdateStatus>,
+  installUpdate: () => ipcRenderer.invoke(IPC_INVOKE_CHANNELS.installUpdate) as Promise<boolean>,
 });

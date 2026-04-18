@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectionStatus } from './components/ConnectionStatus';
+import { UpdateBanner } from './components/UpdateBanner';
 import { useServerState } from './hooks/useServerState';
 
 type DragRegionStyle = React.CSSProperties & { WebkitAppRegion: 'drag' | 'no-drag' };
@@ -15,6 +16,7 @@ function App() {
     isConnected,
     isConnectionBusy,
     connectionError,
+    trafficSnapshot,
     setSelectedServer,
     toggleConnection,
     pingAllServers
@@ -48,11 +50,13 @@ function App() {
         />
 
         <div className={isSettingsOpen ? 'hidden' : 'contents'}>
+          <UpdateBanner />
           <ConnectionStatus 
             isConnected={isConnected}
             isBusy={isConnectionBusy}
             selectedServer={selectedServer}
             connectionError={connectionError}
+            trafficSnapshot={trafficSnapshot}
             onToggleConnection={toggleConnection}
           />
         </div>
