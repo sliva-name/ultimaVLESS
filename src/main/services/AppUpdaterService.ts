@@ -120,7 +120,7 @@ export class AppUpdaterService extends EventEmitter {
     updater.autoInstallOnAppQuit = true;
     updater.allowPrerelease = false;
     try {
-      (updater.logger as unknown) = null;
+      (updater.logger as unknown) = logger;
     } catch {
       /* optional hook, safe to ignore */
     }

@@ -8,6 +8,13 @@ import {
   TUN_WAIT_TIMEOUT,
 } from './constants';
 
+function validateIpOrPrefix(val: string): void {
+  // Allows IPv4, IPv6, and CIDR notation
+  if (!/^[a-fA-F0-9.:/]+$/.test(val)) {
+    throw new Error(`Invalid IP or prefix format: ${val}`);
+  }
+}
+
 /**
  * Pure PowerShell script builders for the Windows TUN routing path.
  * Kept side-effect-free so they can be audited/tested independently.
@@ -146,6 +153,8 @@ export const addRouteScript = (
   metric: number,
   interfaceIndex?: number
 ): string => {
+  validateIpOrPrefix(destPrefix);
+  validateIpOrPrefix(gateway);
   const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
   return `
       $existing = Get-NetRoute -DestinationPrefix "${destPrefix}"${ifPart} -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -165,6 +174,7 @@ export const addDefaultRouteViaTunScript = (tunIdx: number): string => `
         `;
 
 export const deleteRouteScript = (prefix: string, interfaceIndex?: number): string => {
+  validateIpOrPrefix(prefix);
   const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
   return `
       Remove-NetRoute -DestinationPrefix "${prefix}"${ifPart} -ErrorAction SilentlyContinue
@@ -176,6 +186,7 @@ export const deleteRouteByPrefixAndMetricScript = (
   metric: number,
   interfaceIndex?: number
 ): string => {
+  validateIpOrPrefix(destinationPrefix);
   const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
   return `
       Get-NetRoute -DestinationPrefix "${destinationPrefix}"${ifPart} -ErrorAction SilentlyContinue |
@@ -184,18 +195,22 @@ export const deleteRouteByPrefixAndMetricScript = (
     `;
 };
 
-export const deleteTunDefaultRoutesByNextHopScript = (nextHop: string, metric: number): string => `
+export const deleteTunDefaultRoutesByNextHopScript = (nextHop: string, metric: number): string => {
+  validateIpOrPrefix(nextHop);
+  return `
       Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
         Where-Object {
           $_.RouteMetric -eq ${metric} -and $_.NextHop -eq "${nextHop}"
         } |
         Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
     `;
+};
 
 export const deleteHostRoutesByPrefixesAndMetricScript = (
   destinationPrefixes: string[],
   metric: number
 ): string => {
+  destinationPrefixes.forEach(validateIpOrPrefix);
   const prefixesLiteral = destinationPrefixes.map((prefix) => `'${prefix}'`).join(', ');
   return `
       $targets = @(${prefixesLiteral})

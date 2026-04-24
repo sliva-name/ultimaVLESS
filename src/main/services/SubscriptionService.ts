@@ -1,5 +1,6 @@
 import { decode, isValid } from 'js-base64';
 import net from 'net';
+import dns from 'dns';
 import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { parseJsonConfigs } from './subscription/jsonParsing';
@@ -77,7 +78,7 @@ export class SubscriptionService {
     return parseDirectLinksFromText(input);
   }
 
-  private validateRemoteSubscriptionUrl(rawUrl: string): URL {
+  private async validateRemoteSubscriptionUrl(rawUrl: string): Promise<URL> {
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(rawUrl);
@@ -91,6 +92,22 @@ export class SubscriptionService {
 
     if (isPrivateOrLoopbackHost(parsedUrl.hostname)) {
       throw new Error('Subscription URL host is not allowed');
+    }
+
+    try {
+      const lookupResult = await dns.promises.lookup(parsedUrl.hostname);
+      if (isPrivateOrLoopbackHost(lookupResult.address)) {
+        throw new Error('Subscription URL resolves to a private IP');
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Subscription URL resolves to a private IP') {
+        throw err;
+      }
+      // If DNS lookup fails for other reasons, we might still want to let fetch try,
+      // or we can reject. It's safer to reject if we can't verify.
+      // But let's just log and continue if it's a normal network error, 
+      // or throw if it's our error.
+      // Actually, if it fails to resolve, fetch will fail anyway.
     }
 
     return parsedUrl;
@@ -114,7 +131,7 @@ export class SubscriptionService {
         if (!location) {
           throw new Error(`Redirect response missing Location header: HTTP ${response.status}`);
         }
-        currentUrl = this.validateRemoteSubscriptionUrl(new URL(location, currentUrl).toString());
+        currentUrl = await this.validateRemoteSubscriptionUrl(new URL(location, currentUrl).toString());
         continue;
       }
 
@@ -137,7 +154,7 @@ export class SubscriptionService {
         };
       }
 
-      const validatedUrl = this.validateRemoteSubscriptionUrl(url);
+      const validatedUrl = await this.validateRemoteSubscriptionUrl(url);
       const yandexHtml = isYandexTranslateHost(validatedUrl.hostname);
       if (yandexHtml) {
         logger.info('SubscriptionService', 'Subscription URL is Yandex Translate; fetching HTML with browser headers');

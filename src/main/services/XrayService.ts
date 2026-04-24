@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import fsPromises from 'fs/promises';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
 import { ConnectionMode, VlessConfig } from '@/shared/types';
@@ -68,9 +69,7 @@ export class XrayService extends EventEmitter {
     connectionMode: ConnectionMode = 'proxy',
     options: ConfigGeneratorOptions = {}
   ): Promise<void> {
-    if (this.process) {
-      this.stop();
-    }
+    this.stop();
     await this.awaitPendingStop();
     this.setHealthStatus({
       state: 'starting',
@@ -111,7 +110,7 @@ export class XrayService extends EventEmitter {
     }
 
     try {
-      fs.writeFileSync(configPath, JSON.stringify(xrayConfig, null, 2));
+      await fsPromises.writeFile(configPath, JSON.stringify(xrayConfig, null, 2));
       logger.info('XrayService', 'Config written to disk');
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -123,7 +122,9 @@ export class XrayService extends EventEmitter {
     const binName = process.platform === 'win32' ? 'xray.exe' : 'xray';
     const binPath = path.join(this.resourcesPath, binName);
 
-    if (!fs.existsSync(binPath)) {
+    try {
+      await fsPromises.access(binPath, fs.constants.F_OK);
+    } catch {
       const error = new Error(`Xray binary not found at: ${binPath}`);
       this.markFailed(error.message);
       logger.error('XrayService', 'Binary not found', error);
@@ -131,7 +132,7 @@ export class XrayService extends EventEmitter {
     }
     if (process.platform !== 'win32') {
       try {
-        fs.chmodSync(binPath, 0o755);
+        await fsPromises.chmod(binPath, 0o755);
       } catch (error) {
         logger.warn('XrayService', 'Failed to ensure executable mode for Xray binary', {
           binPath,
@@ -277,9 +278,7 @@ export class XrayService extends EventEmitter {
           error: error instanceof Error ? error.message : String(error),
         });
       }
-      // Flip to null only after the kill() signal is sent to avoid a window
-      // where isRunning() returns false while the OS process is still alive.
-      this.process = null;
+      // The process will be set to null in the 'close' event handler.
     }
   }
 
@@ -288,7 +287,7 @@ export class XrayService extends EventEmitter {
    * @returns {boolean} True if running, false otherwise.
    */
   public isRunning(): boolean {
-    return this.process !== null;
+    return this.process !== null || this.stopWaitPromise !== null;
   }
 
   public getHealthStatus(): XrayHealthStatus {
@@ -454,10 +453,15 @@ export class XrayService extends EventEmitter {
       processRef.once('close', onClose);
       processRef.once('error', onError);
       timeoutId = setTimeout(() => {
-        logger.warn('XrayService', 'Timed out waiting for Xray to exit', {
+        logger.warn('XrayService', 'Timed out waiting for Xray to exit, sending SIGKILL', {
           timeoutMs: XrayService.STOP_TIMEOUT_MS,
           pid: processRef.pid ?? null,
         });
+        try {
+          processRef.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
         finish(onClose, onError);
       }, XrayService.STOP_TIMEOUT_MS);
     });

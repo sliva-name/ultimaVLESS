@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import fs from 'fs';
+import fsPromises from 'fs/promises';
 import { spawn } from 'child_process';
 import { XrayService } from './XrayService';
 import { ConfigGenerator } from './ConfigGenerator';
@@ -10,14 +10,20 @@ import { probeTcpPort } from './networkProbe';
 vi.mock('fs', () => ({
   default: {
     existsSync: vi.fn(() => true),
-    writeFileSync: vi.fn(),
-    appendFileSync: vi.fn(),
     mkdirSync: vi.fn(),
-    chmodSync: vi.fn(),
+    appendFileSync: vi.fn(),
     statSync: vi.fn(() => ({ size: 0 })),
-    renameSync: vi.fn(),
-    unlinkSync: vi.fn(),
+    constants: { F_OK: 0 },
   },
+}));
+vi.mock('fs/promises', () => ({
+  default: {
+    writeFile: vi.fn(),
+    access: vi.fn(),
+    chmod: vi.fn(),
+    stat: vi.fn(() => ({ size: 0 })),
+    open: vi.fn(),
+  }
 }));
 
 vi.mock('child_process', () => {
@@ -74,7 +80,7 @@ describe('XrayService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fsPromises.access).mockResolvedValue(undefined);
     vi.mocked(probeTcpPort).mockResolvedValue(true);
   });
 
@@ -91,7 +97,7 @@ describe('XrayService', () => {
       'proxy',
       expect.objectContaining({ performanceSettings: expect.any(Object) })
     );
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
+    expect(fsPromises.writeFile).toHaveBeenCalledWith(
       expect.stringMatching(/[\\/]tmp[\\/]config\.json$/),
       JSON.stringify({ outbound: {} }, null, 2)
     );
@@ -115,7 +121,7 @@ describe('XrayService', () => {
 
   it('throws when the Xray binary is missing', async () => {
     const svc = new XrayService();
-    vi.mocked(fs.existsSync).mockReturnValue(false);
+    vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
 
     await expect(svc.start(mockConfig)).rejects.toThrow('Xray binary not found');
     expect(svc.getHealthStatus()).toMatchObject({
@@ -133,6 +139,8 @@ describe('XrayService', () => {
 
     await svc.start(mockConfig);
     svc.stop();
+    mockProcess.emit('close', 0);
+    await new Promise(resolve => setTimeout(resolve, 0));
 
     expect(mockProcess.kill).toHaveBeenCalledTimes(1);
     expect(svc.isRunning()).toBe(false);

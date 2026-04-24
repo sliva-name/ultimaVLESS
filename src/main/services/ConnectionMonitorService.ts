@@ -374,7 +374,7 @@ export class ConnectionMonitorService extends EventEmitter {
       logger.debug('ConnectionMonitorService', 'HTTP tunnel probe passed');
 
       // Читаем только новые строки со времени старта текущей сессии.
-      const logLines = this.readNewLogLines(50);
+      const logLines = await this.readNewLogLines(50);
       if (isStale()) {
         return;
       }
@@ -414,13 +414,15 @@ export class ConnectionMonitorService extends EventEmitter {
   /**
    * Reads recent lines from Xray log file.
    */
-  private readNewLogLines(count: number): string[] {
+  private async readNewLogLines(count: number): Promise<string[]> {
     try {
-      if (!fs.existsSync(this.xrayLogPath)) {
+      try {
+        await fs.promises.access(this.xrayLogPath, fs.constants.F_OK);
+      } catch {
         return [];
       }
 
-      const stats = fs.statSync(this.xrayLogPath);
+      const stats = await fs.promises.stat(this.xrayLogPath);
       if (stats.size === 0) {
         return [];
       }
@@ -442,11 +444,11 @@ export class ConnectionMonitorService extends EventEmitter {
         : previousOffset;
       const readLength = stats.size - readStart;
       const buffer = Buffer.alloc(readLength);
-      const fd = fs.openSync(this.xrayLogPath, 'r');
+      const fd = await fs.promises.open(this.xrayLogPath, 'r');
       try {
-        fs.readSync(fd, buffer, 0, readLength, readStart);
+        await fd.read(buffer, 0, readLength, readStart);
       } finally {
-        fs.closeSync(fd);
+        await fd.close();
       }
 
       const content = buffer.toString('utf-8');

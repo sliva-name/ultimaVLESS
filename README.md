@@ -24,7 +24,7 @@ Portable build (`UltimaVLESS-Portable-*.exe`) is also available.
 
 - Connect to VLESS servers (including Reality / Vision presets).
 - Import and update server lists from subscription links.
-- Add manual links from clipboard/text (supports mixed text with `vless://`, `trojan://`, `hysteria2://` links).
+- Add manual links from clipboard/text (supports mixed text with `vless://` and `trojan://` links).
 - Split servers by source (Subscription / Manual) for easier navigation.
 - Work in system proxy mode and TUN mode.
 - Save selected server and connection mode between launches.
@@ -44,7 +44,7 @@ VLESS client, Xray client, desktop VPN client, Windows VPN client, Reality clien
 
 Built-in default subscription URL:
 
-`https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt`
+`https://translate.yandex.ru/translate?url=https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt&lang=de-de`
 
 ## Basic Usage
 
