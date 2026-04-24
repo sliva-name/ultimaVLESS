@@ -27,7 +27,10 @@ export class TrayService {
   private handlers: TrayHandlers | null = null;
   private mainWindowRef: (() => BrowserWindow | null) | null = null;
 
-  public init(handlers: TrayHandlers, getMainWindow: () => BrowserWindow | null): void {
+  public init(
+    handlers: TrayHandlers,
+    getMainWindow: () => BrowserWindow | null,
+  ): void {
     if (this.tray) return;
 
     this.handlers = handlers;
@@ -64,7 +67,7 @@ export class TrayService {
     if (previous.kind === 'connected') {
       this.notify(
         mainLocaleService.t('notify.disconnected.title'),
-        mainLocaleService.t('notify.disconnected.body')
+        mainLocaleService.t('notify.disconnected.body'),
       );
     }
   }
@@ -81,7 +84,7 @@ export class TrayService {
     if (previous.kind !== 'connected') {
       this.notify(
         mainLocaleService.t('notify.connected.title'),
-        mainLocaleService.t('notify.connected.body', { name: serverName })
+        mainLocaleService.t('notify.connected.body', { name: serverName }),
       );
     }
   }
@@ -95,7 +98,7 @@ export class TrayService {
   public reportSwitching(): void {
     this.notify(
       mainLocaleService.t('notify.switching.title'),
-      mainLocaleService.t('notify.switching.body')
+      mainLocaleService.t('notify.switching.body'),
     );
   }
 

@@ -53,12 +53,17 @@ describe('ConnectionStackService', () => {
         start: vi.fn(async () => {
           calls.push('xray-start');
         }),
-      } as any
+      } as any,
     );
 
-    const transition = service.transitionTo(makeServer({ uuid: 'server-1' }), 'proxy', { http: 10809, socks: 10808 }, {
-      stopXray: true,
-    });
+    const transition = service.transitionTo(
+      makeServer({ uuid: 'server-1' }),
+      'proxy',
+      { http: 10809, socks: 10808 },
+      {
+        stopXray: true,
+      },
+    );
     const reset = service.resetNetworkingStack({ stopXray: true });
 
     await Promise.resolve();
@@ -100,7 +105,7 @@ describe('ConnectionStackService', () => {
           calls.push('xray-stop');
         }),
         start: vi.fn(),
-      } as any
+      } as any,
     );
 
     await service.cleanupAfterFailure();

@@ -81,7 +81,7 @@ export class ConnectionMonitorService extends EventEmitter {
 
     const userDataPath = app.getPath('userData');
     this.xrayLogPath = path.join(userDataPath, 'xray.log');
-    
+
     logger.info('ConnectionMonitorService', 'Initialized');
   }
 
@@ -89,9 +89,9 @@ export class ConnectionMonitorService extends EventEmitter {
    * Starts monitoring the current connection.
    */
   public startMonitoring(server: VlessConfig): void {
-    logger.info('ConnectionMonitorService', 'Starting monitoring', { 
+    logger.info('ConnectionMonitorService', 'Starting monitoring', {
       serverName: server.name,
-      serverAddress: server.address 
+      serverAddress: server.address,
     });
 
     if (this.reconnectTimeout) {
@@ -114,22 +114,25 @@ export class ConnectionMonitorService extends EventEmitter {
     // Начинаем периодическую проверку соединения
     this.startPeriodicCheck();
 
-    this.emit('connected', { 
-      type: 'connected', 
+    this.emit('connected', {
+      type: 'connected',
       server,
-      message: `Connected to ${server.name}` 
+      message: `Connected to ${server.name}`,
     } as ConnectionEvent);
   }
 
   /**
    * Stops monitoring.
    */
-  public stopMonitoring(options: { message?: string; preserveLastError?: boolean } = {}): void {
-    const { message = 'Monitoring stopped', preserveLastError = false } = options;
+  public stopMonitoring(
+    options: { message?: string; preserveLastError?: boolean } = {},
+  ): void {
+    const { message = 'Monitoring stopped', preserveLastError = false } =
+      options;
     this.monitoringGeneration += 1;
     this.switchInProgress = false;
     logger.info('ConnectionMonitorService', 'Stopping monitoring');
-    
+
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
@@ -150,8 +153,8 @@ export class ConnectionMonitorService extends EventEmitter {
       this.status.lastError = null;
     }
 
-    this.emit('disconnected', { 
-      type: 'disconnected', 
+    this.emit('disconnected', {
+      type: 'disconnected',
       server: null,
       message,
     } as ConnectionEvent);
@@ -207,19 +210,26 @@ export class ConnectionMonitorService extends EventEmitter {
 
     const currentProtocol = currentServer.protocol ?? 'vless';
     const fuzzy = servers.find((server) => {
-      if (server.address !== currentServer.address || server.port !== currentServer.port) {
+      if (
+        server.address !== currentServer.address ||
+        server.port !== currentServer.port
+      ) {
         return false;
       }
       return (server.protocol ?? 'vless') === currentProtocol;
     });
 
     if (fuzzy) {
-      logger.info('ConnectionMonitorService', 'Tracked server matched by address/port after uuid rotation', {
-        from: currentServer.uuid.substring(0, 12),
-        to: fuzzy.uuid.substring(0, 12),
-        address: currentServer.address,
-        port: currentServer.port,
-      });
+      logger.info(
+        'ConnectionMonitorService',
+        'Tracked server matched by address/port after uuid rotation',
+        {
+          from: currentServer.uuid.substring(0, 12),
+          to: fuzzy.uuid.substring(0, 12),
+          address: currentServer.address,
+          port: currentServer.port,
+        },
+      );
       this.status.currentServer = fuzzy;
       return fuzzy;
     }
@@ -232,7 +242,7 @@ export class ConnectionMonitorService extends EventEmitter {
    */
   public recordError(error: string, server?: VlessConfig): void {
     const targetServer = server || this.status.currentServer;
-    
+
     logger.error('ConnectionMonitorService', 'Connection error detected', {
       error,
       server: targetServer?.name,
@@ -241,7 +251,9 @@ export class ConnectionMonitorService extends EventEmitter {
 
     this.status.lastError = error;
     this.status.connectionAttempts++;
-    this.status.lastHealthState = this.isBlockingError(error) ? 'failed' : 'degraded';
+    this.status.lastHealthState = this.isBlockingError(error)
+      ? 'failed'
+      : 'degraded';
     this.status.lastHealthFailureReason = error;
 
     if (targetServer) {
@@ -255,7 +267,7 @@ export class ConnectionMonitorService extends EventEmitter {
       // Если ошибка указывает на блокировку, помечаем сервер
       if (this.isBlockingError(error)) {
         this.markServerAsBlocked(targetServer.uuid);
-        
+
         if (this.isAutoSwitchingEnabled && this.status.isConnected) {
           this.scheduleAutoSwitch();
         }
@@ -276,8 +288,10 @@ export class ConnectionMonitorService extends EventEmitter {
   private markServerAsBlocked(serverId: string): void {
     if (!this.status.blockedServers.has(serverId)) {
       this.status.blockedServers.add(serverId);
-      logger.warn('ConnectionMonitorService', 'Server marked as blocked', { serverId });
-      
+      logger.warn('ConnectionMonitorService', 'Server marked as blocked', {
+        serverId,
+      });
+
       const server = this.status.currentServer;
       if (server && server.uuid === serverId) {
         this.emit('blocked', {
@@ -315,7 +329,9 @@ export class ConnectionMonitorService extends EventEmitter {
 
     const generationAtStart = this.monitoringGeneration;
     const isStale = () =>
-      this.monitoringGeneration !== generationAtStart || !this.status.isConnected || !this.status.currentServer;
+      this.monitoringGeneration !== generationAtStart ||
+      !this.status.isConnected ||
+      !this.status.currentServer;
 
     this.healthCheckInFlight = true;
     try {
@@ -333,18 +349,28 @@ export class ConnectionMonitorService extends EventEmitter {
       if (!localProxyReachable) {
         this.tunnelProbeFailStreak = 0;
         const xrayState = xrayService.getHealthStatus();
-        const failureReason = xrayState.lastReadinessError || 'Local proxy listeners are unreachable';
-        
+        const failureReason =
+          xrayState.lastReadinessError ||
+          'Local proxy listeners are unreachable';
+
         const previousState = this.status.lastHealthState;
         const previousReason = this.status.lastHealthFailureReason;
 
-        this.status.lastHealthState = xrayState.state === 'failed' ? 'failed' : 'degraded';
+        this.status.lastHealthState =
+          xrayState.state === 'failed' ? 'failed' : 'degraded';
         this.status.lastHealthFailureReason = failureReason;
 
-        if (previousReason !== failureReason || previousState !== this.status.lastHealthState) {
+        if (
+          previousReason !== failureReason ||
+          previousState !== this.status.lastHealthState
+        ) {
           this.recordError(failureReason, this.status.currentServer);
         } else {
-          logger.debug('ConnectionMonitorService', 'Local proxy listeners still unreachable', { failureReason });
+          logger.debug(
+            'ConnectionMonitorService',
+            'Local proxy listeners still unreachable',
+            { failureReason },
+          );
         }
         return;
       }
@@ -404,7 +430,8 @@ export class ConnectionMonitorService extends EventEmitter {
         return;
       }
       this.status.lastHealthState = 'failed';
-      this.status.lastHealthFailureReason = error instanceof Error ? error.message : String(error);
+      this.status.lastHealthFailureReason =
+        error instanceof Error ? error.message : String(error);
       logger.error('ConnectionMonitorService', 'Health check failed', error);
     } finally {
       this.healthCheckInFlight = false;
@@ -439,9 +466,10 @@ export class ConnectionMonitorService extends EventEmitter {
         return [];
       }
 
-      const readStart = unreadLength > maxChunkBytes
-        ? stats.size - maxChunkBytes
-        : previousOffset;
+      const readStart =
+        unreadLength > maxChunkBytes
+          ? stats.size - maxChunkBytes
+          : previousOffset;
       const readLength = stats.size - readStart;
       const buffer = Buffer.alloc(readLength);
       const fd = await fs.promises.open(this.xrayLogPath, 'r');
@@ -461,7 +489,11 @@ export class ConnectionMonitorService extends EventEmitter {
         .filter((line) => line.length > 0);
       return lines.slice(-count);
     } catch (error) {
-      logger.error('ConnectionMonitorService', 'Failed to read log file', error);
+      logger.error(
+        'ConnectionMonitorService',
+        'Failed to read log file',
+        error,
+      );
       return [];
     }
   }
@@ -515,14 +547,21 @@ export class ConnectionMonitorService extends EventEmitter {
       // Bail out when the monitoring session changed (stop/new connection) —
       // otherwise we would switch a session we no longer own.
       if (this.monitoringGeneration !== scheduledGeneration) {
-        logger.debug('ConnectionMonitorService', 'Auto-switch skipped (stale generation)', {
-          scheduled: scheduledGeneration,
-          current: this.monitoringGeneration,
-        });
+        logger.debug(
+          'ConnectionMonitorService',
+          'Auto-switch skipped (stale generation)',
+          {
+            scheduled: scheduledGeneration,
+            current: this.monitoringGeneration,
+          },
+        );
         return;
       }
       if (!this.status.isConnected || !this.status.currentServer) {
-        logger.debug('ConnectionMonitorService', 'Auto-switch skipped (not connected)');
+        logger.debug(
+          'ConnectionMonitorService',
+          'Auto-switch skipped (not connected)',
+        );
         return;
       }
       void this.attemptAutoSwitch();
@@ -542,23 +581,33 @@ export class ConnectionMonitorService extends EventEmitter {
 
     const servers = configService.getServers();
     if (servers.length === 0) {
-      logger.warn('ConnectionMonitorService', 'No servers available for switching');
+      logger.warn(
+        'ConnectionMonitorService',
+        'No servers available for switching',
+      );
       return;
     }
 
     // Находим следующий доступный сервер
-    const currentIndex = servers.findIndex(s => s.uuid === this.status.currentServer!.uuid);
-    const availableServers = servers.filter(s => !this.status.blockedServers.has(s.uuid));
+    const currentIndex = servers.findIndex(
+      (s) => s.uuid === this.status.currentServer!.uuid,
+    );
+    const availableServers = servers.filter(
+      (s) => !this.status.blockedServers.has(s.uuid),
+    );
 
     if (availableServers.length === 0) {
-      logger.warn('ConnectionMonitorService', 'All servers appear to be blocked');
+      logger.warn(
+        'ConnectionMonitorService',
+        'All servers appear to be blocked',
+      );
       this.status.blockedServers.clear(); // Сбрасываем список блокировок
       return;
     }
 
     // Выбираем следующий сервер (циклически)
     let nextServer: VlessConfig | null = null;
-    
+
     if (currentIndex >= 0) {
       // Ищем следующий сервер после текущего
       for (let i = 1; i < servers.length; i++) {
@@ -575,10 +624,18 @@ export class ConnectionMonitorService extends EventEmitter {
       nextServer = availableServers[0];
     }
 
-    if (nextServer && this.status.currentServer && nextServer.uuid === this.status.currentServer.uuid) {
-      logger.warn('ConnectionMonitorService', 'Auto-switch skipped because next server equals current server', {
-        server: nextServer.name,
-      });
+    if (
+      nextServer &&
+      this.status.currentServer &&
+      nextServer.uuid === this.status.currentServer.uuid
+    ) {
+      logger.warn(
+        'ConnectionMonitorService',
+        'Auto-switch skipped because next server equals current server',
+        {
+          server: nextServer.name,
+        },
+      );
       return;
     }
 
@@ -609,25 +666,40 @@ export class ConnectionMonitorService extends EventEmitter {
   /**
    * Switches to a different server.
    */
-  private async switchToServer(server: VlessConfig, expectedGeneration: number): Promise<void> {
+  private async switchToServer(
+    server: VlessConfig,
+    expectedGeneration: number,
+  ): Promise<void> {
     try {
-      if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) return;
+      if (
+        this.monitoringGeneration !== expectedGeneration ||
+        !this.status.isConnected
+      )
+        return;
       const connectionMode = configService.getConnectionMode();
 
       configService.setSelectedServerId(server.uuid);
 
-      await connectionStackService.transitionTo(server, connectionMode, {
-        http: APP_CONSTANTS.PORTS.HTTP,
-        socks: APP_CONSTANTS.PORTS.SOCKS,
-      }, {
-        stopXray: true,
-        delayBeforeApplyMs: 1000,
-      });
-      if (this.monitoringGeneration !== expectedGeneration || !this.status.isConnected) {
+      await connectionStackService.transitionTo(
+        server,
+        connectionMode,
+        {
+          http: APP_CONSTANTS.PORTS.HTTP,
+          socks: APP_CONSTANTS.PORTS.SOCKS,
+        },
+        {
+          stopXray: true,
+          delayBeforeApplyMs: 1000,
+        },
+      );
+      if (
+        this.monitoringGeneration !== expectedGeneration ||
+        !this.status.isConnected
+      ) {
         await connectionStackService.resetNetworkingStack({ stopXray: true });
         return;
       }
-      
+
       // Обновляем статус мониторинга
       this.startMonitoring(server);
 
@@ -636,16 +708,24 @@ export class ConnectionMonitorService extends EventEmitter {
         connectionMode,
       });
     } catch (error) {
-      logger.error('ConnectionMonitorService', 'Failed to switch server', error);
+      logger.error(
+        'ConnectionMonitorService',
+        'Failed to switch server',
+        error,
+      );
       const errorMessage = `Failed to switch: ${error instanceof Error ? error.message : String(error)}`;
       this.recordError(errorMessage, server);
-      
+
       // Если переключение не удалось, пытаемся отключиться
       try {
         await connectionStackService.cleanupAfterFailure();
         this.stopMonitoring();
       } catch (cleanupError) {
-        logger.error('ConnectionMonitorService', 'Cleanup after switch failure failed', cleanupError);
+        logger.error(
+          'ConnectionMonitorService',
+          'Cleanup after switch failure failed',
+          cleanupError,
+        );
       }
     }
   }
@@ -654,7 +734,7 @@ export class ConnectionMonitorService extends EventEmitter {
    * Gets current connection status.
    */
   public getStatus(): ConnectionStatus {
-    return { 
+    return {
       ...this.status,
       blockedServers: Array.from(this.status.blockedServers), // Конвертируем Set в массив
     };

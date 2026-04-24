@@ -11,33 +11,49 @@ import {
 describe('normalizeAddSubscriptionPayload', () => {
   it('normalizes a valid payload', () => {
     expect(
-      normalizeAddSubscriptionPayload({ name: '  My Sub  ', url: '  https://example.com/sub  ' })
+      normalizeAddSubscriptionPayload({
+        name: '  My Sub  ',
+        url: '  https://example.com/sub  ',
+      }),
     ).toEqual({ name: 'My Sub', url: 'https://example.com/sub' });
   });
 
   it('rejects missing name', () => {
-    expect(() => normalizeAddSubscriptionPayload({ name: '', url: 'https://example.com' })).toThrow(/name is required/);
+    expect(() =>
+      normalizeAddSubscriptionPayload({ name: '', url: 'https://example.com' }),
+    ).toThrow(/name is required/);
   });
 
   it('rejects missing url', () => {
-    expect(() => normalizeAddSubscriptionPayload({ name: 'Test', url: '' })).toThrow(/URL is required/);
+    expect(() =>
+      normalizeAddSubscriptionPayload({ name: 'Test', url: '' }),
+    ).toThrow(/URL is required/);
   });
 
   it('rejects oversized URL', () => {
     expect(() =>
-      normalizeAddSubscriptionPayload({ name: 'Test', url: `https://example.com/${'a'.repeat(5000)}` })
+      normalizeAddSubscriptionPayload({
+        name: 'Test',
+        url: `https://example.com/${'a'.repeat(5000)}`,
+      }),
     ).toThrow(/URL is too long/);
   });
 
   it('rejects non-object payload', () => {
-    expect(() => normalizeAddSubscriptionPayload('https://example.com')).toThrow(/Invalid subscription payload/);
+    expect(() =>
+      normalizeAddSubscriptionPayload('https://example.com'),
+    ).toThrow(/Invalid subscription payload/);
   });
 });
 
 describe('normalizeUpdateSubscriptionPayload', () => {
   it('normalizes a valid patch', () => {
     expect(
-      normalizeUpdateSubscriptionPayload({ id: 'abc', name: '  Updated  ', enabled: false })
+      normalizeUpdateSubscriptionPayload({
+        id: 'abc',
+        name: '  Updated  ',
+        enabled: false,
+      }),
     ).toEqual({ id: 'abc', patch: { name: 'Updated', enabled: false } });
   });
 
@@ -46,14 +62,17 @@ describe('normalizeUpdateSubscriptionPayload', () => {
       normalizeUpdateSubscriptionPayload({
         id: 'sub-1',
         patch: { enabled: false },
-      })
+      }),
     ).toEqual({ id: 'sub-1', patch: { enabled: false } });
     expect(
       normalizeUpdateSubscriptionPayload({
         id: 'sub-1',
         patch: { name: '  New  ', url: '  https://x.test/sub  ' },
-      })
-    ).toEqual({ id: 'sub-1', patch: { name: 'New', url: 'https://x.test/sub' } });
+      }),
+    ).toEqual({
+      id: 'sub-1',
+      patch: { name: 'New', url: 'https://x.test/sub' },
+    });
   });
 
   it('flat fields override nested patch when both present', () => {
@@ -62,28 +81,34 @@ describe('normalizeUpdateSubscriptionPayload', () => {
         id: 'sub-1',
         patch: { enabled: true },
         enabled: false,
-      })
+      }),
     ).toEqual({ id: 'sub-1', patch: { enabled: false } });
   });
 
   it('rejects missing id', () => {
-    expect(() => normalizeUpdateSubscriptionPayload({ id: '', name: 'Test' })).toThrow(/id is required/);
+    expect(() =>
+      normalizeUpdateSubscriptionPayload({ id: '', name: 'Test' }),
+    ).toThrow(/id is required/);
   });
 });
 
 describe('normalizeManualLinks', () => {
   it('trims and returns string', () => {
-    expect(normalizeManualLinks('  vless://abc@x:443#s  ')).toBe('vless://abc@x:443#s');
-  });
-
-  it('rejects oversized payload', () => {
-    expect(() => normalizeManualLinks('vless://x@y:443#s\n'.repeat(70_000))).toThrow(
-      /Manual links payload is too large/
+    expect(normalizeManualLinks('  vless://abc@x:443#s  ')).toBe(
+      'vless://abc@x:443#s',
     );
   });
 
+  it('rejects oversized payload', () => {
+    expect(() =>
+      normalizeManualLinks('vless://x@y:443#s\n'.repeat(70_000)),
+    ).toThrow(/Manual links payload is too large/);
+  });
+
   it('rejects non-string', () => {
-    expect(() => normalizeManualLinks({ text: 'links' })).toThrow(/Invalid manual links payload/);
+    expect(() => normalizeManualLinks({ text: 'links' })).toThrow(
+      /Invalid manual links payload/,
+    );
   });
 });
 
@@ -95,24 +120,23 @@ describe('assertValidServerPayload', () => {
         name: 'Server 1',
         address: 'example.com',
         port: 443,
-      })
+      }),
     ).toMatchObject({ port: 443, address: 'example.com' });
   });
 
-  it.each([
-    { port: 70000 },
-    { port: 0 },
-    { port: 443.5 },
-  ])('rejects invalid port values: $port', ({ port }) => {
-    expect(() =>
-      assertValidServerPayload({
-        uuid: 'abcdef12-3456',
-        name: 'Server 1',
-        address: 'example.com',
-        port,
-      } as any)
-    ).toThrow(/Invalid server payload/);
-  });
+  it.each([{ port: 70000 }, { port: 0 }, { port: 443.5 }])(
+    'rejects invalid port values: $port',
+    ({ port }) => {
+      expect(() =>
+        assertValidServerPayload({
+          uuid: 'abcdef12-3456',
+          name: 'Server 1',
+          address: 'example.com',
+          port,
+        } as any),
+      ).toThrow(/Invalid server payload/);
+    },
+  );
 });
 
 describe('assertConnectionMode', () => {

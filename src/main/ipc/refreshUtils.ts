@@ -21,7 +21,10 @@ interface ActiveConnectionSnapshot {
  * the active config continues to live in `xray` memory; it will simply
  * not reappear in the sidebar on the next refresh.
  */
-function isSameServerRepresented(refreshedServers: VlessConfig[], target: VlessConfig): boolean {
+function isSameServerRepresented(
+  refreshedServers: VlessConfig[],
+  target: VlessConfig,
+): boolean {
   if (refreshedServers.some((server) => server.uuid === target.uuid)) {
     return true;
   }
@@ -41,19 +44,24 @@ export function preserveActiveServerIfNeeded(
   existingServers: VlessConfig[],
   monitorStatus: ActiveConnectionSnapshot,
   isXrayRunning: boolean,
-  selectedServerId?: string | null
+  selectedServerId?: string | null,
 ): VlessConfig[] {
   const toPreserve = new Map<string, VlessConfig>();
 
   const activeServer = monitorStatus.currentServer;
   if (isXrayRunning && monitorStatus.isConnected && activeServer) {
     if (!isSameServerRepresented(refreshedServers, activeServer)) {
-      const preservedServer = existingServers.find((server) => server.uuid === activeServer.uuid) ?? activeServer;
+      const preservedServer =
+        existingServers.find((server) => server.uuid === activeServer.uuid) ??
+        activeServer;
       toPreserve.set(preservedServer.uuid, preservedServer);
     }
   }
 
-  if (selectedServerId && !refreshedServers.some((s) => s.uuid === selectedServerId)) {
+  if (
+    selectedServerId &&
+    !refreshedServers.some((s) => s.uuid === selectedServerId)
+  ) {
     const selected = existingServers.find((s) => s.uuid === selectedServerId);
     if (selected && !isSameServerRepresented(refreshedServers, selected)) {
       toPreserve.set(selected.uuid, selected);

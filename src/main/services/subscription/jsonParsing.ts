@@ -25,10 +25,18 @@ function makeServerIdentity(
   authToken: string,
   address: string,
   port: number,
-  parts: Array<string | undefined>
+  parts: Array<string | undefined>,
 ): string {
-  const signature = [authToken, address, String(port), ...parts.map((part) => part || '')].join('|');
-  const digest = createHash('sha256').update(signature).digest('hex').slice(0, 16);
+  const signature = [
+    authToken,
+    address,
+    String(port),
+    ...parts.map((part) => part || ''),
+  ].join('|');
+  const digest = createHash('sha256')
+    .update(signature)
+    .digest('hex')
+    .slice(0, 16);
   return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
 }
 
@@ -87,7 +95,11 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
       }
 
       // Docs-style flat VLESS outbound: settings.address / settings.port / settings.id (no vnext).
-      if ((!address || !port) && settings && ['vless', 'vmess'].includes(protocol)) {
+      if (
+        (!address || !port) &&
+        settings &&
+        ['vless', 'vmess'].includes(protocol)
+      ) {
         const flatAddr = asString(settings.address);
         const flatPort = asNumber(settings.port);
         if (flatAddr && flatPort) {
@@ -155,10 +167,14 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         serviceName = asString(grpcSettings.serviceName);
       }
 
-      const networkType = (['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(network)
-        ? network
-        : undefined) as VlessConfig['type'];
-      const secType = (['reality', 'tls', 'none'].includes(security) ? security : undefined) as VlessConfig['security'];
+      const networkType = (
+        ['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(network)
+          ? network
+          : undefined
+      ) as VlessConfig['type'];
+      const secType = (
+        ['reality', 'tls', 'none'].includes(security) ? security : undefined
+      ) as VlessConfig['security'];
 
       // Avoid embedding raw trojan password in uuid (makeServerIdentity prefixes authToken).
       const idToken =
@@ -206,6 +222,8 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
     }
   }
 
-  logger.info('SubscriptionService', 'Parsed JSON configs', { count: results.length });
+  logger.info('SubscriptionService', 'Parsed JSON configs', {
+    count: results.length,
+  });
   return results;
 }

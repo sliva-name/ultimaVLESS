@@ -1,4 +1,8 @@
-import { ConnectionMonitorStatus, AppRecoveryStatus, XrayHealthStatus } from '@/shared/ipc';
+import {
+  ConnectionMonitorStatus,
+  AppRecoveryStatus,
+  XrayHealthStatus,
+} from '@/shared/ipc';
 import { ConnectionStatus } from '@/main/services/ConnectionMonitorService';
 import { VlessConfig } from '@/shared/types';
 
@@ -12,7 +16,7 @@ export function buildConnectionMonitorStatusSummary(
   status: ConnectionStatus,
   autoSwitchingEnabled: boolean,
   xrayHealth: XrayHealthStatus,
-  recoveryStatus: AppRecoveryStatus
+  recoveryStatus: AppRecoveryStatus,
 ): ConnectionMonitorStatus {
   return {
     ...status,

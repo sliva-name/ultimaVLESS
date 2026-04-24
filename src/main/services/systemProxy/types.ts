@@ -37,4 +37,7 @@ export interface LinuxProxySnapshot {
   socksPort: number;
 }
 
-export type ProxySnapshot = WindowsProxySnapshot | MacosProxySnapshot | LinuxProxySnapshot;
+export type ProxySnapshot =
+  | WindowsProxySnapshot
+  | MacosProxySnapshot
+  | LinuxProxySnapshot;

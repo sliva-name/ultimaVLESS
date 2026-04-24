@@ -31,7 +31,7 @@ describe('buildConnectionMonitorStatusSummary', () => {
         lastRecoveryOutcome: 'recreated',
         lastRecoveryReason: 'render-process-gone:killed:1',
         lastFatalReason: null,
-      }
+      },
     );
 
     expect(summary).toMatchObject({

@@ -2,7 +2,11 @@ import net from 'net';
 import tls from 'tls';
 import http from 'http';
 
-export async function probeTcpPort(port: number, host: string = '127.0.0.1', timeoutMs: number = 1500): Promise<boolean> {
+export async function probeTcpPort(
+  port: number,
+  host: string = '127.0.0.1',
+  timeoutMs: number = 1500,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host, port });
     let settled = false;
@@ -29,14 +33,23 @@ export async function probeTcpPort(port: number, host: string = '127.0.0.1', tim
  * Returns true if the handshake succeeds (certificate validity is not checked).
  * Useful for detecting broken TLS/Reality configs that pass raw TCP ping but fail in practice.
  */
-export async function probeTlsHandshake(host: string, port: number, sni: string, timeoutMs: number = 4000): Promise<boolean> {
+export async function probeTlsHandshake(
+  host: string,
+  port: number,
+  sni: string,
+  timeoutMs: number = 4000,
+): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
 
     const finish = (result: boolean) => {
       if (settled) return;
       settled = true;
-      try { socket.destroy(); } catch { /* ignore */ }
+      try {
+        socket.destroy();
+      } catch {
+        /* ignore */
+      }
       resolve(result);
     };
 
@@ -56,7 +69,8 @@ export async function probeTlsHandshake(host: string, port: number, sni: string,
   });
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> =>
+  new Promise((r) => setTimeout(r, ms));
 
 function probeHttpThroughProxyOnce(
   proxyPort: number,
@@ -79,7 +93,11 @@ function probeHttpThroughProxyOnce(
       port: proxyPort,
       path: `http://${targetHost}${targetPath}`,
       method: 'GET',
-      headers: { Host: targetHost, 'User-Agent': 'Mozilla/5.0', Connection: 'close' },
+      headers: {
+        Host: targetHost,
+        'User-Agent': 'Mozilla/5.0',
+        Connection: 'close',
+      },
     });
 
     req.setTimeout(timeoutMs, () => {
@@ -114,7 +132,13 @@ function probeHttpThroughProxyAny(
     let resolved = false;
 
     for (const target of targets) {
-      probeHttpThroughProxyOnce(proxyPort, proxyHost, timeoutMs, target.host, target.path).then(res => {
+      probeHttpThroughProxyOnce(
+        proxyPort,
+        proxyHost,
+        timeoutMs,
+        target.host,
+        target.path,
+      ).then((res) => {
         if (resolved) return;
         if (res) {
           resolved = true;

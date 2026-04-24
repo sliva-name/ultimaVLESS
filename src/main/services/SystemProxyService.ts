@@ -24,8 +24,14 @@ export class SystemProxyService {
 
   constructor(platform: NodeJS.Platform = process.platform) {
     this.platform = platform;
-    this.snapshotPath = path.join(app.getPath('userData'), 'system-proxy-state.json');
-    this.windows = platform === 'win32' ? new WindowsProxyAdapter(app.getPath('userData')) : null;
+    this.snapshotPath = path.join(
+      app.getPath('userData'),
+      'system-proxy-state.json',
+    );
+    this.windows =
+      platform === 'win32'
+        ? new WindowsProxyAdapter(app.getPath('userData'))
+        : null;
     this.darwin = platform === 'darwin' ? new DarwinProxyAdapter() : null;
     this.linux = platform === 'linux' ? new LinuxProxyAdapter() : null;
   }
@@ -50,9 +56,13 @@ export class SystemProxyService {
         this.commitSnapshot(snapshot);
         return;
       }
-      logger.info('SystemProxyService', 'Unsupported platform for system proxy operations', {
-        platform: this.platform,
-      });
+      logger.info(
+        'SystemProxyService',
+        'Unsupported platform for system proxy operations',
+        {
+          platform: this.platform,
+        },
+      );
     });
   }
 
@@ -74,7 +84,10 @@ export class SystemProxyService {
   }
 
   private runSerialized<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.operationChain.then(() => operation(), () => operation());
+    const next = this.operationChain.then(
+      () => operation(),
+      () => operation(),
+    );
     this.operationChain = next.catch(() => undefined);
     return next;
   }
@@ -88,7 +101,9 @@ export class SystemProxyService {
     this.saveSnapshot(snapshot);
   }
 
-  private async restoreSnapshotOrFallback(fallback: () => Promise<void>): Promise<void> {
+  private async restoreSnapshotOrFallback(
+    fallback: () => Promise<void>,
+  ): Promise<void> {
     const snapshot = this.activeSnapshot ?? this.loadSnapshot();
     if (!snapshot) {
       await fallback();
@@ -112,16 +127,22 @@ export class SystemProxyService {
       await this.linux.restoreState(snapshot);
       return;
     }
-    logger.warn('SystemProxyService', 'No adapter available to restore proxy snapshot', {
-      snapshotPlatform: snapshot.platform,
-      runtimePlatform: this.platform,
-    });
+    logger.warn(
+      'SystemProxyService',
+      'No adapter available to restore proxy snapshot',
+      {
+        snapshotPlatform: snapshot.platform,
+        runtimePlatform: this.platform,
+      },
+    );
   }
 
   private loadSnapshot(): ProxySnapshot | null {
     try {
       if (!fs.existsSync(this.snapshotPath)) return null;
-      return JSON.parse(fs.readFileSync(this.snapshotPath, 'utf8')) as ProxySnapshot;
+      return JSON.parse(
+        fs.readFileSync(this.snapshotPath, 'utf8'),
+      ) as ProxySnapshot;
     } catch (error) {
       logger.warn('SystemProxyService', 'Failed to load proxy snapshot', {
         error: error instanceof Error ? error.message : String(error),

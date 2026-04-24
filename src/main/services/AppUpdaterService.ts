@@ -54,11 +54,26 @@ type AutoUpdaterLike = {
   allowPrerelease?: boolean;
   logger?: unknown;
   on(event: 'checking-for-update', listener: () => void): AutoUpdaterLike;
-  on(event: 'update-available', listener: (info: { version?: string; releaseNotes?: string | null }) => void): AutoUpdaterLike;
+  on(
+    event: 'update-available',
+    listener: (info: {
+      version?: string;
+      releaseNotes?: string | null;
+    }) => void,
+  ): AutoUpdaterLike;
   on(event: 'update-not-available', listener: () => void): AutoUpdaterLike;
   on(event: 'error', listener: (error: Error) => void): AutoUpdaterLike;
-  on(event: 'download-progress', listener: (progress: { percent?: number; bytesPerSecond?: number }) => void): AutoUpdaterLike;
-  on(event: 'update-downloaded', listener: (info: { version?: string; releaseNotes?: string | null }) => void): AutoUpdaterLike;
+  on(
+    event: 'download-progress',
+    listener: (progress: { percent?: number; bytesPerSecond?: number }) => void,
+  ): AutoUpdaterLike;
+  on(
+    event: 'update-downloaded',
+    listener: (info: {
+      version?: string;
+      releaseNotes?: string | null;
+    }) => void,
+  ): AutoUpdaterLike;
   checkForUpdates(): Promise<unknown>;
   downloadUpdate(): Promise<unknown>;
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
@@ -103,27 +118,41 @@ export class AppUpdaterService extends EventEmitter {
     this.started = true;
 
     if (!app.isPackaged) {
-      logger.info('AppUpdaterService', 'Auto-updates disabled: app is not packaged');
+      logger.info(
+        'AppUpdaterService',
+        'Auto-updates disabled: app is not packaged',
+      );
       this.setStatus({ stage: 'disabled' });
       return;
     }
     if (process.env.ELECTRON_UPDATER_DISABLE === '1') {
-      logger.info('AppUpdaterService', 'Auto-updates disabled via ELECTRON_UPDATER_DISABLE=1');
+      logger.info(
+        'AppUpdaterService',
+        'Auto-updates disabled via ELECTRON_UPDATER_DISABLE=1',
+      );
       this.setStatus({ stage: 'disabled' });
       return;
     }
     if (process.env.PORTABLE_EXECUTABLE_DIR) {
       // Windows portable builds cannot self-update in-place.
-      logger.info('AppUpdaterService', 'Auto-updates disabled: portable build detected');
+      logger.info(
+        'AppUpdaterService',
+        'Auto-updates disabled: portable build detected',
+      );
       this.setStatus({ stage: 'disabled' });
       return;
     }
 
     try {
       const mod = await import('electron-updater');
-      const updater = (mod.autoUpdater ?? mod.default?.autoUpdater) as AutoUpdaterLike | undefined;
+      const updater = (mod.autoUpdater ?? mod.default?.autoUpdater) as
+        | AutoUpdaterLike
+        | undefined;
       if (!updater) {
-        logger.warn('AppUpdaterService', 'electron-updater did not expose autoUpdater');
+        logger.warn(
+          'AppUpdaterService',
+          'electron-updater did not expose autoUpdater',
+        );
         this.setStatus({ stage: 'disabled' });
         return;
       }
@@ -155,7 +184,10 @@ export class AppUpdaterService extends EventEmitter {
   public async checkForUpdates(): Promise<void> {
     if (!this.updater) return;
     if (this.shouldDeferDueToBusyConnection()) {
-      logger.info('AppUpdaterService', 'Deferring update check while connection is busy');
+      logger.info(
+        'AppUpdaterService',
+        'Deferring update check while connection is busy',
+      );
       this.scheduleDeferredCheck(POST_BUSY_GRACE_MS, 'busy-deferred');
       return;
     }
@@ -213,10 +245,14 @@ export class AppUpdaterService extends EventEmitter {
           return;
         }
         if (waitedFor >= MAX_DEFER_MS) {
-          logger.warn('AppUpdaterService', 'Update check defer cap reached, attempting anyway', {
-            reason,
-            waitedMs: waitedFor,
-          });
+          logger.warn(
+            'AppUpdaterService',
+            'Update check defer cap reached, attempting anyway',
+            {
+              reason,
+              waitedMs: waitedFor,
+            },
+          );
         }
         void this.runCheckNow();
       }, delayMs);
@@ -235,13 +271,20 @@ export class AppUpdaterService extends EventEmitter {
     const transient = isTransientNetworkError(message);
     if (transient) {
       this.transientFailureCount += 1;
-      logger.warn('AppUpdaterService', 'Transient network error during update check', {
-        source,
-        error: message,
-        consecutive: this.transientFailureCount,
-        willSurface: this.transientFailureCount >= TRANSIENT_ERROR_THRESHOLD,
-      });
-      const backoffIndex = Math.min(this.transientFailureCount - 1, TRANSIENT_RETRY_BACKOFF_MS.length - 1);
+      logger.warn(
+        'AppUpdaterService',
+        'Transient network error during update check',
+        {
+          source,
+          error: message,
+          consecutive: this.transientFailureCount,
+          willSurface: this.transientFailureCount >= TRANSIENT_ERROR_THRESHOLD,
+        },
+      );
+      const backoffIndex = Math.min(
+        this.transientFailureCount - 1,
+        TRANSIENT_RETRY_BACKOFF_MS.length - 1,
+      );
       const backoffMs = TRANSIENT_RETRY_BACKOFF_MS[backoffIndex];
       this.scheduleTransientRetry(backoffMs);
       if (this.transientFailureCount < TRANSIENT_ERROR_THRESHOLD) {
@@ -254,7 +297,10 @@ export class AppUpdaterService extends EventEmitter {
       }
     } else {
       this.transientFailureCount = 0;
-      logger.warn('AppUpdaterService', 'Update check failed', { source, error: message });
+      logger.warn('AppUpdaterService', 'Update check failed', {
+        source,
+        error: message,
+      });
     }
     this.setStatus({ stage: 'error', error: message });
   }
@@ -301,7 +347,7 @@ export class AppUpdaterService extends EventEmitter {
       if (version) {
         trayService.notify(
           mainLocaleService.t('notify.updateAvailable.title'),
-          mainLocaleService.t('notify.updateAvailable.body', { version })
+          mainLocaleService.t('notify.updateAvailable.body', { version }),
         );
       }
     });
@@ -322,13 +368,14 @@ export class AppUpdaterService extends EventEmitter {
       this.setStatus({
         stage: 'downloaded',
         version,
-        releaseNotes: normalizeNotes(info?.releaseNotes) ?? this.status.releaseNotes,
+        releaseNotes:
+          normalizeNotes(info?.releaseNotes) ?? this.status.releaseNotes,
         percent: 100,
       });
       if (version) {
         trayService.notify(
           mainLocaleService.t('notify.updateReady.title'),
-          mainLocaleService.t('notify.updateReady.body', { version })
+          mainLocaleService.t('notify.updateReady.body', { version }),
         );
       }
     });

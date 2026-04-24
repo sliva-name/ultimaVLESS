@@ -19,7 +19,11 @@ interface SettingsModalProps {
 
 type SettingsTabId = 'sources' | 'network' | 'diagnostics';
 
-const SETTINGS_TABS: { id: SettingsTabId; labelKey: string; icon: typeof Layers }[] = [
+const SETTINGS_TABS: {
+  id: SettingsTabId;
+  labelKey: string;
+  icon: typeof Layers;
+}[] = [
   { id: 'sources', labelKey: 'settings.tabs.sources', icon: Layers },
   { id: 'network', labelKey: 'settings.tabs.network', icon: Shield },
   { id: 'diagnostics', labelKey: 'settings.tabs.diagnostics', icon: Activity },
@@ -54,8 +58,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <header className="relative z-10 shrink-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b border-gray-800/50">
           <div className="min-w-0">
-            <h2 className="text-lg sm:text-xl font-semibold text-white tracking-tight">{t('settings.title')}</h2>
-            <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-md">{t('settings.subtitle')}</p>
+            <h2 className="text-lg sm:text-xl font-semibold text-white tracking-tight">
+              {t('settings.title')}
+            </h2>
+            <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-md">
+              {t('settings.subtitle')}
+            </p>
           </div>
           <div className="flex items-center gap-2 self-end sm:self-center mt-2 sm:mt-0">
             <div className="flex bg-black/40 border border-gray-700/50 rounded-xl p-1">
@@ -97,7 +105,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 'shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors border border-transparent whitespace-nowrap',
                 activeTab === id
                   ? 'bg-primary/15 text-white border-primary/30'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/5',
               )}
             >
               <Icon className="w-4 h-4 opacity-90" />
@@ -108,10 +116,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="flex-1 min-h-0 overflow-y-auto relative z-10 px-4 sm:px-6 py-4 sm:py-5 pb-6 text-sm leading-relaxed">
           {activeTab === 'sources' && (
-            <SettingsSourcesTab
-              subscriptions={subscriptions}
-              isOpen={isOpen}
-            />
+            <SettingsSourcesTab subscriptions={subscriptions} isOpen={isOpen} />
           )}
 
           {activeTab === 'network' && (
@@ -146,13 +151,19 @@ interface LanguageButtonProps {
   onSelect: () => void;
 }
 
-const LanguageButton: React.FC<LanguageButtonProps> = ({ code, active, onSelect }) => (
+const LanguageButton: React.FC<LanguageButtonProps> = ({
+  code,
+  active,
+  onSelect,
+}) => (
   <button
     type="button"
     onClick={onSelect}
     className={clsx(
       'px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors',
-      active ? 'bg-primary/20 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+      active
+        ? 'bg-primary/20 text-white'
+        : 'text-gray-400 hover:text-gray-200 hover:bg-white/5',
     )}
   >
     {code.toUpperCase()}

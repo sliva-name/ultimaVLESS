@@ -17,9 +17,9 @@ export async function isElevatedOnWindows(): Promise<boolean> {
       [
         '-NoProfile',
         '-Command',
-        '[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent() | ForEach-Object { $_.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }'
+        '[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent() | ForEach-Object { $_.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }',
       ],
-      { windowsHide: true }
+      { windowsHide: true },
     );
 
     const timeout = setTimeout(() => {
@@ -28,7 +28,9 @@ export async function isElevatedOnWindows(): Promise<boolean> {
     }, 5000);
 
     let stdout = '';
-    ps.stdout?.on('data', (d) => { stdout += d.toString(); });
+    ps.stdout?.on('data', (d) => {
+      stdout += d.toString();
+    });
     ps.on('close', (code) => {
       clearTimeout(timeout);
       if (code !== 0) {
@@ -62,7 +64,7 @@ export async function relaunchAsAdminOnWindows(): Promise<boolean> {
         '-Command',
         `Start-Process -FilePath '${escapedExePath}' -Verb RunAs`,
       ],
-      { windowsHide: true }
+      { windowsHide: true },
     );
 
     ps.on('close', (code) => {

@@ -11,10 +11,15 @@ export interface RunPowerShellOptions {
  * Extracted so the huge TunRouteService coordinator class stays focused
  * on orchestration rather than IO plumbing.
  */
-export function runPowerShell(script: string, options: RunPowerShellOptions = {}): Promise<string> {
+export function runPowerShell(
+  script: string,
+  options: RunPowerShellOptions = {},
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const normalizedScript = `$ProgressPreference = 'SilentlyContinue'\n${script}`;
-    const encodedScript = Buffer.from(normalizedScript, 'utf16le').toString('base64');
+    const encodedScript = Buffer.from(normalizedScript, 'utf16le').toString(
+      'base64',
+    );
     const ps = spawn(
       'powershell.exe',
       [
@@ -26,12 +31,16 @@ export function runPowerShell(script: string, options: RunPowerShellOptions = {}
         '-EncodedCommand',
         encodedScript,
       ],
-      { windowsHide: true }
+      { windowsHide: true },
     );
 
     const timeout = setTimeout(() => {
       ps.kill('SIGTERM');
-      reject(new Error(`PowerShell command timed out after ${POWERSHELL_TIMEOUT / 1000}s`));
+      reject(
+        new Error(
+          `PowerShell command timed out after ${POWERSHELL_TIMEOUT / 1000}s`,
+        ),
+      );
     }, POWERSHELL_TIMEOUT);
 
     let stdout = '';

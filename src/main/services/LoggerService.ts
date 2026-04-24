@@ -20,14 +20,16 @@ export class LoggerService {
     // Use app.getPath('logs') if available (Electron), otherwise fallback to userData or cwd (testing)
     let logDir: string;
     try {
-        logDir = app.getPath('logs');
+      logDir = app.getPath('logs');
     } catch {
-        // Fallback for testing environments where app is not available
-        logDir = path.join(process.cwd(), 'logs');
+      // Fallback for testing environments where app is not available
+      logDir = path.join(process.cwd(), 'logs');
     }
 
     this.logPath = path.join(logDir, filename);
-    this.debugEnabled = process.env.NODE_ENV === 'development' || process.env.ULTIMA_DEBUG === '1';
+    this.debugEnabled =
+      process.env.NODE_ENV === 'development' ||
+      process.env.ULTIMA_DEBUG === '1';
     this.ensureLogDirExists();
   }
 
@@ -45,12 +47,13 @@ export class LoggerService {
    * @param {unknown} [data] - Optional data to serialize.
    */
   public log(location: string, message: string, data?: unknown): void {
-    const logEntry = JSON.stringify({
-      timestamp: new Date().toISOString(),
-      location,
-      message,
-      data,
-    }) + '\n';
+    const logEntry =
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        location,
+        message,
+        data,
+      }) + '\n';
 
     this.writeQueue = this.writeQueue.then(async () => {
       try {
@@ -141,7 +144,13 @@ export class LoggerService {
    * @param {unknown} [error] - The error object or data.
    */
   public error(location: string, message: string, error?: unknown): void {
-    this.log(location, `[ERROR] ${message}`, error instanceof Error ? { message: error.message, stack: error.stack } : error);
+    this.log(
+      location,
+      `[ERROR] ${message}`,
+      error instanceof Error
+        ? { message: error.message, stack: error.stack }
+        : error,
+    );
   }
 
   /**

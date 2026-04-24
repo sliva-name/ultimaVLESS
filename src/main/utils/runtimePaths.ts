@@ -7,7 +7,9 @@ export function getBinResourcesPath(): string {
     : path.join(process.cwd(), 'resources/bin');
 }
 
-export function getAppIconPath(platform: NodeJS.Platform = process.platform): string {
+export function getAppIconPath(
+  platform: NodeJS.Platform = process.platform,
+): string {
   const resourcesPath = getBinResourcesPath();
   if (platform === 'win32') {
     return path.join(resourcesPath, 'logo.ico');

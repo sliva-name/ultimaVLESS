@@ -4,7 +4,10 @@ import dns from 'dns';
 import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { parseJsonConfigs } from './subscription/jsonParsing';
-import { extractSupportedLinks, parseDirectLinksFromText } from './subscription/linkParsing';
+import {
+  extractSupportedLinks,
+  parseDirectLinksFromText,
+} from './subscription/linkParsing';
 import { redactUrl } from '@/main/utils/redactUrl';
 
 /** translate.yandex.ru often expects a browser-like client for the full HTML body. */
@@ -28,7 +31,11 @@ function expandHtmlEntitiesForUrlExtraction(html: string): string {
     .replace(/&#x3a;/gi, ':');
 }
 
-async function fetchWithTimeout(url: string, ms: number, init?: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  ms: number,
+  init?: RequestInit,
+): Promise<Response> {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), ms);
   try {
@@ -40,13 +47,15 @@ async function fetchWithTimeout(url: string, ms: number, init?: RequestInit): Pr
 
 function isPrivateOrLoopbackHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
-  if (normalized === 'localhost' || normalized.endsWith('.localhost')) return true;
+  if (normalized === 'localhost' || normalized.endsWith('.localhost'))
+    return true;
   if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true;
 
   const ipVersion = net.isIP(normalized);
   if (ipVersion === 4) {
     const octets = normalized.split('.').map(Number);
-    if (octets.length !== 4 || octets.some((value) => Number.isNaN(value))) return false;
+    if (octets.length !== 4 || octets.some((value) => Number.isNaN(value)))
+      return false;
     const [a, b] = octets;
     return (
       a === 0 ||
@@ -59,7 +68,11 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
   }
 
   if (ipVersion === 6) {
-    return normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:');
+    return (
+      normalized.startsWith('fc') ||
+      normalized.startsWith('fd') ||
+      normalized.startsWith('fe80:')
+    );
   }
 
   return false;
@@ -102,7 +115,9 @@ export class SubscriptionService {
     // For full protection, the fetch agent would need to pin to one of the
     // pre-validated IPs (out of scope here).
     try {
-      const lookupResults = await dns.promises.lookup(parsedUrl.hostname, { all: true });
+      const lookupResults = await dns.promises.lookup(parsedUrl.hostname, {
+        all: true,
+      });
       if (lookupResults.length === 0) {
         throw new Error('Subscription URL did not resolve to any address');
       }
@@ -112,7 +127,10 @@ export class SubscriptionService {
         }
       }
     } catch (err) {
-      if (err instanceof Error && /private IP|did not resolve/.test(err.message)) {
+      if (
+        err instanceof Error &&
+        /private IP|did not resolve/.test(err.message)
+      ) {
         throw err;
       }
       // Other DNS failures (NXDOMAIN, timeout) — let fetch surface a clearer
@@ -122,41 +140,60 @@ export class SubscriptionService {
     return parsedUrl;
   }
 
-  private async fetchValidatedResponse(url: URL, init?: RequestInit): Promise<Response> {
+  private async fetchValidatedResponse(
+    url: URL,
+    init?: RequestInit,
+  ): Promise<Response> {
     let currentUrl = url;
 
-    for (let redirectCount = 0; redirectCount <= SubscriptionService.MAX_REDIRECTS; redirectCount += 1) {
+    for (
+      let redirectCount = 0;
+      redirectCount <= SubscriptionService.MAX_REDIRECTS;
+      redirectCount += 1
+    ) {
       const response = await fetchWithTimeout(
         currentUrl.toString(),
         SubscriptionService.FETCH_TIMEOUT_MS,
         {
           ...init,
           redirect: 'manual',
-        }
+        },
       );
 
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location');
         if (!location) {
-          throw new Error(`Redirect response missing Location header: HTTP ${response.status}`);
+          throw new Error(
+            `Redirect response missing Location header: HTTP ${response.status}`,
+          );
         }
-        currentUrl = await this.validateRemoteSubscriptionUrl(new URL(location, currentUrl).toString());
+        currentUrl = await this.validateRemoteSubscriptionUrl(
+          new URL(location, currentUrl).toString(),
+        );
         continue;
       }
 
       return response;
     }
 
-    throw new Error(`Too many redirects while fetching subscription (max ${SubscriptionService.MAX_REDIRECTS})`);
+    throw new Error(
+      `Too many redirects while fetching subscription (max ${SubscriptionService.MAX_REDIRECTS})`,
+    );
   }
 
-  public async fetchAndParseDetailed(url: string): Promise<{ configs: VlessConfig[]; extractedLinks: string[] }> {
-    logger.info('SubscriptionService', 'fetchAndParse called', { redactedUrl: redactUrl(url) });
+  public async fetchAndParseDetailed(
+    url: string,
+  ): Promise<{ configs: VlessConfig[]; extractedLinks: string[] }> {
+    logger.info('SubscriptionService', 'fetchAndParse called', {
+      redactedUrl: redactUrl(url),
+    });
     try {
       const directLinksFromInput = this.extractSupportedLinksFromText(url);
       if (directLinksFromInput.length > 0) {
         const directConfigs = this.parseDirectLinksFromText(url);
-        logger.info('SubscriptionService', 'Detected direct link input', { count: directConfigs.length });
+        logger.info('SubscriptionService', 'Detected direct link input', {
+          count: directConfigs.length,
+        });
         return {
           configs: directConfigs,
           extractedLinks: directLinksFromInput,
@@ -166,11 +203,14 @@ export class SubscriptionService {
       const validatedUrl = await this.validateRemoteSubscriptionUrl(url);
       const yandexHtml = isYandexTranslateHost(validatedUrl.hostname);
       if (yandexHtml) {
-        logger.info('SubscriptionService', 'Subscription URL is Yandex Translate; fetching HTML with browser headers');
+        logger.info(
+          'SubscriptionService',
+          'Subscription URL is Yandex Translate; fetching HTML with browser headers',
+        );
       }
       const response = await this.fetchValidatedResponse(
         validatedUrl,
-        yandexHtml ? { headers: YANDEX_TRANSLATE_FETCH_HEADERS } : undefined
+        yandexHtml ? { headers: YANDEX_TRANSLATE_FETCH_HEADERS } : undefined,
       );
       if (!response.ok) {
         throw new Error(`Subscription request failed: HTTP ${response.status}`);
@@ -179,7 +219,10 @@ export class SubscriptionService {
       const contentLengthHeader = response.headers?.get?.('content-length');
       if (contentLengthHeader) {
         const contentLength = Number(contentLengthHeader);
-        if (!Number.isNaN(contentLength) && contentLength > SubscriptionService.MAX_RESPONSE_BODY_LENGTH) {
+        if (
+          !Number.isNaN(contentLength) &&
+          contentLength > SubscriptionService.MAX_RESPONSE_BODY_LENGTH
+        ) {
           throw new Error('Subscription response is too large');
         }
       }
@@ -205,7 +248,9 @@ export class SubscriptionService {
       }
 
       if (Array.isArray(body)) {
-        logger.info('SubscriptionService', 'Detected JSON array format', { count: body.length });
+        logger.info('SubscriptionService', 'Detected JSON array format', {
+          count: body.length,
+        });
         return {
           configs: parseJsonConfigs(body),
           extractedLinks: [],
@@ -216,7 +261,10 @@ export class SubscriptionService {
       // `body` is typed as `string | unknown[] | Record<string, unknown>` — the array case
       // is handled above, so `typeof === 'object'` uniquely identifies the Record branch.
       if (typeof body === 'object') {
-        logger.info('SubscriptionService', 'Detected single JSON object format');
+        logger.info(
+          'SubscriptionService',
+          'Detected single JSON object format',
+        );
         return {
           configs: parseJsonConfigs([body]),
           extractedLinks: [],
@@ -227,16 +275,24 @@ export class SubscriptionService {
       let textBody = body.trim();
       if (yandexHtml) {
         textBody = expandHtmlEntitiesForUrlExtraction(textBody);
-        logger.info('SubscriptionService', 'Parsing Yandex Translate HTML for subscription links', {
-          approxLength: textBody.length,
-        });
+        logger.info(
+          'SubscriptionService',
+          'Parsing Yandex Translate HTML for subscription links',
+          {
+            approxLength: textBody.length,
+          },
+        );
       }
       const directLinksFromBody = this.extractSupportedLinksFromText(textBody);
       if (directLinksFromBody.length > 0) {
-        logger.info('SubscriptionService', 'Detected direct links in response body', {
-          count: directLinksFromBody.length,
-          yandexHtml,
-        });
+        logger.info(
+          'SubscriptionService',
+          'Detected direct links in response body',
+          {
+            count: directLinksFromBody.length,
+            yandexHtml,
+          },
+        );
         return {
           configs: this.parseDirectLinksFromText(textBody),
           extractedLinks: directLinksFromBody,
@@ -247,7 +303,9 @@ export class SubscriptionService {
         try {
           const parsed = JSON.parse(textBody);
           const arr = Array.isArray(parsed) ? parsed : [parsed];
-          logger.info('SubscriptionService', 'Detected JSON string format', { count: arr.length });
+          logger.info('SubscriptionService', 'Detected JSON string format', {
+            count: arr.length,
+          });
           return {
             configs: parseJsonConfigs(arr),
             extractedLinks: [],
@@ -287,15 +345,20 @@ export class SubscriptionService {
     let decoded = '';
     try {
       decoded = decode(cleanBase64);
-      logger.info('SubscriptionService', 'Decoded base64', { length: decoded.length });
+      logger.info('SubscriptionService', 'Decoded base64', {
+        length: decoded.length,
+      });
     } catch (error) {
-      const decodeError = error instanceof Error ? error : new Error('Base64 decode failed');
+      const decodeError =
+        error instanceof Error ? error : new Error('Base64 decode failed');
       logger.error('SubscriptionService', 'Decode failed', decodeError);
       throw decodeError;
     }
 
     const configs = parseDirectLinksFromText(decoded);
-    logger.info('SubscriptionService', 'Parsed base64 configs', { count: configs.length });
+    logger.info('SubscriptionService', 'Parsed base64 configs', {
+      count: configs.length,
+    });
     return configs;
   }
 }

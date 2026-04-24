@@ -20,10 +20,18 @@ function makeServerIdentity(
   authToken: string,
   address: string,
   port: number,
-  parts: Array<string | undefined>
+  parts: Array<string | undefined>,
 ): string {
-  const signature = [authToken, address, String(port), ...parts.map((part) => part || '')].join('|');
-  const digest = createHash('sha256').update(signature).digest('hex').slice(0, 16);
+  const signature = [
+    authToken,
+    address,
+    String(port),
+    ...parts.map((part) => part || ''),
+  ].join('|');
+  const digest = createHash('sha256')
+    .update(signature)
+    .digest('hex')
+    .slice(0, 16);
   return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
 }
 
@@ -45,7 +53,7 @@ export function extractSupportedLinks(input: string): string[] {
       link
         .replace(/(?:&quot;|&apos;|&#34;|&#39;)+$/gi, '')
         .replace(/[)\],.;]+$/g, '')
-        .trim()
+        .trim(),
     )
     .filter((link) => isSupportedLink(link));
 }
@@ -59,17 +67,32 @@ function parseVlessLink(link: string): VlessConfig | null {
     const uuid = safeDecodeComponent(parsedUrl.username || '');
     const address = parsedUrl.hostname || '';
     const port = Number(parsedUrl.port);
-    if (!uuid || !address || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+    if (
+      !uuid ||
+      !address ||
+      !Number.isInteger(port) ||
+      port < 1 ||
+      port > 65535
+    )
+      return null;
 
-    const name = parsedUrl.hash ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Server' : 'Server';
+    const name = parsedUrl.hash
+      ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Server'
+      : 'Server';
     const params = parsedUrl.searchParams;
 
     const typeValue = params.get('type') || 'tcp';
     const securityValue = params.get('security') || 'none';
-    const type = (['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(typeValue)
-      ? typeValue
-      : 'tcp') as VlessConfig['type'];
-    const security = (['reality', 'tls', 'none'].includes(securityValue) ? securityValue : 'none') as VlessConfig['security'];
+    const type = (
+      ['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(typeValue)
+        ? typeValue
+        : 'tcp'
+    ) as VlessConfig['type'];
+    const security = (
+      ['reality', 'tls', 'none'].includes(securityValue)
+        ? securityValue
+        : 'none'
+    ) as VlessConfig['security'];
     const flow = params.get('flow') ?? undefined;
     const encryption = params.get('encryption') ?? undefined;
     const sni = params.get('sni') ?? undefined;
@@ -115,7 +138,9 @@ function parseVlessLink(link: string): VlessConfig | null {
       serviceName,
     };
   } catch {
-    logger.error('SubscriptionService', 'Error parsing VLESS link', { link: link.substring(0, 50) + '...' });
+    logger.error('SubscriptionService', 'Error parsing VLESS link', {
+      link: link.substring(0, 50) + '...',
+    });
     return null;
   }
 }
@@ -129,13 +154,26 @@ function parseTrojanLink(link: string): VlessConfig | null {
     const password = safeDecodeComponent(parsedUrl.username || '');
     const address = parsedUrl.hostname || '';
     const port = Number(parsedUrl.port);
-    if (!password || !address || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+    if (
+      !password ||
+      !address ||
+      !Number.isInteger(port) ||
+      port < 1 ||
+      port > 65535
+    )
+      return null;
 
-    const name = parsedUrl.hash ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Trojan Server' : 'Trojan Server';
+    const name = parsedUrl.hash
+      ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Trojan Server'
+      : 'Trojan Server';
     const params = parsedUrl.searchParams;
     const typeParam = params.get('type') || '';
-    const network = (['tcp', 'ws', 'grpc'].includes(typeParam) ? typeParam : 'tcp') as 'tcp' | 'ws' | 'grpc';
-    const security = ((params.get('security') || 'tls') === 'none' ? 'none' : 'tls') as 'tls' | 'none';
+    const network = (
+      ['tcp', 'ws', 'grpc'].includes(typeParam) ? typeParam : 'tcp'
+    ) as 'tcp' | 'ws' | 'grpc';
+    const security = (
+      (params.get('security') || 'tls') === 'none' ? 'none' : 'tls'
+    ) as 'tls' | 'none';
 
     // Structured fields only — rely on ConfigGenerator to produce a complete
     // Xray configuration (inbounds, block/direct outbounds, routing rules)
@@ -150,7 +188,10 @@ function parseTrojanLink(link: string): VlessConfig | null {
         params.get('path') || '',
         params.get('host') || '',
         params.get('serviceName') || '',
-        String(isTruthyQueryParam(params.get('insecure')) || isTruthyQueryParam(params.get('allowInsecure'))),
+        String(
+          isTruthyQueryParam(params.get('insecure')) ||
+            isTruthyQueryParam(params.get('allowInsecure')),
+        ),
       ]),
       address,
       port,
@@ -169,7 +210,9 @@ function parseTrojanLink(link: string): VlessConfig | null {
         isTruthyQueryParam(params.get('allowInsecure')),
     };
   } catch {
-    logger.error('SubscriptionService', 'Error parsing Trojan link', { link: link.substring(0, 50) + '...' });
+    logger.error('SubscriptionService', 'Error parsing Trojan link', {
+      link: link.substring(0, 50) + '...',
+    });
     return null;
   }
 }

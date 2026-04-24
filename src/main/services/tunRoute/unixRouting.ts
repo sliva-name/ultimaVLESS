@@ -10,13 +10,17 @@ import { DefaultRouteInfo, UNIX_COMMAND_TIMEOUT } from './constants';
 export function runUnixCommand(
   command: string,
   args: string[],
-  options: { allowNonZeroExit?: boolean } = {}
+  options: { allowNonZeroExit?: boolean } = {},
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args);
     const timeout = setTimeout(() => {
       child.kill('SIGTERM');
-      reject(new Error(`Command timed out after ${UNIX_COMMAND_TIMEOUT / 1000}s: ${command} ${args.join(' ')}`));
+      reject(
+        new Error(
+          `Command timed out after ${UNIX_COMMAND_TIMEOUT / 1000}s: ${command} ${args.join(' ')}`,
+        ),
+      );
     }, UNIX_COMMAND_TIMEOUT);
 
     let stdout = '';
@@ -38,13 +42,22 @@ export function runUnixCommand(
         return;
       }
       const details = `${stderr}\n${stdout}`.trim();
-      reject(new Error(details || `Command failed with code ${code}: ${command} ${args.join(' ')}`));
+      reject(
+        new Error(
+          details ||
+            `Command failed with code ${code}: ${command} ${args.join(' ')}`,
+        ),
+      );
     });
   });
 }
 
 export async function getLinuxDefaultRouteInfo(): Promise<DefaultRouteInfo | null> {
-  const routeOut = await runUnixCommand('ip', ['-4', 'route', 'show', 'default'], { allowNonZeroExit: true });
+  const routeOut = await runUnixCommand(
+    'ip',
+    ['-4', 'route', 'show', 'default'],
+    { allowNonZeroExit: true },
+  );
   const line = routeOut
     .split(/\r?\n/)
     .map((value) => value.trim())
@@ -65,14 +78,22 @@ export async function getLinuxDefaultRouteInfo(): Promise<DefaultRouteInfo | nul
   };
 }
 
-async function getLinuxInterfaceAddress(interfaceName: string): Promise<string | null> {
-  const addrOut = await runUnixCommand('ip', ['-4', '-o', 'addr', 'show', 'dev', interfaceName], { allowNonZeroExit: true });
+async function getLinuxInterfaceAddress(
+  interfaceName: string,
+): Promise<string | null> {
+  const addrOut = await runUnixCommand(
+    'ip',
+    ['-4', '-o', 'addr', 'show', 'dev', interfaceName],
+    { allowNonZeroExit: true },
+  );
   const match = /\binet\s+([0-9.]+)\//.exec(addrOut);
   return match ? match[1] : null;
 }
 
 export async function getMacosDefaultRouteInfo(): Promise<DefaultRouteInfo | null> {
-  const routeOut = await runUnixCommand('route', ['-n', 'get', 'default'], { allowNonZeroExit: true });
+  const routeOut = await runUnixCommand('route', ['-n', 'get', 'default'], {
+    allowNonZeroExit: true,
+  });
   const gatewayMatch = /^\s*gateway:\s+([0-9.]+)\s*$/m.exec(routeOut);
   const interfaceMatch = /^\s*interface:\s+([^\s]+)\s*$/m.exec(routeOut);
   if (!gatewayMatch || !interfaceMatch) return null;
@@ -87,8 +108,14 @@ export async function getMacosDefaultRouteInfo(): Promise<DefaultRouteInfo | nul
   };
 }
 
-async function getMacosInterfaceAddress(interfaceName: string): Promise<string | null> {
-  const output = await runUnixCommand('ipconfig', ['getifaddr', interfaceName], { allowNonZeroExit: true });
+async function getMacosInterfaceAddress(
+  interfaceName: string,
+): Promise<string | null> {
+  const output = await runUnixCommand(
+    'ipconfig',
+    ['getifaddr', interfaceName],
+    { allowNonZeroExit: true },
+  );
   const value = output.trim();
   return value.length > 0 ? value : null;
 }

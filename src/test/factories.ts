@@ -13,7 +13,7 @@ export function makeServer(overrides: Partial<VlessConfig> = {}): VlessConfig {
 }
 
 export function makeMonitorStatus(
-  overrides: Partial<ConnectionMonitorStatus> = {}
+  overrides: Partial<ConnectionMonitorStatus> = {},
 ): ConnectionMonitorStatus {
   return {
     isConnected: false,
@@ -48,4 +48,3 @@ export function makeMonitorStatus(
     ...overrides,
   };
 }
-

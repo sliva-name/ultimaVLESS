@@ -14,11 +14,21 @@ describe('AppRecoveryService', () => {
     const service = new AppRecoveryService();
     vi.setSystemTime(new Date('2026-04-03T10:00:00.000Z'));
 
-    expect(service.beginRecovery('did-fail-load', 'did-fail-load').recoveryBlocked).toBe(false);
-    expect(service.beginRecovery('render-process-gone', 'render-process-gone').recoveryBlocked).toBe(false);
-    expect(service.beginRecovery('did-fail-load', 'did-fail-load').recoveryBlocked).toBe(false);
+    expect(
+      service.beginRecovery('did-fail-load', 'did-fail-load').recoveryBlocked,
+    ).toBe(false);
+    expect(
+      service.beginRecovery('render-process-gone', 'render-process-gone')
+        .recoveryBlocked,
+    ).toBe(false);
+    expect(
+      service.beginRecovery('did-fail-load', 'did-fail-load').recoveryBlocked,
+    ).toBe(false);
 
-    const blocked = service.beginRecovery('render-process-gone', 'render-process-gone');
+    const blocked = service.beginRecovery(
+      'render-process-gone',
+      'render-process-gone',
+    );
     expect(blocked.recoveryBlocked).toBe(true);
     expect(blocked.recoveryAttemptCount).toBe(3);
     expect(blocked.lastRecoveryTrigger).toBe('render-process-gone');

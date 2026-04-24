@@ -119,7 +119,7 @@ describe('ConnectionMonitorService', () => {
     const errorPromise = new Promise<void>((resolve) => {
       svc.on('error', () => resolve());
     });
-    
+
     svc.startMonitoring(server);
     fs.appendFileSync(logPath, 'failed to dial new-server\n', 'utf8');
 
@@ -208,7 +208,9 @@ describe('ConnectionMonitorService', () => {
 
     expect(svc.getStatus().lastError).toBeNull();
     expect(svc.getStatus().lastHealthState).toBe('degraded');
-    expect(svc.getStatus().lastHealthFailureReason).toContain('Remote endpoint check');
+    expect(svc.getStatus().lastHealthFailureReason).toContain(
+      'Remote endpoint check',
+    );
   });
 
   it('sets lastError after two consecutive HTTP tunnel probe failures', async () => {
@@ -229,9 +231,12 @@ describe('ConnectionMonitorService', () => {
 
   it('ignores in-flight health check results after monitoring stops', async () => {
     let releaseProbe: (() => void) | null = null;
-    probeTcpPortMock.mockImplementation(() => new Promise<boolean>((resolve) => {
-      releaseProbe = () => resolve(false);
-    }));
+    probeTcpPortMock.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseProbe = () => resolve(false);
+        }),
+    );
 
     const ConnectionMonitorService = await loadService();
     const svc = new ConnectionMonitorService();

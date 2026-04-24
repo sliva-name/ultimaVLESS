@@ -11,7 +11,12 @@ import type {
   TrafficSnapshot,
   UpdateStatus,
 } from '@/shared/ipc';
-import type { ConnectionMode, PerformanceSettings, Subscription, VlessConfig } from '@/shared/types';
+import type {
+  ConnectionMode,
+  PerformanceSettings,
+  Subscription,
+  VlessConfig,
+} from '@/shared/types';
 import { makeMonitorStatus } from './factories';
 
 type ListenerMap = {
@@ -45,7 +50,9 @@ function createListenerRegistration<T>(listeners: Set<(value: T) => void>) {
   });
 }
 
-export function createElectronApiMock(overrides: Partial<IElectronAPI> = {}): ElectronApiMock {
+export function createElectronApiMock(
+  overrides: Partial<IElectronAPI> = {},
+): ElectronApiMock {
   const listeners: ListenerMap = {
     updateServers: new Set(),
     updateSubscriptions: new Set(),
@@ -58,35 +65,52 @@ export function createElectronApiMock(overrides: Partial<IElectronAPI> = {}): El
   };
 
   const api: ElectronApiMock = {
-    connect: vi.fn(async (_server: VlessConfig): Promise<ConnectResult> => ({ ok: true })),
+    connect: vi.fn(
+      async (_server: VlessConfig): Promise<ConnectResult> => ({ ok: true }),
+    ),
     disconnect: vi.fn(async (): Promise<DisconnectResult> => ({ ok: true })),
 
     // Subscriptions CRUD
     getSubscriptions: vi.fn(async (): Promise<Subscription[]> => []),
-    addSubscription: vi.fn(async (_payload: AddSubscriptionPayload): Promise<AddSubscriptionResult & { subscriptionId: string }> => ({
-      ok: true,
-      configCount: 0,
-      subscriptionId: 'mock-id',
-    })),
+    addSubscription: vi.fn(
+      async (
+        _payload: AddSubscriptionPayload,
+      ): Promise<AddSubscriptionResult & { subscriptionId: string }> => ({
+        ok: true,
+        configCount: 0,
+        subscriptionId: 'mock-id',
+      }),
+    ),
     updateSubscription: vi.fn(async () => true),
     deleteSubscription: vi.fn(async () => true),
     refreshSubscriptions: vi.fn(async () => ({ ok: true, configCount: 0 })),
 
     // Manual links
     getManualLinks: vi.fn(async () => ''),
-    saveManualLinks: vi.fn(async (): Promise<SaveManualLinksResult> => ({ ok: true, configCount: 0 })),
+    saveManualLinks: vi.fn(
+      async (): Promise<SaveManualLinksResult> => ({
+        ok: true,
+        configCount: 0,
+      }),
+    ),
 
     // Events
     onUpdateServers: createListenerRegistration(listeners.updateServers),
-    onUpdateSubscriptions: createListenerRegistration(listeners.updateSubscriptions),
+    onUpdateSubscriptions: createListenerRegistration(
+      listeners.updateSubscriptions,
+    ),
     onConnectionStatus: createListenerRegistration(listeners.connectionStatus),
     onConnectionBusy: createListenerRegistration(listeners.connectionBusy),
     onConnectionError: createListenerRegistration(listeners.connectionError),
-    onConnectionMonitorEvent: createListenerRegistration(listeners.connectionMonitorEvent),
+    onConnectionMonitorEvent: createListenerRegistration(
+      listeners.connectionMonitorEvent,
+    ),
     onTrafficStats: createListenerRegistration(listeners.trafficStats),
     onUpdateStatus: createListenerRegistration(listeners.updateStatus),
 
-    getConnectionMonitorStatus: vi.fn(async (): Promise<ConnectionMonitorStatus> => makeMonitorStatus()),
+    getConnectionMonitorStatus: vi.fn(
+      async (): Promise<ConnectionMonitorStatus> => makeMonitorStatus(),
+    ),
     setAutoSwitching: vi.fn(async (_enabled: boolean) => true),
     clearBlockedServers: vi.fn(async () => true),
     getServers: vi.fn(async () => []),
@@ -108,46 +132,60 @@ export function createElectronApiMock(overrides: Partial<IElectronAPI> = {}): El
     getLogs: vi.fn(async () => ''),
     openLogFolder: vi.fn(async () => true),
     openExternalUrl: vi.fn(async (_url: string) => true),
-    importMobileWhiteListSubscription: vi.fn(async () => ({ ok: true, configCount: 1 })),
-    getAppVersion: vi.fn(async () => '0.0.0-test'),
-    pingServer: vi.fn(async (_server: VlessConfig) => ({ uuid: _server.uuid, latency: null })),
-    pingAllServers: vi.fn(async (_force?: boolean) => []),
-    getPerformanceSettings: vi.fn(async (): Promise<PerformanceSettings> => ({
-      muxEnabled: true,
-      muxConcurrency: 8,
-      xudpConcurrency: 16,
-      xudpProxyUDP443: 'reject',
-      tcpFastOpen: true,
-      sniffingRouteOnly: true,
-      logLevel: 'warning',
-      fingerprint: 'chrome',
-      blockAds: true,
-      blockBittorrent: true,
-      domainStrategy: 'IPIfNonMatch',
+    importMobileWhiteListSubscription: vi.fn(async () => ({
+      ok: true,
+      configCount: 1,
     })),
-    setPerformanceSettings: vi.fn(async (_settings: PerformanceSettings) => true),
+    getAppVersion: vi.fn(async () => '0.0.0-test'),
+    pingServer: vi.fn(async (_server: VlessConfig) => ({
+      uuid: _server.uuid,
+      latency: null,
+    })),
+    pingAllServers: vi.fn(async (_force?: boolean) => []),
+    getPerformanceSettings: vi.fn(
+      async (): Promise<PerformanceSettings> => ({
+        muxEnabled: true,
+        muxConcurrency: 8,
+        xudpConcurrency: 16,
+        xudpProxyUDP443: 'reject',
+        tcpFastOpen: true,
+        sniffingRouteOnly: true,
+        logLevel: 'warning',
+        fingerprint: 'chrome',
+        blockAds: true,
+        blockBittorrent: true,
+        domainStrategy: 'IPIfNonMatch',
+      }),
+    ),
+    setPerformanceSettings: vi.fn(
+      async (_settings: PerformanceSettings) => true,
+    ),
 
     getUiLanguage: vi.fn(async (): Promise<'en' | 'ru'> => 'en'),
     setUiLanguage: vi.fn(async (_language: 'en' | 'ru') => true),
     getTrafficStats: vi.fn(async (): Promise<TrafficSnapshot | null> => null),
-    getUpdateStatus: vi.fn(async (): Promise<UpdateStatus> => ({
-      stage: 'disabled',
-      version: null,
-      releaseNotes: null,
-      percent: 0,
-      bytesPerSecond: 0,
-      error: null,
-      updatedAt: 0,
-    })),
-    checkForUpdates: vi.fn(async (): Promise<UpdateStatus> => ({
-      stage: 'disabled',
-      version: null,
-      releaseNotes: null,
-      percent: 0,
-      bytesPerSecond: 0,
-      error: null,
-      updatedAt: 0,
-    })),
+    getUpdateStatus: vi.fn(
+      async (): Promise<UpdateStatus> => ({
+        stage: 'disabled',
+        version: null,
+        releaseNotes: null,
+        percent: 0,
+        bytesPerSecond: 0,
+        error: null,
+        updatedAt: 0,
+      }),
+    ),
+    checkForUpdates: vi.fn(
+      async (): Promise<UpdateStatus> => ({
+        stage: 'disabled',
+        version: null,
+        releaseNotes: null,
+        percent: 0,
+        bytesPerSecond: 0,
+        error: null,
+        updatedAt: 0,
+      }),
+    ),
     installUpdate: vi.fn(async () => true),
 
     emitUpdateServers: (servers: VlessConfig[]) => {

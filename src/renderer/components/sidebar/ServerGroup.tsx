@@ -39,21 +39,39 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
 
   const headerContent = (
     <div className="flex items-center gap-2 min-w-0">
-      <span className={clsx('w-1.5 h-1.5 shrink-0 rounded-full shadow-sm', color.dot)} />
+      <span
+        className={clsx(
+          'w-1.5 h-1.5 shrink-0 rounded-full shadow-sm',
+          color.dot,
+        )}
+      />
       <span
         className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider truncate min-w-0 flex-1"
         title={title}
       >
         {title}
       </span>
-      <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-md border shrink-0', color.badge)}>
+      <span
+        className={clsx(
+          'text-[10px] px-1.5 py-0.5 rounded-md border shrink-0',
+          color.badge,
+        )}
+      >
         {servers.length}
       </span>
     </div>
   );
 
   return (
-    <div className={clsx('rounded-xl border p-2', color.border, 'bg-linear-to-br', color.bg, 'to-transparent')}>
+    <div
+      className={clsx(
+        'rounded-xl border p-2',
+        color.border,
+        'bg-linear-to-br',
+        color.bg,
+        'to-transparent',
+      )}
+    >
       {collapsible ? (
         <button
           type="button"
@@ -65,7 +83,7 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
           <ChevronDown
             className={clsx(
               'w-3.5 h-3.5 shrink-0 text-gray-400 transition-transform',
-              expanded && 'rotate-180'
+              expanded && 'rotate-180',
             )}
           />
         </button>

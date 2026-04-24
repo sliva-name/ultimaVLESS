@@ -1,6 +1,6 @@
 {
   "name": "ultima-vless-client",
-  "version": "3.8.4",
+  "version": "3.8.5",
   "description": "Open-source desktop VLESS/Xray VPN client for Windows, macOS, and Linux",
   "homepage": "https://github.com/sliva-name/ultimaVLESS",
   "repository": {
@@ -14,6 +14,8 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "build:renderer": "vite build",
     "build:electron": "npm run typecheck && npm run build:renderer",
     "check:codesign:win": "node -e \"if(!process.env.CSC_LINK||!process.env.CSC_KEY_PASSWORD){console.error('Missing CSC_LINK or CSC_KEY_PASSWORD');process.exit(1)};console.log('Code signing env OK')\"",
@@ -174,11 +176,13 @@
     "electron": "^41.1.1",
     "electron-builder": "^26.8.1",
     "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^15.15.0",
     "jsdom": "^29.0.1",
     "postcss": "^8.5.8",
+    "prettier": "^3.8.3",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.0",

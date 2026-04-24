@@ -4,17 +4,32 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { Sidebar } from './Sidebar';
 import { VlessConfig } from '@/shared/types';
 import { vi, beforeEach } from 'vitest';
-import { createElectronApiMock, installElectronApiMock } from '@/test/electronApiMock';
+import {
+  createElectronApiMock,
+  installElectronApiMock,
+} from '@/test/electronApiMock';
 import { makeServer } from '@/test/factories';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key })
+  useTranslation: () => ({ t: (key: string) => key }),
 }));
 
 describe('Sidebar', () => {
   const mockServers: VlessConfig[] = [
-    makeServer({ uuid: '1', address: 'server1.com', name: 'Server 1', security: 'reality', source: 'subscription' }),
-    makeServer({ uuid: '2', address: 'server2.com', name: 'Server 2', security: 'tls', source: 'manual' }),
+    makeServer({
+      uuid: '1',
+      address: 'server1.com',
+      name: 'Server 1',
+      security: 'reality',
+      source: 'subscription',
+    }),
+    makeServer({
+      uuid: '2',
+      address: 'server2.com',
+      name: 'Server 2',
+      security: 'tls',
+      source: 'manual',
+    }),
   ];
 
   beforeEach(() => {
@@ -25,14 +40,14 @@ describe('Sidebar', () => {
 
   it('renders subscription and manual server groups', async () => {
     render(
-      <Sidebar 
+      <Sidebar
         servers={mockServers}
         subscriptions={[]}
         selectedServer={null}
         isConnected={false}
         onSelectServer={() => {}}
         onOpenSettings={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByText('Server 1')).toBeInTheDocument();
@@ -44,14 +59,14 @@ describe('Sidebar', () => {
 
   it('exposes selected state through aria-selected', async () => {
     render(
-      <Sidebar 
+      <Sidebar
         servers={mockServers}
         subscriptions={[]}
         selectedServer={mockServers[0]}
         isConnected={false}
         onSelectServer={() => {}}
         onOpenSettings={() => {}}
-      />
+      />,
     );
 
     expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
@@ -64,14 +79,14 @@ describe('Sidebar', () => {
   it('calls onSelectServer when clicked', async () => {
     const handleSelect = vi.fn();
     render(
-      <Sidebar 
+      <Sidebar
         servers={mockServers}
         subscriptions={[]}
         selectedServer={null}
         isConnected={false}
         onSelectServer={handleSelect}
         onOpenSettings={() => {}}
-      />
+      />,
     );
 
     expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
@@ -82,14 +97,14 @@ describe('Sidebar', () => {
   it('does not allow selecting another server while connected', async () => {
     const handleSelect = vi.fn();
     render(
-      <Sidebar 
+      <Sidebar
         servers={mockServers}
         subscriptions={[]}
         selectedServer={mockServers[0]}
         isConnected={true}
         onSelectServer={handleSelect}
         onOpenSettings={() => {}}
-      />
+      />,
     );
 
     expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
@@ -109,7 +124,7 @@ describe('Sidebar', () => {
         isConnected={false}
         onSelectServer={() => {}}
         onOpenSettings={() => {}}
-      />
+      />,
     );
 
     expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
@@ -126,11 +141,10 @@ describe('Sidebar', () => {
         onSelectServer={() => {}}
         onOpenSettings={() => {}}
         onPingAll={vi.fn()}
-      />
+      />,
     );
 
     expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
     expect(screen.getByTitle('sidebar.pingAll')).toBeDisabled();
   });
 });
-

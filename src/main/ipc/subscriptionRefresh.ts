@@ -6,12 +6,21 @@ import { logger } from '@/main/services/LoggerService';
 import { preserveActiveServerIfNeeded } from './refreshUtils';
 import { redactUrl } from './validators';
 
-type RefreshSubscriptionResult = { configCount: number; reason?: string; partialErrors?: string[] };
+type RefreshSubscriptionResult = {
+  configCount: number;
+  reason?: string;
+  partialErrors?: string[];
+};
 
 interface SubscriptionRefreshManagerDeps {
   getWindow: () => BrowserWindow | null;
   configService: {
-    getSubscriptions: () => Array<{ id: string; name: string; url: string; enabled: boolean }>;
+    getSubscriptions: () => Array<{
+      id: string;
+      name: string;
+      url: string;
+      enabled: boolean;
+    }>;
     getManualLinksInput: () => string;
     getServers: () => VlessConfig[];
     setServers: (servers: VlessConfig[]) => void;
@@ -57,8 +66,12 @@ function getDedupKey(config: VlessConfig): string {
   ].join('|');
 }
 
-export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManagerDeps) {
-  let refreshQueue: Promise<RefreshSubscriptionResult> = Promise.resolve({ configCount: 0 });
+export function createSubscriptionRefreshManager(
+  deps: SubscriptionRefreshManagerDeps,
+) {
+  let refreshQueue: Promise<RefreshSubscriptionResult> = Promise.resolve({
+    configCount: 0,
+  });
   let autoRefreshTimer: NodeJS.Timeout | null = null;
 
   const sendToRenderer = (channel: IpcEventChannel, ...args: unknown[]) => {
@@ -74,7 +87,9 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
     sendToRenderer(IPC_EVENT_CHANNELS.connectionError, message);
   };
 
-  const refreshAllSubscriptions = async (manualLinks: string): Promise<RefreshSubscriptionResult> => {
+  const refreshAllSubscriptions = async (
+    manualLinks: string,
+  ): Promise<RefreshSubscriptionResult> => {
     const subscriptions = deps.configService.getSubscriptions();
     const enabled = subscriptions.filter((s) => s.enabled);
 
@@ -89,13 +104,15 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
 
     for (const sub of enabled) {
       try {
-        const result = await deps.subscriptionService.fetchAndParseDetailed(sub.url.trim());
+        const result = await deps.subscriptionService.fetchAndParseDetailed(
+          sub.url.trim(),
+        );
         configs.push(
           ...result.configs.map((cfg) => ({
             ...cfg,
             source: 'subscription' as const,
             subscriptionId: sub.id,
-          }))
+          })),
         );
         logger.info('IPC', `Fetched subscription "${sub.name}"`, {
           count: result.configs.length,
@@ -105,18 +122,30 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
         const msg = error instanceof Error ? error.message : String(error);
         partialErrors.push(`${sub.name}: ${msg}`);
         failedSubscriptionIds.add(sub.id);
-        logger.error('IPC', `Failed to fetch subscription "${sub.name}"`, error);
+        logger.error(
+          'IPC',
+          `Failed to fetch subscription "${sub.name}"`,
+          error,
+        );
       }
     }
 
     const effectiveManualLinksText = manualLinks.trim();
     if (effectiveManualLinksText) {
-      const manualConfigs = deps.subscriptionService.parseDirectLinksFromText(effectiveManualLinksText);
-      configs.push(...manualConfigs.map((cfg) => ({ ...cfg, source: 'manual' as const })));
+      const manualConfigs = deps.subscriptionService.parseDirectLinksFromText(
+        effectiveManualLinksText,
+      );
+      configs.push(
+        ...manualConfigs.map((cfg) => ({ ...cfg, source: 'manual' as const })),
+      );
     }
 
-    const uniqueConfigs = Array.from(new Map(configs.map((cfg) => [getDedupKey(cfg), cfg])).values());
-    logger.info('IPC', 'refreshAllSubscriptions dedup', { total: uniqueConfigs.length });
+    const uniqueConfigs = Array.from(
+      new Map(configs.map((cfg) => [getDedupKey(cfg), cfg])).values(),
+    );
+    logger.info('IPC', 'refreshAllSubscriptions dedup', {
+      total: uniqueConfigs.length,
+    });
 
     const existingServers = deps.configService.getServers();
 
@@ -124,13 +153,20 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
     if (failedSubscriptionIds.size > 0) {
       const freshKeys = new Set(uniqueConfigs.map(getDedupKey));
       const preservedFromFailed = existingServers.filter(
-        (s) => s.subscriptionId && failedSubscriptionIds.has(s.subscriptionId) && !freshKeys.has(getDedupKey(s))
+        (s) =>
+          s.subscriptionId &&
+          failedSubscriptionIds.has(s.subscriptionId) &&
+          !freshKeys.has(getDedupKey(s)),
       );
       if (preservedFromFailed.length > 0) {
-        logger.warn('IPC', 'Preserving servers from failed subscriptions to prevent data loss', {
-          preserved: preservedFromFailed.length,
-          failedCount: failedSubscriptionIds.size,
-        });
+        logger.warn(
+          'IPC',
+          'Preserving servers from failed subscriptions to prevent data loss',
+          {
+            preserved: preservedFromFailed.length,
+            failedCount: failedSubscriptionIds.size,
+          },
+        );
         mergedConfigs = [...uniqueConfigs, ...preservedFromFailed];
       }
     }
@@ -162,10 +198,7 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
       // Prefer the freshest sample if multiple stored entries share an endpoint
       // (e.g. a rotated server still co-existing with its previous incarnation
       // from `preserveActiveServerIfNeeded`).
-      if (
-        !previous ||
-        (stored.pingTime ?? 0) > (previous.pingTime ?? 0)
-      ) {
+      if (!previous || (stored.pingTime ?? 0) > (previous.pingTime ?? 0)) {
         pingByEndpoint.set(key, stored);
       }
     });
@@ -189,9 +222,12 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
       existingServers,
       monitorStatus,
       deps.xrayService.isRunning(),
-      selectedIdBeforeRefresh
+      selectedIdBeforeRefresh,
     );
-    if (effectiveConfigs.length !== configsWithPing.length && monitorStatus.currentServer) {
+    if (
+      effectiveConfigs.length !== configsWithPing.length &&
+      monitorStatus.currentServer
+    ) {
       logger.warn('IPC', 'Preserving active server during background refresh', {
         serverId: monitorStatus.currentServer.uuid.substring(0, 8),
         serverName: monitorStatus.currentServer.name,
@@ -206,30 +242,45 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
       return {
         configCount: 0,
         partialErrors,
-        reason: partialErrors.length > 0
-          ? partialErrors.join('; ')
-          : 'No valid configuration links were found',
+        reason:
+          partialErrors.length > 0
+            ? partialErrors.join('; ')
+            : 'No valid configuration links were found',
       };
     }
 
     deps.configService.setServers(effectiveConfigs);
-    const syncedCurrentServer = deps.connectionMonitorService.syncCurrentServer(effectiveConfigs);
+    const syncedCurrentServer =
+      deps.connectionMonitorService.syncCurrentServer(effectiveConfigs);
     if (syncedCurrentServer) {
       deps.configService.setSelectedServerId(syncedCurrentServer.uuid);
-    } else if (selectedIdBeforeRefresh && !effectiveConfigs.some((s) => s.uuid === selectedIdBeforeRefresh)) {
-      const oldServer = existingServers.find((s) => s.uuid === selectedIdBeforeRefresh);
+    } else if (
+      selectedIdBeforeRefresh &&
+      !effectiveConfigs.some((s) => s.uuid === selectedIdBeforeRefresh)
+    ) {
+      const oldServer = existingServers.find(
+        (s) => s.uuid === selectedIdBeforeRefresh,
+      );
       if (oldServer) {
         const fuzzy =
           effectiveConfigs.find(
-            (s) => s.address === oldServer.address && s.port === oldServer.port && s.name === oldServer.name
+            (s) =>
+              s.address === oldServer.address &&
+              s.port === oldServer.port &&
+              s.name === oldServer.name,
           ) ??
-          effectiveConfigs.find((s) => s.address === oldServer.address && s.port === oldServer.port);
+          effectiveConfigs.find(
+            (s) => s.address === oldServer.address && s.port === oldServer.port,
+          );
         if (fuzzy) {
           deps.configService.setSelectedServerId(fuzzy.uuid);
         }
       }
     }
-    sendToRenderer(IPC_EVENT_CHANNELS.updateServers, toSafeServerList(effectiveConfigs));
+    sendToRenderer(
+      IPC_EVENT_CHANNELS.updateServers,
+      toSafeServerList(effectiveConfigs),
+    );
 
     return {
       configCount: effectiveConfigs.length,
@@ -237,7 +288,9 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
     };
   };
 
-  const queueRefreshAllSubscriptions = (manualLinks: string): Promise<RefreshSubscriptionResult> => {
+  const queueRefreshAllSubscriptions = (
+    manualLinks: string,
+  ): Promise<RefreshSubscriptionResult> => {
     const job = refreshQueue.then(() => refreshAllSubscriptions(manualLinks));
     refreshQueue = job.catch(() => ({ configCount: 0 }));
     return job;
@@ -254,18 +307,23 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
   const restartAutoRefreshTimer = (): void => {
     const subscriptions = deps.configService.getSubscriptions();
     const manualLinks = deps.configService.getManualLinksInput();
-    const hasInput = subscriptions.some((s) => s.enabled) || !!manualLinks.trim();
+    const hasInput =
+      subscriptions.some((s) => s.enabled) || !!manualLinks.trim();
 
     stopAutoRefreshTimer();
     if (!hasInput) {
-      logger.info('IPC', 'Auto-refresh timer not started: no subscription input');
+      logger.info(
+        'IPC',
+        'Auto-refresh timer not started: no subscription input',
+      );
       return;
     }
 
     autoRefreshTimer = setInterval(() => {
       const latestManualLinks = deps.configService.getManualLinksInput();
       const latestSubs = deps.configService.getSubscriptions();
-      const hasLatestInput = latestSubs.some((s) => s.enabled) || !!latestManualLinks.trim();
+      const hasLatestInput =
+        latestSubs.some((s) => s.enabled) || !!latestManualLinks.trim();
 
       if (!hasLatestInput) {
         stopAutoRefreshTimer();
@@ -275,11 +333,17 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
       void queueRefreshAllSubscriptions(latestManualLinks)
         .then((result) => {
           if (result.configCount === 0) {
-            reportSubscriptionRefreshIssue(result.reason || 'No valid configuration links were found');
+            reportSubscriptionRefreshIssue(
+              result.reason || 'No valid configuration links were found',
+            );
           } else if (result.partialErrors && result.partialErrors.length > 0) {
-            logger.warn('IPC', 'Some subscriptions failed during auto-refresh', {
-              errors: result.partialErrors,
-            });
+            logger.warn(
+              'IPC',
+              'Some subscriptions failed during auto-refresh',
+              {
+                errors: result.partialErrors,
+              },
+            );
           }
         })
         .catch((error) => {

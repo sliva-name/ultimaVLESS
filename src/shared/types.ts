@@ -33,14 +33,14 @@ export interface VlessConfig {
   pbk?: string; // reality public key
   sid?: string; // reality short id
   spx?: string; // reality spiderX
-  
+
   // WS specific
   path?: string;
   host?: string;
-  
+
   // gRPC specific
   serviceName?: string;
-  
+
   // Ping information
   ping?: number | null;
   pingTime?: number;
@@ -54,11 +54,31 @@ export type ConnectionMode = 'proxy' | 'tun';
 export type XudpProxyUDP443 = 'reject' | 'allow' | 'skip';
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error' | 'none';
 export type DomainStrategy = 'AsIs' | 'IPIfNonMatch' | 'IPOnDemand';
-export type TlsFingerprint = 'chrome' | 'firefox' | 'safari' | 'edge' | 'random' | 'randomized';
+export type TlsFingerprint =
+  | 'chrome'
+  | 'firefox'
+  | 'safari'
+  | 'edge'
+  | 'random'
+  | 'randomized';
 
-export const VALID_XUDP_PROXY_UDP_443_VALUES: readonly XudpProxyUDP443[] = ['reject', 'allow', 'skip'] as const;
-export const VALID_LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warning', 'error', 'none'] as const;
-export const VALID_DOMAIN_STRATEGIES: readonly DomainStrategy[] = ['AsIs', 'IPIfNonMatch', 'IPOnDemand'] as const;
+export const VALID_XUDP_PROXY_UDP_443_VALUES: readonly XudpProxyUDP443[] = [
+  'reject',
+  'allow',
+  'skip',
+] as const;
+export const VALID_LOG_LEVELS: readonly LogLevel[] = [
+  'debug',
+  'info',
+  'warning',
+  'error',
+  'none',
+] as const;
+export const VALID_DOMAIN_STRATEGIES: readonly DomainStrategy[] = [
+  'AsIs',
+  'IPIfNonMatch',
+  'IPOnDemand',
+] as const;
 export const VALID_TLS_FINGERPRINTS: readonly TlsFingerprint[] = [
   'chrome',
   'firefox',

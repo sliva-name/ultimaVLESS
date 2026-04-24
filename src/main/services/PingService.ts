@@ -19,7 +19,10 @@ export class PingService {
    * @param timeout - Connection timeout in milliseconds (default: 1800ms).
    * @returns Promise resolving to latency in milliseconds, or null if connection failed.
    */
-  public async pingServer(server: VlessConfig, timeout: number = this.DEFAULT_TIMEOUT): Promise<number | null> {
+  public async pingServer(
+    server: VlessConfig,
+    timeout: number = this.DEFAULT_TIMEOUT,
+  ): Promise<number | null> {
     const tcpLatency = await this.tcpPing(server, timeout);
     if (tcpLatency === null) {
       return null;
@@ -28,12 +31,23 @@ export class PingService {
     if (this.requiresTlsCheck(server)) {
       const sni = server.sni || server.address;
       const tlsTimeout = Math.max(timeout, 4000);
-      const tlsOk = await probeTlsHandshake(server.address, server.port, sni, tlsTimeout);
+      const tlsOk = await probeTlsHandshake(
+        server.address,
+        server.port,
+        sni,
+        tlsTimeout,
+      );
       if (!tlsOk) {
-        logger.debug('PingService', `TLS handshake failed for ${server.name} (${server.address}:${server.port}, sni=${sni})`);
+        logger.debug(
+          'PingService',
+          `TLS handshake failed for ${server.name} (${server.address}:${server.port}, sni=${sni})`,
+        );
         return null;
       }
-      logger.debug('PingService', `TLS handshake OK for ${server.name} (sni=${sni})`);
+      logger.debug(
+        'PingService',
+        `TLS handshake OK for ${server.name} (sni=${sni})`,
+      );
     }
 
     return tcpLatency;
@@ -44,7 +58,10 @@ export class PingService {
     return server.security === 'tls' || server.security === 'reality';
   }
 
-  private async tcpPing(server: VlessConfig, timeout: number): Promise<number | null> {
+  private async tcpPing(
+    server: VlessConfig,
+    timeout: number,
+  ): Promise<number | null> {
     return new Promise((resolve) => {
       const startTime = Date.now();
       const socket = new net.Socket();
@@ -56,20 +73,30 @@ export class PingService {
 
       const onError = (error: Error) => {
         cleanup();
-        logger.debug('PingService', `TCP ping failed for ${server.name} (${server.address}:${server.port})`, { error: error.message });
+        logger.debug(
+          'PingService',
+          `TCP ping failed for ${server.name} (${server.address}:${server.port})`,
+          { error: error.message },
+        );
         resolve(null);
       };
 
       const onTimeout = () => {
         cleanup();
-        logger.debug('PingService', `TCP ping timeout for ${server.name} (${server.address}:${server.port})`);
+        logger.debug(
+          'PingService',
+          `TCP ping timeout for ${server.name} (${server.address}:${server.port})`,
+        );
         resolve(null);
       };
 
       const onConnect = () => {
         const latency = Date.now() - startTime;
         cleanup();
-        logger.debug('PingService', `TCP ping success for ${server.name} (${server.address}:${server.port}): ${latency}ms`);
+        logger.debug(
+          'PingService',
+          `TCP ping success for ${server.name} (${server.address}:${server.port}): ${latency}ms`,
+        );
         resolve(latency);
       };
 
@@ -94,7 +121,7 @@ export class PingService {
    */
   public async pingServers(
     servers: VlessConfig[],
-    timeout: number = this.DEFAULT_TIMEOUT
+    timeout: number = this.DEFAULT_TIMEOUT,
   ): Promise<Map<string, number | null>> {
     const results = new Map<string, number | null>();
 
@@ -117,7 +144,7 @@ export class PingService {
           uuid: server.uuid.substring(0, 8) + '...',
           address: server.address,
           port: server.port,
-          latency
+          latency,
         });
         results.set(server.uuid, latency);
       }
@@ -128,7 +155,7 @@ export class PingService {
     logger.debug('PingService', 'All ping results', {
       totalServers: servers.length,
       resultsCount: results.size,
-      uniqueUUIDs: new Set(servers.map(s => s.uuid)).size,
+      uniqueUUIDs: new Set(servers.map((s) => s.uuid)).size,
     });
 
     return results;
@@ -142,15 +169,14 @@ export class PingService {
    */
   public async pingServerWithResult(
     server: VlessConfig,
-    timeout: number = this.DEFAULT_TIMEOUT
+    timeout: number = this.DEFAULT_TIMEOUT,
   ): Promise<{ uuid: string; latency: number | null }> {
     const latency = await this.pingServer(server, timeout);
     return {
       uuid: server.uuid,
-      latency
+      latency,
     };
   }
 }
 
 export const pingService = new PingService();
-

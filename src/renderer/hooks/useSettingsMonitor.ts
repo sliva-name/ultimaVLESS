@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ConnectionMonitorEvent, ConnectionStatus as MonitorStatus } from '@/renderer/preload.d';
+import {
+  ConnectionMonitorEvent,
+  ConnectionStatus as MonitorStatus,
+} from '@/renderer/preload.d';
 
 interface UseSettingsMonitorOptions {
   isOpen: boolean;
 }
 
 export function useSettingsMonitor({ isOpen }: UseSettingsMonitorOptions) {
-  const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null);
-  const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>([]);
+  const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(
+    null,
+  );
+  const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>(
+    [],
+  );
   const [autoSwitching, setAutoSwitching] = useState(true);
   const [hasLoadedMonitorStatus, setHasLoadedMonitorStatus] = useState(false);
   const loadMonitorStatusRef = useRef<(() => Promise<void>) | null>(null);
@@ -37,7 +44,8 @@ export function useSettingsMonitor({ isOpen }: UseSettingsMonitorOptions) {
       void loadMonitorStatusRef.current?.();
     };
 
-    const removeMonitorListener = window.electronAPI.onConnectionMonitorEvent(handleMonitorEvent);
+    const removeMonitorListener =
+      window.electronAPI.onConnectionMonitorEvent(handleMonitorEvent);
     const interval = setInterval(loadMonitorStatus, 5000);
 
     return () => {

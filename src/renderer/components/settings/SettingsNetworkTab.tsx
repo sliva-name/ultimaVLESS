@@ -32,10 +32,13 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
   const { t } = useTranslation();
 
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('proxy');
-  const [tunCapability, setTunCapability] = useState<TunCapabilityStatus | null>(null);
+  const [tunCapability, setTunCapability] =
+    useState<TunCapabilityStatus | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
 
-  const [perfSettings, setPerfSettings] = useState<PerformanceSettings>(DEFAULT_PERFORMANCE_SETTINGS);
+  const [perfSettings, setPerfSettings] = useState<PerformanceSettings>(
+    DEFAULT_PERFORMANCE_SETTINGS,
+  );
   const [perfDirty, setPerfDirty] = useState(false);
   const [perfSaving, setPerfSaving] = useState(false);
 
@@ -43,53 +46,68 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
     if (!isOpen) return;
     setModeError(null);
 
-    window.electronAPI.getConnectionMode()
+    window.electronAPI
+      .getConnectionMode()
       .then(setConnectionMode)
       .catch((err) => console.error('Failed to load connection mode:', err));
 
-    window.electronAPI.getPerformanceSettings()
+    window.electronAPI
+      .getPerformanceSettings()
       .then((settings) => {
         setPerfSettings(settings);
         setPerfDirty(false);
       })
-      .catch((err) => console.error('Failed to load performance settings:', err));
+      .catch((err) =>
+        console.error('Failed to load performance settings:', err),
+      );
 
-    window.electronAPI.getTunCapabilityStatus()
+    window.electronAPI
+      .getTunCapabilityStatus()
       .then(setTunCapability)
-      .catch((err) => console.error('Failed to load TUN capability status:', err));
+      .catch((err) =>
+        console.error('Failed to load TUN capability status:', err),
+      );
   }, [isOpen]);
 
-  const handleConnectionModeChange = useCallback(async (mode: ConnectionMode) => {
-    if (!hasLoadedMonitorStatus) return;
-    if (monitorIsConnected) {
-      setModeError(t('settings.network.disconnectHintError'));
-      return;
-    }
-    if (mode === 'tun' && tunCapability && !tunCapability.supported) {
-      setModeError(
-        tunCapability.platform === 'darwin'
-          ? t('settings.network.tunUnsupportedDarwin')
-          : t('settings.network.tunUnavailable')
-      );
-      return;
-    }
-    try {
-      await window.electronAPI.setConnectionMode(mode);
-      setConnectionMode(mode);
-      setModeError(null);
-    } catch (err) {
-      console.error('Failed to set connection mode:', err);
-      setModeError(err instanceof Error ? err.message : 'Failed to set connection mode');
-    }
-  }, [hasLoadedMonitorStatus, monitorIsConnected, tunCapability, t]);
+  const handleConnectionModeChange = useCallback(
+    async (mode: ConnectionMode) => {
+      if (!hasLoadedMonitorStatus) return;
+      if (monitorIsConnected) {
+        setModeError(t('settings.network.disconnectHintError'));
+        return;
+      }
+      if (mode === 'tun' && tunCapability && !tunCapability.supported) {
+        setModeError(
+          tunCapability.platform === 'darwin'
+            ? t('settings.network.tunUnsupportedDarwin')
+            : t('settings.network.tunUnavailable'),
+        );
+        return;
+      }
+      try {
+        await window.electronAPI.setConnectionMode(mode);
+        setConnectionMode(mode);
+        setModeError(null);
+      } catch (err) {
+        console.error('Failed to set connection mode:', err);
+        setModeError(
+          err instanceof Error ? err.message : 'Failed to set connection mode',
+        );
+      }
+    },
+    [hasLoadedMonitorStatus, monitorIsConnected, tunCapability, t],
+  );
 
-  const updatePerfField = useCallback(<K extends keyof PerformanceSettings>(
-    key: K,
-    value: PerformanceSettings[K]
-  ) => {
-    setPerfSettings(prev => ({ ...prev, [key]: value }));
-    setPerfDirty(true);
-  }, []);
+  const updatePerfField = useCallback(
+    <K extends keyof PerformanceSettings>(
+      key: K,
+      value: PerformanceSettings[K],
+    ) => {
+      setPerfSettings((prev) => ({ ...prev, [key]: value }));
+      setPerfDirty(true);
+    },
+    [],
+  );
 
   const handleSavePerfSettings = useCallback(async () => {
     setPerfSaving(true);
@@ -108,7 +126,9 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
     setPerfSettings(DEFAULT_PERFORMANCE_SETTINGS);
     setPerfSaving(true);
     try {
-      await window.electronAPI.setPerformanceSettings(DEFAULT_PERFORMANCE_SETTINGS);
+      await window.electronAPI.setPerformanceSettings(
+        DEFAULT_PERFORMANCE_SETTINGS,
+      );
       setPerfDirty(false);
     } catch (err) {
       console.error('Failed to reset performance settings:', err);
@@ -119,7 +139,8 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
   }, []);
 
   const tunUnavailable = !!tunCapability && !tunCapability.supported;
-  const tunNeedsPrivileges = !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
+  const tunNeedsPrivileges =
+    !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
   const tunButtonDisabled = tunUnavailable;
   const modeControlsDisabled = !hasLoadedMonitorStatus;
   // Prefer the authoritative renderer-side connection state (ws-fast updates)
@@ -128,20 +149,23 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
   const networkLocked = isConnected || isConnectionBusy || monitorIsConnected;
   const modeLockedByConnection = networkLocked;
 
-  const modeButtonClass = (active: boolean, disabled: boolean) => clsx(
-    'p-4 rounded-xl border text-left transition-all duration-200',
-    active
-      ? 'border-primary/70 bg-primary/10 text-white'
-      : disabled
-        ? 'border-gray-800/80 bg-gray-900/30 text-gray-500 cursor-not-allowed opacity-70'
-        : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70'
-  );
+  const modeButtonClass = (active: boolean, disabled: boolean) =>
+    clsx(
+      'p-4 rounded-xl border text-left transition-all duration-200',
+      active
+        ? 'border-primary/70 bg-primary/10 text-white'
+        : disabled
+          ? 'border-gray-800/80 bg-gray-900/30 text-gray-500 cursor-not-allowed opacity-70'
+          : 'border-gray-700/50 bg-gray-800/40 text-gray-300 hover:border-gray-600/70',
+    );
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2.5 mb-1">
         <Shield className="w-4 h-4 text-primary shrink-0" />
-        <h3 className="text-sm font-semibold text-gray-200">{t('settings.network.mode')}</h3>
+        <h3 className="text-sm font-semibold text-gray-200">
+          {t('settings.network.mode')}
+        </h3>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -149,26 +173,41 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
           type="button"
           onClick={() => handleConnectionModeChange('proxy')}
           disabled={modeControlsDisabled || modeLockedByConnection}
-          className={modeButtonClass(connectionMode === 'proxy', modeControlsDisabled || modeLockedByConnection)}
+          className={modeButtonClass(
+            connectionMode === 'proxy',
+            modeControlsDisabled || modeLockedByConnection,
+          )}
         >
-          <div className="text-sm font-semibold mb-1">{t('settings.network.proxyMode')}</div>
-          <div className="text-xs text-gray-400 leading-relaxed">{t('settings.network.proxyDesc')}</div>
+          <div className="text-sm font-semibold mb-1">
+            {t('settings.network.proxyMode')}
+          </div>
+          <div className="text-xs text-gray-400 leading-relaxed">
+            {t('settings.network.proxyDesc')}
+          </div>
         </button>
         <button
           type="button"
           onClick={() => handleConnectionModeChange('tun')}
-          disabled={modeControlsDisabled || tunButtonDisabled || modeLockedByConnection}
+          disabled={
+            modeControlsDisabled || tunButtonDisabled || modeLockedByConnection
+          }
           className={modeButtonClass(
             connectionMode === 'tun',
-            modeControlsDisabled || tunButtonDisabled || modeLockedByConnection
+            modeControlsDisabled || tunButtonDisabled || modeLockedByConnection,
           )}
         >
-          <div className="text-sm font-semibold mb-1">{t('settings.network.tunMode')}</div>
-          <div className="text-xs text-gray-400 leading-relaxed">{t('settings.network.tunDesc')}</div>
+          <div className="text-sm font-semibold mb-1">
+            {t('settings.network.tunMode')}
+          </div>
+          <div className="text-xs text-gray-400 leading-relaxed">
+            {t('settings.network.tunDesc')}
+          </div>
         </button>
       </div>
 
-      <p className="text-sm text-gray-500 leading-relaxed">{t('settings.network.disconnectHint')}</p>
+      <p className="text-sm text-gray-500 leading-relaxed">
+        {t('settings.network.disconnectHint')}
+      </p>
       {tunUnavailable && (
         <p className="text-sm text-orange-400 leading-relaxed">
           {tunCapability?.platform === 'darwin'
@@ -195,14 +234,20 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             : tunCapability.degradedReason}
         </p>
       )}
-      {modeError && <p className="text-sm text-orange-400 leading-relaxed">{modeError}</p>}
+      {modeError && (
+        <p className="text-sm text-orange-400 leading-relaxed">{modeError}</p>
+      )}
 
       <div className="mt-6 pt-6 border-t border-gray-700/50 space-y-4">
         <div className="flex items-center gap-2.5 mb-1">
           <Activity className="w-4 h-4 text-primary shrink-0" />
-          <h3 className="text-sm font-semibold text-gray-200">{t('settings.network.performance')}</h3>
+          <h3 className="text-sm font-semibold text-gray-200">
+            {t('settings.network.performance')}
+          </h3>
         </div>
-        <p className="text-xs text-gray-500 leading-relaxed">{t('settings.network.performanceHint')}</p>
+        <p className="text-xs text-gray-500 leading-relaxed">
+          {t('settings.network.performanceHint')}
+        </p>
 
         {networkLocked && (
           <div
@@ -219,7 +264,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
           aria-disabled={networkLocked}
           className={clsx(
             'space-y-3 transition-opacity duration-200',
-            networkLocked && 'opacity-60 pointer-events-none select-none'
+            networkLocked && 'opacity-60 pointer-events-none select-none',
           )}
         >
           <PerfToggleRow
@@ -253,7 +298,9 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             label={t('settings.network.xudpProxyUDP443')}
             hint={t('settings.network.xudpProxyUDP443Hint')}
             value={perfSettings.xudpProxyUDP443}
-            onChange={(v) => updatePerfField('xudpProxyUDP443', v as XudpProxyUDP443)}
+            onChange={(v) =>
+              updatePerfField('xudpProxyUDP443', v as XudpProxyUDP443)
+            }
             options={[
               { value: 'reject', label: t('settings.network.udp443Reject') },
               { value: 'allow', label: t('settings.network.udp443Allow') },
@@ -295,7 +342,9 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             label={t('settings.network.fingerprint')}
             hint={t('settings.network.fingerprintHint')}
             value={perfSettings.fingerprint}
-            onChange={(v) => updatePerfField('fingerprint', v as TlsFingerprint)}
+            onChange={(v) =>
+              updatePerfField('fingerprint', v as TlsFingerprint)
+            }
             options={[
               { value: 'chrome', label: 'Chrome' },
               { value: 'firefox', label: 'Firefox' },
@@ -324,7 +373,9 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             label={t('settings.network.domainStrategy')}
             hint={t('settings.network.domainStrategyHint')}
             value={perfSettings.domainStrategy}
-            onChange={(v) => updatePerfField('domainStrategy', v as DomainStrategy)}
+            onChange={(v) =>
+              updatePerfField('domainStrategy', v as DomainStrategy)
+            }
             options={[
               { value: 'AsIs', label: 'AsIs' },
               { value: 'IPIfNonMatch', label: 'IPIfNonMatch' },
@@ -341,9 +392,15 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             className="flex-1 disabled:opacity-40"
           >
             {perfSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-            {perfDirty
-              ? (perfSaving ? t('settings.sources.saving') : t('settings.sources.saveManual'))
-              : <Check className="w-4 h-4" />}
+            {perfDirty ? (
+              perfSaving ? (
+                t('settings.sources.saving')
+              ) : (
+                t('settings.sources.saveManual')
+              )
+            ) : (
+              <Check className="w-4 h-4" />
+            )}
           </PrimaryButton>
           <button
             type="button"
@@ -375,21 +432,23 @@ const PerfLabel: React.FC<PerfRowProps> = ({ label, hint }) => (
   </div>
 );
 
-const PerfToggleRow: React.FC<PerfRowProps & { checked: boolean; onChange: (v: boolean) => void }> = ({
-  label, hint, checked, onChange,
-}) => (
+const PerfToggleRow: React.FC<
+  PerfRowProps & { checked: boolean; onChange: (v: boolean) => void }
+> = ({ label, hint, checked, onChange }) => (
   <div className="flex items-center justify-between gap-3">
     <PerfLabel label={label} hint={hint} />
     <Toggle checked={checked} onChange={onChange} ariaLabel={label} />
   </div>
 );
 
-const PerfNumberRow: React.FC<PerfRowProps & {
-  value: number;
-  min: number;
-  max: number;
-  onChange: (v: number) => void;
-}> = ({ label, hint, value, min, max, onChange }) => (
+const PerfNumberRow: React.FC<
+  PerfRowProps & {
+    value: number;
+    min: number;
+    max: number;
+    onChange: (v: number) => void;
+  }
+> = ({ label, hint, value, min, max, onChange }) => (
   <div className="flex items-center justify-between gap-3">
     <PerfLabel label={label} hint={hint} />
     <input
@@ -398,17 +457,21 @@ const PerfNumberRow: React.FC<PerfRowProps & {
       max={max}
       value={value}
       aria-label={label}
-      onChange={(e) => onChange(Math.max(min, Math.min(max, parseInt(e.target.value) || min)))}
+      onChange={(e) =>
+        onChange(Math.max(min, Math.min(max, parseInt(e.target.value) || min)))
+      }
       className="w-20 bg-black/40 border border-gray-600/50 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none"
     />
   </div>
 );
 
-const PerfSelectRow: React.FC<PerfRowProps & {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}> = ({ label, hint, value, onChange, options }) => (
+const PerfSelectRow: React.FC<
+  PerfRowProps & {
+    value: string;
+    onChange: (v: string) => void;
+    options: { value: string; label: string }[];
+  }
+> = ({ label, hint, value, onChange, options }) => (
   <div className="flex items-center justify-between gap-3">
     <PerfLabel label={label} hint={hint} />
     <select
@@ -418,7 +481,9 @@ const PerfSelectRow: React.FC<PerfRowProps & {
       className="bg-black/40 border border-gray-600/50 rounded-lg px-2 py-1.5 text-sm text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none"
     >
       {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>{opt.label}</option>
+        <option key={opt.value} value={opt.value}>
+          {opt.label}
+        </option>
       ))}
     </select>
   </div>

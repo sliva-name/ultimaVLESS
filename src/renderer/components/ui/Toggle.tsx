@@ -59,14 +59,14 @@ export const Toggle: React.FC<ToggleProps> = ({
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         sizes.track,
-        checked ? 'bg-primary' : 'bg-gray-700'
+        checked ? 'bg-primary' : 'bg-gray-700',
       )}
     >
       <span
         className={clsx(
           'absolute bg-white rounded-full transition-transform duration-200',
           sizes.thumb,
-          checked ? sizes.thumbOn : 'translate-x-0'
+          checked ? sizes.thumbOn : 'translate-x-0',
         )}
       />
     </button>

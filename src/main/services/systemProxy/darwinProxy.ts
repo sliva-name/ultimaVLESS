@@ -29,7 +29,7 @@ export class DarwinProxyAdapter {
           socksHost: socks.host,
           socksPort: socks.port,
         } satisfies MacosServiceProxySnapshot;
-      })
+      }),
     );
     return { platform: 'darwin', services: snapshots };
   }
@@ -37,16 +37,41 @@ export class DarwinProxyAdapter {
   async enable(httpPort: number, socksPort: number): Promise<void> {
     const services = await this.listNetworkServices();
     if (services.length === 0) {
-      throw new Error('No macOS network services found for system proxy configuration.');
+      throw new Error(
+        'No macOS network services found for system proxy configuration.',
+      );
     }
 
     for (const service of services) {
-      await this.run([NETWORKSETUP, '-setwebproxy', service, '127.0.0.1', String(httpPort)]);
-      await this.run([NETWORKSETUP, '-setsecurewebproxy', service, '127.0.0.1', String(httpPort)]);
-      await this.run([NETWORKSETUP, '-setsocksfirewallproxy', service, '127.0.0.1', String(socksPort)]);
+      await this.run([
+        NETWORKSETUP,
+        '-setwebproxy',
+        service,
+        '127.0.0.1',
+        String(httpPort),
+      ]);
+      await this.run([
+        NETWORKSETUP,
+        '-setsecurewebproxy',
+        service,
+        '127.0.0.1',
+        String(httpPort),
+      ]);
+      await this.run([
+        NETWORKSETUP,
+        '-setsocksfirewallproxy',
+        service,
+        '127.0.0.1',
+        String(socksPort),
+      ]);
       await this.run([NETWORKSETUP, '-setwebproxystate', service, 'on']);
       await this.run([NETWORKSETUP, '-setsecurewebproxystate', service, 'on']);
-      await this.run([NETWORKSETUP, '-setsocksfirewallproxystate', service, 'on']);
+      await this.run([
+        NETWORKSETUP,
+        '-setsocksfirewallproxystate',
+        service,
+        'on',
+      ]);
     }
 
     logger.info('SystemProxyService', 'macOS system proxy enabled', {
@@ -59,14 +84,22 @@ export class DarwinProxyAdapter {
   async disable(): Promise<void> {
     const services = await this.listNetworkServices();
     if (services.length === 0) {
-      logger.warn('SystemProxyService', 'No macOS network services found while disabling proxy');
+      logger.warn(
+        'SystemProxyService',
+        'No macOS network services found while disabling proxy',
+      );
       return;
     }
 
     for (const service of services) {
       await this.run([NETWORKSETUP, '-setwebproxystate', service, 'off']);
       await this.run([NETWORKSETUP, '-setsecurewebproxystate', service, 'off']);
-      await this.run([NETWORKSETUP, '-setsocksfirewallproxystate', service, 'off']);
+      await this.run([
+        NETWORKSETUP,
+        '-setsocksfirewallproxystate',
+        service,
+        'off',
+      ]);
     }
 
     logger.info('SystemProxyService', 'macOS system proxy disabled', {
@@ -76,9 +109,27 @@ export class DarwinProxyAdapter {
 
   async restoreState(snapshot: MacosProxySnapshot): Promise<void> {
     for (const service of snapshot.services) {
-      await this.restoreKind(service.service, 'web', service.webHost, service.webPort, service.webEnabled);
-      await this.restoreKind(service.service, 'secure', service.secureHost, service.securePort, service.secureEnabled);
-      await this.restoreKind(service.service, 'socks', service.socksHost, service.socksPort, service.socksEnabled);
+      await this.restoreKind(
+        service.service,
+        'web',
+        service.webHost,
+        service.webPort,
+        service.webEnabled,
+      );
+      await this.restoreKind(
+        service.service,
+        'secure',
+        service.secureHost,
+        service.securePort,
+        service.secureEnabled,
+      );
+      await this.restoreKind(
+        service.service,
+        'socks',
+        service.socksHost,
+        service.socksPort,
+        service.socksEnabled,
+      );
     }
   }
 
@@ -88,18 +139,24 @@ export class DarwinProxyAdapter {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
-      .filter((line) => line !== 'An asterisk (*) denotes that a network service is disabled.')
+      .filter(
+        (line) =>
+          line !==
+          'An asterisk (*) denotes that a network service is disabled.',
+      )
       .map((line) => line.replace(/^\*\s*/, ''));
   }
 
   private async getProxyDetails(
     service: string,
-    kind: MacosProxyKind
+    kind: MacosProxyKind,
   ): Promise<{ enabled: boolean; host: string | null; port: number | null }> {
     const flag =
-      kind === 'web' ? '-getwebproxy'
-      : kind === 'secure' ? '-getsecurewebproxy'
-      : '-getsocksfirewallproxy';
+      kind === 'web'
+        ? '-getwebproxy'
+        : kind === 'secure'
+          ? '-getsecurewebproxy'
+          : '-getsocksfirewallproxy';
     const output = await this.run([NETWORKSETUP, flag, service]);
     return parseProxyDetails(output);
   }
@@ -109,16 +166,20 @@ export class DarwinProxyAdapter {
     kind: MacosProxyKind,
     host: string | null,
     port: number | null,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<void> {
     const setFlag =
-      kind === 'web' ? '-setwebproxy'
-      : kind === 'secure' ? '-setsecurewebproxy'
-      : '-setsocksfirewallproxy';
+      kind === 'web'
+        ? '-setwebproxy'
+        : kind === 'secure'
+          ? '-setsecurewebproxy'
+          : '-setsocksfirewallproxy';
     const stateFlag =
-      kind === 'web' ? '-setwebproxystate'
-      : kind === 'secure' ? '-setsecurewebproxystate'
-      : '-setsocksfirewallproxystate';
+      kind === 'web'
+        ? '-setwebproxystate'
+        : kind === 'secure'
+          ? '-setsecurewebproxystate'
+          : '-setsocksfirewallproxystate';
 
     if (host && port != null) {
       await this.run([NETWORKSETUP, setFlag, service, host, String(port)]);
@@ -132,7 +193,11 @@ export class DarwinProxyAdapter {
   }
 }
 
-function parseProxyDetails(output: string): { enabled: boolean; host: string | null; port: number | null } {
+function parseProxyDetails(output: string): {
+  enabled: boolean;
+  host: string | null;
+  port: number | null;
+} {
   const enabled = /^\s*Enabled:\s+Yes\s*$/im.test(output);
   const serverMatch = /^\s*Server:\s+(.+)\s*$/im.exec(output);
   const portMatch = /^\s*Port:\s+(\d+)\s*$/im.exec(output);

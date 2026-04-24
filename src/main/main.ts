@@ -18,16 +18,17 @@ if (!process.versions.electron) {
     'Run this app with Electron, not Node:\n' +
       '  npx electron .\n' +
       '  npm run electron:start\n' +
-      '  npx electron --trace-deprecation .'
+      '  npx electron --trace-deprecation .',
   );
   process.exit(1);
 }
 
 async function stopNetworkStack(): Promise<void> {
-  const [{ connectionStackService }, { connectionMonitorService }] = await Promise.all([
-    import('./services/ConnectionStackService'),
-    import('./services/ConnectionMonitorService'),
-  ]);
+  const [{ connectionStackService }, { connectionMonitorService }] =
+    await Promise.all([
+      import('./services/ConnectionStackService'),
+      import('./services/ConnectionMonitorService'),
+    ]);
   connectionMonitorService.stopMonitoring();
   await connectionStackService.resetNetworkingStack({ stopXray: true });
 }
@@ -142,7 +143,7 @@ async function attemptWindowRecovery(
   options: {
     recreateWindow?: boolean;
     details?: Record<string, unknown>;
-  } = {}
+  } = {},
 ): Promise<void> {
   if (isQuitting || isShuttingDown) {
     return;
@@ -183,7 +184,11 @@ async function attemptWindowRecovery(
     appRecoveryService.completeRecovery('reloaded');
   } catch (error) {
     appRecoveryService.completeRecovery('completed');
-    logger.error('Main', 'Recovery attempt failed before renderer finished loading', error);
+    logger.error(
+      'Main',
+      'Recovery attempt failed before renderer finished loading',
+      error,
+    );
   }
 }
 
@@ -208,7 +213,7 @@ async function ensureTray() {
       isWindowVisible: () =>
         !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible(),
     },
-    () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null)
+    () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
   );
   logStartupStep('Tray initialized');
 }
@@ -229,11 +234,11 @@ async function createWindow() {
       contextIsolation: true,
       sandbox: true,
     },
-    titleBarStyle: 'hidden', 
+    titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#1e1e1e',
-      symbolColor: '#ffffff'
-    }
+      symbolColor: '#ffffff',
+    },
   });
   const windowInstance = mainWindow;
   const wc = windowInstance.webContents;
@@ -247,36 +252,47 @@ async function createWindow() {
   wc.on('did-stop-loading', () => {
     logStartupStep('webContents did-stop-loading');
   });
-  wc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    logStartupStep('webContents did-fail-load', {
-      errorCode,
-      errorDescription,
-      validatedURL,
-      isMainFrame,
-    });
-    if (!isMainFrame || errorCode === DID_FAIL_LOAD_ABORTED) {
-      return;
-    }
-    void attemptWindowRecovery('did-fail-load', `did-fail-load:${errorCode}:${errorDescription}`, {
-      details: {
+  wc.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      logStartupStep('webContents did-fail-load', {
         errorCode,
         errorDescription,
         validatedURL,
-      },
-    });
-  });
+        isMainFrame,
+      });
+      if (!isMainFrame || errorCode === DID_FAIL_LOAD_ABORTED) {
+        return;
+      }
+      void attemptWindowRecovery(
+        'did-fail-load',
+        `did-fail-load:${errorCode}:${errorDescription}`,
+        {
+          details: {
+            errorCode,
+            errorDescription,
+            validatedURL,
+          },
+        },
+      );
+    },
+  );
   wc.on('render-process-gone', (_event, details) => {
     logStartupStep('webContents render-process-gone', {
       reason: details.reason,
       exitCode: details.exitCode,
     });
-    void attemptWindowRecovery('render-process-gone', `render-process-gone:${details.reason}:${details.exitCode}`, {
-      recreateWindow: true,
-      details: {
-        reason: details.reason,
-        exitCode: details.exitCode,
+    void attemptWindowRecovery(
+      'render-process-gone',
+      `render-process-gone:${details.reason}:${details.exitCode}`,
+      {
+        recreateWindow: true,
+        details: {
+          reason: details.reason,
+          exitCode: details.exitCode,
+        },
       },
-    });
+    );
   });
   wc.on('unresponsive', () => {
     logStartupStep('webContents unresponsive');
@@ -340,10 +356,13 @@ async function createWindow() {
 
       try {
         const targetUrl = new URL(navigationUrl);
-        const expectedIndexUrl = pathToFileURL(path.join(__dirname, '../dist/index.html'));
+        const expectedIndexUrl = pathToFileURL(
+          path.join(__dirname, '../dist/index.html'),
+        );
         return (
           targetUrl.protocol === 'file:' &&
-          decodeURIComponent(targetUrl.pathname) === decodeURIComponent(expectedIndexUrl.pathname)
+          decodeURIComponent(targetUrl.pathname) ===
+            decodeURIComponent(expectedIndexUrl.pathname)
         );
       } catch {
         return false;
@@ -356,7 +375,8 @@ async function createWindow() {
     }
   });
 
-  const { registerIpcHandlers, loadInitialState } = await import('./ipc/IpcHandler');
+  const { registerIpcHandlers, loadInitialState } =
+    await import('./ipc/IpcHandler');
   registerIpcHandlers(mainWindow);
 
   mainWindow.webContents.on('did-finish-load', async () => {
@@ -373,7 +393,10 @@ async function createWindow() {
 
   void loadRenderer(windowInstance).catch((error) => {
     logger.error('Main', 'Initial renderer load failed', error);
-    void attemptWindowRecovery('initial-load', `initial-load:${formatUnknownError(error)}`);
+    void attemptWindowRecovery(
+      'initial-load',
+      `initial-load:${formatUnknownError(error)}`,
+    );
   });
 
   logStartupStep('BrowserWindow created', {
@@ -414,14 +437,18 @@ app.on('child-process-gone', (_event, details) => {
   });
 
   if (details.type === 'Utility' || details.type === 'GPU') {
-    void attemptWindowRecovery('child-process-gone', `child-process-gone:${details.type}:${details.reason}:${details.exitCode}`, {
-      recreateWindow: details.type === 'GPU',
-      details: {
-        type: details.type,
-        reason: details.reason,
-        exitCode: details.exitCode,
+    void attemptWindowRecovery(
+      'child-process-gone',
+      `child-process-gone:${details.type}:${details.reason}:${details.exitCode}`,
+      {
+        recreateWindow: details.type === 'GPU',
+        details: {
+          type: details.type,
+          reason: details.reason,
+          exitCode: details.exitCode,
+        },
       },
-    });
+    );
   }
 });
 
@@ -451,7 +478,9 @@ app.on('before-quit', (event) => {
   isShuttingDown = true;
 
   const forceExitTimeout = setTimeout(() => {
-    logger.warn('Main', 'Forced exit after shutdown timeout', { timeoutMs: SHUTDOWN_TIMEOUT_MS });
+    logger.warn('Main', 'Forced exit after shutdown timeout', {
+      timeoutMs: SHUTDOWN_TIMEOUT_MS,
+    });
     app.exit(0);
   }, SHUTDOWN_TIMEOUT_MS);
 

@@ -2,8 +2,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-const RELEASE_API_URL = 'https://api.github.com/repos/XTLS/Xray-core/releases/latest';
-const RELEASE_LATEST_DOWNLOAD_BASE_URL = 'https://github.com/XTLS/Xray-core/releases/latest/download';
+const RELEASE_API_URL =
+  'https://api.github.com/repos/XTLS/Xray-core/releases/latest';
+const RELEASE_LATEST_DOWNLOAD_BASE_URL =
+  'https://github.com/XTLS/Xray-core/releases/latest/download';
 const ROOT_DIR = process.cwd();
 const RESOURCES_DIR = path.join(ROOT_DIR, 'resources', 'bin');
 
@@ -26,8 +28,10 @@ function parseArgs(argv) {
 
 function normalizePlatform(value) {
   const platform = String(value || '').toLowerCase();
-  if (platform === 'win' || platform === 'windows' || platform === 'win32') return 'win32';
-  if (platform === 'mac' || platform === 'macos' || platform === 'darwin') return 'darwin';
+  if (platform === 'win' || platform === 'windows' || platform === 'win32')
+    return 'win32';
+  if (platform === 'mac' || platform === 'macos' || platform === 'darwin')
+    return 'darwin';
   if (platform === 'linux') return 'linux';
   throw new Error(`Unsupported platform: ${value}`);
 }
@@ -45,13 +49,21 @@ function getCandidateNames(platform, arch) {
   }
   if (platform === 'linux') {
     if (arch === 'arm64') {
-      return ['Xray-linux-arm64-v8a.zip', 'Xray-linux-arm64.zip', 'Xray-linux-64.zip'];
+      return [
+        'Xray-linux-arm64-v8a.zip',
+        'Xray-linux-arm64.zip',
+        'Xray-linux-64.zip',
+      ];
     }
     return ['Xray-linux-64.zip', 'Xray-linux-amd64.zip'];
   }
   if (platform === 'darwin') {
     if (arch === 'arm64') {
-      return ['Xray-macos-arm64-v8a.zip', 'Xray-macos-arm64.zip', 'Xray-macos-64.zip'];
+      return [
+        'Xray-macos-arm64-v8a.zip',
+        'Xray-macos-arm64.zip',
+        'Xray-macos-64.zip',
+      ];
     }
     return ['Xray-macos-64.zip', 'Xray-macos-amd64.zip'];
   }
@@ -115,7 +127,9 @@ async function downloadFromLatestRelease(candidates, destinationPath) {
       errors.push(`${candidate}: ${message}`);
     }
   }
-  throw new Error(`Could not download Xray archive via latest download URLs. Attempts: ${errors.join(' | ')}`);
+  throw new Error(
+    `Could not download Xray archive via latest download URLs. Attempts: ${errors.join(' | ')}`,
+  );
 }
 
 async function downloadFromApiAssets(candidates, destinationPath) {
@@ -123,7 +137,9 @@ async function downloadFromApiAssets(candidates, destinationPath) {
   const assets = Array.isArray(release.assets) ? release.assets : [];
   const selected = selectAsset(assets, candidates);
   if (!selected) {
-    throw new Error(`Could not find Xray archive in API response. Tried: ${candidates.join(', ')}`);
+    throw new Error(
+      `Could not find Xray archive in API response. Tried: ${candidates.join(', ')}`,
+    );
   }
   await downloadFile(selected.browser_download_url, destinationPath);
   return selected.name;
@@ -138,7 +154,9 @@ async function main() {
 
   const candidateNames = getCandidateNames(platform, arch);
   if (candidateNames.length === 0) {
-    throw new Error(`No candidate asset names for platform=${platform} arch=${arch}`);
+    throw new Error(
+      `No candidate asset names for platform=${platform} arch=${arch}`,
+    );
   }
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xray-assets-'));
@@ -152,7 +170,10 @@ async function main() {
       archiveName = await downloadFromLatestRelease(candidateNames, zipPath);
       console.log(`Downloaded ${archiveName} via latest release URL`);
     } catch (directError) {
-      const directMessage = directError instanceof Error ? directError.message : String(directError);
+      const directMessage =
+        directError instanceof Error
+          ? directError.message
+          : String(directError);
       console.warn(`Direct latest-release download failed: ${directMessage}`);
       archiveName = await downloadFromApiAssets(candidateNames, zipPath);
       console.log(`Downloaded ${archiveName} via GitHub API asset URL`);
@@ -162,13 +183,26 @@ async function main() {
     const { spawnSync } = await import('child_process');
     const unzipResult =
       process.platform === 'win32'
-        ? spawnSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -Path "${zipPath}" -DestinationPath "${extractDir}" -Force`], { stdio: 'inherit' })
-        : spawnSync('unzip', ['-o', zipPath, '-d', extractDir], { stdio: 'inherit' });
+        ? spawnSync(
+            'powershell',
+            [
+              '-NoProfile',
+              '-Command',
+              `Expand-Archive -Path "${zipPath}" -DestinationPath "${extractDir}" -Force`,
+            ],
+            { stdio: 'inherit' },
+          )
+        : spawnSync('unzip', ['-o', zipPath, '-d', extractDir], {
+            stdio: 'inherit',
+          });
     if (unzipResult.status !== 0) {
       throw new Error('Failed to extract downloaded Xray archive');
     }
 
-    const required = platform === 'win32' ? ['xray.exe', 'geoip.dat', 'geosite.dat'] : ['xray', 'geoip.dat', 'geosite.dat'];
+    const required =
+      platform === 'win32'
+        ? ['xray.exe', 'geoip.dat', 'geosite.dat']
+        : ['xray', 'geoip.dat', 'geosite.dat'];
     for (const file of required) {
       const source = path.join(extractDir, file);
       if (!fs.existsSync(source)) {

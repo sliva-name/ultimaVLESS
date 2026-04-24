@@ -14,7 +14,9 @@ const newServer = makeServer({
   name: 'New Server',
 });
 
-function makeMonitorStatus(overrides: Partial<ConnectionMonitorStatus> = {}): ConnectionMonitorStatus {
+function makeMonitorStatus(
+  overrides: Partial<ConnectionMonitorStatus> = {},
+): ConnectionMonitorStatus {
   return {
     isConnected: true,
     currentServer: activeServer,
@@ -61,11 +63,20 @@ describe('preserveActiveServerIfNeeded', () => {
       isRunning: false,
       expectedUuids: [newServer.uuid],
     },
-  ])('returns the expected refresh result for connection state %#', ({ monitorStatus, isRunning, expectedUuids }) => {
-    const result = preserveActiveServerIfNeeded([newServer], [activeServer], monitorStatus, isRunning, null);
+  ])(
+    'returns the expected refresh result for connection state %#',
+    ({ monitorStatus, isRunning, expectedUuids }) => {
+      const result = preserveActiveServerIfNeeded(
+        [newServer],
+        [activeServer],
+        monitorStatus,
+        isRunning,
+        null,
+      );
 
-    expect(result.map((server) => server.uuid)).toEqual(expectedUuids);
-  });
+      expect(result.map((server) => server.uuid)).toEqual(expectedUuids);
+    },
+  );
 
   it('does not duplicate the active server when the subscription rotated its uuid', () => {
     const active = makeServer({
@@ -85,7 +96,13 @@ describe('preserveActiveServerIfNeeded', () => {
       name: 'Rotated Server',
     });
 
-    const result = preserveActiveServerIfNeeded([rotated], [active], makeMonitorStatus({ currentServer: active }), true, null);
+    const result = preserveActiveServerIfNeeded(
+      [rotated],
+      [active],
+      makeMonitorStatus({ currentServer: active }),
+      true,
+      null,
+    );
 
     expect(result.map((server) => server.uuid)).toEqual(['stable-new']);
   });
@@ -109,7 +126,7 @@ describe('preserveActiveServerIfNeeded', () => {
       [previouslySelected],
       makeMonitorStatus({ isConnected: false, currentServer: null }),
       false,
-      previouslySelected.uuid
+      previouslySelected.uuid,
     );
 
     expect(result.map((server) => server.uuid)).toEqual(['sel-new']);

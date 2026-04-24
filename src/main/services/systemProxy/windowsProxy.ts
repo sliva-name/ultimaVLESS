@@ -86,7 +86,9 @@ export class WindowsProxyAdapter {
   }
 
   async restoreState(snapshot: WindowsProxySnapshot): Promise<void> {
-    const encoded = Buffer.from(JSON.stringify(snapshot), 'utf8').toString('base64');
+    const encoded = Buffer.from(JSON.stringify(snapshot), 'utf8').toString(
+      'base64',
+    );
     await this.runPowerShellCommand(`
       $json = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${encoded}'))
       $state = $json | ConvertFrom-Json
@@ -125,26 +127,43 @@ export class WindowsProxyAdapter {
 
   private runScript(enable: string, proxy: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      logger.info('SystemProxyService', `Running script enable=${enable} proxy=${proxy}`);
+      logger.info(
+        'SystemProxyService',
+        `Running script enable=${enable} proxy=${proxy}`,
+      );
 
-      const ps = spawn('powershell', [
-        '-NoProfile',
-        '-ExecutionPolicy', 'Bypass',
-        '-File', this.scriptPath,
-        enable,
-        proxy,
-      ], { windowsHide: true });
+      const ps = spawn(
+        'powershell',
+        [
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          this.scriptPath,
+          enable,
+          proxy,
+        ],
+        { windowsHide: true },
+      );
 
       const timeout = setTimeout(() => {
         ps.kill('SIGTERM');
-        reject(new Error(`Proxy script timed out after ${SCRIPT_TIMEOUT_MS / 1000}s`));
+        reject(
+          new Error(
+            `Proxy script timed out after ${SCRIPT_TIMEOUT_MS / 1000}s`,
+          ),
+        );
       }, SCRIPT_TIMEOUT_MS);
 
       ps.stdout.on('data', (data) => {
-        logger.info('SystemProxyService', 'STDOUT', { data: data.toString().trim() });
+        logger.info('SystemProxyService', 'STDOUT', {
+          data: data.toString().trim(),
+        });
       });
       ps.stderr.on('data', (data) => {
-        logger.error('SystemProxyService', 'STDERR', { data: data.toString().trim() });
+        logger.error('SystemProxyService', 'STDERR', {
+          data: data.toString().trim(),
+        });
       });
 
       ps.on('close', (code) => {
@@ -166,7 +185,7 @@ export class WindowsProxyAdapter {
     return runCommand(
       'powershell',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
-      SCRIPT_TIMEOUT_MS
+      SCRIPT_TIMEOUT_MS,
     );
   }
 }

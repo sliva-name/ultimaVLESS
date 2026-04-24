@@ -3,11 +3,15 @@ import path from 'path';
 
 const platform = process.argv[2];
 if (!platform) {
-  console.error('Usage: node scripts/verify-release-config.mjs <win|linux|mac>');
+  console.error(
+    'Usage: node scripts/verify-release-config.mjs <win|linux|mac>',
+  );
   process.exit(1);
 }
 
-const packageJson = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
+const packageJson = JSON.parse(
+  fs.readFileSync(path.resolve('package.json'), 'utf8'),
+);
 const extraResources = packageJson.build?.extraResources?.[0]?.filter || [];
 
 function requireResource(name) {

@@ -1,5 +1,9 @@
 import { EventEmitter } from 'events';
-import { AppRecoveryOutcome, AppRecoveryStatus, AppRecoveryTrigger } from '@/shared/ipc';
+import {
+  AppRecoveryOutcome,
+  AppRecoveryStatus,
+  AppRecoveryTrigger,
+} from '@/shared/ipc';
 
 const RECOVERY_WINDOW_MS = 60_000;
 const MAX_RECOVERY_ATTEMPTS = 3;
@@ -20,7 +24,7 @@ export class AppRecoveryService extends EventEmitter {
   public beginRecovery(
     trigger: AppRecoveryTrigger,
     reason: string,
-    now: number = Date.now()
+    now: number = Date.now(),
   ): AppRecoveryStatus {
     this.pruneAttempts(now);
 
@@ -55,21 +59,25 @@ export class AppRecoveryService extends EventEmitter {
 
   public completeRecovery(
     outcome: AppRecoveryOutcome = 'completed',
-    now: number = Date.now()
+    now: number = Date.now(),
   ): AppRecoveryStatus {
     this.pruneAttempts(now);
     this.status = {
       ...this.status,
       recoveryInProgress: false,
       recoveryAttemptCount: this.recoveryAttemptTimestamps.length,
-      recoveryBlocked: this.recoveryAttemptTimestamps.length >= MAX_RECOVERY_ATTEMPTS,
+      recoveryBlocked:
+        this.recoveryAttemptTimestamps.length >= MAX_RECOVERY_ATTEMPTS,
       lastRecoveryOutcome: outcome,
     };
     this.emitChange();
     return this.getStatus();
   }
 
-  public recordFatal(reason: string, now: number = Date.now()): AppRecoveryStatus {
+  public recordFatal(
+    reason: string,
+    now: number = Date.now(),
+  ): AppRecoveryStatus {
     this.pruneAttempts(now);
     this.status = {
       ...this.status,
@@ -87,16 +95,21 @@ export class AppRecoveryService extends EventEmitter {
     return {
       ...this.status,
       recoveryAttemptCount: this.recoveryAttemptTimestamps.length,
-      recoveryBlocked: this.status.recoveryBlocked && this.recoveryAttemptTimestamps.length >= MAX_RECOVERY_ATTEMPTS,
+      recoveryBlocked:
+        this.status.recoveryBlocked &&
+        this.recoveryAttemptTimestamps.length >= MAX_RECOVERY_ATTEMPTS,
     };
   }
 
   private pruneAttempts(now: number): void {
     this.recoveryAttemptTimestamps = this.recoveryAttemptTimestamps.filter(
-      (timestamp) => now - timestamp <= RECOVERY_WINDOW_MS
+      (timestamp) => now - timestamp <= RECOVERY_WINDOW_MS,
     );
 
-    if (this.recoveryAttemptTimestamps.length < MAX_RECOVERY_ATTEMPTS && this.status.recoveryBlocked) {
+    if (
+      this.recoveryAttemptTimestamps.length < MAX_RECOVERY_ATTEMPTS &&
+      this.status.recoveryBlocked
+    ) {
       this.status = {
         ...this.status,
         recoveryBlocked: false,

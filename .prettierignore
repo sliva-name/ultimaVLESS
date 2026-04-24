@@ -1,0 +1,6 @@
+dist
+dist-electron
+release
+coverage
+node_modules
+resources/bin

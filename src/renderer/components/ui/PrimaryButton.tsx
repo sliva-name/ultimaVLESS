@@ -25,7 +25,7 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
       'disabled:opacity-50 disabled:cursor-not-allowed transition-all',
       'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
       block && 'w-full',
-      className
+      className,
     )}
   >
     {children}

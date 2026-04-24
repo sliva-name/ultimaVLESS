@@ -45,7 +45,7 @@ describe('ConfigGenerator', () => {
         pbk: undefined,
         fp: undefined,
       }),
-      '/tmp/log'
+      '/tmp/log',
     );
 
     expect(result.outbounds[0].streamSettings).toMatchObject({
@@ -57,13 +57,21 @@ describe('ConfigGenerator', () => {
   });
 
   it('uses the default reality fingerprint when fp is missing', () => {
-    const result = ConfigGenerator.generate(makeServer({ ...baseConfig, fp: undefined }), '/tmp/log');
+    const result = ConfigGenerator.generate(
+      makeServer({ ...baseConfig, fp: undefined }),
+      '/tmp/log',
+    );
 
-    expect(result.outbounds[0].streamSettings?.realitySettings?.fingerprint).toBe('chrome');
+    expect(
+      result.outbounds[0].streamSettings?.realitySettings?.fingerprint,
+    ).toBe('chrome');
   });
 
   it('omits empty flow on the VLESS user object', () => {
-    const result = ConfigGenerator.generate(makeServer({ ...baseConfig, flow: undefined }), '/tmp/log');
+    const result = ConfigGenerator.generate(
+      makeServer({ ...baseConfig, flow: undefined }),
+      '/tmp/log',
+    );
     const user = (result.outbounds[0] as any).settings.vnext[0].users[0];
     expect(user.flow).toBeUndefined();
     expect(user.encryption).toBe('none');
@@ -73,14 +81,26 @@ describe('ConfigGenerator', () => {
     const result = ConfigGenerator.generate(baseConfig, '/tmp/log');
     const mux = result.outbounds[0].mux;
 
-    expect(mux).toEqual({ enabled: true, concurrency: -1, xudpConcurrency: 16, xudpProxyUDP443: 'reject' });
+    expect(mux).toEqual({
+      enabled: true,
+      concurrency: -1,
+      xudpConcurrency: 16,
+      xudpProxyUDP443: 'reject',
+    });
   });
 
   it('enables full mux when no flow is set', () => {
-    const result = ConfigGenerator.generate(makeServer({ ...baseConfig, flow: undefined }), '/tmp/log');
+    const result = ConfigGenerator.generate(
+      makeServer({ ...baseConfig, flow: undefined }),
+      '/tmp/log',
+    );
     const mux = result.outbounds[0].mux;
 
-    expect(mux).toMatchObject({ enabled: true, concurrency: 8, xudpConcurrency: 16 });
+    expect(mux).toMatchObject({
+      enabled: true,
+      concurrency: 8,
+      xudpConcurrency: 16,
+    });
   });
 
   it('places mux at outbound level, not inside streamSettings', () => {
@@ -97,14 +117,21 @@ describe('ConfigGenerator', () => {
 
   it('sets routeOnly on socks inbound sniffing', () => {
     const result = ConfigGenerator.generate(baseConfig, '/tmp/log');
-    const socksInbound = result.inbounds?.find((ib: any) => ib.protocol === 'socks');
+    const socksInbound = result.inbounds?.find(
+      (ib: any) => ib.protocol === 'socks',
+    );
     expect(socksInbound?.sniffing?.routeOnly).toBe(true);
   });
 
   it('adds kcpSettings for kcp transport', () => {
-    const result = ConfigGenerator.generate(makeServer({ ...baseConfig, type: 'kcp', security: 'none' }), '/tmp/log');
+    const result = ConfigGenerator.generate(
+      makeServer({ ...baseConfig, type: 'kcp', security: 'none' }),
+      '/tmp/log',
+    );
     expect(result.outbounds[0].streamSettings?.network).toBe('kcp');
-    expect(result.outbounds[0].streamSettings?.kcpSettings?.header).toEqual({ type: 'none' });
+    expect(result.outbounds[0].streamSettings?.kcpSettings?.header).toEqual({
+      type: 'none',
+    });
   });
 
   it('adds httpSettings for http transport', () => {
@@ -116,7 +143,7 @@ describe('ConfigGenerator', () => {
         path: '/p',
         host: 'cdn.test',
       }),
-      '/tmp/log'
+      '/tmp/log',
     );
     expect(result.outbounds[0].streamSettings?.httpSettings).toEqual({
       path: '/p',
@@ -125,25 +152,38 @@ describe('ConfigGenerator', () => {
   });
 
   it('adds quicSettings for quic transport', () => {
-    const result = ConfigGenerator.generate(makeServer({ ...baseConfig, type: 'quic', security: 'tls' }), '/tmp/log');
+    const result = ConfigGenerator.generate(
+      makeServer({ ...baseConfig, type: 'quic', security: 'tls' }),
+      '/tmp/log',
+    );
     expect(result.outbounds[0].streamSettings?.network).toBe('quic');
-    expect(result.outbounds[0].streamSettings?.quicSettings?.header).toEqual({ type: 'none' });
+    expect(result.outbounds[0].streamSettings?.quicSettings?.header).toEqual({
+      type: 'none',
+    });
   });
 
   it('routes bittorrent traffic to the block outbound', () => {
     const result = ConfigGenerator.generate(baseConfig, '/tmp/log');
 
     expect(
-      result.routing.rules.some((rule: any) => rule.protocol?.includes('bittorrent') && rule.outboundTag === 'block')
+      result.routing.rules.some(
+        (rule: any) =>
+          rule.protocol?.includes('bittorrent') && rule.outboundTag === 'block',
+      ),
     ).toBe(true);
   });
 
   it('omits bittorrent block rule when blockBittorrent is false', () => {
     const result = ConfigGenerator.generate(baseConfig, '/tmp/log', 'proxy', {
-      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, blockBittorrent: false },
+      performanceSettings: {
+        ...DEFAULT_PERFORMANCE_SETTINGS,
+        blockBittorrent: false,
+      },
     });
     expect(
-      result.routing.rules.some((rule: any) => rule.protocol?.includes('bittorrent'))
+      result.routing.rules.some((rule: any) =>
+        rule.protocol?.includes('bittorrent'),
+      ),
     ).toBe(false);
   });
 
@@ -152,20 +192,28 @@ describe('ConfigGenerator', () => {
       performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, blockAds: false },
     });
     expect(
-      result.routing.rules.some((rule: any) => rule.domain?.includes('geosite:category-ads-all'))
+      result.routing.rules.some((rule: any) =>
+        rule.domain?.includes('geosite:category-ads-all'),
+      ),
     ).toBe(false);
   });
 
   it('uses custom log level from performance settings', () => {
     const result = ConfigGenerator.generate(baseConfig, '/tmp/log', 'proxy', {
-      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, logLevel: 'debug' },
+      performanceSettings: {
+        ...DEFAULT_PERFORMANCE_SETTINGS,
+        logLevel: 'debug',
+      },
     });
     expect(result.log.loglevel).toBe('debug');
   });
 
   it('uses custom domain strategy from performance settings', () => {
     const result = ConfigGenerator.generate(baseConfig, '/tmp/log', 'proxy', {
-      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, domainStrategy: 'AsIs' },
+      performanceSettings: {
+        ...DEFAULT_PERFORMANCE_SETTINGS,
+        domainStrategy: 'AsIs',
+      },
     });
     expect(result.routing.domainStrategy).toBe('AsIs');
   });
@@ -173,16 +221,26 @@ describe('ConfigGenerator', () => {
   it('uses custom fingerprint when server fp is not set', () => {
     const noFpConfig = makeServer({ ...baseConfig, fp: undefined });
     const result = ConfigGenerator.generate(noFpConfig, '/tmp/log', 'proxy', {
-      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, fingerprint: 'firefox' },
+      performanceSettings: {
+        ...DEFAULT_PERFORMANCE_SETTINGS,
+        fingerprint: 'firefox',
+      },
     });
-    expect(result.outbounds[0].streamSettings?.realitySettings?.fingerprint).toBe('firefox');
+    expect(
+      result.outbounds[0].streamSettings?.realitySettings?.fingerprint,
+    ).toBe('firefox');
   });
 
   it('prefers server fp over default fingerprint setting', () => {
     const result = ConfigGenerator.generate(baseConfig, '/tmp/log', 'proxy', {
-      performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, fingerprint: 'firefox' },
+      performanceSettings: {
+        ...DEFAULT_PERFORMANCE_SETTINGS,
+        fingerprint: 'firefox',
+      },
     });
-    expect(result.outbounds[0].streamSettings?.realitySettings?.fingerprint).toBe('chrome');
+    expect(
+      result.outbounds[0].streamSettings?.realitySettings?.fingerprint,
+    ).toBe('chrome');
   });
 
   it('adds tun-specific settings when tun mode is enabled', () => {
@@ -218,10 +276,12 @@ describe('ConfigGenerator', () => {
       }),
       '/tmp/log',
       'tun',
-      { tunAutoRoute: true }
+      { tunAutoRoute: true },
     );
 
-    const tunInbounds = result.inbounds.filter((inbound: any) => inbound.protocol === 'tun');
+    const tunInbounds = result.inbounds.filter(
+      (inbound: any) => inbound.protocol === 'tun',
+    );
     expect(tunInbounds).toHaveLength(1);
     expect(tunInbounds[0].tag).toBe('existing-tun');
   });
@@ -233,12 +293,18 @@ describe('ConfigGenerator', () => {
         rawConfig: {
           inbounds: [],
           outbounds: [
-            { tag: 'proxy', protocol: 'vless', settings: { vnext: [{ users: [{ id: 'x', encryption: 'none' }] }] } },
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                vnext: [{ users: [{ id: 'x', encryption: 'none' }] }],
+              },
+            },
             { tag: 'direct', protocol: 'freedom' },
           ],
         },
       }),
-      '/tmp/log'
+      '/tmp/log',
     );
 
     const proxy = result.outbounds.find((o: any) => o.tag === 'proxy');
@@ -258,11 +324,23 @@ describe('ConfigGenerator', () => {
         rawConfig: {
           inbounds: [],
           outbounds: [
-            { tag: 'proxy', protocol: 'vless', settings: { vnext: [{ users: [{ id: 'x', encryption: 'none', flow: 'xtls-rprx-vision' }] }] } },
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                vnext: [
+                  {
+                    users: [
+                      { id: 'x', encryption: 'none', flow: 'xtls-rprx-vision' },
+                    ],
+                  },
+                ],
+              },
+            },
           ],
         },
       }),
-      '/tmp/log'
+      '/tmp/log',
     );
 
     const proxy = result.outbounds[0];
@@ -277,15 +355,18 @@ describe('ConfigGenerator', () => {
           inbounds: [],
           outbounds: [
             {
-              tag: 'proxy', protocol: 'vless',
-              settings: { vnext: [{ users: [{ id: 'x', encryption: 'none' }] }] },
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                vnext: [{ users: [{ id: 'x', encryption: 'none' }] }],
+              },
               streamSettings: { sockopt: { tcpFastOpen: false, mark: 255 } },
               mux: { enabled: false, concurrency: 1 },
             },
           ],
         },
       }),
-      '/tmp/log'
+      '/tmp/log',
     );
 
     const proxy = result.outbounds[0];
@@ -300,13 +381,18 @@ describe('ConfigGenerator', () => {
         ...baseConfig,
         rawConfig: {
           inbounds: [
-            { protocol: 'socks', port: 1080, listen: '0.0.0.0', sniffing: { enabled: true, destOverride: ['http', 'tls'] } },
+            {
+              protocol: 'socks',
+              port: 1080,
+              listen: '0.0.0.0',
+              sniffing: { enabled: true, destOverride: ['http', 'tls'] },
+            },
             { protocol: 'http', port: 8080, listen: '0.0.0.0' },
           ],
           outbounds: [{ tag: 'proxy', protocol: 'vless', settings: {} }],
         },
       }),
-      '/tmp/log'
+      '/tmp/log',
     );
 
     const socks = result.inbounds.find((ib: any) => ib.protocol === 'socks');
@@ -322,12 +408,21 @@ describe('ConfigGenerator', () => {
         rawConfig: {
           inbounds: [],
           outbounds: [{ tag: 'proxy', protocol: 'vless', settings: {} }],
-          routing: { rules: [{ type: 'field', domain: ['example.com'], outboundTag: 'direct' }] },
+          routing: {
+            rules: [
+              { type: 'field', domain: ['example.com'], outboundTag: 'direct' },
+            ],
+          },
         },
       }),
       '/tmp/log',
       'proxy',
-      { performanceSettings: { ...DEFAULT_PERFORMANCE_SETTINGS, blockAds: true } }
+      {
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          blockAds: true,
+        },
+      },
     );
 
     expect(result.routing.rules[0]).toMatchObject({
@@ -358,17 +453,21 @@ describe('ConfigGenerator', () => {
           outbounds: [{ tag: 'proxy', protocol: 'vless', settings: {} }],
         },
       }),
-      '/tmp/log'
+      '/tmp/log',
     );
 
-    expect(result.inbounds.filter((inbound: any) => inbound.protocol === 'socks')).toEqual([
+    expect(
+      result.inbounds.filter((inbound: any) => inbound.protocol === 'socks'),
+    ).toEqual([
       expect.objectContaining({
         port: 10808,
         listen: '127.0.0.1',
         settings: expect.objectContaining({ udp: true }),
       }),
     ]);
-    expect(result.inbounds.filter((inbound: any) => inbound.protocol === 'http')).toEqual([
+    expect(
+      result.inbounds.filter((inbound: any) => inbound.protocol === 'http'),
+    ).toEqual([
       expect.objectContaining({
         port: 10809,
         listen: '127.0.0.1',
@@ -376,4 +475,3 @@ describe('ConfigGenerator', () => {
     ]);
   });
 });
-

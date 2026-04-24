@@ -24,16 +24,21 @@ export class ConnectionStackService {
   constructor(
     private readonly proxyService: SystemProxyService = systemProxyService,
     private readonly routeService: TunRouteService = tunRouteService,
-    private readonly coreService: XrayService = xrayService
+    private readonly coreService: XrayService = xrayService,
   ) {}
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const run = this.stackQueue.then(task, task);
-    this.stackQueue = run.then(() => undefined, () => undefined);
+    this.stackQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
     return run;
   }
 
-  private async resetNetworkingStackUnsafe(options: { stopXray?: boolean } = {}): Promise<void> {
+  private async resetNetworkingStackUnsafe(
+    options: { stopXray?: boolean } = {},
+  ): Promise<void> {
     const { stopXray = true } = options;
     await this.proxyService.disable();
     await this.routeService.disable();
@@ -42,7 +47,11 @@ export class ConnectionStackService {
     }
   }
 
-  private async applyConnectionModeUnsafe(server: VlessConfig, mode: ConnectionMode, ports: ProxyPorts): Promise<void> {
+  private async applyConnectionModeUnsafe(
+    server: VlessConfig,
+    mode: ConnectionMode,
+    ports: ProxyPorts,
+  ): Promise<void> {
     if (mode === 'proxy') {
       await this.coreService.start(server, mode);
       await this.proxyService.enable(ports.http, ports.socks);
@@ -62,7 +71,7 @@ export class ConnectionStackService {
     server: VlessConfig,
     mode: ConnectionMode,
     ports: ProxyPorts,
-    options: TransitionOptions = {}
+    options: TransitionOptions = {},
   ): Promise<void> {
     const { delayBeforeApplyMs = 0, stopXray = true } = options;
     await this.resetNetworkingStackUnsafe({ stopXray });
@@ -72,21 +81,31 @@ export class ConnectionStackService {
     await this.applyConnectionModeUnsafe(server, mode, ports);
   }
 
-  public async resetNetworkingStack(options: { stopXray?: boolean } = {}): Promise<void> {
+  public async resetNetworkingStack(
+    options: { stopXray?: boolean } = {},
+  ): Promise<void> {
     return this.enqueue(() => this.resetNetworkingStackUnsafe(options));
   }
 
-  public async applyConnectionMode(server: VlessConfig, mode: ConnectionMode, ports: ProxyPorts): Promise<void> {
-    return this.enqueue(() => this.applyConnectionModeUnsafe(server, mode, ports));
+  public async applyConnectionMode(
+    server: VlessConfig,
+    mode: ConnectionMode,
+    ports: ProxyPorts,
+  ): Promise<void> {
+    return this.enqueue(() =>
+      this.applyConnectionModeUnsafe(server, mode, ports),
+    );
   }
 
   public async transitionTo(
     server: VlessConfig,
     mode: ConnectionMode,
     ports: ProxyPorts,
-    options: TransitionOptions = {}
+    options: TransitionOptions = {},
   ): Promise<void> {
-    return this.enqueue(() => this.transitionToUnsafe(server, mode, ports, options));
+    return this.enqueue(() =>
+      this.transitionToUnsafe(server, mode, ports, options),
+    );
   }
 
   public async cleanupAfterFailure(): Promise<void> {
@@ -94,7 +113,11 @@ export class ConnectionStackService {
       try {
         await this.resetNetworkingStackUnsafe({ stopXray: true });
       } catch (error) {
-        logger.error('ConnectionStackService', 'Failed to cleanup network stack', error);
+        logger.error(
+          'ConnectionStackService',
+          'Failed to cleanup network stack',
+          error,
+        );
         throw error;
       }
     });
