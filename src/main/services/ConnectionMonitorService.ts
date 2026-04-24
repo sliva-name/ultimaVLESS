@@ -466,6 +466,12 @@ export class ConnectionMonitorService extends EventEmitter {
     }
   }
 
+  /**
+   * Synchronous on purpose: must complete before {@link startPeriodicCheck}
+   * fires its first tick AND before any caller appends to xray.log so the
+   * cursor lands at the true end-of-file. Called once per `startMonitoring`,
+   * not periodically — the periodic health-check uses async `fs.promises.*`.
+   */
   private resetLogCursorToFileEnd(): void {
     try {
       if (!fs.existsSync(this.xrayLogPath)) {

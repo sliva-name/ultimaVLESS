@@ -94,20 +94,29 @@ export class SubscriptionService {
       throw new Error('Subscription URL host is not allowed');
     }
 
+    // Resolve and check ALL addresses returned by DNS so a domain cannot mix
+    // public and private records to bypass the check (a subset of DNS
+    // rebinding). A TOCTOU window between validation and the actual fetch
+    // remains possible — `fetchValidatedResponse` re-validates each redirect,
+    // but a malicious authoritative DNS could still flip records with TTL=0.
+    // For full protection, the fetch agent would need to pin to one of the
+    // pre-validated IPs (out of scope here).
     try {
-      const lookupResult = await dns.promises.lookup(parsedUrl.hostname);
-      if (isPrivateOrLoopbackHost(lookupResult.address)) {
-        throw new Error('Subscription URL resolves to a private IP');
+      const lookupResults = await dns.promises.lookup(parsedUrl.hostname, { all: true });
+      if (lookupResults.length === 0) {
+        throw new Error('Subscription URL did not resolve to any address');
+      }
+      for (const result of lookupResults) {
+        if (isPrivateOrLoopbackHost(result.address)) {
+          throw new Error('Subscription URL resolves to a private IP');
+        }
       }
     } catch (err) {
-      if (err instanceof Error && err.message === 'Subscription URL resolves to a private IP') {
+      if (err instanceof Error && /private IP|did not resolve/.test(err.message)) {
         throw err;
       }
-      // If DNS lookup fails for other reasons, we might still want to let fetch try,
-      // or we can reject. It's safer to reject if we can't verify.
-      // But let's just log and continue if it's a normal network error, 
-      // or throw if it's our error.
-      // Actually, if it fails to resolve, fetch will fail anyway.
+      // Other DNS failures (NXDOMAIN, timeout) — let fetch surface a clearer
+      // error; nothing we could safely connect to here.
     }
 
     return parsedUrl;

@@ -278,7 +278,11 @@ export class XrayService extends EventEmitter {
           error: error instanceof Error ? error.message : String(error),
         });
       }
-      // The process will be set to null in the 'close' event handler.
+      // `this.process` reference is cleared by the 'close' event handler in
+      // `start()`. Until then, `isRunning()` still reports `true` thanks to
+      // `stopWaitPromise`, so callers cannot race a half-stopped process.
+      // SIGKILL is sent by `waitForProcessExit` if the child does not exit
+      // within `STOP_TIMEOUT_MS`.
     }
   }
 

@@ -67,6 +67,9 @@ describe('SubscriptionService', () => {
           body: [
             'translated page',
             'vless://uuid@example.com:443?type=tcp&security=reality&sni=example.com&fp=chrome&pbk=key&sid=123#One',
+            // hysteria2 is intentionally not supported by linkParsing.ts; this
+            // line exists to confirm it is silently filtered out (see
+            // expectedNames below — only 'One' should survive).
             'hysteria2://pass@144.31.224.14:443/?insecure=1&amp;sni=www.cloudflare.com#Two',
           ].join('\n'),
           expectedNames: ['One'],

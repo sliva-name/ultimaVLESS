@@ -6,6 +6,47 @@ import { mainLocaleService } from './MainLocaleService';
 import { trayService } from './TrayService';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+/** Initial delay after `start()` before the first check fires. */
+const INITIAL_CHECK_DELAY_MS = 8000;
+/** When the connection is busy (TUN setup, server switch), wait at least this
+ *  long after it settles before kicking the deferred check. Long enough to let
+ *  Windows replace the default route and the OS DNS cache settle. */
+const POST_BUSY_GRACE_MS = 5000;
+/** Cap on how long we will defer a single check while the connection stays
+ *  busy. After this we attempt anyway and treat the result as "transient" if
+ *  it fails — better than waiting forever on a stuck connection flow. */
+const MAX_DEFER_MS = 60_000;
+/** How many consecutive transient (network-shaped) failures before we surface
+ *  an error banner to the user. The first 1-2 failures right after a network
+ *  change should be invisible. */
+const TRANSIENT_ERROR_THRESHOLD = 3;
+/** Backoff after a transient failure: 30s -> 60s -> 120s -> 240s, capped at
+ *  the regular interval so we don't dwarf it. */
+const TRANSIENT_RETRY_BACKOFF_MS = [30_000, 60_000, 120_000, 240_000] as const;
+
+const TRANSIENT_ERROR_PATTERNS = [
+  /ERR_ADDRESS_UNREACHABLE/i,
+  /ERR_INTERNET_DISCONNECTED/i,
+  /ERR_NAME_NOT_RESOLVED/i,
+  /ERR_NETWORK_CHANGED/i,
+  /ERR_PROXY_CONNECTION_FAILED/i,
+  /ERR_CONNECTION_RESET/i,
+  /ERR_CONNECTION_REFUSED/i,
+  /ERR_CONNECTION_TIMED_OUT/i,
+  /\bENETUNREACH\b/,
+  /\bENOTFOUND\b/,
+  /\bETIMEDOUT\b/,
+  /\bECONNRESET\b/,
+  /\bECONNREFUSED\b/,
+  /\bEHOSTUNREACH\b/,
+  /\bEAI_AGAIN\b/,
+  /getaddrinfo/i,
+  /network is unreachable/i,
+];
+
+function isTransientNetworkError(message: string): boolean {
+  return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
 
 type AutoUpdaterLike = {
   autoDownload?: boolean;
@@ -43,7 +84,19 @@ export class AppUpdaterService extends EventEmitter {
   private status: UpdateStatus = { ...DISABLED_STATUS };
   private updater: AutoUpdaterLike | null = null;
   private checkTimer: NodeJS.Timeout | null = null;
+  private retryTimer: NodeJS.Timeout | null = null;
+  private deferTimer: NodeJS.Timeout | null = null;
   private started = false;
+  /** Counts consecutive transient network failures; reset on any non-error
+   *  outcome (available / not-available / downloaded). */
+  private transientFailureCount = 0;
+  /** Plugged in by `IpcHandler` once the connection-busy flag exists, so the
+   *  updater knows when to defer checks during TUN setup / server switches. */
+  private isConnectionBusy: () => boolean = () => false;
+
+  public setConnectionBusyGetter(getter: () => boolean): void {
+    this.isConnectionBusy = getter;
+  }
 
   public async start(): Promise<void> {
     if (this.started) return;
@@ -78,10 +131,10 @@ export class AppUpdaterService extends EventEmitter {
       this.attach(updater);
       this.scheduleChecks();
       // Fire a first check shortly after start so the UI picks up any pending
-      // update without waiting a full polling interval.
-      setTimeout(() => {
-        void this.checkForUpdates();
-      }, 8000);
+      // update without waiting a full polling interval. Routed through
+      // `scheduleDeferredCheck` so it inherits the same connection-busy
+      // backoff as periodic checks.
+      this.scheduleDeferredCheck(INITIAL_CHECK_DELAY_MS, 'initial');
     } catch (error) {
       logger.warn('AppUpdaterService', 'Failed to load electron-updater', {
         error: error instanceof Error ? error.message : String(error),
@@ -94,16 +147,19 @@ export class AppUpdaterService extends EventEmitter {
     return this.status;
   }
 
+  /**
+   * Public entry point used by IPC `check-for-updates`. Honours the busy gate
+   * and the transient-error suppression so a manual click during a connection
+   * transition still does the right thing.
+   */
   public async checkForUpdates(): Promise<void> {
     if (!this.updater) return;
-    try {
-      this.setStatus({ stage: 'checking', error: null });
-      await this.updater.checkForUpdates();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn('AppUpdaterService', 'checkForUpdates threw', { error: message });
-      this.setStatus({ stage: 'error', error: message });
+    if (this.shouldDeferDueToBusyConnection()) {
+      logger.info('AppUpdaterService', 'Deferring update check while connection is busy');
+      this.scheduleDeferredCheck(POST_BUSY_GRACE_MS, 'busy-deferred');
+      return;
     }
+    await this.runCheckNow();
   }
 
   public quitAndInstall(): void {
@@ -113,6 +169,109 @@ export class AppUpdaterService extends EventEmitter {
     } catch (error) {
       logger.error('AppUpdaterService', 'quitAndInstall failed', error);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internals
+  // ---------------------------------------------------------------------------
+
+  private async runCheckNow(): Promise<void> {
+    if (!this.updater) return;
+    try {
+      this.setStatus({ stage: 'checking', error: null });
+      await this.updater.checkForUpdates();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.handleCheckFailure(message, 'checkForUpdates threw');
+    }
+  }
+
+  private shouldDeferDueToBusyConnection(): boolean {
+    try {
+      return this.isConnectionBusy();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Schedules a single deferred check. If the connection is still busy when
+   * the timer fires, we re-defer up to {@link MAX_DEFER_MS}. Multiple
+   * `scheduleDeferredCheck` calls coalesce — only one timer runs at a time.
+   */
+  private scheduleDeferredCheck(initialDelayMs: number, reason: string): void {
+    if (this.deferTimer) return;
+
+    const startedAt = Date.now();
+    const tick = (delayMs: number): void => {
+      this.deferTimer = setTimeout(() => {
+        this.deferTimer = null;
+        if (!this.updater) return;
+        const waitedFor = Date.now() - startedAt;
+        if (this.shouldDeferDueToBusyConnection() && waitedFor < MAX_DEFER_MS) {
+          tick(POST_BUSY_GRACE_MS);
+          return;
+        }
+        if (waitedFor >= MAX_DEFER_MS) {
+          logger.warn('AppUpdaterService', 'Update check defer cap reached, attempting anyway', {
+            reason,
+            waitedMs: waitedFor,
+          });
+        }
+        void this.runCheckNow();
+      }, delayMs);
+    };
+    tick(initialDelayMs);
+  }
+
+  /**
+   * Centralised failure handler shared between the explicit `checkForUpdates`
+   * promise rejection and the asynchronous `error` event from
+   * `electron-updater`. Transient network errors during the first
+   * {@link TRANSIENT_ERROR_THRESHOLD} attempts are kept off the UI banner —
+   * the user almost certainly triggered them by (dis)connecting the VPN.
+   */
+  private handleCheckFailure(message: string, source: string): void {
+    const transient = isTransientNetworkError(message);
+    if (transient) {
+      this.transientFailureCount += 1;
+      logger.warn('AppUpdaterService', 'Transient network error during update check', {
+        source,
+        error: message,
+        consecutive: this.transientFailureCount,
+        willSurface: this.transientFailureCount >= TRANSIENT_ERROR_THRESHOLD,
+      });
+      const backoffIndex = Math.min(this.transientFailureCount - 1, TRANSIENT_RETRY_BACKOFF_MS.length - 1);
+      const backoffMs = TRANSIENT_RETRY_BACKOFF_MS[backoffIndex];
+      this.scheduleTransientRetry(backoffMs);
+      if (this.transientFailureCount < TRANSIENT_ERROR_THRESHOLD) {
+        // Don't blow away a previously good status (`available`, `downloaded`)
+        // and don't show an error banner yet — the network is just flapping.
+        if (this.status.stage === 'checking') {
+          this.setStatus({ stage: 'not-available', error: null });
+        }
+        return;
+      }
+    } else {
+      this.transientFailureCount = 0;
+      logger.warn('AppUpdaterService', 'Update check failed', { source, error: message });
+    }
+    this.setStatus({ stage: 'error', error: message });
+  }
+
+  private scheduleTransientRetry(delayMs: number): void {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+    }
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      if (!this.updater) return;
+      if (this.shouldDeferDueToBusyConnection()) {
+        this.scheduleDeferredCheck(POST_BUSY_GRACE_MS, 'transient-retry-busy');
+        return;
+      }
+      void this.runCheckNow();
+    }, delayMs);
   }
 
   private attach(updater: AutoUpdaterLike): void {
@@ -129,6 +288,7 @@ export class AppUpdaterService extends EventEmitter {
       this.setStatus({ stage: 'checking', error: null });
     });
     updater.on('update-available', (info) => {
+      this.transientFailureCount = 0;
       const version = info?.version ?? null;
       this.setStatus({
         stage: 'available',
@@ -146,6 +306,7 @@ export class AppUpdaterService extends EventEmitter {
       }
     });
     updater.on('update-not-available', () => {
+      this.transientFailureCount = 0;
       this.setStatus({ stage: 'not-available', error: null });
     });
     updater.on('download-progress', (progress) => {
@@ -156,6 +317,7 @@ export class AppUpdaterService extends EventEmitter {
       });
     });
     updater.on('update-downloaded', (info) => {
+      this.transientFailureCount = 0;
       const version = info?.version ?? this.status.version;
       this.setStatus({
         stage: 'downloaded',
@@ -172,8 +334,7 @@ export class AppUpdaterService extends EventEmitter {
     });
     updater.on('error', (error) => {
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn('AppUpdaterService', 'Updater error', { error: message });
-      this.setStatus({ stage: 'error', error: message });
+      this.handleCheckFailure(message, 'updater error event');
     });
   }
 
