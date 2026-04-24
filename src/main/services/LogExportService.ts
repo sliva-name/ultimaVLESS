@@ -57,22 +57,27 @@ export class LogExportService {
 
   private async safeReadFile(filePath: string): Promise<string> {
     try {
-      if (fs.existsSync(filePath)) {
-        // Read last 50KB to avoid huge files
-        const stats = fs.statSync(filePath);
-        const maxSize = 50 * 1024; 
-        
-        if (stats.size > maxSize) {
-            const buffer = Buffer.alloc(maxSize);
-            const fd = fs.openSync(filePath, 'r');
-            fs.readSync(fd, buffer, 0, maxSize, stats.size - maxSize);
-            fs.closeSync(fd);
-            return '...[truncated]...\n' + buffer.toString('utf-8');
-        }
-        
-        return fs.readFileSync(filePath, 'utf-8');
+      try {
+        await fs.promises.access(filePath, fs.constants.F_OK);
+      } catch {
+        return '[Log file not found]';
       }
-      return '[Log file not found]';
+      
+      const stats = await fs.promises.stat(filePath);
+      const maxSize = 50 * 1024; 
+      
+      if (stats.size > maxSize) {
+          const buffer = Buffer.alloc(maxSize);
+          const fd = await fs.promises.open(filePath, 'r');
+          try {
+            await fd.read(buffer, 0, maxSize, stats.size - maxSize);
+          } finally {
+            await fd.close();
+          }
+          return '...[truncated]...\n' + buffer.toString('utf-8');
+      }
+      
+      return await fs.promises.readFile(filePath, 'utf-8');
     } catch (e) {
       return `[Error reading log: ${e}]`;
     }

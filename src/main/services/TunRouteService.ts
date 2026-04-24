@@ -1,4 +1,3 @@
-import { promisify } from 'util';
 import dns from 'dns';
 import net from 'net';
 import { VlessConfig } from '@/shared/types';
@@ -31,8 +30,6 @@ import {
 } from './tunRoute/windowsScripts';
 import { getLinuxDefaultRouteInfo, getMacosDefaultRouteInfo } from './tunRoute/unixRouting';
 import { runPowerShell as runPowerShellScript, RunPowerShellOptions } from './tunRoute/powerShellRunner';
-
-const dnsLookup = promisify(dns.lookup);
 
 export interface TunRoutingPlan {
   defaultRoute: DefaultRouteInfo;
@@ -295,14 +292,13 @@ export class TunRouteService {
       timeoutHandle = setTimeout(() => reject(new Error('DNS lookup timeout')), DNS_TIMEOUT);
     });
     try {
-      const result = await Promise.race<dns.LookupAddress[] | dns.LookupAddress>([
-        dnsLookup(address, { family: 4, all: true }),
+      const resolver = new dns.promises.Resolver();
+      resolver.setServers(['8.8.8.8', '1.1.1.1']);
+      const result = await Promise.race<string[]>([
+        resolver.resolve4(address),
         timeoutPromise,
       ]);
-      const addresses = Array.isArray(result)
-        ? result.map((r) => r.address)
-        : [result.address];
-      return [...new Set(addresses)];
+      return [...new Set(result)];
     } catch {
       return [];
     } finally {

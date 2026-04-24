@@ -261,6 +261,10 @@ export function registerIpcHandlers(
   appUpdaterService.on('status', (status) => {
     sendToRenderer(IPC_EVENT_CHANNELS.updateStatus, status);
   });
+  // The updater needs to know about TUN setup / server-switch transitions so
+  // it can defer network calls instead of surfacing
+  // `net::ERR_ADDRESS_UNREACHABLE` while the default route is being swapped.
+  appUpdaterService.setConnectionBusyGetter(() => connectionBusy);
 
   // -------------------------------------------------------------------------
   // Subscriptions CRUD

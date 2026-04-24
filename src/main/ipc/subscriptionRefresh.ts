@@ -135,20 +135,49 @@ export function createSubscriptionRefreshManager(deps: SubscriptionRefreshManage
       }
     }
 
-    const pingDataMap = new Map<string, { ping: number | null; pingTime: number | undefined }>();
+    // Preserve previously measured ping data across refreshes. The primary
+    // index is by `uuid`, but some subscription providers rotate VLESS UUIDs /
+    // Trojan passwords / Reality `sid` between fetches — that produces a new
+    // deterministic stable-id hash for the *same* endpoint and would wipe the
+    // ping value on every refresh. Fall back to a fuzzy index keyed by
+    // `protocol|address:port` (mirrors `syncCurrentServer`'s tolerance) so the
+    // UI keeps a usable latency right after subscription refreshes — including
+    // the one that fires automatically after the UAC auto-relaunch into TUN
+    // mode.
+    type StoredPing = { ping: number | null; pingTime: number | undefined };
+    const pingByUuid = new Map<string, StoredPing>();
+    const pingByEndpoint = new Map<string, StoredPing>();
+    const endpointKey = (cfg: VlessConfig): string =>
+      `${cfg.protocol ?? 'vless'}|${cfg.address}:${cfg.port}`;
+
     existingServers.forEach((server) => {
-      if (server.ping !== undefined || server.pingTime !== undefined) {
-        pingDataMap.set(server.uuid, {
-          ping: server.ping ?? null,
-          pingTime: server.pingTime,
-        });
+      if (server.ping === undefined && server.pingTime === undefined) return;
+      const stored: StoredPing = {
+        ping: server.ping ?? null,
+        pingTime: server.pingTime,
+      };
+      pingByUuid.set(server.uuid, stored);
+      const key = endpointKey(server);
+      const previous = pingByEndpoint.get(key);
+      // Prefer the freshest sample if multiple stored entries share an endpoint
+      // (e.g. a rotated server still co-existing with its previous incarnation
+      // from `preserveActiveServerIfNeeded`).
+      if (
+        !previous ||
+        (stored.pingTime ?? 0) > (previous.pingTime ?? 0)
+      ) {
+        pingByEndpoint.set(key, stored);
       }
     });
 
     const configsWithPing = mergedConfigs.map((config) => {
-      const pingData = pingDataMap.get(config.uuid);
-      if (pingData) {
-        return { ...config, ping: pingData.ping, pingTime: pingData.pingTime };
+      const direct = pingByUuid.get(config.uuid);
+      if (direct) {
+        return { ...config, ping: direct.ping, pingTime: direct.pingTime };
+      }
+      const fuzzy = pingByEndpoint.get(endpointKey(config));
+      if (fuzzy) {
+        return { ...config, ping: fuzzy.ping, pingTime: fuzzy.pingTime };
       }
       return { ...config, ping: null };
     });

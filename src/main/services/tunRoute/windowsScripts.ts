@@ -1,3 +1,4 @@
+import net from 'net';
 import {
   TUN_ADDRESS,
   TUN_INTERFACE_NAME,
@@ -7,6 +8,50 @@ import {
   TUN_WAIT_INTERVAL,
   TUN_WAIT_TIMEOUT,
 } from './constants';
+
+/**
+ * All values that are interpolated into PowerShell scripts must pass through
+ * here. The previous regex (`/^[a-fA-F0-9.:/]+$/`) allowed obviously invalid
+ * inputs like "1.1.1.1.1.1" and "::::". `net.isIP` rejects those while still
+ * permitting CIDR suffixes (split off and validated separately).
+ */
+function validateIpOrPrefix(val: string): void {
+  if (typeof val !== 'string' || val.length === 0 || val.length > 64) {
+    throw new Error(`Invalid IP or prefix format: ${val}`);
+  }
+  const slashIndex = val.indexOf('/');
+  const addressPart = slashIndex === -1 ? val : val.slice(0, slashIndex);
+  const prefixPart = slashIndex === -1 ? null : val.slice(slashIndex + 1);
+
+  const family = net.isIP(addressPart);
+  if (family === 0) {
+    throw new Error(`Invalid IP or prefix format: ${val}`);
+  }
+
+  if (prefixPart !== null) {
+    if (!/^\d{1,3}$/.test(prefixPart)) {
+      throw new Error(`Invalid IP or prefix format: ${val}`);
+    }
+    const prefix = Number(prefixPart);
+    const max = family === 4 ? 32 : 128;
+    if (!Number.isInteger(prefix) || prefix < 0 || prefix > max) {
+      throw new Error(`Invalid IP or prefix format: ${val}`);
+    }
+  }
+}
+
+function validateInterfaceIndex(value: number | undefined): void {
+  if (value === undefined) return;
+  if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
+    throw new Error(`Invalid PowerShell interface index: ${value}`);
+  }
+}
+
+function validateMetric(value: number): void {
+  if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
+    throw new Error(`Invalid PowerShell route metric: ${value}`);
+  }
+}
 
 /**
  * Pure PowerShell script builders for the Windows TUN routing path.
@@ -132,13 +177,16 @@ export const getTunInterfaceIndexScript = (): string => `
       if ($adapter) { Write-Output $adapter.ifIndex }
     `;
 
-export const ensureTunAddressScript = (tunInterfaceIndex: number): string => `
+export const ensureTunAddressScript = (tunInterfaceIndex: number): string => {
+  validateInterfaceIndex(tunInterfaceIndex);
+  return `
       $existing = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Select-Object -First 1
       if (-not $existing) {
         New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress ${TUN_ADDRESS} -PrefixLength ${TUN_PREFIX} -ErrorAction Stop
       }
     `;
+};
 
 export const addRouteScript = (
   destPrefix: string,
@@ -146,6 +194,10 @@ export const addRouteScript = (
   metric: number,
   interfaceIndex?: number
 ): string => {
+  validateIpOrPrefix(destPrefix);
+  validateIpOrPrefix(gateway);
+  validateMetric(metric);
+  validateInterfaceIndex(interfaceIndex);
   const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
   return `
       $existing = Get-NetRoute -DestinationPrefix "${destPrefix}"${ifPart} -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -156,15 +208,20 @@ export const addRouteScript = (
     `;
 };
 
-export const addDefaultRouteViaTunScript = (tunIdx: number): string => `
+export const addDefaultRouteViaTunScript = (tunIdx: number): string => {
+  validateInterfaceIndex(tunIdx);
+  return `
           $existing = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
           if (-not $existing) {
             New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "${TUN_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
             Write-Output "CREATED"
           }
         `;
+};
 
 export const deleteRouteScript = (prefix: string, interfaceIndex?: number): string => {
+  validateIpOrPrefix(prefix);
+  validateInterfaceIndex(interfaceIndex);
   const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
   return `
       Remove-NetRoute -DestinationPrefix "${prefix}"${ifPart} -ErrorAction SilentlyContinue
@@ -176,6 +233,9 @@ export const deleteRouteByPrefixAndMetricScript = (
   metric: number,
   interfaceIndex?: number
 ): string => {
+  validateIpOrPrefix(destinationPrefix);
+  validateMetric(metric);
+  validateInterfaceIndex(interfaceIndex);
   const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
   return `
       Get-NetRoute -DestinationPrefix "${destinationPrefix}"${ifPart} -ErrorAction SilentlyContinue |
@@ -184,18 +244,24 @@ export const deleteRouteByPrefixAndMetricScript = (
     `;
 };
 
-export const deleteTunDefaultRoutesByNextHopScript = (nextHop: string, metric: number): string => `
+export const deleteTunDefaultRoutesByNextHopScript = (nextHop: string, metric: number): string => {
+  validateIpOrPrefix(nextHop);
+  validateMetric(metric);
+  return `
       Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
         Where-Object {
           $_.RouteMetric -eq ${metric} -and $_.NextHop -eq "${nextHop}"
         } |
         Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
     `;
+};
 
 export const deleteHostRoutesByPrefixesAndMetricScript = (
   destinationPrefixes: string[],
   metric: number
 ): string => {
+  destinationPrefixes.forEach(validateIpOrPrefix);
+  validateMetric(metric);
   const prefixesLiteral = destinationPrefixes.map((prefix) => `'${prefix}'`).join(', ');
   return `
       $targets = @(${prefixesLiteral})

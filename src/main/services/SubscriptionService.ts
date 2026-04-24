@@ -1,5 +1,6 @@
 import { decode, isValid } from 'js-base64';
 import net from 'net';
+import dns from 'dns';
 import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { parseJsonConfigs } from './subscription/jsonParsing';
@@ -77,7 +78,7 @@ export class SubscriptionService {
     return parseDirectLinksFromText(input);
   }
 
-  private validateRemoteSubscriptionUrl(rawUrl: string): URL {
+  private async validateRemoteSubscriptionUrl(rawUrl: string): Promise<URL> {
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(rawUrl);
@@ -91,6 +92,31 @@ export class SubscriptionService {
 
     if (isPrivateOrLoopbackHost(parsedUrl.hostname)) {
       throw new Error('Subscription URL host is not allowed');
+    }
+
+    // Resolve and check ALL addresses returned by DNS so a domain cannot mix
+    // public and private records to bypass the check (a subset of DNS
+    // rebinding). A TOCTOU window between validation and the actual fetch
+    // remains possible — `fetchValidatedResponse` re-validates each redirect,
+    // but a malicious authoritative DNS could still flip records with TTL=0.
+    // For full protection, the fetch agent would need to pin to one of the
+    // pre-validated IPs (out of scope here).
+    try {
+      const lookupResults = await dns.promises.lookup(parsedUrl.hostname, { all: true });
+      if (lookupResults.length === 0) {
+        throw new Error('Subscription URL did not resolve to any address');
+      }
+      for (const result of lookupResults) {
+        if (isPrivateOrLoopbackHost(result.address)) {
+          throw new Error('Subscription URL resolves to a private IP');
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && /private IP|did not resolve/.test(err.message)) {
+        throw err;
+      }
+      // Other DNS failures (NXDOMAIN, timeout) — let fetch surface a clearer
+      // error; nothing we could safely connect to here.
     }
 
     return parsedUrl;
@@ -114,7 +140,7 @@ export class SubscriptionService {
         if (!location) {
           throw new Error(`Redirect response missing Location header: HTTP ${response.status}`);
         }
-        currentUrl = this.validateRemoteSubscriptionUrl(new URL(location, currentUrl).toString());
+        currentUrl = await this.validateRemoteSubscriptionUrl(new URL(location, currentUrl).toString());
         continue;
       }
 
@@ -137,7 +163,7 @@ export class SubscriptionService {
         };
       }
 
-      const validatedUrl = this.validateRemoteSubscriptionUrl(url);
+      const validatedUrl = await this.validateRemoteSubscriptionUrl(url);
       const yandexHtml = isYandexTranslateHost(validatedUrl.hostname);
       if (yandexHtml) {
         logger.info('SubscriptionService', 'Subscription URL is Yandex Translate; fetching HTML with browser headers');

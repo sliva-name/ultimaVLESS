@@ -116,11 +116,15 @@ describe('ConnectionMonitorService', () => {
     const svc = new ConnectionMonitorService();
     const server = makeServer({ uuid: 'server-1', name: 'Example' });
 
-    svc.on('error', () => {});
+    const errorPromise = new Promise<void>((resolve) => {
+      svc.on('error', () => resolve());
+    });
+    
     svc.startMonitoring(server);
     fs.appendFileSync(logPath, 'failed to dial new-server\n', 'utf8');
 
     await vi.advanceTimersByTimeAsync(30_000);
+    await errorPromise;
 
     expect(svc.getStatus().lastError).toContain('failed to dial');
     expect(svc.getStatus().blockedServers).toContain(server.uuid);

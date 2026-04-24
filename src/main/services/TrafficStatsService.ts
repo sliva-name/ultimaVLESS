@@ -27,7 +27,7 @@ interface RawCounters {
   downloadBytes: number;
 }
 
-const POLL_INTERVAL_MS = 1500;
+const POLL_INTERVAL_MS = 3000;
 const QUERY_TIMEOUT_MS = 1800;
 
 /**
