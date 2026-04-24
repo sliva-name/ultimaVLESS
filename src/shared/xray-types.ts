@@ -62,7 +62,15 @@ export type XrayMuxSettings = {
 };
 
 export type XrayStreamSettings = {
-  network: 'tcp' | 'raw' | 'kcp' | 'ws' | 'http' | 'domainsocket' | 'quic' | 'grpc';
+  network:
+    | 'tcp'
+    | 'raw'
+    | 'kcp'
+    | 'ws'
+    | 'http'
+    | 'domainsocket'
+    | 'quic'
+    | 'grpc';
   security: 'none' | 'tls' | 'reality';
   tlsSettings?: XrayTlsSettings;
   realitySettings?: XrayRealitySettings;
@@ -105,8 +113,8 @@ export type XrayRealitySettings = {
   password?: string;
   /** Some configs use this name; Xray may accept it as alias — prefer `password` for clients. */
   publicKey?: string;
-  shortId?: string;    // used in client outbound
-  spiderX?: string;    // used in client outbound
+  shortId?: string; // used in client outbound
+  spiderX?: string; // used in client outbound
 };
 
 export type XrayWsSettings = {
@@ -160,4 +168,3 @@ export type XrayConfig = {
   reverse?: Record<string, unknown>;
   fakedns?: Record<string, unknown>;
 };
-

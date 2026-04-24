@@ -1,5 +1,17 @@
-import { ConnectionMode, DEFAULT_PERFORMANCE_SETTINGS, PerformanceSettings, VlessConfig } from '@/shared/types';
-import { XrayConfig, XrayOutbound, XrayInbound, XrayStreamSettings, XrayMuxSettings, XrayRoutingRule } from '@/shared/xray-types';
+import {
+  ConnectionMode,
+  DEFAULT_PERFORMANCE_SETTINGS,
+  PerformanceSettings,
+  VlessConfig,
+} from '@/shared/types';
+import {
+  XrayConfig,
+  XrayOutbound,
+  XrayInbound,
+  XrayStreamSettings,
+  XrayMuxSettings,
+  XrayRoutingRule,
+} from '@/shared/xray-types';
 import { APP_CONSTANTS } from '@/shared/constants';
 
 type MutableConfigNode = Record<string, unknown>;
@@ -40,10 +52,15 @@ export class ConfigGenerator {
     config: VlessConfig,
     logPath: string,
     connectionMode: ConnectionMode = 'proxy',
-    options: ConfigGeneratorOptions = {}
+    options: ConfigGeneratorOptions = {},
   ): XrayConfig {
     if (config.rawConfig) {
-      return this.applyRawConfig(config.rawConfig, logPath, connectionMode, options);
+      return this.applyRawConfig(
+        config.rawConfig,
+        logPath,
+        connectionMode,
+        options,
+      );
     }
     return this.generateFromFields(config, logPath, connectionMode, options);
   }
@@ -52,7 +69,7 @@ export class ConfigGenerator {
     rawConfig: XrayConfig,
     logPath: string,
     connectionMode: ConnectionMode,
-    options: ConfigGeneratorOptions
+    options: ConfigGeneratorOptions,
   ): XrayConfig {
     const cfg = JSON.parse(JSON.stringify(rawConfig)) as XrayConfig;
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
@@ -68,7 +85,9 @@ export class ConfigGenerator {
     }
 
     this.ensureLocalProxyInbounds(cfg.inbounds, perf.sniffingRouteOnly);
-    const hasTun = cfg.inbounds.some((ib) => ib?.protocol === 'tun' || ib?.tag === 'tun-in');
+    const hasTun = cfg.inbounds.some(
+      (ib) => ib?.protocol === 'tun' || ib?.tag === 'tun-in',
+    );
 
     if (connectionMode === 'tun' && !hasTun) {
       cfg.inbounds.unshift(this.createTunInbound(options));
@@ -92,7 +111,8 @@ export class ConfigGenerator {
       cfg.outbounds = [];
     }
     const outbounds = cfg.outbounds as MutableOutbound[];
-    const hasTag = (tag: string): boolean => outbounds.some((o) => o?.tag === tag);
+    const hasTag = (tag: string): boolean =>
+      outbounds.some((o) => o?.tag === tag);
     if (!hasTag('direct')) {
       outbounds.push({ tag: 'direct', protocol: 'freedom', settings: {} });
     }
@@ -101,11 +121,15 @@ export class ConfigGenerator {
     }
   }
 
-  private static applyPerfToOutbounds(cfg: XrayConfig, perf: PerformanceSettings): void {
+  private static applyPerfToOutbounds(
+    cfg: XrayConfig,
+    perf: PerformanceSettings,
+  ): void {
     if (!Array.isArray(cfg.outbounds)) return;
     for (const outbound of cfg.outbounds as MutableOutbound[]) {
       if (!outbound || (outbound.tag && outbound.tag !== 'proxy')) continue;
-      if (outbound.protocol !== 'vless' && outbound.protocol !== 'trojan') continue;
+      if (outbound.protocol !== 'vless' && outbound.protocol !== 'trojan')
+        continue;
 
       if (!outbound.streamSettings) outbound.streamSettings = {};
       if (!outbound.streamSettings.sockopt) {
@@ -117,8 +141,18 @@ export class ConfigGenerator {
       if (!outbound.mux) {
         const hasVisionFlow = this.outboundHasVisionFlow(outbound);
         outbound.mux = hasVisionFlow
-          ? { enabled: true, concurrency: -1, xudpConcurrency: perf.xudpConcurrency, xudpProxyUDP443: perf.xudpProxyUDP443 }
-          : { enabled: perf.muxEnabled, concurrency: perf.muxConcurrency, xudpConcurrency: perf.xudpConcurrency, xudpProxyUDP443: perf.xudpProxyUDP443 };
+          ? {
+              enabled: true,
+              concurrency: -1,
+              xudpConcurrency: perf.xudpConcurrency,
+              xudpProxyUDP443: perf.xudpProxyUDP443,
+            }
+          : {
+              enabled: perf.muxEnabled,
+              concurrency: perf.muxConcurrency,
+              xudpConcurrency: perf.xudpConcurrency,
+              xudpProxyUDP443: perf.xudpProxyUDP443,
+            };
       }
     }
   }
@@ -130,40 +164,67 @@ export class ConfigGenerator {
     for (const server of vnext) {
       if (!Array.isArray(server.users)) continue;
       for (const user of server.users as Array<Record<string, unknown>>) {
-        if (user.flow && typeof user.flow === 'string' && user.flow.trim() !== '') return true;
+        if (
+          user.flow &&
+          typeof user.flow === 'string' &&
+          user.flow.trim() !== ''
+        )
+          return true;
       }
     }
     return false;
   }
 
-  private static applyPerfToRouting(cfg: XrayConfig, perf: PerformanceSettings): void {
+  private static applyPerfToRouting(
+    cfg: XrayConfig,
+    perf: PerformanceSettings,
+  ): void {
     if (!cfg.routing || typeof cfg.routing !== 'object') {
       cfg.routing = { domainStrategy: perf.domainStrategy, rules: [] };
     }
 
-    const rules: Array<Record<string, unknown>> = Array.isArray(cfg.routing.rules) ? cfg.routing.rules : [];
+    const rules: Array<Record<string, unknown>> = Array.isArray(
+      cfg.routing.rules,
+    )
+      ? cfg.routing.rules
+      : [];
 
-    const hasAdBlock = rules.some((r) =>
-      Array.isArray(r.domain) && r.domain.some((d: unknown) => typeof d === 'string' && d.includes('category-ads'))
+    const hasAdBlock = rules.some(
+      (r) =>
+        Array.isArray(r.domain) &&
+        r.domain.some(
+          (d: unknown) => typeof d === 'string' && d.includes('category-ads'),
+        ),
     );
-    const hasBtBlock = rules.some((r) =>
-      Array.isArray(r.protocol) && (r.protocol as unknown[]).includes('bittorrent') && r.outboundTag === 'block'
+    const hasBtBlock = rules.some(
+      (r) =>
+        Array.isArray(r.protocol) &&
+        (r.protocol as unknown[]).includes('bittorrent') &&
+        r.outboundTag === 'block',
     );
 
     // Prepend block rules in reverse priority so the final order is:
     //   [ads?, bittorrent?, ...existing rules]
     if (perf.blockBittorrent && !hasBtBlock) {
-      const btIndex = rules.findIndex((r) =>
-        Array.isArray(r.protocol) && r.protocol.includes('bittorrent')
+      const btIndex = rules.findIndex(
+        (r) => Array.isArray(r.protocol) && r.protocol.includes('bittorrent'),
       );
       if (btIndex >= 0) {
         rules[btIndex].outboundTag = 'block';
       } else {
-        rules.unshift({ type: 'field', protocol: ['bittorrent'], outboundTag: 'block' });
+        rules.unshift({
+          type: 'field',
+          protocol: ['bittorrent'],
+          outboundTag: 'block',
+        });
       }
     }
     if (perf.blockAds && !hasAdBlock) {
-      rules.unshift({ type: 'field', domain: ['geosite:category-ads-all'], outboundTag: 'block' });
+      rules.unshift({
+        type: 'field',
+        domain: ['geosite:category-ads-all'],
+        outboundTag: 'block',
+      });
     }
 
     cfg.routing.rules = rules as XrayRoutingRule[];
@@ -173,10 +234,11 @@ export class ConfigGenerator {
     config: VlessConfig,
     logPath: string,
     connectionMode: ConnectionMode,
-    options: ConfigGeneratorOptions
+    options: ConfigGeneratorOptions,
   ): XrayConfig {
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
-    const protocol: 'vless' | 'trojan' = config.protocol === 'trojan' ? 'trojan' : 'vless';
+    const protocol: 'vless' | 'trojan' =
+      config.protocol === 'trojan' ? 'trojan' : 'vless';
 
     const streamSettings: XrayStreamSettings = {
       network: (config.type === 'raw' ? 'raw' : config.type) || 'tcp',
@@ -244,10 +306,21 @@ export class ConfigGenerator {
       };
     }
 
-    const hasVisionFlow = protocol === 'vless' && !!(config.flow && config.flow.trim() !== '');
+    const hasVisionFlow =
+      protocol === 'vless' && !!(config.flow && config.flow.trim() !== '');
     const mux: XrayMuxSettings = hasVisionFlow
-      ? { enabled: true, concurrency: -1, xudpConcurrency: perf.xudpConcurrency, xudpProxyUDP443: perf.xudpProxyUDP443 }
-      : { enabled: perf.muxEnabled, concurrency: perf.muxConcurrency, xudpConcurrency: perf.xudpConcurrency, xudpProxyUDP443: perf.xudpProxyUDP443 };
+      ? {
+          enabled: true,
+          concurrency: -1,
+          xudpConcurrency: perf.xudpConcurrency,
+          xudpProxyUDP443: perf.xudpProxyUDP443,
+        }
+      : {
+          enabled: perf.muxEnabled,
+          concurrency: perf.muxConcurrency,
+          xudpConcurrency: perf.xudpConcurrency,
+          xudpProxyUDP443: perf.xudpProxyUDP443,
+        };
 
     const outbound: XrayOutbound = {
       protocol,
@@ -263,7 +336,9 @@ export class ConfigGenerator {
       outbound.sendThrough = options.sendThrough;
     }
 
-    const inbounds: XrayInbound[] = this.createLocalProxyInbounds(perf.sniffingRouteOnly);
+    const inbounds: XrayInbound[] = this.createLocalProxyInbounds(
+      perf.sniffingRouteOnly,
+    );
     if (connectionMode === 'tun') {
       inbounds.unshift(this.createTunInbound(options) as XrayInbound);
     }
@@ -281,9 +356,9 @@ export class ConfigGenerator {
           {
             address: '223.5.5.5',
             domains: ['geosite:cn'],
-            expectIPs: ['geoip:cn']
+            expectIPs: ['geoip:cn'],
           },
-          'localhost'
+          'localhost',
         ],
         queryStrategy: 'UseIPv4',
       },
@@ -313,7 +388,8 @@ export class ConfigGenerator {
     cfg.api = cfg.api ?? { tag: 'api', services: ['StatsService'] };
 
     const policy = (cfg.policy ?? {}) as Record<string, unknown>;
-    const levels = ((policy.levels as Record<string, Record<string, unknown>>) ?? {});
+    const levels =
+      (policy.levels as Record<string, Record<string, unknown>>) ?? {};
     const levelZero = levels['0'] ?? {};
     levels['0'] = {
       ...levelZero,
@@ -358,7 +434,9 @@ export class ConfigGenerator {
       cfg.routing.rules = [];
     }
     const rules = cfg.routing.rules as XrayRoutingRule[];
-    const hasApiRule = rules.some((r) => r && Array.isArray(r.inboundTag) && r.inboundTag.includes('api'));
+    const hasApiRule = rules.some(
+      (r) => r && Array.isArray(r.inboundTag) && r.inboundTag.includes('api'),
+    );
     if (!hasApiRule) {
       // Append at the end: the api rule only matches the dedicated `api`
       // inbound, so it never competes with user rules and preserving the
@@ -370,7 +448,7 @@ export class ConfigGenerator {
   private static buildOutboundSettings(
     config: VlessConfig,
     protocol: 'vless' | 'trojan',
-    hasVisionFlow: boolean
+    hasVisionFlow: boolean,
   ): Record<string, unknown> {
     if (protocol === 'trojan') {
       const server: Record<string, unknown> = {
@@ -398,21 +476,29 @@ export class ConfigGenerator {
     };
   }
 
-  private static applySendThroughIfNeeded(cfg: XrayConfig, sendThrough?: string): void {
-    if (!sendThrough || !Array.isArray(cfg.outbounds) || cfg.outbounds.length === 0) {
+  private static applySendThroughIfNeeded(
+    cfg: XrayConfig,
+    sendThrough?: string,
+  ): void {
+    if (
+      !sendThrough ||
+      !Array.isArray(cfg.outbounds) ||
+      cfg.outbounds.length === 0
+    ) {
       return;
     }
     const outbounds = cfg.outbounds as MutableOutbound[];
     const preferred =
-      outbounds.find((outbound) => outbound?.tag === 'proxy') ??
-      outbounds[0];
+      outbounds.find((outbound) => outbound?.tag === 'proxy') ?? outbounds[0];
     if (!preferred || preferred.sendThrough) {
       return;
     }
     preferred.sendThrough = sendThrough;
   }
 
-  private static createLocalProxyInbounds(sniffingRouteOnly = true): XrayInbound[] {
+  private static createLocalProxyInbounds(
+    sniffingRouteOnly = true,
+  ): XrayInbound[] {
     const sniffing = {
       enabled: true,
       destOverride: ['http', 'tls', 'quic'],
@@ -438,7 +524,10 @@ export class ConfigGenerator {
     ];
   }
 
-  private static ensureLocalProxyInbounds(inbounds: MutableInbound[], sniffingRouteOnly = true): void {
+  private static ensureLocalProxyInbounds(
+    inbounds: MutableInbound[],
+    sniffingRouteOnly = true,
+  ): void {
     let hasSocks = false;
     let hasHttp = false;
 
@@ -491,23 +580,39 @@ export class ConfigGenerator {
     }
   }
 
-  private static buildRoutingRules(perf: PerformanceSettings): XrayRoutingRule[] {
+  private static buildRoutingRules(
+    perf: PerformanceSettings,
+  ): XrayRoutingRule[] {
     const rules: XrayRoutingRule[] = [];
     if (perf.blockAds) {
-      rules.push({ type: 'field', domain: ['geosite:category-ads-all'], outboundTag: 'block' });
+      rules.push({
+        type: 'field',
+        domain: ['geosite:category-ads-all'],
+        outboundTag: 'block',
+      });
     }
     if (perf.blockBittorrent) {
-      rules.push({ type: 'field', protocol: ['bittorrent'], outboundTag: 'block' });
+      rules.push({
+        type: 'field',
+        protocol: ['bittorrent'],
+        outboundTag: 'block',
+      });
     }
     rules.push(
       { type: 'field', domain: ['geosite:cn'], outboundTag: 'direct' },
-      { type: 'field', ip: ['geoip:private', 'geoip:cn'], outboundTag: 'direct' },
+      {
+        type: 'field',
+        ip: ['geoip:private', 'geoip:cn'],
+        outboundTag: 'direct',
+      },
       { type: 'field', port: '0-65535', outboundTag: 'proxy' },
     );
     return rules;
   }
 
-  private static createTunInbound(options: ConfigGeneratorOptions): XrayInbound {
+  private static createTunInbound(
+    options: ConfigGeneratorOptions,
+  ): XrayInbound {
     const tunInbound: XrayInbound = {
       tag: 'tun-in',
       port: 0,

@@ -1,4 +1,9 @@
-import { ConnectionMode, PerformanceSettings, Subscription, VlessConfig } from './types';
+import {
+  ConnectionMode,
+  PerformanceSettings,
+  Subscription,
+  VlessConfig,
+} from './types';
 
 export interface ConnectResult {
   ok: boolean;
@@ -54,7 +59,13 @@ export interface ConnectionMonitorEvent {
   message?: string;
 }
 
-export type XrayHealthState = 'starting' | 'running' | 'degraded' | 'stopping' | 'stopped' | 'failed';
+export type XrayHealthState =
+  | 'starting'
+  | 'running'
+  | 'degraded'
+  | 'stopping'
+  | 'stopped'
+  | 'failed';
 export type ConnectionHealthState = 'idle' | 'healthy' | 'degraded' | 'failed';
 export type AppRecoveryTrigger =
   | 'initial-load'
@@ -64,7 +75,12 @@ export type AppRecoveryTrigger =
   | 'child-process-gone'
   | 'uncaught-exception'
   | 'unhandled-rejection';
-export type AppRecoveryOutcome = 'reloaded' | 'recreated' | 'completed' | 'blocked' | 'fatal-exit-needed';
+export type AppRecoveryOutcome =
+  | 'reloaded'
+  | 'recreated'
+  | 'completed'
+  | 'blocked'
+  | 'fatal-exit-needed';
 
 export interface XrayHealthStatus {
   state: XrayHealthState;
@@ -222,7 +238,9 @@ export const IPC_EVENT_CHANNELS = {
 
 export type { Subscription, PerformanceSettings };
 
-export type IpcInvokeChannel = typeof IPC_INVOKE_CHANNELS[keyof typeof IPC_INVOKE_CHANNELS];
-export type IpcEventChannel = typeof IPC_EVENT_CHANNELS[keyof typeof IPC_EVENT_CHANNELS];
+export type IpcInvokeChannel =
+  (typeof IPC_INVOKE_CHANNELS)[keyof typeof IPC_INVOKE_CHANNELS];
+export type IpcEventChannel =
+  (typeof IPC_EVENT_CHANNELS)[keyof typeof IPC_EVENT_CHANNELS];
 
 export type IpcConnectionMode = ConnectionMode;

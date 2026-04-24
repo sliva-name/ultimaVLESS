@@ -32,7 +32,8 @@ export class XrayService extends EventEmitter {
   private static readonly READINESS_RETRY_MS = 250;
   private static readonly STOP_TIMEOUT_MS = 3000;
   private readonly expectedExitProcesses = new WeakSet<ChildProcess>();
-  private readonly notifiedUnexpectedExitProcesses = new WeakSet<ChildProcess>();
+  private readonly notifiedUnexpectedExitProcesses =
+    new WeakSet<ChildProcess>();
   private stopWaitPromise: Promise<void> | null = null;
   private healthStatus: XrayHealthStatus = {
     state: 'stopped',
@@ -50,8 +51,10 @@ export class XrayService extends EventEmitter {
   constructor() {
     super();
     this.resourcesPath = getBinResourcesPath();
-    
-    logger.info('XrayService', 'Initialized', { resourcesPath: this.resourcesPath });
+
+    logger.info('XrayService', 'Initialized', {
+      resourcesPath: this.resourcesPath,
+    });
   }
 
   /**
@@ -67,7 +70,7 @@ export class XrayService extends EventEmitter {
   public async start(
     config: VlessConfig,
     connectionMode: ConnectionMode = 'proxy',
-    options: ConfigGeneratorOptions = {}
+    options: ConfigGeneratorOptions = {},
   ): Promise<void> {
     this.stop();
     await this.awaitPendingStop();
@@ -110,7 +113,10 @@ export class XrayService extends EventEmitter {
     }
 
     try {
-      await fsPromises.writeFile(configPath, JSON.stringify(xrayConfig, null, 2));
+      await fsPromises.writeFile(
+        configPath,
+        JSON.stringify(xrayConfig, null, 2),
+      );
       logger.info('XrayService', 'Config written to disk');
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -134,10 +140,14 @@ export class XrayService extends EventEmitter {
       try {
         await fsPromises.chmod(binPath, 0o755);
       } catch (error) {
-        logger.warn('XrayService', 'Failed to ensure executable mode for Xray binary', {
-          binPath,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        logger.warn(
+          'XrayService',
+          'Failed to ensure executable mode for Xray binary',
+          {
+            binPath,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       }
     }
 
@@ -146,11 +156,13 @@ export class XrayService extends EventEmitter {
       spawnedProcess = spawn(binPath, ['-c', configPath], {
         env: {
           ...process.env,
-          'XRAY_LOCATION_ASSET': this.resourcesPath
-        }
+          XRAY_LOCATION_ASSET: this.resourcesPath,
+        },
       });
       this.process = spawnedProcess;
-      logger.info('XrayService', 'Process spawned', { pid: spawnedProcess.pid });
+      logger.info('XrayService', 'Process spawned', {
+        pid: spawnedProcess.pid,
+      });
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
       this.markFailed(error.message);
@@ -183,7 +195,7 @@ export class XrayService extends EventEmitter {
     spawnedProcess.on('close', (code) => {
       const signal = spawnedProcess.signalCode ?? null;
       const wasExpectedExit = this.expectedExitProcesses.has(spawnedProcess);
-      logger.warn('XrayService', 'Process exited', { 
+      logger.warn('XrayService', 'Process exited', {
         code,
         signal,
         server: config.name,
@@ -207,19 +219,19 @@ export class XrayService extends EventEmitter {
         });
       }
     });
-    
+
     spawnedProcess.on('error', (err) => {
-        logger.error('XrayService', 'Process error', {
-          error: err.message,
-          stack: err.stack,
-          server: config.name,
-          serverAddress: `${config.address}:${config.port}`,
-        });
-        this.maybeEmitUnexpectedExit(spawnedProcess, config, {
-          code: null,
-          signal: null,
-          reason: `Xray process error: ${err.message}`,
-        });
+      logger.error('XrayService', 'Process error', {
+        error: err.message,
+        stack: err.stack,
+        server: config.name,
+        serverAddress: `${config.address}:${config.port}`,
+      });
+      this.maybeEmitUnexpectedExit(spawnedProcess, config, {
+        code: null,
+        signal: null,
+        reason: `Xray process error: ${err.message}`,
+      });
     });
 
     try {
@@ -231,7 +243,9 @@ export class XrayService extends EventEmitter {
           ready: readiness.reachable,
           xrayRunning: true,
           lastStartAt: Date.now(),
-          lastReadyAt: readiness.reachable ? Date.now() : this.healthStatus.lastReadyAt,
+          lastReadyAt: readiness.reachable
+            ? Date.now()
+            : this.healthStatus.lastReadyAt,
           lastReadinessCheckAt: Date.now(),
           localProxyReachable: readiness.reachable,
           lastFailureAt: null,
@@ -244,7 +258,8 @@ export class XrayService extends EventEmitter {
         this.process = null;
       }
       if (this.healthStatus.state === 'starting') {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         this.markFailed(errorMessage);
       }
       throw error;
@@ -297,21 +312,30 @@ export class XrayService extends EventEmitter {
   public getHealthStatus(): XrayHealthStatus {
     return {
       ...this.healthStatus,
-      xrayRunning: this.process !== null && this.healthStatus.state !== 'stopped' && this.healthStatus.state !== 'failed',
+      xrayRunning:
+        this.process !== null &&
+        this.healthStatus.state !== 'stopped' &&
+        this.healthStatus.state !== 'failed',
     };
   }
 
   private maybeEmitUnexpectedExit(
     processRef: ChildProcess,
     config: VlessConfig,
-    event: Omit<XrayUnexpectedExitEvent, 'config'>
+    event: Omit<XrayUnexpectedExitEvent, 'config'>,
   ): void {
-    if (this.expectedExitProcesses.has(processRef) || this.notifiedUnexpectedExitProcesses.has(processRef)) {
+    if (
+      this.expectedExitProcesses.has(processRef) ||
+      this.notifiedUnexpectedExitProcesses.has(processRef)
+    ) {
       return;
     }
     this.notifiedUnexpectedExitProcesses.add(processRef);
     this.markFailed(event.reason);
-    this.emit('unexpected-exit', { ...event, config } satisfies XrayUnexpectedExitEvent);
+    this.emit('unexpected-exit', {
+      ...event,
+      config,
+    } satisfies XrayUnexpectedExitEvent);
   }
 
   private markFailed(reason: string): void {
@@ -338,8 +362,10 @@ export class XrayService extends EventEmitter {
       updatedStatus.xrayRunning !== this.healthStatus.xrayRunning ||
       updatedStatus.lastStartAt !== this.healthStatus.lastStartAt ||
       updatedStatus.lastReadyAt !== this.healthStatus.lastReadyAt ||
-      updatedStatus.lastReadinessCheckAt !== this.healthStatus.lastReadinessCheckAt ||
-      updatedStatus.localProxyReachable !== this.healthStatus.localProxyReachable ||
+      updatedStatus.lastReadinessCheckAt !==
+        this.healthStatus.lastReadinessCheckAt ||
+      updatedStatus.localProxyReachable !==
+        this.healthStatus.localProxyReachable ||
       updatedStatus.lastFailureAt !== this.healthStatus.lastFailureAt ||
       updatedStatus.lastFailureReason !== this.healthStatus.lastFailureReason ||
       updatedStatus.lastReadinessError !== this.healthStatus.lastReadinessError;
@@ -351,12 +377,16 @@ export class XrayService extends EventEmitter {
   }
 
   private async awaitLocalProxyReadiness(
-    processRef: ChildProcess
+    processRef: ChildProcess,
   ): Promise<{ reachable: boolean; reason: string | null }> {
     const startedAt = Date.now();
     while (Date.now() - startedAt <= XrayService.READINESS_TIMEOUT_MS) {
       if (this.process !== processRef) {
-        return { reachable: false, reason: 'Xray process exited before local proxy listeners became ready' };
+        return {
+          reachable: false,
+          reason:
+            'Xray process exited before local proxy listeners became ready',
+        };
       }
 
       const [socksReady, httpReady] = await Promise.all([
@@ -381,16 +411,23 @@ export class XrayService extends EventEmitter {
         localProxyReachable: false,
         lastReadinessError: 'Local proxy listeners are not reachable yet',
       });
-      await new Promise((resolve) => setTimeout(resolve, XrayService.READINESS_RETRY_MS));
+      await new Promise((resolve) =>
+        setTimeout(resolve, XrayService.READINESS_RETRY_MS),
+      );
     }
 
     return {
       reachable: false,
-      reason: 'Xray started but local proxy listeners did not become reachable in time',
+      reason:
+        'Xray started but local proxy listeners did not become reachable in time',
     };
   }
 
-  private logXrayLine(stream: 'stdout' | 'stderr', line: string, config: VlessConfig): void {
+  private logXrayLine(
+    stream: 'stdout' | 'stderr',
+    line: string,
+    config: VlessConfig,
+  ): void {
     const normalized = line.toLowerCase();
     const metadata = {
       stream,
@@ -399,7 +436,10 @@ export class XrayService extends EventEmitter {
       serverAddress: `${config.address}:${config.port}`,
     };
 
-    if (normalized.includes('[error]') || normalized.includes('failed to start')) {
+    if (
+      normalized.includes('[error]') ||
+      normalized.includes('failed to start')
+    ) {
       logger.error('XrayService', 'Xray runtime error', metadata);
       return;
     }
@@ -426,25 +466,38 @@ export class XrayService extends EventEmitter {
       let timeoutId: NodeJS.Timeout | null = null;
       type ProcessEventHandler = () => void;
 
-      const cleanup = (onClose: ProcessEventHandler, onError: ProcessEventHandler): void => {
+      const cleanup = (
+        onClose: ProcessEventHandler,
+        onError: ProcessEventHandler,
+      ): void => {
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
         }
-        const withOff = processRef as ChildProcess & { off?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+        const withOff = processRef as ChildProcess & {
+          off?: (event: string, listener: ProcessEventHandler) => ChildProcess;
+        };
         if (typeof withOff.off === 'function') {
           withOff.off('close', onClose);
           withOff.off('error', onError);
           return;
         }
-        const withRemove = processRef as ChildProcess & { removeListener?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+        const withRemove = processRef as ChildProcess & {
+          removeListener?: (
+            event: string,
+            listener: ProcessEventHandler,
+          ) => ChildProcess;
+        };
         if (typeof withRemove.removeListener === 'function') {
           withRemove.removeListener('close', onClose);
           withRemove.removeListener('error', onError);
         }
       };
 
-      const finish = (onClose: ProcessEventHandler, onError: ProcessEventHandler): void => {
+      const finish = (
+        onClose: ProcessEventHandler,
+        onError: ProcessEventHandler,
+      ): void => {
         if (settled) return;
         settled = true;
         cleanup(onClose, onError);
@@ -457,10 +510,14 @@ export class XrayService extends EventEmitter {
       processRef.once('close', onClose);
       processRef.once('error', onError);
       timeoutId = setTimeout(() => {
-        logger.warn('XrayService', 'Timed out waiting for Xray to exit, sending SIGKILL', {
-          timeoutMs: XrayService.STOP_TIMEOUT_MS,
-          pid: processRef.pid ?? null,
-        });
+        logger.warn(
+          'XrayService',
+          'Timed out waiting for Xray to exit, sending SIGKILL',
+          {
+            timeoutMs: XrayService.STOP_TIMEOUT_MS,
+            pid: processRef.pid ?? null,
+          },
+        );
         try {
           processRef.kill('SIGKILL');
         } catch {
@@ -479,13 +536,20 @@ export class XrayService extends EventEmitter {
       // and we forward listeners opaquely. Contravariant `never[]` lets both signatures assign.
       type ProcessEventHandler = (...args: never[]) => void;
 
-      const addListener = (event: 'close' | 'error', handler: ProcessEventHandler): boolean => {
-        const withOnce = processRef as ChildProcess & { once?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+      const addListener = (
+        event: 'close' | 'error',
+        handler: ProcessEventHandler,
+      ): boolean => {
+        const withOnce = processRef as ChildProcess & {
+          once?: (event: string, listener: ProcessEventHandler) => ChildProcess;
+        };
         if (typeof withOnce.once === 'function') {
           withOnce.once(event, handler);
           return true;
         }
-        const withOn = processRef as ChildProcess & { on?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+        const withOn = processRef as ChildProcess & {
+          on?: (event: string, listener: ProcessEventHandler) => ChildProcess;
+        };
         if (typeof withOn.on === 'function') {
           withOn.on(event, handler);
           return true;
@@ -493,13 +557,23 @@ export class XrayService extends EventEmitter {
         return false;
       };
 
-      const removeListener = (event: 'close' | 'error', handler: ProcessEventHandler): void => {
-        const withOff = processRef as ChildProcess & { off?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+      const removeListener = (
+        event: 'close' | 'error',
+        handler: ProcessEventHandler,
+      ): void => {
+        const withOff = processRef as ChildProcess & {
+          off?: (event: string, listener: ProcessEventHandler) => ChildProcess;
+        };
         if (typeof withOff.off === 'function') {
           withOff.off(event, handler);
           return;
         }
-        const withRemove = processRef as ChildProcess & { removeListener?: (event: string, listener: ProcessEventHandler) => ChildProcess };
+        const withRemove = processRef as ChildProcess & {
+          removeListener?: (
+            event: string,
+            listener: ProcessEventHandler,
+          ) => ChildProcess;
+        };
         if (typeof withRemove.removeListener === 'function') {
           withRemove.removeListener(event, handler);
         }
@@ -517,12 +591,15 @@ export class XrayService extends EventEmitter {
         fn();
       };
 
-      const onCloseDuringStartup = (code: number | null, signal: NodeJS.Signals | null) => {
+      const onCloseDuringStartup = (
+        code: number | null,
+        signal: NodeJS.Signals | null,
+      ) => {
         finish(() => {
           reject(
             new Error(
-              `Xray exited during startup (code=${code ?? 'null'}, signal=${signal ?? 'none'})`
-            )
+              `Xray exited during startup (code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
+            ),
           );
         });
       };
@@ -537,7 +614,10 @@ export class XrayService extends EventEmitter {
         resolve();
         return;
       }
-      timeoutId = setTimeout(() => finish(resolve), XrayService.STARTUP_GRACE_MS);
+      timeoutId = setTimeout(
+        () => finish(resolve),
+        XrayService.STARTUP_GRACE_MS,
+      );
     });
   }
 }

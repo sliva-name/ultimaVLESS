@@ -26,7 +26,9 @@ export interface IElectronAPI {
 
   // Subscriptions CRUD
   getSubscriptions: () => Promise<Subscription[]>;
-  addSubscription: (payload: AddSubscriptionPayload) => Promise<AddSubscriptionResult & { subscriptionId: string }>;
+  addSubscription: (
+    payload: AddSubscriptionPayload,
+  ) => Promise<AddSubscriptionResult & { subscriptionId: string }>;
   updateSubscription: (payload: UpdateSubscriptionPayload) => Promise<boolean>;
   deleteSubscription: (id: string) => Promise<boolean>;
   refreshSubscriptions: () => Promise<RefreshSubscriptionsResult>;
@@ -37,12 +39,18 @@ export interface IElectronAPI {
 
   // Events
   onUpdateServers: (callback: (servers: VlessConfig[]) => void) => () => void;
-  onUpdateSubscriptions: (callback: (subscriptions: Subscription[]) => void) => () => void;
+  onUpdateSubscriptions: (
+    callback: (subscriptions: Subscription[]) => void,
+  ) => () => void;
   onConnectionStatus: (callback: (status: boolean) => void) => () => void;
   onConnectionBusy: (callback: (busy: boolean) => void) => () => void;
   onConnectionError: (callback: (error: string) => void) => () => void;
-  onConnectionMonitorEvent: (callback: (event: ConnectionMonitorEvent) => void) => () => void;
-  onTrafficStats: (callback: (snapshot: TrafficSnapshot | null) => void) => () => void;
+  onConnectionMonitorEvent: (
+    callback: (event: ConnectionMonitorEvent) => void,
+  ) => () => void;
+  onTrafficStats: (
+    callback: (snapshot: TrafficSnapshot | null) => void,
+  ) => () => void;
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
 
   getConnectionMonitorStatus: () => Promise<ConnectionMonitorStatus>;

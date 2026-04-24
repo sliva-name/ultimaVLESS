@@ -34,12 +34,14 @@ describe('TunRouteService support policy', () => {
       supported: true,
       reason: null,
       routeMode: 'linux-xray-auto-route',
-      degradedReason: 'Linux TUN routing currently relies on Xray auto-route behavior rather than explicit OS-level route teardown.',
+      degradedReason:
+        'Linux TUN routing currently relies on Xray auto-route behavior rather than explicit OS-level route teardown.',
     },
     {
       platform: 'darwin' as const,
       supported: false,
-      reason: 'TUN mode is currently supported only on Windows and Linux by the bundled Xray core.',
+      reason:
+        'TUN mode is currently supported only on Windows and Linux by the bundled Xray core.',
       routeMode: null,
       degradedReason: null,
     },
@@ -50,15 +52,18 @@ describe('TunRouteService support policy', () => {
       routeMode: null,
       degradedReason: null,
     },
-  ])('reports support policy for $platform', async ({ platform, supported, reason, routeMode, degradedReason }) => {
-    const TunRouteService = await loadService();
-    const service = new TunRouteService(platform);
+  ])(
+    'reports support policy for $platform',
+    async ({ platform, supported, reason, routeMode, degradedReason }) => {
+      const TunRouteService = await loadService();
+      const service = new TunRouteService(platform);
 
-    expect(service.isSupported()).toBe(supported);
-    expect(service.getUnsupportedReason()).toBe(reason);
-    expect(service.getRouteMode()).toBe(routeMode);
-    expect(service.getDegradedReason()).toBe(degradedReason);
-  });
+      expect(service.isSupported()).toBe(supported);
+      expect(service.getUnsupportedReason()).toBe(reason);
+      expect(service.getRouteMode()).toBe(routeMode);
+      expect(service.getDegradedReason()).toBe(degradedReason);
+    },
+  );
 
   it('rejects prepareRoutingPlan when platform is unsupported', async () => {
     const TunRouteService = await loadService();
@@ -70,8 +75,10 @@ describe('TunRouteService support policy', () => {
         name: 'Server 1',
         address: 'example.com',
         port: 443,
-      })
-    ).rejects.toThrow('TUN mode is currently supported only on Windows and Linux by the bundled Xray core.');
+      }),
+    ).rejects.toThrow(
+      'TUN mode is currently supported only on Windows and Linux by the bundled Xray core.',
+    );
   });
 
   it('does not track routes that already existed before enable', async () => {
@@ -105,11 +112,13 @@ describe('TunRouteService support policy', () => {
     const callsBeforeDisable = runPowerShell.mock.calls.length;
     await service.disable();
 
-    const deleteCalls = runPowerShell.mock.calls.slice(callsBeforeDisable).filter(([script]) =>
-      String(script).includes('Remove-NetRoute')
-    );
+    const deleteCalls = runPowerShell.mock.calls
+      .slice(callsBeforeDisable)
+      .filter(([script]) => String(script).includes('Remove-NetRoute'));
     expect(deleteCalls).toHaveLength(1);
-    expect(String(deleteCalls[0][0])).toContain('Get-NetRoute -DestinationPrefix "0.0.0.0/0"');
+    expect(String(deleteCalls[0][0])).toContain(
+      'Get-NetRoute -DestinationPrefix "0.0.0.0/0"',
+    );
   });
 
   it('includes resolved domain IPs when cleaning up stale routes', async () => {
@@ -119,10 +128,17 @@ describe('TunRouteService support policy', () => {
 
     const TunRouteService = await loadService();
     const service = new TunRouteService('win32');
-    vi.spyOn(service as any, 'resolveProxyAddresses').mockResolvedValue(['203.0.113.10']);
+    vi.spyOn(service as any, 'resolveProxyAddresses').mockResolvedValue([
+      '203.0.113.10',
+    ]);
     vi.spyOn(service as any, 'getTunInterfaceIndex').mockResolvedValue(null);
-    const deleteHostRoutes = vi.spyOn(service as any, 'deleteHostRoutesByPrefixesAndMetric').mockResolvedValue(1);
-    vi.spyOn(service as any, 'deleteTunDefaultRoutesByNextHop').mockResolvedValue(undefined);
+    const deleteHostRoutes = vi
+      .spyOn(service as any, 'deleteHostRoutesByPrefixesAndMetric')
+      .mockResolvedValue(1);
+    vi.spyOn(
+      service as any,
+      'deleteTunDefaultRoutesByNextHop',
+    ).mockResolvedValue(undefined);
 
     await service.disable();
 

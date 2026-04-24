@@ -23,7 +23,7 @@ vi.mock('fs/promises', () => ({
     chmod: vi.fn(),
     stat: vi.fn(() => ({ size: 0 })),
     open: vi.fn(),
-  }
+  },
 }));
 
 vi.mock('child_process', () => {
@@ -95,11 +95,11 @@ describe('XrayService', () => {
       mockConfig,
       expect.stringMatching(/[\\/]tmp[\\/]xray\.log$/),
       'proxy',
-      expect.objectContaining({ performanceSettings: expect.any(Object) })
+      expect.objectContaining({ performanceSettings: expect.any(Object) }),
     );
     expect(fsPromises.writeFile).toHaveBeenCalledWith(
       expect.stringMatching(/[\\/]tmp[\\/]config\.json$/),
-      JSON.stringify({ outbound: {} }, null, 2)
+      JSON.stringify({ outbound: {} }, null, 2),
     );
     expect(spawn).toHaveBeenCalledWith(
       expect.stringMatching(/resources[\\/]+bin[\\/]+xray(\.exe)?$/),
@@ -108,7 +108,7 @@ describe('XrayService', () => {
         env: expect.objectContaining({
           XRAY_LOCATION_ASSET: expect.stringMatching(/resources[\\/]+bin$/),
         }),
-      })
+      }),
     );
     expect(svc.isRunning()).toBe(true);
     expect(svc.getHealthStatus()).toMatchObject({
@@ -123,7 +123,9 @@ describe('XrayService', () => {
     const svc = new XrayService();
     vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
 
-    await expect(svc.start(mockConfig)).rejects.toThrow('Xray binary not found');
+    await expect(svc.start(mockConfig)).rejects.toThrow(
+      'Xray binary not found',
+    );
     expect(svc.getHealthStatus()).toMatchObject({
       state: 'failed',
       ready: false,
@@ -140,7 +142,7 @@ describe('XrayService', () => {
     await svc.start(mockConfig);
     svc.stop();
     mockProcess.emit('close', 0);
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(mockProcess.kill).toHaveBeenCalledTimes(1);
     expect(svc.isRunning()).toBe(false);
@@ -162,7 +164,7 @@ describe('XrayService', () => {
         code: 17,
         signal: null,
         config: mockConfig,
-      })
+      }),
     );
     expect(svc.isRunning()).toBe(false);
   });
@@ -214,12 +216,14 @@ describe('XrayService', () => {
 
     await svc.start(mockConfig);
 
-    const restartPromise = svc.start(makeServer({
-      uuid: 'uuid-2',
-      address: 'addr-2',
-      name: 'second',
-      security: 'reality',
-    }));
+    const restartPromise = svc.start(
+      makeServer({
+        uuid: 'uuid-2',
+        address: 'addr-2',
+        name: 'second',
+        security: 'reality',
+      }),
+    );
 
     await Promise.resolve();
     expect(spawn).toHaveBeenCalledTimes(1);

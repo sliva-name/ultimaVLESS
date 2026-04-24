@@ -28,8 +28,14 @@ import {
   getTunInterfaceIndexScript,
   waitForTunInterfaceScript,
 } from './tunRoute/windowsScripts';
-import { getLinuxDefaultRouteInfo, getMacosDefaultRouteInfo } from './tunRoute/unixRouting';
-import { runPowerShell as runPowerShellScript, RunPowerShellOptions } from './tunRoute/powerShellRunner';
+import {
+  getLinuxDefaultRouteInfo,
+  getMacosDefaultRouteInfo,
+} from './tunRoute/unixRouting';
+import {
+  runPowerShell as runPowerShellScript,
+  RunPowerShellOptions,
+} from './tunRoute/powerShellRunner';
 
 export interface TunRoutingPlan {
   defaultRoute: DefaultRouteInfo;
@@ -76,7 +82,9 @@ export class TunRouteService {
     return null;
   }
 
-  public async prepareRoutingPlan(config: VlessConfig): Promise<TunRoutingPlan> {
+  public async prepareRoutingPlan(
+    config: VlessConfig,
+  ): Promise<TunRoutingPlan> {
     const unsupportedReason = this.getUnsupportedReason();
     if (unsupportedReason) {
       throw new Error(unsupportedReason);
@@ -93,20 +101,29 @@ export class TunRouteService {
       throw new Error('Could not get default route. Check network connection.');
     }
     if (proxyIps.length === 0) {
-      throw new Error(`Could not resolve proxy server address: ${config.address}`);
+      throw new Error(
+        `Could not resolve proxy server address: ${config.address}`,
+      );
     }
 
     return { defaultRoute, proxyIps };
   }
 
-  public async enable(config: VlessConfig, plan?: TunRoutingPlan): Promise<void> {
+  public async enable(
+    config: VlessConfig,
+    plan?: TunRoutingPlan,
+  ): Promise<void> {
     if (this.platform !== 'win32') {
       const routingPlan = plan ?? (await this.prepareRoutingPlan(config));
-      logger.info('TunRouteService', 'Using Xray auto-route for TUN mode on Unix platform', {
-        platform: this.platform,
-        proxyIpCount: routingPlan.proxyIps.length,
-        defaultInterface: routingPlan.defaultRoute.interfaceName,
-      });
+      logger.info(
+        'TunRouteService',
+        'Using Xray auto-route for TUN mode on Unix platform',
+        {
+          platform: this.platform,
+          proxyIpCount: routingPlan.proxyIps.length,
+          defaultInterface: routingPlan.defaultRoute.interfaceName,
+        },
+      );
       return;
     }
 
@@ -136,7 +153,13 @@ export class TunRouteService {
 
       for (const proxyIp of proxyIps) {
         this.ensureWithinDeadline(deadline, `add host route for ${proxyIp}`);
-        await this.addRoute(proxyIp, '255.255.255.255', defaultRoute.gateway, 1, defaultRoute.interfaceIndex);
+        await this.addRoute(
+          proxyIp,
+          '255.255.255.255',
+          defaultRoute.gateway,
+          1,
+          defaultRoute.interfaceIndex,
+        );
       }
       this.ensureWithinDeadline(deadline, 'add default route via TUN');
       await this.addDefaultRouteViaTun(tunInterfaceIndex);
@@ -154,10 +177,14 @@ export class TunRouteService {
 
   public async disable(): Promise<void> {
     if (this.platform !== 'win32') {
-      logger.info('TunRouteService', 'Unix TUN cleanup delegated to Xray process lifecycle', {
-        platform: this.platform,
-        routeMode: this.getRouteMode(),
-      });
+      logger.info(
+        'TunRouteService',
+        'Unix TUN cleanup delegated to Xray process lifecycle',
+        {
+          platform: this.platform,
+          routeMode: this.getRouteMode(),
+        },
+      );
       return;
     }
 
@@ -184,7 +211,9 @@ export class TunRouteService {
 
   // ---- Unix helpers ---------------------------------------------------------
 
-  private async prepareUnixRoutingPlan(config: VlessConfig): Promise<TunRoutingPlan> {
+  private async prepareUnixRoutingPlan(
+    config: VlessConfig,
+  ): Promise<TunRoutingPlan> {
     const [defaultRoute, proxyIps] = await Promise.all([
       this.getUnixDefaultRouteInfo(),
       this.resolveProxyAddresses(config.address),
@@ -193,7 +222,9 @@ export class TunRouteService {
       throw new Error('Could not get default route. Check network connection.');
     }
     if (proxyIps.length === 0) {
-      throw new Error(`Could not resolve proxy server address: ${config.address}`);
+      throw new Error(
+        `Could not resolve proxy server address: ${config.address}`,
+      );
     }
     return { defaultRoute, proxyIps };
   }
@@ -207,7 +238,9 @@ export class TunRouteService {
   // ---- Windows route discovery ---------------------------------------------
 
   private async getDefaultRoute(): Promise<DefaultRouteInfo | null> {
-    const out = await this.runPowerShell(getDefaultRouteScript(), { allowNonZeroExit: true });
+    const out = await this.runPowerShell(getDefaultRouteScript(), {
+      allowNonZeroExit: true,
+    });
     const match = out.trim().match(/^(\d+)\|([^\s|]+)\|([^|]+)(?:\|(.*))?$/);
     if (!match) return null;
     const localAddress = match[4]?.trim() || '';
@@ -249,18 +282,20 @@ export class TunRouteService {
   }
 
   private async waitForTunInterface(): Promise<number> {
-    const out = await this.runPowerShell(waitForTunInterfaceScript()).catch((error) => {
-      const details = error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `TUN interface did not appear within ${TUN_WAIT_TIMEOUT / 1000}s. ` +
-        `Make sure app runs as Administrator and Xray has TUN support. Details: ${details}`
-      );
-    });
+    const out = await this.runPowerShell(waitForTunInterfaceScript()).catch(
+      (error) => {
+        const details = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `TUN interface did not appear within ${TUN_WAIT_TIMEOUT / 1000}s. ` +
+            `Make sure app runs as Administrator and Xray has TUN support. Details: ${details}`,
+        );
+      },
+    );
     const idx = parseInt(out.trim(), 10);
     if (Number.isNaN(idx)) {
       throw new Error(
         `TUN interface did not appear within ${TUN_WAIT_TIMEOUT / 1000}s. ` +
-        `Make sure app runs as Administrator and Xray has TUN support.`
+          `Make sure app runs as Administrator and Xray has TUN support.`,
       );
     }
     logger.info('TunRouteService', 'TUN interface found', { index: idx });
@@ -268,7 +303,9 @@ export class TunRouteService {
   }
 
   private async getTunInterfaceIndex(): Promise<number | null> {
-    const out = await this.runPowerShell(getTunInterfaceIndexScript(), { allowNonZeroExit: true });
+    const out = await this.runPowerShell(getTunInterfaceIndexScript(), {
+      allowNonZeroExit: true,
+    });
     const n = parseInt(out.trim(), 10);
     return Number.isNaN(n) ? null : n;
   }
@@ -277,9 +314,13 @@ export class TunRouteService {
     try {
       await this.runPowerShell(ensureTunAddressScript(tunInterfaceIndex));
     } catch (e) {
-      logger.warn('TunRouteService', 'Could not set TUN address (Xray may have set it)', {
-        error: e instanceof Error ? e.message : String(e),
-      });
+      logger.warn(
+        'TunRouteService',
+        'Could not set TUN address (Xray may have set it)',
+        {
+          error: e instanceof Error ? e.message : String(e),
+        },
+      );
     }
   }
 
@@ -289,7 +330,10 @@ export class TunRouteService {
     if (this.isIp(address)) return [address];
     let timeoutHandle: NodeJS.Timeout | null = null;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutHandle = setTimeout(() => reject(new Error('DNS lookup timeout')), DNS_TIMEOUT);
+      timeoutHandle = setTimeout(
+        () => reject(new Error('DNS lookup timeout')),
+        DNS_TIMEOUT,
+      );
     });
     try {
       const resolver = new dns.promises.Resolver();
@@ -332,10 +376,12 @@ export class TunRouteService {
     mask: string,
     gateway: string,
     metric: number,
-    interfaceIndex?: number
+    interfaceIndex?: number,
   ): Promise<boolean> {
     if (net.isIP(destination) === 0) {
-      throw new Error(`Refusing to add route for non-IP destination: ${destination}`);
+      throw new Error(
+        `Refusing to add route for non-IP destination: ${destination}`,
+      );
     }
     if (net.isIP(gateway) === 0) {
       throw new Error(`Refusing to add route with non-IP gateway: ${gateway}`);
@@ -348,7 +394,9 @@ export class TunRouteService {
     }
     const prefixLen = this.maskToPrefix(mask);
     const destPrefix = `${destination}/${prefixLen}`;
-    const out = await this.runPowerShell(addRouteScript(destPrefix, gateway, metric, interfaceIndex));
+    const out = await this.runPowerShell(
+      addRouteScript(destPrefix, gateway, metric, interfaceIndex),
+    );
     const created = out.includes('CREATED');
     if (created) {
       this.addedRoutes.push({ destination, mask, interfaceIndex });
@@ -360,9 +408,15 @@ export class TunRouteService {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= DEFAULT_ROUTE_ADD_RETRIES; attempt += 1) {
       try {
-        const out = await this.runPowerShell(addDefaultRouteViaTunScript(tunIdx));
+        const out = await this.runPowerShell(
+          addDefaultRouteViaTunScript(tunIdx),
+        );
         if (out.includes('CREATED')) {
-          this.addedRoutes.push({ destination: '0.0.0.0', mask: '0.0.0.0', interfaceIndex: tunIdx });
+          this.addedRoutes.push({
+            destination: '0.0.0.0',
+            mask: '0.0.0.0',
+            interfaceIndex: tunIdx,
+          });
         }
         return;
       } catch (error) {
@@ -384,28 +438,46 @@ export class TunRouteService {
   }
 
   private async deleteRoute(route: AddedRoute): Promise<void> {
-    const prefix = route.destination === '0.0.0.0' ? '0.0.0.0/0' : `${route.destination}/32`;
-    await this.runPowerShell(deleteRouteScript(prefix, route.interfaceIndex), { allowNonZeroExit: true });
+    const prefix =
+      route.destination === '0.0.0.0' ? '0.0.0.0/0' : `${route.destination}/32`;
+    await this.runPowerShell(deleteRouteScript(prefix, route.interfaceIndex), {
+      allowNonZeroExit: true,
+    });
   }
 
   private async cleanupStaleTunRoutes(): Promise<void> {
     const knownServerIps = await this.getKnownServerIps();
     const tunIndex = await this.getTunInterfaceIndex();
     if (tunIndex != null) {
-      await this.deleteRouteByPrefixAndMetric('0.0.0.0/0', TUN_ROUTE_METRIC, tunIndex).catch((error) => {
-        logger.warn('TunRouteService', 'Failed to cleanup stale TUN default route', {
-          interfaceIndex: tunIndex,
-          error: error instanceof Error ? error.message : String(error),
-        });
+      await this.deleteRouteByPrefixAndMetric(
+        '0.0.0.0/0',
+        TUN_ROUTE_METRIC,
+        tunIndex,
+      ).catch((error) => {
+        logger.warn(
+          'TunRouteService',
+          'Failed to cleanup stale TUN default route',
+          {
+            interfaceIndex: tunIndex,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       });
     } else {
       // Fallback: remove stale default route candidates by next hop/metric even if
       // interface alias changed (e.g. "ultima0 #2") and exact index is unknown.
-      await this.deleteTunDefaultRoutesByNextHop(TUN_NEXTHOP, TUN_ROUTE_METRIC).catch((error) => {
-        logger.warn('TunRouteService', 'Failed to cleanup stale TUN default routes by next hop', {
-          nextHop: TUN_NEXTHOP,
-          error: error instanceof Error ? error.message : String(error),
-        });
+      await this.deleteTunDefaultRoutesByNextHop(
+        TUN_NEXTHOP,
+        TUN_ROUTE_METRIC,
+      ).catch((error) => {
+        logger.warn(
+          'TunRouteService',
+          'Failed to cleanup stale TUN default routes by next hop',
+          {
+            nextHop: TUN_NEXTHOP,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       });
     }
 
@@ -413,7 +485,7 @@ export class TunRouteService {
     try {
       removedHostRoutes = await this.deleteHostRoutesByPrefixesAndMetric(
         knownServerIps.map((ip) => `${ip}/32`),
-        1
+        1,
       );
     } catch (error) {
       logger.warn('TunRouteService', 'Failed to cleanup stale host routes', {
@@ -432,7 +504,7 @@ export class TunRouteService {
   private async getKnownServerIps(): Promise<string[]> {
     const servers = configService.getServers();
     const resolved = await Promise.all(
-      servers.map((server) => this.resolveProxyAddresses(server.address))
+      servers.map((server) => this.resolveProxyAddresses(server.address)),
     );
     return [...new Set(resolved.flat())];
   }
@@ -440,29 +512,36 @@ export class TunRouteService {
   private async deleteRouteByPrefixAndMetric(
     destinationPrefix: string,
     metric: number,
-    interfaceIndex?: number
+    interfaceIndex?: number,
   ): Promise<void> {
     await this.runPowerShell(
-      deleteRouteByPrefixAndMetricScript(destinationPrefix, metric, interfaceIndex),
-      { allowNonZeroExit: true }
+      deleteRouteByPrefixAndMetricScript(
+        destinationPrefix,
+        metric,
+        interfaceIndex,
+      ),
+      { allowNonZeroExit: true },
     );
   }
 
-  private async deleteTunDefaultRoutesByNextHop(nextHop: string, metric: number): Promise<void> {
+  private async deleteTunDefaultRoutesByNextHop(
+    nextHop: string,
+    metric: number,
+  ): Promise<void> {
     await this.runPowerShell(
       deleteTunDefaultRoutesByNextHopScript(nextHop, metric),
-      { allowNonZeroExit: true }
+      { allowNonZeroExit: true },
     );
   }
 
   private async deleteHostRoutesByPrefixesAndMetric(
     destinationPrefixes: string[],
-    metric: number
+    metric: number,
   ): Promise<number> {
     if (destinationPrefixes.length === 0) return 0;
     const out = await this.runPowerShell(
       deleteHostRoutesByPrefixesAndMetricScript(destinationPrefixes, metric),
-      { allowNonZeroExit: true }
+      { allowNonZeroExit: true },
     );
     const parsed = parseInt(out.trim(), 10);
     return Number.isNaN(parsed) ? 0 : parsed;
@@ -471,7 +550,10 @@ export class TunRouteService {
   // ---- PowerShell runner ---------------------------------------------------
   // Kept as an instance method so tests can spy on it via `service as any`.
 
-  private runPowerShell(script: string, options: RunPowerShellOptions = {}): Promise<string> {
+  private runPowerShell(
+    script: string,
+    options: RunPowerShellOptions = {},
+  ): Promise<string> {
     return runPowerShellScript(script, options);
   }
 
@@ -481,7 +563,7 @@ export class TunRouteService {
     if (Date.now() <= deadline) return;
     throw new Error(
       `TUN setup timed out after ${ENABLE_TIMEOUT / 1000}s while running: ${stage}. ` +
-      'Xray may not support TUN on this system.'
+        'Xray may not support TUN on this system.',
     );
   }
 

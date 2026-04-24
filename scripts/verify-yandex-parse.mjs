@@ -34,14 +34,28 @@ async function main() {
   const rawRes = await fetch(RAW);
   const rawText = await rawRes.text();
   const rawLinks = extractLinks(rawText);
-  console.log('HTTP', rawRes.status, 'len', rawText.length, 'matches', rawLinks.length);
+  console.log(
+    'HTTP',
+    rawRes.status,
+    'len',
+    rawText.length,
+    'matches',
+    rawLinks.length,
+  );
 
   console.log('\n--- Yandex Translate (app path) ---');
   const yaRes = await fetch(YANDEX, { headers: HEADERS });
   const yaHtml = await yaRes.text();
   const expanded = expandEntities(yaHtml);
   const yaLinks = extractLinks(expanded);
-  console.log('HTTP', yaRes.status, 'len', yaHtml.length, 'matches', yaLinks.length);
+  console.log(
+    'HTTP',
+    yaRes.status,
+    'len',
+    yaHtml.length,
+    'matches',
+    yaLinks.length,
+  );
 
   const uniqYa = [...new Set(yaLinks)];
   const uniqRaw = [...new Set(rawLinks)];
@@ -50,8 +64,13 @@ async function main() {
   if (uniqYa.length > 0) {
     console.log('Yandex sample:', uniqYa[0].slice(0, 120) + '...');
   } else {
-    console.log('WARNING: No vless/trojan/hysteria links in Yandex HTML with this fetch.');
-    console.log('Snippet (first 500 chars):', yaHtml.slice(0, 500).replace(/\s+/g, ' '));
+    console.log(
+      'WARNING: No vless/trojan/hysteria links in Yandex HTML with this fetch.',
+    );
+    console.log(
+      'Snippet (first 500 chars):',
+      yaHtml.slice(0, 500).replace(/\s+/g, ' '),
+    );
   }
 }
 

@@ -12,4 +12,3 @@ export const APP_CONSTANTS = {
     SUBSCRIPTION_FETCH: 10000,
   },
 };
-

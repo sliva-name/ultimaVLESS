@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import clsx from 'clsx';
 import { Settings, Server, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -42,19 +48,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const subscriptionGroups = useMemo(
     () => buildSubscriptionGroups(subscriptions, servers),
-    [subscriptions, servers]
+    [subscriptions, servers],
   );
   const orphanSubscriptionServers = useMemo(
     () => buildOrphanSubscriptionServers(servers),
-    [servers]
+    [servers],
   );
-  const manualServers = useMemo(
-    () => buildManualServers(servers),
-    [servers]
-  );
+  const manualServers = useMemo(() => buildManualServers(servers), [servers]);
 
   useEffect(() => {
-    window.electronAPI.getAppVersion()
+    window.electronAPI
+      .getAppVersion()
       .then(setAppVersion)
       .catch(() => setAppVersion(''));
   }, []);
@@ -64,12 +68,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // Re-scroll whenever the selected server actually changes, not only on the
     // very first render — otherwise keyboard/remote navigation that switches
     // to a server that's offscreen will leave it out of view.
-    if (lastScrolledUuidRef.current === selectedServer.uuid && didScrollToSelectedRef.current) {
+    if (
+      lastScrolledUuidRef.current === selectedServer.uuid &&
+      didScrollToSelectedRef.current
+    ) {
       return;
     }
     const container = scrollContainerRef.current;
     if (!container) return;
-    const el = container.querySelector(`[data-server-uuid="${selectedServer.uuid}"]`);
+    const el = container.querySelector(
+      `[data-server-uuid="${selectedServer.uuid}"]`,
+    );
     if (el && typeof el.scrollIntoView === 'function') {
       el.scrollIntoView({ block: 'nearest' });
       didScrollToSelectedRef.current = true;
@@ -95,11 +104,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-1.5 rounded-xl bg-linear-to-br from-primary/20 to-primary/10 border border-primary/30 shadow-lg shadow-primary/10">
-              <img src={logoUrl} alt="UltimaVLESS logo" className="w-8 h-8 rounded-lg" />
+              <img
+                src={logoUrl}
+                alt="UltimaVLESS logo"
+                className="w-8 h-8 rounded-lg"
+              />
             </div>
             <div>
-              <h1 className="font-bold text-lg text-white tracking-tight">{t('app.title')}</h1>
-              <p className="text-xs text-gray-400 mt-0.5">{t('app.subtitle')}</p>
+              <h1 className="font-bold text-lg text-white tracking-tight">
+                {t('app.title')}
+              </h1>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {t('app.subtitle')}
+              </p>
             </div>
           </div>
           <button
@@ -112,7 +129,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 space-y-2 relative z-10">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto p-3 space-y-2 relative z-10"
+      >
         {servers.length > 0 && (
           <div className="px-2 mb-3">
             <div className="flex items-center justify-between">
@@ -129,11 +149,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                     isPinging || isConnected
                       ? 'text-gray-600 cursor-not-allowed'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50',
                   )}
                   title={t('sidebar.pingAll')}
                 >
-                  <RefreshCw className={clsx('w-3.5 h-3.5', isPinging && 'animate-spin')} />
+                  <RefreshCw
+                    className={clsx('w-3.5 h-3.5', isPinging && 'animate-spin')}
+                  />
                 </button>
               )}
             </div>
@@ -180,7 +202,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="p-4 rounded-xl bg-gray-800/30 border border-gray-700/30 mb-4">
               <Server className="w-8 h-8 text-gray-500" />
             </div>
-            <p className="text-gray-400 text-sm font-medium mb-1">{t('sidebar.noServers')}</p>
+            <p className="text-gray-400 text-sm font-medium mb-1">
+              {t('sidebar.noServers')}
+            </p>
           </div>
         )}
       </div>
@@ -195,7 +219,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isConnected && (
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-lg shadow-green-500/50" />
-              <span className="text-xs text-green-400 font-medium">{t('sidebar.connected')}</span>
+              <span className="text-xs text-green-400 font-medium">
+                {t('sidebar.connected')}
+              </span>
             </div>
           )}
         </div>

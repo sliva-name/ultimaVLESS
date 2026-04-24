@@ -18,14 +18,22 @@ vi.mock('@/main/services/LoggerService', () => ({
 }));
 
 describe('registerConnectionHandlers', () => {
-  const handlers = new Map<string, (event: unknown, payload?: unknown) => Promise<unknown>>();
+  const handlers = new Map<
+    string,
+    (event: unknown, payload?: unknown) => Promise<unknown>
+  >();
 
   beforeEach(() => {
     handlers.clear();
     ipcHandleMock.mockReset();
-    ipcHandleMock.mockImplementation((channel: string, handler: (event: unknown, payload?: unknown) => Promise<unknown>) => {
-      handlers.set(channel, handler);
-    });
+    ipcHandleMock.mockImplementation(
+      (
+        channel: string,
+        handler: (event: unknown, payload?: unknown) => Promise<unknown>,
+      ) => {
+        handlers.set(channel, handler);
+      },
+    );
   });
 
   function registerWith(overrides: Partial<any> = {}) {
@@ -86,11 +94,18 @@ describe('registerConnectionHandlers', () => {
     const result = await disconnectHandler({} as never);
 
     expect(result).toEqual({ ok: true });
-    expect(deps.connectionStackService.resetNetworkingStack).toHaveBeenCalledWith({ stopXray: true });
-    expect(deps.connectionMonitorService.stopMonitoring).toHaveBeenCalledWith({ message: 'Disconnected' });
     expect(
-      deps.connectionStackService.resetNetworkingStack.mock.invocationCallOrder[0]
-    ).toBeLessThan(deps.connectionMonitorService.stopMonitoring.mock.invocationCallOrder[0]);
+      deps.connectionStackService.resetNetworkingStack,
+    ).toHaveBeenCalledWith({ stopXray: true });
+    expect(deps.connectionMonitorService.stopMonitoring).toHaveBeenCalledWith({
+      message: 'Disconnected',
+    });
+    expect(
+      deps.connectionStackService.resetNetworkingStack.mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      deps.connectionMonitorService.stopMonitoring.mock.invocationCallOrder[0],
+    );
   });
 
   it('keeps monitoring active when stack reset fails during disconnect', async () => {

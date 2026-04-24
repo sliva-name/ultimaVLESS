@@ -44,11 +44,14 @@ const STRINGS: Record<UiLanguage, Record<MainTranslationKey, string>> = {
     'notify.disconnected.body': 'VPN tunnel was closed',
     'notify.error.title': 'UltimaVLESS — Connection error',
     'notify.switching.title': 'UltimaVLESS — Switching server',
-    'notify.switching.body': 'Current server looks blocked, trying another one…',
+    'notify.switching.body':
+      'Current server looks blocked, trying another one…',
     'notify.updateAvailable.title': 'UltimaVLESS — Update available',
-    'notify.updateAvailable.body': 'Version {version} is being downloaded in the background.',
+    'notify.updateAvailable.body':
+      'Version {version} is being downloaded in the background.',
     'notify.updateReady.title': 'UltimaVLESS — Update ready',
-    'notify.updateReady.body': 'Version {version} will install on next restart.',
+    'notify.updateReady.body':
+      'Version {version} will install on next restart.',
   },
   ru: {
     'tray.show': 'Показать',
@@ -68,15 +71,20 @@ const STRINGS: Record<UiLanguage, Record<MainTranslationKey, string>> = {
     'notify.disconnected.body': 'VPN-туннель закрыт',
     'notify.error.title': 'UltimaVLESS — ошибка подключения',
     'notify.switching.title': 'UltimaVLESS — смена сервера',
-    'notify.switching.body': 'Текущий сервер выглядит заблокированным, пробуем другой…',
+    'notify.switching.body':
+      'Текущий сервер выглядит заблокированным, пробуем другой…',
     'notify.updateAvailable.title': 'UltimaVLESS — доступно обновление',
     'notify.updateAvailable.body': 'Версия {version} загружается в фоне.',
     'notify.updateReady.title': 'UltimaVLESS — обновление готово',
-    'notify.updateReady.body': 'Версия {version} установится при следующем запуске.',
+    'notify.updateReady.body':
+      'Версия {version} установится при следующем запуске.',
   },
 };
 
-function format(template: string, params: Record<string, string | number | null | undefined>): string {
+function format(
+  template: string,
+  params: Record<string, string | number | null | undefined>,
+): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => {
     const value = params[key];
     return value === null || value === undefined ? '' : String(value);
@@ -102,7 +110,10 @@ class MainLocaleService extends EventEmitter {
     this.emit('language-changed', language);
   }
 
-  public t(key: MainTranslationKey, params: Record<string, string | number | null | undefined> = {}): string {
+  public t(
+    key: MainTranslationKey,
+    params: Record<string, string | number | null | undefined> = {},
+  ): string {
     const table = STRINGS[this.language] ?? STRINGS.en;
     const template = table[key] ?? STRINGS.en[key] ?? key;
     return format(template, params);

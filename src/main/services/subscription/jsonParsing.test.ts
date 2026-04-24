@@ -55,7 +55,13 @@ describe('parseJsonConfigs', () => {
         {
           protocol: 'vless',
           settings: {
-            vnext: [{ address: 'a.example.com', port: 443, users: [{ id: 'u1', encryption: 'none' }] }],
+            vnext: [
+              {
+                address: 'a.example.com',
+                port: 443,
+                users: [{ id: 'u1', encryption: 'none' }],
+              },
+            ],
           },
           streamSettings: {
             network: 'tcp',
@@ -81,8 +87,20 @@ describe('parseJsonConfigs', () => {
         {
           tag: 'proxy',
           protocol: 'trojan',
-          settings: { servers: [{ address: 'trojan.example.com', port: 443, password: 'secret-pass' }] },
-          streamSettings: { network: 'tcp', security: 'tls', tlsSettings: { serverName: 'trojan.example.com' } },
+          settings: {
+            servers: [
+              {
+                address: 'trojan.example.com',
+                port: 443,
+                password: 'secret-pass',
+              },
+            ],
+          },
+          streamSettings: {
+            network: 'tcp',
+            security: 'tls',
+            tlsSettings: { serverName: 'trojan.example.com' },
+          },
         },
       ],
     };
@@ -99,7 +117,13 @@ describe('parseJsonConfigs', () => {
         {
           protocol: 'vless',
           settings: {
-            vnext: [{ address: 'x.com', port: 443, users: [{ id: 'uuid', encryption: 'none' }] }],
+            vnext: [
+              {
+                address: 'x.com',
+                port: 443,
+                users: [{ id: 'uuid', encryption: 'none' }],
+              },
+            ],
           },
           streamSettings: { network: 'raw', security: 'none' },
         },

@@ -13,11 +13,36 @@ export interface GroupColor {
 }
 
 export const SUBSCRIPTION_COLORS: readonly GroupColor[] = [
-  { dot: 'bg-blue-400 shadow-blue-400/60',    badge: 'bg-blue-500/15 text-blue-300 border-blue-500/30',       border: 'border-blue-500/20',    bg: 'from-blue-500/8' },
-  { dot: 'bg-emerald-400 shadow-emerald-400/60', badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', border: 'border-emerald-500/20', bg: 'from-emerald-500/8' },
-  { dot: 'bg-amber-400 shadow-amber-400/60',  badge: 'bg-amber-500/15 text-amber-300 border-amber-500/30',    border: 'border-amber-500/20',   bg: 'from-amber-500/8' },
-  { dot: 'bg-rose-400 shadow-rose-400/60',    badge: 'bg-rose-500/15 text-rose-300 border-rose-500/30',       border: 'border-rose-500/20',    bg: 'from-rose-500/8' },
-  { dot: 'bg-cyan-400 shadow-cyan-400/60',    badge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',       border: 'border-cyan-500/20',    bg: 'from-cyan-500/8' },
+  {
+    dot: 'bg-blue-400 shadow-blue-400/60',
+    badge: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+    border: 'border-blue-500/20',
+    bg: 'from-blue-500/8',
+  },
+  {
+    dot: 'bg-emerald-400 shadow-emerald-400/60',
+    badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    border: 'border-emerald-500/20',
+    bg: 'from-emerald-500/8',
+  },
+  {
+    dot: 'bg-amber-400 shadow-amber-400/60',
+    badge: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    border: 'border-amber-500/20',
+    bg: 'from-amber-500/8',
+  },
+  {
+    dot: 'bg-rose-400 shadow-rose-400/60',
+    badge: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    border: 'border-rose-500/20',
+    bg: 'from-rose-500/8',
+  },
+  {
+    dot: 'bg-cyan-400 shadow-cyan-400/60',
+    badge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+    border: 'border-cyan-500/20',
+    bg: 'from-cyan-500/8',
+  },
 ] as const;
 
 export const ORPHAN_GROUP_COLOR: GroupColor = {
@@ -63,21 +88,31 @@ export function sortByPingAvailability(items: VlessConfig[]): VlessConfig[] {
 
 export function buildSubscriptionGroups(
   subscriptions: Subscription[],
-  servers: VlessConfig[]
+  servers: VlessConfig[],
 ): SubscriptionServerGroup[] {
   return subscriptions
     .filter((subscription) => subscription.enabled)
     .map((subscription) => ({
       subscription,
-      servers: sortByPingAvailability(servers.filter((server) => server.subscriptionId === subscription.id)),
+      servers: sortByPingAvailability(
+        servers.filter((server) => server.subscriptionId === subscription.id),
+      ),
     }))
     .filter((group) => group.servers.length > 0);
 }
 
-export function buildOrphanSubscriptionServers(servers: VlessConfig[]): VlessConfig[] {
-  return sortByPingAvailability(servers.filter((server) => server.source !== 'manual' && !server.subscriptionId));
+export function buildOrphanSubscriptionServers(
+  servers: VlessConfig[],
+): VlessConfig[] {
+  return sortByPingAvailability(
+    servers.filter(
+      (server) => server.source !== 'manual' && !server.subscriptionId,
+    ),
+  );
 }
 
 export function buildManualServers(servers: VlessConfig[]): VlessConfig[] {
-  return sortByPingAvailability(servers.filter((server) => server.source === 'manual'));
+  return sortByPingAvailability(
+    servers.filter((server) => server.source === 'manual'),
+  );
 }

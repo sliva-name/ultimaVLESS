@@ -9,32 +9,42 @@ interface CountryFlagProps {
   size?: number;
 }
 
-export const CountryFlag: React.FC<CountryFlagProps> = ({ server, className = '', size = 24 }) => {
+export const CountryFlag: React.FC<CountryFlagProps> = ({
+  server,
+  className = '',
+  size = 24,
+}) => {
   const countryCode = getCountryCode(server);
-  
+
   if (!countryCode) {
     // Fallback to globe icon if country cannot be determined
-    return <Globe className={className} style={{ width: size, height: size }} />;
+    return (
+      <Globe className={className} style={{ width: size, height: size }} />
+    );
   }
-  
-  const flagRegistry = Flags as Record<string, React.ComponentType<React.SVGProps<SVGSVGElement>>>;
+
+  const flagRegistry = Flags as Record<
+    string,
+    React.ComponentType<React.SVGProps<SVGSVGElement>>
+  >;
   const FlagComponent = flagRegistry[countryCode];
-  
+
   if (!FlagComponent) {
     // Fallback to globe icon if flag component doesn't exist
-    return <Globe className={className} style={{ width: size, height: size }} />;
+    return (
+      <Globe className={className} style={{ width: size, height: size }} />
+    );
   }
-  
+
   return (
-    <FlagComponent 
+    <FlagComponent
       className={className}
-      style={{ 
-        width: `${size}px`, 
-        height: `${size * 2 / 3}px`, // Maintain 3:2 aspect ratio
+      style={{
+        width: `${size}px`,
+        height: `${(size * 2) / 3}px`, // Maintain 3:2 aspect ratio
         display: 'inline-block',
-        flexShrink: 0
+        flexShrink: 0,
       }}
     />
   );
 };
-

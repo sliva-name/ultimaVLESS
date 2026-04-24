@@ -30,4 +30,3 @@ vi.mock('electron-store', () => {
     })),
   };
 });
-

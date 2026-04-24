@@ -5,7 +5,9 @@ import { ConnectionStatus } from './components/ConnectionStatus';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useServerState } from './hooks/useServerState';
 
-type DragRegionStyle = React.CSSProperties & { WebkitAppRegion: 'drag' | 'no-drag' };
+type DragRegionStyle = React.CSSProperties & {
+  WebkitAppRegion: 'drag' | 'no-drag';
+};
 const dragRegionStyle: DragRegionStyle = { WebkitAppRegion: 'drag' };
 
 function App() {
@@ -19,7 +21,7 @@ function App() {
     trafficSnapshot,
     setSelectedServer,
     toggleConnection,
-    pingAllServers
+    pingAllServers,
   } = useServerState();
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -32,8 +34,8 @@ function App() {
       <div className="absolute inset-0 bg-linear-to-br from-primary/3 via-transparent to-transparent pointer-events-none" />
       <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-primary/2 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-1/2 h-1/2 bg-blue-500/2 rounded-full blur-3xl pointer-events-none" />
-      
-      <Sidebar 
+
+      <Sidebar
         servers={servers}
         subscriptions={subscriptions}
         selectedServer={selectedServer}
@@ -44,14 +46,14 @@ function App() {
       />
 
       <div className="flex-1 flex flex-col min-h-0 min-w-0 relative">
-        <div 
-          className="h-8 w-full app-drag-region bg-linear-to-r from-surface/50 to-transparent backdrop-blur-sm border-b border-gray-800/30" 
+        <div
+          className="h-8 w-full app-drag-region bg-linear-to-r from-surface/50 to-transparent backdrop-blur-sm border-b border-gray-800/30"
           style={dragRegionStyle}
         />
 
         <div className={isSettingsOpen ? 'hidden' : 'contents'}>
           <UpdateBanner />
-          <ConnectionStatus 
+          <ConnectionStatus
             isConnected={isConnected}
             isBusy={isConnectionBusy}
             selectedServer={selectedServer}

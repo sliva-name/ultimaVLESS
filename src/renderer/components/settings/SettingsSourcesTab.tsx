@@ -1,5 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Loader2, Link2, ExternalLink, Plus, Trash2, ChevronDown } from 'lucide-react';
+import {
+  Loader2,
+  Link2,
+  ExternalLink,
+  Plus,
+  Trash2,
+  ChevronDown,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Subscription } from '@/shared/types';
 import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '@/shared/subscriptionUrls';
@@ -28,7 +35,9 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
   const [isAdding, setIsAdding] = useState(false);
 
   const [importingMobileList, setImportingMobileList] = useState(false);
-  const [importMobileError, setImportMobileError] = useState<string | null>(null);
+  const [importMobileError, setImportMobileError] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -36,14 +45,18 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
     setImportMobileError(null);
     setAddError(null);
 
-    window.electronAPI.getManualLinks()
+    window.electronAPI
+      .getManualLinks()
       .then((links) => setManualLinks(links || ''))
       .catch((err) => console.error('Failed to load manual links:', err));
   }, [isOpen]);
 
   const handleToggleSubscription = useCallback(async (sub: Subscription) => {
     try {
-      await window.electronAPI.updateSubscription({ id: sub.id, patch: { enabled: !sub.enabled } });
+      await window.electronAPI.updateSubscription({
+        id: sub.id,
+        patch: { enabled: !sub.enabled },
+      });
     } catch (err) {
       console.error('Failed to toggle subscription', err);
     }
@@ -57,30 +70,43 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
     }
   }, []);
 
-  const handleAddSubscription = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddError(null);
-    const name = newSubName.trim();
-    const url = newSubUrl.trim();
-    if (!name) { setAddError(t('settings.sources.errors.nameRequired')); return; }
-    if (!url) { setAddError(t('settings.sources.errors.urlRequired')); return; }
-
-    setIsAdding(true);
-    try {
-      const result = await window.electronAPI.addSubscription({ name, url });
-      if (!result.ok) {
-        setAddError(result.error || t('settings.sources.errors.fetchFailed'));
-      } else {
-        setNewSubName('');
-        setNewSubUrl('');
-        setIsAddFormExpanded(false);
+  const handleAddSubscription = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setAddError(null);
+      const name = newSubName.trim();
+      const url = newSubUrl.trim();
+      if (!name) {
+        setAddError(t('settings.sources.errors.nameRequired'));
+        return;
       }
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : t('settings.sources.errors.addFailed'));
-    } finally {
-      setIsAdding(false);
-    }
-  }, [newSubName, newSubUrl, t]);
+      if (!url) {
+        setAddError(t('settings.sources.errors.urlRequired'));
+        return;
+      }
+
+      setIsAdding(true);
+      try {
+        const result = await window.electronAPI.addSubscription({ name, url });
+        if (!result.ok) {
+          setAddError(result.error || t('settings.sources.errors.fetchFailed'));
+        } else {
+          setNewSubName('');
+          setNewSubUrl('');
+          setIsAddFormExpanded(false);
+        }
+      } catch (err) {
+        setAddError(
+          err instanceof Error
+            ? err.message
+            : t('settings.sources.errors.addFailed'),
+        );
+      } finally {
+        setIsAdding(false);
+      }
+    },
+    [newSubName, newSubUrl, t],
+  );
 
   const handleOpenYandexTranslatedList = useCallback(async () => {
     setImportMobileError(null);
@@ -91,46 +117,65 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
         window.electronAPI.importMobileWhiteListSubscription(),
       ]);
       if (openResult.status === 'rejected') {
-        console.error('Failed to open translated list in browser', openResult.reason);
+        console.error(
+          'Failed to open translated list in browser',
+          openResult.reason,
+        );
       }
       if (importResult.status === 'rejected') {
-        const msg = importResult.reason instanceof Error ? importResult.reason.message : String(importResult.reason);
+        const msg =
+          importResult.reason instanceof Error
+            ? importResult.reason.message
+            : String(importResult.reason);
         setImportMobileError(msg);
         return;
       }
       const data = importResult.value;
       if (!data.ok) {
-        setImportMobileError(data.error || t('settings.sources.errors.loadFailed'));
+        setImportMobileError(
+          data.error || t('settings.sources.errors.loadFailed'),
+        );
       }
     } finally {
       setImportingMobileList(false);
     }
   }, [t]);
 
-  const handleSaveManualLinks = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setManualSaveError(null);
-    setIsSavingManual(true);
-    try {
-      const result = await window.electronAPI.saveManualLinks(manualLinks);
-      if (!result.ok && result.error) {
-        setManualSaveError(result.error);
+  const handleSaveManualLinks = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setManualSaveError(null);
+      setIsSavingManual(true);
+      try {
+        const result = await window.electronAPI.saveManualLinks(manualLinks);
+        if (!result.ok && result.error) {
+          setManualSaveError(result.error);
+        }
+      } catch (err) {
+        setManualSaveError(
+          err instanceof Error
+            ? err.message
+            : t('settings.sources.errors.saveManualFailed'),
+        );
+      } finally {
+        setIsSavingManual(false);
       }
-    } catch (err) {
-      setManualSaveError(err instanceof Error ? err.message : t('settings.sources.errors.saveManualFailed'));
-    } finally {
-      setIsSavingManual(false);
-    }
-  }, [manualLinks, t]);
+    },
+    [manualLinks, t],
+  );
 
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-sm font-medium text-gray-300 mb-3">{t('settings.sources.subscriptions')}</p>
+        <p className="text-sm font-medium text-gray-300 mb-3">
+          {t('settings.sources.subscriptions')}
+        </p>
 
         <div className="space-y-2 mb-4">
           {subscriptions.length === 0 && (
-            <p className="text-sm text-gray-500 px-0.5 leading-relaxed">{t('settings.sources.noSubscriptions')}</p>
+            <p className="text-sm text-gray-500 px-0.5 leading-relaxed">
+              {t('settings.sources.noSubscriptions')}
+            </p>
           )}
           {subscriptions.map((sub) => (
             <div
@@ -138,15 +183,27 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
               className="rounded-2xl border border-gray-700/50 bg-gray-900/20 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center"
             >
               <div className="flex-1 min-w-0 w-full sm:w-auto">
-                <div className="text-sm font-semibold text-white truncate">{sub.name}</div>
-                <div className="text-xs text-gray-400 font-mono mt-1 break-all sm:break-normal leading-relaxed">{sub.url}</div>
+                <div className="text-sm font-semibold text-white truncate">
+                  {sub.name}
+                </div>
+                <div className="text-xs text-gray-400 font-mono mt-1 break-all sm:break-normal leading-relaxed">
+                  {sub.url}
+                </div>
               </div>
               <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                 <Toggle
                   checked={sub.enabled}
                   onChange={() => handleToggleSubscription(sub)}
-                  title={sub.enabled ? t('settings.sources.disableSubscription') : t('settings.sources.enableSubscription')}
-                  ariaLabel={sub.enabled ? t('settings.sources.disableSubscription') : t('settings.sources.enableSubscription')}
+                  title={
+                    sub.enabled
+                      ? t('settings.sources.disableSubscription')
+                      : t('settings.sources.enableSubscription')
+                  }
+                  ariaLabel={
+                    sub.enabled
+                      ? t('settings.sources.disableSubscription')
+                      : t('settings.sources.enableSubscription')
+                  }
                 />
                 <button
                   type="button"
@@ -165,7 +222,10 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
         <div className="rounded-2xl border border-gray-700/50 bg-gray-900/20 overflow-hidden mb-1">
           <button
             type="button"
-            onClick={() => { setIsAddFormExpanded((p) => !p); setAddError(null); }}
+            onClick={() => {
+              setIsAddFormExpanded((p) => !p);
+              setAddError(null);
+            }}
             aria-expanded={isAddFormExpanded}
             className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors"
           >
@@ -173,10 +233,15 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
               <Plus className="w-5 h-5 text-primary shrink-0" />
               {t('settings.sources.addSubscription')}
             </span>
-            <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform shrink-0 ${isAddFormExpanded ? 'rotate-180' : ''}`} />
+            <ChevronDown
+              className={`w-5 h-5 text-gray-400 transition-transform shrink-0 ${isAddFormExpanded ? 'rotate-180' : ''}`}
+            />
           </button>
           {isAddFormExpanded && (
-            <form onSubmit={handleAddSubscription} className="px-4 pb-4 space-y-3">
+            <form
+              onSubmit={handleAddSubscription}
+              className="px-4 pb-4 space-y-3"
+            >
               <input
                 type="text"
                 value={newSubName}
@@ -192,10 +257,20 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
                 placeholder={t('settings.sources.urlPlaceholder')}
                 className="w-full bg-black/40 border border-gray-600/50 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all"
               />
-              {addError && <p className="text-xs text-orange-400 leading-relaxed">{addError}</p>}
+              {addError && (
+                <p className="text-xs text-orange-400 leading-relaxed">
+                  {addError}
+                </p>
+              )}
               <PrimaryButton type="submit" disabled={isAdding} block>
-                {isAdding ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-                {isAdding ? t('settings.sources.adding') : t('settings.sources.addAndFetch')}
+                {isAdding ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Plus className="w-5 h-5" />
+                )}
+                {isAdding
+                  ? t('settings.sources.adding')
+                  : t('settings.sources.addAndFetch')}
               </PrimaryButton>
             </form>
           )}
@@ -215,7 +290,9 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
           {t('settings.sources.openPreview')}
         </button>
         {importMobileError && (
-          <p className="text-sm text-orange-400 mt-3 leading-relaxed">{importMobileError}</p>
+          <p className="text-sm text-orange-400 mt-3 leading-relaxed">
+            {importMobileError}
+          </p>
         )}
       </div>
 
@@ -232,7 +309,9 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
                 <Link2 className="w-5 h-5 text-primary shrink-0" />
                 {t('settings.sources.manualConfigs')}
               </span>
-              <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform shrink-0 ${isManualExpanded ? 'rotate-180' : ''}`} />
+              <ChevronDown
+                className={`w-5 h-5 text-gray-400 transition-transform shrink-0 ${isManualExpanded ? 'rotate-180' : ''}`}
+              />
             </button>
             {isManualExpanded && (
               <div className="px-4 pb-4">
@@ -246,15 +325,23 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
                   />
                   <div className="absolute inset-0 rounded-xl bg-linear-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                 </div>
-                <p className="text-xs text-gray-500 mt-2 leading-relaxed">{t('settings.sources.manualHint')}</p>
+                <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+                  {t('settings.sources.manualHint')}
+                </p>
                 <div className="flex justify-end mt-3">
                   <PrimaryButton type="submit" disabled={isSavingManual}>
-                    {isSavingManual && <Loader2 className="w-5 h-5 animate-spin" />}
-                    {isSavingManual ? t('settings.sources.saving') : t('settings.sources.saveManual')}
+                    {isSavingManual && (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    )}
+                    {isSavingManual
+                      ? t('settings.sources.saving')
+                      : t('settings.sources.saveManual')}
                   </PrimaryButton>
                 </div>
                 {manualSaveError && (
-                  <p className="text-sm text-orange-400 mt-3 leading-relaxed">{manualSaveError}</p>
+                  <p className="text-sm text-orange-400 mt-3 leading-relaxed">
+                    {manualSaveError}
+                  </p>
                 )}
               </div>
             )}

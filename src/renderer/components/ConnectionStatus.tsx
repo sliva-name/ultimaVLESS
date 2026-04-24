@@ -1,7 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { VlessConfig } from '@/shared/types';
 import type { TrafficSnapshot } from '@/shared/ipc';
-import { Power, Shield, Globe, Zap, CheckCircle2, Loader2, ArrowDown, ArrowUp, Clock } from 'lucide-react';
+import {
+  Power,
+  Shield,
+  Globe,
+  Zap,
+  CheckCircle2,
+  Loader2,
+  ArrowDown,
+  ArrowUp,
+  Clock,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
 import { useTranslation } from 'react-i18next';
@@ -37,7 +47,8 @@ function formatBytes(bytes: number): string {
     value /= 1024;
     unitIndex += 1;
   }
-  const fractionDigits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  const fractionDigits =
+    unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
 }
 
@@ -45,16 +56,18 @@ function formatRate(bytesPerSecond: number): string {
   return `${formatBytes(bytesPerSecond)}/s`;
 }
 
-export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ 
-  isConnected, 
+export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
+  isConnected,
   isBusy = false,
-  selectedServer, 
+  selectedServer,
   connectionError,
   trafficSnapshot = null,
-  onToggleConnection 
+  onToggleConnection,
 }) => {
   const { t } = useTranslation();
-  const busyLabel = isConnected ? t('status.disconnecting') : t('status.connecting');
+  const busyLabel = isConnected
+    ? t('status.disconnecting')
+    : t('status.connecting');
   const busyHint = isConnected
     ? t('status.disconnectingHint')
     : t('status.connectingHint');
@@ -70,7 +83,10 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
 
   const sessionActive = isConnected && !!trafficSnapshot;
   const sessionDurationMs = sessionActive
-    ? Math.max(trafficSnapshot.sessionDurationMs, tick - trafficSnapshot.connectedAt)
+    ? Math.max(
+        trafficSnapshot.sessionDurationMs,
+        tick - trafficSnapshot.connectedAt,
+      )
     : 0;
 
   return (
@@ -79,10 +95,12 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           so they don't scroll with the content. */}
       <div className="pointer-events-none sticky top-0 left-0 h-0 w-full z-0">
         <div className="absolute inset-0 bg-linear-to-br from-primary/5 via-transparent to-transparent" />
-        <div className={clsx(
-          "absolute inset-0 opacity-0 transition-opacity duration-1000",
-          isConnected && "opacity-100"
-        )}>
+        <div
+          className={clsx(
+            'absolute inset-0 opacity-0 transition-opacity duration-1000',
+            isConnected && 'opacity-100',
+          )}
+        >
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-green-500/5 rounded-full blur-3xl animate-pulse" />
           <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl animate-pulse delay-1000" />
         </div>
@@ -91,179 +109,207 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
       {/* Inner wrapper: centers content when it fits, otherwise allows
           scrolling with both top and bottom reachable. */}
       <div className="min-h-full flex flex-col items-center justify-center p-4 sm:p-6 md:p-8">
-      <div className="relative z-10 flex flex-col items-center max-w-2xl w-full px-1">
-        {/* Status Text */}
-        <div className="mb-4 sm:mb-6 text-center animate-[fadeIn_0.5s_ease-out] w-full">
-          <div className="flex flex-nowrap items-center justify-center gap-2 sm:gap-3 mb-3 sm:mb-4 min-h-[3.5rem] sm:min-h-[4.5rem] md:min-h-[5rem]">
-            {isConnected ? (
-              <>
-                <div className="shrink-0 p-2 sm:p-3 rounded-xl bg-green-500/20 border border-green-500/30 shadow-lg shadow-green-500/20">
-                  <CheckCircle2 className="w-6 h-6 sm:w-8 sm:h-8 text-green-400" />
-                </div>
-                <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.1] pb-1 bg-linear-to-r from-green-400 to-green-500 bg-clip-text text-transparent">
-                  {t('status.secure')}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="shrink-0 p-2 sm:p-3 rounded-xl bg-gray-800/50 border border-gray-700/50">
-                  <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-gray-500" />
-                </div>
-                <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.1] pb-1 text-gray-500">
-                  {t('status.disconnected')}
-                </div>
-              </>
-            )}
+        <div className="relative z-10 flex flex-col items-center max-w-2xl w-full px-1">
+          {/* Status Text */}
+          <div className="mb-4 sm:mb-6 text-center animate-[fadeIn_0.5s_ease-out] w-full">
+            <div className="flex flex-nowrap items-center justify-center gap-2 sm:gap-3 mb-3 sm:mb-4 min-h-[3.5rem] sm:min-h-[4.5rem] md:min-h-[5rem]">
+              {isConnected ? (
+                <>
+                  <div className="shrink-0 p-2 sm:p-3 rounded-xl bg-green-500/20 border border-green-500/30 shadow-lg shadow-green-500/20">
+                    <CheckCircle2 className="w-6 h-6 sm:w-8 sm:h-8 text-green-400" />
+                  </div>
+                  <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.1] pb-1 bg-linear-to-r from-green-400 to-green-500 bg-clip-text text-transparent">
+                    {t('status.secure')}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="shrink-0 p-2 sm:p-3 rounded-xl bg-gray-800/50 border border-gray-700/50">
+                    <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-gray-500" />
+                  </div>
+                  <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.1] pb-1 text-gray-500">
+                    {t('status.disconnected')}
+                  </div>
+                </>
+              )}
+            </div>
+            <p className="text-gray-400 text-base sm:text-lg font-medium px-2 min-h-[1.75rem] sm:min-h-[2rem]">
+              {isBusy
+                ? busyLabel
+                : isConnected
+                  ? t('status.connectedTo', {
+                      name: selectedServer?.name || 'server',
+                    })
+                  : selectedServer
+                    ? t('status.readyToConnect', { name: selectedServer.name })
+                    : t('status.selectServer')}
+            </p>
           </div>
-          <p className="text-gray-400 text-base sm:text-lg font-medium px-2 min-h-[1.75rem] sm:min-h-[2rem]">
-            {isBusy
-              ? busyLabel
-              : isConnected 
-                ? t('status.connectedTo', { name: selectedServer?.name || 'server' })
-                : selectedServer 
-                  ? t('status.readyToConnect', { name: selectedServer.name })
-                  : t('status.selectServer')}
-          </p>
-        </div>
 
-        {/* Main Connection Button */}
-        <div className="relative mb-6 sm:mb-8">
-          {/* Pulsing rings when connected — softer scale so they don't
+          {/* Main Connection Button */}
+          <div className="relative mb-6 sm:mb-8">
+            {/* Pulsing rings when connected — softer scale so they don't
               visually overlap the status text above the button. */}
-          {isConnected && (
-            <>
-              <div className="absolute inset-0 rounded-full border-4 border-green-500/30 animate-ping-soft pointer-events-none" />
-              <div className="absolute inset-0 rounded-full border-4 border-green-500/20 animate-ping-soft pointer-events-none [animation-delay:700ms]" />
-            </>
-          )}
-          
-          <button
-            onClick={onToggleConnection}
-            disabled={!selectedServer || isBusy}
-            className={clsx(
-              "relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 rounded-full border-[6px] sm:border-8 flex items-center justify-center transition-all duration-500 shadow-2xl transform",
-              !(!selectedServer || isBusy) && "hover:scale-105 active:scale-95",
-              isConnected
-                ? "bg-linear-to-br from-green-500/20 to-green-600/10 border-green-500 shadow-green-500/30"
-                : "bg-linear-to-br from-gray-800/50 to-gray-800/30 border-gray-700 shadow-black/30",
-              !(!selectedServer || isBusy) && (
+            {isConnected && (
+              <>
+                <div className="absolute inset-0 rounded-full border-4 border-green-500/30 animate-ping-soft pointer-events-none" />
+                <div className="absolute inset-0 rounded-full border-4 border-green-500/20 animate-ping-soft pointer-events-none [animation-delay:700ms]" />
+              </>
+            )}
+
+            <button
+              onClick={onToggleConnection}
+              disabled={!selectedServer || isBusy}
+              className={clsx(
+                'relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 rounded-full border-[6px] sm:border-8 flex items-center justify-center transition-all duration-500 shadow-2xl transform',
+                !(!selectedServer || isBusy) &&
+                  'hover:scale-105 active:scale-95',
                 isConnected
-                  ? "hover:shadow-green-500/40"
-                  : "hover:border-gray-600 hover:from-gray-700/60 hover:to-gray-700/40 hover:shadow-black/40"
-              ),
-              (!selectedServer || isBusy) && "opacity-50 cursor-not-allowed"
-            )}
-          >
-            <div className={clsx(
-              "absolute inset-0 rounded-full bg-linear-to-br opacity-0 transition-opacity duration-300",
-              isConnected ? "from-green-500/10 to-transparent" : "from-primary/10 to-transparent",
-              "hover:opacity-100"
-            )} />
-            
-            <Power className={clsx(
-              "relative z-10 w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 transition-all duration-500",
-              isConnected 
-                ? "text-green-400 drop-shadow-lg shadow-green-500/50" 
-                : "text-gray-400 group-hover:text-gray-300"
-            )} />
+                  ? 'bg-linear-to-br from-green-500/20 to-green-600/10 border-green-500 shadow-green-500/30'
+                  : 'bg-linear-to-br from-gray-800/50 to-gray-800/30 border-gray-700 shadow-black/30',
+                !(!selectedServer || isBusy) &&
+                  (isConnected
+                    ? 'hover:shadow-green-500/40'
+                    : 'hover:border-gray-600 hover:from-gray-700/60 hover:to-gray-700/40 hover:shadow-black/40'),
+                (!selectedServer || isBusy) && 'opacity-50 cursor-not-allowed',
+              )}
+            >
+              <div
+                className={clsx(
+                  'absolute inset-0 rounded-full bg-linear-to-br opacity-0 transition-opacity duration-300',
+                  isConnected
+                    ? 'from-green-500/10 to-transparent'
+                    : 'from-primary/10 to-transparent',
+                  'hover:opacity-100',
+                )}
+              />
 
-            {isBusy && (
-              <div className="absolute inset-0 flex items-center justify-center z-20 rounded-full bg-black/35">
-                <Loader2 className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 text-white animate-spin" />
-              </div>
-            )}
-          </button>
-        </div>
+              <Power
+                className={clsx(
+                  'relative z-10 w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 transition-all duration-500',
+                  isConnected
+                    ? 'text-green-400 drop-shadow-lg shadow-green-500/50'
+                    : 'text-gray-400 group-hover:text-gray-300',
+                )}
+              />
 
-        {/* Reserved slot for busy hint so the layout stays stable when
+              {isBusy && (
+                <div className="absolute inset-0 flex items-center justify-center z-20 rounded-full bg-black/35">
+                  <Loader2 className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 text-white animate-spin" />
+                </div>
+              )}
+            </button>
+          </div>
+
+          {/* Reserved slot for busy hint so the layout stays stable when
             transitioning between connecting/connected/disconnected. */}
-        <div className="mb-4 sm:mb-6 min-h-[2.25rem] sm:min-h-[2.5rem] flex items-center justify-center">
-          {isBusy && (
-            <div className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full bg-primary/10 border border-primary/30 backdrop-blur-sm animate-[fadeIn_0.3s_ease-out] max-w-md text-center justify-center">
-              <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
-              <span className="text-xs sm:text-sm text-primary font-medium leading-snug">{busyHint}</span>
+          <div className="mb-4 sm:mb-6 min-h-[2.25rem] sm:min-h-[2.5rem] flex items-center justify-center">
+            {isBusy && (
+              <div className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full bg-primary/10 border border-primary/30 backdrop-blur-sm animate-[fadeIn_0.3s_ease-out] max-w-md text-center justify-center">
+                <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
+                <span className="text-xs sm:text-sm text-primary font-medium leading-snug">
+                  {busyHint}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Server Info Cards */}
+          {selectedServer && (
+            <div
+              className={clsx(
+                'grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl transition-all duration-500 animate-[fadeIn_0.5s_ease-out]',
+                isConnected ? 'opacity-100' : 'opacity-60',
+              )}
+            >
+              <div className="p-4 sm:p-5 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
+                <div className="flex items-center gap-2 mb-3">
+                  <CountryFlag
+                    server={selectedServer}
+                    size={24}
+                    className="rounded-sm"
+                  />
+                  <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+                    {t('status.country')}
+                  </div>
+                </div>
+                <div className="text-base sm:text-lg text-white font-semibold truncate">
+                  {selectedServer.name}
+                </div>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
+                <div className="flex items-center gap-2 mb-3">
+                  <Globe className="w-4 h-4 text-gray-400" />
+                  <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+                    {t('status.ipAddress')}
+                  </div>
+                </div>
+                <div className="font-mono text-base sm:text-lg text-white font-semibold truncate">
+                  {selectedServer.address}
+                </div>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
+                <div className="flex items-center gap-2 mb-3">
+                  <Zap className="w-4 h-4 text-primary" />
+                  <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+                    {t('status.protocol')}
+                  </div>
+                </div>
+                <div className="font-mono text-base sm:text-lg font-semibold bg-linear-to-r from-primary to-blue-400 bg-clip-text text-transparent">
+                  {selectedServer.security === 'reality' ? 'REALITY' : 'VLESS'}
+                </div>
+              </div>
             </div>
           )}
-        </div>
 
-        {/* Server Info Cards */}
-        {selectedServer && (
-          <div className={clsx(
-            "grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl transition-all duration-500 animate-[fadeIn_0.5s_ease-out]",
-            isConnected ? "opacity-100" : "opacity-60"
-          )}>
-            <div className="p-4 sm:p-5 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
-              <div className="flex items-center gap-2 mb-3">
-                <CountryFlag server={selectedServer} size={24} className="rounded-sm" />
-                <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">{t('status.country')}</div>
-              </div>
-              <div className="text-base sm:text-lg text-white font-semibold truncate">{selectedServer.name}</div>
-            </div>
-            
-            <div className="p-4 sm:p-5 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
-              <div className="flex items-center gap-2 mb-3">
-                <Globe className="w-4 h-4 text-gray-400" />
-                <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">{t('status.ipAddress')}</div>
-              </div>
-              <div className="font-mono text-base sm:text-lg text-white font-semibold truncate">{selectedServer.address}</div>
-            </div>
-            
-            <div className="p-4 sm:p-5 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
-              <div className="flex items-center gap-2 mb-3">
-                <Zap className="w-4 h-4 text-primary" />
-                <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold">{t('status.protocol')}</div>
-              </div>
-              <div className="font-mono text-base sm:text-lg font-semibold bg-linear-to-r from-primary to-blue-400 bg-clip-text text-transparent">
-                {selectedServer.security === 'reality' ? 'REALITY' : 'VLESS'}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Connection Status Indicator — reserved slot keeps the layout
+          {/* Connection Status Indicator — reserved slot keeps the layout
             from jumping when the pill appears on connect. */}
-        <div className="mt-5 sm:mt-6 min-h-[2.25rem] flex items-center justify-center">
-          {isConnected && (
-            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 border border-green-500/30 backdrop-blur-sm animate-[fadeIn_0.5s_ease-out]">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-lg shadow-green-500/50" />
-              <span className="text-sm text-green-400 font-medium">{t('status.connectionActive')}</span>
+          <div className="mt-5 sm:mt-6 min-h-[2.25rem] flex items-center justify-center">
+            {isConnected && (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 border border-green-500/30 backdrop-blur-sm animate-[fadeIn_0.5s_ease-out]">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-lg shadow-green-500/50" />
+                <span className="text-sm text-green-400 font-medium">
+                  {t('status.connectionActive')}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {sessionActive && (
+            <div
+              className="mt-4 sm:mt-5 grid grid-cols-3 gap-2 sm:gap-3 w-full max-w-2xl animate-[fadeIn_0.4s_ease-out]"
+              aria-label={t('status.session.label')}
+            >
+              <StatTile
+                icon={<Clock className="w-4 h-4 text-green-400" />}
+                label={t('status.session.duration')}
+                primary={formatDuration(sessionDurationMs)}
+              />
+              <StatTile
+                icon={<ArrowDown className="w-4 h-4 text-sky-400" />}
+                label={t('status.session.download')}
+                primary={formatBytes(trafficSnapshot.downloadBytes)}
+                secondary={formatRate(trafficSnapshot.downloadBps)}
+              />
+              <StatTile
+                icon={<ArrowUp className="w-4 h-4 text-purple-400" />}
+                label={t('status.session.upload')}
+                primary={formatBytes(trafficSnapshot.uploadBytes)}
+                secondary={formatRate(trafficSnapshot.uploadBps)}
+              />
+            </div>
+          )}
+
+          {connectionError && (
+            <div className="mt-6 w-full max-w-2xl p-4 rounded-xl bg-orange-500/10 border border-orange-500/30 animate-[fadeIn_0.3s_ease-out]">
+              <div className="text-sm text-orange-300 font-medium break-words">
+                {connectionError}
+              </div>
             </div>
           )}
         </div>
-
-        {sessionActive && (
-          <div
-            className="mt-4 sm:mt-5 grid grid-cols-3 gap-2 sm:gap-3 w-full max-w-2xl animate-[fadeIn_0.4s_ease-out]"
-            aria-label={t('status.session.label')}
-          >
-            <StatTile
-              icon={<Clock className="w-4 h-4 text-green-400" />}
-              label={t('status.session.duration')}
-              primary={formatDuration(sessionDurationMs)}
-            />
-            <StatTile
-              icon={<ArrowDown className="w-4 h-4 text-sky-400" />}
-              label={t('status.session.download')}
-              primary={formatBytes(trafficSnapshot.downloadBytes)}
-              secondary={formatRate(trafficSnapshot.downloadBps)}
-            />
-            <StatTile
-              icon={<ArrowUp className="w-4 h-4 text-purple-400" />}
-              label={t('status.session.upload')}
-              primary={formatBytes(trafficSnapshot.uploadBytes)}
-              secondary={formatRate(trafficSnapshot.uploadBps)}
-            />
-          </div>
-        )}
-
-        {connectionError && (
-          <div className="mt-6 w-full max-w-2xl p-4 rounded-xl bg-orange-500/10 border border-orange-500/30 animate-[fadeIn_0.3s_ease-out]">
-            <div className="text-sm text-orange-300 font-medium break-words">
-              {connectionError}
-            </div>
-          </div>
-        )}
-      </div>
       </div>
     </div>
   );
@@ -276,16 +322,26 @@ interface StatTileProps {
   secondary?: string;
 }
 
-const StatTile: React.FC<StatTileProps> = ({ icon, label, primary, secondary }) => (
+const StatTile: React.FC<StatTileProps> = ({
+  icon,
+  label,
+  primary,
+  secondary,
+}) => (
   <div className="min-w-0 p-2.5 sm:p-3 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 backdrop-blur-sm">
     <div className="flex items-center gap-1.5 sm:gap-2 mb-1 sm:mb-1.5 min-w-0">
       <span className="shrink-0">{icon}</span>
-      <div className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-wider font-semibold truncate">{label}</div>
+      <div className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-wider font-semibold truncate">
+        {label}
+      </div>
     </div>
-    <div className="font-mono text-sm sm:text-base text-white font-semibold tabular-nums truncate">{primary}</div>
+    <div className="font-mono text-sm sm:text-base text-white font-semibold tabular-nums truncate">
+      {primary}
+    </div>
     {secondary && (
-      <div className="mt-0.5 text-[11px] sm:text-xs text-gray-400 font-mono tabular-nums truncate">{secondary}</div>
+      <div className="mt-0.5 text-[11px] sm:text-xs text-gray-400 font-mono tabular-nums truncate">
+        {secondary}
+      </div>
     )}
   </div>
 );
-

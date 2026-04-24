@@ -4,7 +4,8 @@ import { logger } from './LoggerService';
 import { sanitizeDiagnosticPayload } from '@/shared/sanitizeDiagnostics';
 
 let sentryInitialized = false;
-const DEFAULT_ENVIRONMENT = process.env.NODE_ENV || (app.isPackaged ? 'production' : 'development');
+const DEFAULT_ENVIRONMENT =
+  process.env.NODE_ENV || (app.isPackaged ? 'production' : 'development');
 
 function getReleaseName(): string {
   return `ultima-vless-client@${app.getVersion()}`;

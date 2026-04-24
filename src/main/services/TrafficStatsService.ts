@@ -114,8 +114,14 @@ export class TrafficStatsService extends EventEmitter {
       let downloadBps = 0;
       if (this.lastRaw && this.lastRawAt > 0) {
         const dtSec = Math.max(0.001, (now - this.lastRawAt) / 1000);
-        uploadBps = Math.max(0, (raw.uploadBytes - this.lastRaw.uploadBytes) / dtSec);
-        downloadBps = Math.max(0, (raw.downloadBytes - this.lastRaw.downloadBytes) / dtSec);
+        uploadBps = Math.max(
+          0,
+          (raw.uploadBytes - this.lastRaw.uploadBytes) / dtSec,
+        );
+        downloadBps = Math.max(
+          0,
+          (raw.downloadBytes - this.lastRaw.downloadBytes) / dtSec,
+        );
       }
       this.lastRaw = raw;
       this.lastRawAt = now;
@@ -144,7 +150,13 @@ export class TrafficStatsService extends EventEmitter {
     return new Promise((resolve) => {
       execFile(
         binPath,
-        ['api', 'statsquery', `--server=${server}`, '-pattern', 'outbound>>>proxy'],
+        [
+          'api',
+          'statsquery',
+          `--server=${server}`,
+          '-pattern',
+          'outbound>>>proxy',
+        ],
         { timeout: QUERY_TIMEOUT_MS, windowsHide: true },
         (error, stdout) => {
           if (error) {
@@ -174,12 +186,19 @@ export class TrafficStatsService extends EventEmitter {
             }
             resolve({ uploadBytes: upload, downloadBytes: download });
           } catch (parseError) {
-            logger.debug('TrafficStatsService', 'Failed to parse stats response', {
-              error: parseError instanceof Error ? parseError.message : String(parseError),
-            });
+            logger.debug(
+              'TrafficStatsService',
+              'Failed to parse stats response',
+              {
+                error:
+                  parseError instanceof Error
+                    ? parseError.message
+                    : String(parseError),
+              },
+            );
             resolve(null);
           }
-        }
+        },
       );
     });
   }

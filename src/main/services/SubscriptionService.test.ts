@@ -4,13 +4,20 @@ import { SubscriptionService } from './SubscriptionService';
 
 function createTextResponse(
   body: string,
-  options: { ok?: boolean; status?: number; headers?: Record<string, string> } = {}
+  options: {
+    ok?: boolean;
+    status?: number;
+    headers?: Record<string, string>;
+  } = {},
 ): Response {
   return {
     ok: options.ok ?? true,
     status: options.status ?? 200,
     headers: {
-      get: (name: string) => options.headers?.[name.toLowerCase()] ?? options.headers?.[name] ?? null,
+      get: (name: string) =>
+        options.headers?.[name.toLowerCase()] ??
+        options.headers?.[name] ??
+        null,
     },
     text: async () => body,
   } as Response;
@@ -18,9 +25,15 @@ function createTextResponse(
 
 function mockFetchText(
   body: string,
-  options: { ok?: boolean; status?: number; headers?: Record<string, string> } = {}
+  options: {
+    ok?: boolean;
+    status?: number;
+    headers?: Record<string, string>;
+  } = {},
 ): void {
-  vi.mocked(globalThis.fetch).mockResolvedValue(createTextResponse(body, options));
+  vi.mocked(globalThis.fetch).mockResolvedValue(
+    createTextResponse(body, options),
+  );
 }
 
 describe('SubscriptionService', () => {
@@ -56,7 +69,10 @@ describe('SubscriptionService', () => {
 
       const configs = await service.fetchAndParse('https://sub.url');
 
-      expect(configs.map((config) => config.name)).toEqual(['TestServer', 'Server2']);
+      expect(configs.map((config) => config.name)).toEqual([
+        'TestServer',
+        'Server2',
+      ]);
       expect(configs[1].type).toBe('ws');
     });
 
@@ -88,19 +104,25 @@ describe('SubscriptionService', () => {
       for (const scenario of scenarios) {
         mockFetchText(scenario.body);
         const configs = await service.fetchAndParse(scenario.url);
-        expect(configs.map((config) => config.name)).toEqual(scenario.expectedNames);
+        expect(configs.map((config) => config.name)).toEqual(
+          scenario.expectedNames,
+        );
         vi.mocked(globalThis.fetch).mockReset();
       }
     });
 
     it('uses browser-like headers when fetching translate.yandex.ru HTML', async () => {
-      mockFetchText(`<!DOCTYPE html><html><body>${mockVlessLink}</body></html>`);
-
-      await service.fetchAndParse(
-        'https://translate.yandex.ru/translate?url=https://raw.githubusercontent.com/x/y.txt&lang=de-de'
+      mockFetchText(
+        `<!DOCTYPE html><html><body>${mockVlessLink}</body></html>`,
       );
 
-      const init = vi.mocked(globalThis.fetch).mock.calls.at(-1)?.[1] as RequestInit | undefined;
+      await service.fetchAndParse(
+        'https://translate.yandex.ru/translate?url=https://raw.githubusercontent.com/x/y.txt&lang=de-de',
+      );
+
+      const init = vi.mocked(globalThis.fetch).mock.calls.at(-1)?.[1] as
+        | RequestInit
+        | undefined;
       expect(init?.headers).toMatchObject({
         'User-Agent': expect.stringContaining('Chrome'),
       });
@@ -108,9 +130,15 @@ describe('SubscriptionService', () => {
 
     it('rejects invalid response bodies and unsafe URLs', async () => {
       mockFetchText('invalid-base-64%%');
-      await expect(service.fetchAndParse('https://sub.url')).rejects.toThrow('Invalid Base64 response');
-      await expect(service.fetchAndParse('file:///etc/passwd')).rejects.toThrow(/Only HTTP\(S\)/);
-      await expect(service.fetchAndParse('http://127.0.0.1/sub')).rejects.toThrow(/host is not allowed/);
+      await expect(service.fetchAndParse('https://sub.url')).rejects.toThrow(
+        'Invalid Base64 response',
+      );
+      await expect(service.fetchAndParse('file:///etc/passwd')).rejects.toThrow(
+        /Only HTTP\(S\)/,
+      );
+      await expect(
+        service.fetchAndParse('http://127.0.0.1/sub'),
+      ).rejects.toThrow(/host is not allowed/);
     });
 
     it('rejects redirects to private hosts', async () => {
@@ -119,17 +147,20 @@ describe('SubscriptionService', () => {
           ok: false,
           status: 302,
           headers: { location: 'http://127.0.0.1/private' },
-        })
+        }),
       );
 
-      await expect(service.fetchAndParse('https://safe.example/sub')).rejects.toThrow(/host is not allowed/);
+      await expect(
+        service.fetchAndParse('https://safe.example/sub'),
+      ).rejects.toThrow(/host is not allowed/);
     });
   });
 
   describe('parseDirectLinksFromText', () => {
     it.each([
       {
-        input: 'hysteria2://pass@144.31.224.14:443/?insecure=1&amp;sni=www.cloudflare.com#NL',
+        input:
+          'hysteria2://pass@144.31.224.14:443/?insecure=1&amp;sni=www.cloudflare.com#NL',
         expectedLength: 0,
       },
       {
@@ -140,12 +171,19 @@ describe('SubscriptionService', () => {
         input: 'vless://uuid@example.com:99999?type=tcp#BadPort',
         expectedLength: 0,
       },
-    ])('returns $expectedLength configs for $input', ({ input, expectedLength }) => {
-      expect(service.parseDirectLinksFromText(input)).toHaveLength(expectedLength);
-    });
+    ])(
+      'returns $expectedLength configs for $input',
+      ({ input, expectedLength }) => {
+        expect(service.parseDirectLinksFromText(input)).toHaveLength(
+          expectedLength,
+        );
+      },
+    );
 
     it('keeps the fragment as the config name when a VLESS link has no query params', () => {
-      const [config] = service.parseDirectLinksFromText('vless://uuid@example.com:443#NoQueryName');
+      const [config] = service.parseDirectLinksFromText(
+        'vless://uuid@example.com:443#NoQueryName',
+      );
 
       expect(config.name).toBe('NoQueryName');
       expect(config.port).toBe(443);
@@ -156,13 +194,13 @@ describe('SubscriptionService', () => {
         [
           'vless://same-user-id@example.com:443?type=tcp&security=reality&sni=one.example&sid=111#A',
           'vless://same-user-id@example.com:443?type=tcp&security=reality&sni=two.example&sid=222#B',
-        ].join('\n')
+        ].join('\n'),
       );
       const byFingerprint = service.parseDirectLinksFromText(
         [
           'vless://same-user-id@example.com:443?type=tcp&security=reality&sni=one.example&fp=chrome#A',
           'vless://same-user-id@example.com:443?type=tcp&security=reality&sni=one.example&fp=qq#B',
-        ].join('\n')
+        ].join('\n'),
       );
 
       expect(byShortId).toHaveLength(2);
@@ -173,4 +211,3 @@ describe('SubscriptionService', () => {
     });
   });
 });
-

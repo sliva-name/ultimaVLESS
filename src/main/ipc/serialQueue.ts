@@ -11,7 +11,7 @@ export function createSerialQueue(): SerialQueue {
       const operation = queue.then(run, run);
       queue = operation.then(
         () => undefined,
-        () => undefined
+        () => undefined,
       );
       return operation;
     },

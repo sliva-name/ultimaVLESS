@@ -1,8 +1,18 @@
 import { VlessConfig } from '@/shared/types';
 import { IElectronAPI } from '@/renderer/preload.d';
 
-export function findServerFuzzy(servers: VlessConfig[], target: VlessConfig): VlessConfig | null {
-  return servers.find((server) => server.address === target.address && server.port === target.port && server.name === target.name) ?? null;
+export function findServerFuzzy(
+  servers: VlessConfig[],
+  target: VlessConfig,
+): VlessConfig | null {
+  return (
+    servers.find(
+      (server) =>
+        server.address === target.address &&
+        server.port === target.port &&
+        server.name === target.name,
+    ) ?? null
+  );
 }
 
 export function hasMissingPingData(servers: VlessConfig[]): boolean {
@@ -12,12 +22,14 @@ export function hasMissingPingData(servers: VlessConfig[]): boolean {
 export async function reconcileSelection(
   newServers: VlessConfig[],
   currentSelected: VlessConfig | null,
-  electronAPI: IElectronAPI
+  electronAPI: IElectronAPI,
 ): Promise<VlessConfig | null> {
   if (newServers.length === 0) return null;
 
   const savedId = await electronAPI.getSelectedServerId();
-  const byId = savedId ? newServers.find((server) => server.uuid === savedId) : null;
+  const byId = savedId
+    ? newServers.find((server) => server.uuid === savedId)
+    : null;
   if (byId) return byId;
 
   if (currentSelected) {

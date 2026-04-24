@@ -192,13 +192,14 @@ export const addRouteScript = (
   destPrefix: string,
   gateway: string,
   metric: number,
-  interfaceIndex?: number
+  interfaceIndex?: number,
 ): string => {
   validateIpOrPrefix(destPrefix);
   validateIpOrPrefix(gateway);
   validateMetric(metric);
   validateInterfaceIndex(interfaceIndex);
-  const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
+  const ifPart =
+    interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
   return `
       $existing = Get-NetRoute -DestinationPrefix "${destPrefix}"${ifPart} -ErrorAction SilentlyContinue | Select-Object -First 1
       if (-not $existing) {
@@ -219,10 +220,14 @@ export const addDefaultRouteViaTunScript = (tunIdx: number): string => {
         `;
 };
 
-export const deleteRouteScript = (prefix: string, interfaceIndex?: number): string => {
+export const deleteRouteScript = (
+  prefix: string,
+  interfaceIndex?: number,
+): string => {
   validateIpOrPrefix(prefix);
   validateInterfaceIndex(interfaceIndex);
-  const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
+  const ifPart =
+    interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
   return `
       Remove-NetRoute -DestinationPrefix "${prefix}"${ifPart} -ErrorAction SilentlyContinue
     `;
@@ -231,12 +236,13 @@ export const deleteRouteScript = (prefix: string, interfaceIndex?: number): stri
 export const deleteRouteByPrefixAndMetricScript = (
   destinationPrefix: string,
   metric: number,
-  interfaceIndex?: number
+  interfaceIndex?: number,
 ): string => {
   validateIpOrPrefix(destinationPrefix);
   validateMetric(metric);
   validateInterfaceIndex(interfaceIndex);
-  const ifPart = interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
+  const ifPart =
+    interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
   return `
       Get-NetRoute -DestinationPrefix "${destinationPrefix}"${ifPart} -ErrorAction SilentlyContinue |
         Where-Object { $_.RouteMetric -eq ${metric} } |
@@ -244,7 +250,10 @@ export const deleteRouteByPrefixAndMetricScript = (
     `;
 };
 
-export const deleteTunDefaultRoutesByNextHopScript = (nextHop: string, metric: number): string => {
+export const deleteTunDefaultRoutesByNextHopScript = (
+  nextHop: string,
+  metric: number,
+): string => {
   validateIpOrPrefix(nextHop);
   validateMetric(metric);
   return `
@@ -258,11 +267,13 @@ export const deleteTunDefaultRoutesByNextHopScript = (nextHop: string, metric: n
 
 export const deleteHostRoutesByPrefixesAndMetricScript = (
   destinationPrefixes: string[],
-  metric: number
+  metric: number,
 ): string => {
   destinationPrefixes.forEach(validateIpOrPrefix);
   validateMetric(metric);
-  const prefixesLiteral = destinationPrefixes.map((prefix) => `'${prefix}'`).join(', ');
+  const prefixesLiteral = destinationPrefixes
+    .map((prefix) => `'${prefix}'`)
+    .join(', ');
   return `
       $targets = @(${prefixesLiteral})
       $targetSet = @{}

@@ -5,7 +5,13 @@ import {
   MOBILE_WHITE_LIST_RAW_URL,
   YANDEX_TRANSLATED_MOBILE_LIST_URL,
 } from '@/shared/subscriptionUrls';
-import { ConnectionMode, DEFAULT_PERFORMANCE_SETTINGS, PerformanceSettings, Subscription, VlessConfig } from '@/shared/types';
+import {
+  ConnectionMode,
+  DEFAULT_PERFORMANCE_SETTINGS,
+  PerformanceSettings,
+  Subscription,
+  VlessConfig,
+} from '@/shared/types';
 import { logger } from './LoggerService';
 import { redactUrl } from '@/main/utils/redactUrl';
 
@@ -47,7 +53,7 @@ export class ConfigService {
         connectionMode: 'proxy',
         pendingTunReconnect: null,
         performanceSettings: DEFAULT_PERFORMANCE_SETTINGS,
-      }
+      },
     });
 
     this.migrateLegacySubscriptionUrl();
@@ -79,11 +85,18 @@ export class ConfigService {
             enabled: true,
           },
         ]);
-        logger.info('ConfigService', 'Migrated legacy subscriptionUrl to subscriptions list', {
-          redactedUrl: redactUrl(migratedUrl),
-        });
+        logger.info(
+          'ConfigService',
+          'Migrated legacy subscriptionUrl to subscriptions list',
+          {
+            redactedUrl: redactUrl(migratedUrl),
+          },
+        );
       }
-    } else if (!this.store.get('subscriptions') || this.store.get('subscriptions').length === 0) {
+    } else if (
+      !this.store.get('subscriptions') ||
+      this.store.get('subscriptions').length === 0
+    ) {
       // Fresh install: seed with the default subscription.
       this.store.set('subscriptions', [
         {
@@ -96,7 +109,9 @@ export class ConfigService {
     }
 
     // Remove the legacy key regardless so it does not linger.
-    (this.store as unknown as { delete: (key: string) => void }).delete('subscriptionUrl');
+    (this.store as unknown as { delete: (key: string) => void }).delete(
+      'subscriptionUrl',
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -111,7 +126,11 @@ export class ConfigService {
     this.store.set('subscriptions', subs);
   }
 
-  public addSubscription(data: { name: string; url: string; enabled?: boolean }): Subscription {
+  public addSubscription(data: {
+    name: string;
+    url: string;
+    enabled?: boolean;
+  }): Subscription {
     const sub: Subscription = {
       id: randomUUID(),
       name: data.name,
@@ -120,7 +139,10 @@ export class ConfigService {
     };
     const existing = this.getSubscriptions();
     this.store.set('subscriptions', [...existing, sub]);
-    logger.info('ConfigService', 'addSubscription', { id: sub.id, name: sub.name });
+    logger.info('ConfigService', 'addSubscription', {
+      id: sub.id,
+      name: sub.name,
+    });
     return sub;
   }
 
@@ -135,7 +157,7 @@ export class ConfigService {
 
   public updateSubscription(
     id: string,
-    patch: Partial<Pick<Subscription, 'name' | 'url' | 'enabled'>>
+    patch: Partial<Pick<Subscription, 'name' | 'url' | 'enabled'>>,
   ): Subscription | null {
     const existing = this.getSubscriptions();
     const idx = existing.findIndex((s) => s.id === id);
@@ -212,10 +234,16 @@ export class ConfigService {
     });
   }
 
-  public consumePendingTunReconnect(maxAgeMs: number = 2 * 60 * 1000): string | null {
+  public consumePendingTunReconnect(
+    maxAgeMs: number = 2 * 60 * 1000,
+  ): string | null {
     const pending = this.store.get('pendingTunReconnect');
     this.store.set('pendingTunReconnect', null);
-    if (!pending || typeof pending.serverId !== 'string' || typeof pending.createdAt !== 'number') {
+    if (
+      !pending ||
+      typeof pending.serverId !== 'string' ||
+      typeof pending.createdAt !== 'number'
+    ) {
       return null;
     }
 

@@ -1,18 +1,18 @@
-const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const UUID_PATTERN =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const IPV4_PATTERN = /\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g;
 
 /** IPs we deliberately keep as-is because they never reveal private identity. */
-const PRESERVED_IPS = new Set([
-  '127.0.0.1',
-  '0.0.0.0',
-  '255.255.255.255',
-]);
+const PRESERVED_IPS = new Set(['127.0.0.1', '0.0.0.0', '255.255.255.255']);
 
 function redactIpv4(match: string): string {
   if (PRESERVED_IPS.has(match)) return match;
   // Private CIDR ranges, loopback, link-local — safe to preserve in diagnostics.
   const octets = match.split('.').map(Number);
-  if (octets.length !== 4 || octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
+  if (
+    octets.length !== 4 ||
+    octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)
+  ) {
     return match;
   }
   const [a, b] = octets;
@@ -38,10 +38,9 @@ export function sanitizeDiagnosticPayload<T>(value: T): T {
     return value.map((item) => sanitizeDiagnosticPayload(item)) as T;
   }
   if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).map(([key, nestedValue]) => [
-      key,
-      sanitizeDiagnosticPayload(nestedValue),
-    ]);
+    const entries = Object.entries(value as Record<string, unknown>).map(
+      ([key, nestedValue]) => [key, sanitizeDiagnosticPayload(nestedValue)],
+    );
     return Object.fromEntries(entries) as T;
   }
   return value;

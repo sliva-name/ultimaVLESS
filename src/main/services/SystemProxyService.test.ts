@@ -72,7 +72,7 @@ describe('SystemProxyService', () => {
                 proxyOverride: null,
                 autoConfigUrl: null,
                 autoDetect: 0,
-              })
+              }),
             );
           }
         }
@@ -93,12 +93,19 @@ describe('SystemProxyService', () => {
   it('captures the current Windows proxy state before enabling the app proxy', async () => {
     const SystemProxyService = await loadService();
     const service = new SystemProxyService('win32');
-    const proxyString = 'http=127.0.0.1:10809;https=127.0.0.1:10809;socks=127.0.0.1:10808';
+    const proxyString =
+      'http=127.0.0.1:10809;https=127.0.0.1:10809;socks=127.0.0.1:10808';
 
     await service.enable(10809, 10808);
 
-    expect(fs.existsSync(path.join(mockState.tempDir, 'system-proxy-state.json'))).toBe(true);
-    expect(getPowerShellCommands().some((command) => command.includes('ConvertTo-Json -Compress'))).toBe(true);
+    expect(
+      fs.existsSync(path.join(mockState.tempDir, 'system-proxy-state.json')),
+    ).toBe(true);
+    expect(
+      getPowerShellCommands().some((command) =>
+        command.includes('ConvertTo-Json -Compress'),
+      ),
+    ).toBe(true);
     expect(hasFileInvocation('1', proxyString)).toBe(true);
   });
 
@@ -113,15 +120,21 @@ describe('SystemProxyService', () => {
         autoConfigUrl: null,
         autoDetect: 0,
       }),
-      'utf8'
+      'utf8',
     );
 
     const SystemProxyService = await loadService();
     const service = new SystemProxyService('win32');
     await service.disable();
 
-    expect(fs.existsSync(path.join(mockState.tempDir, 'system-proxy-state.json'))).toBe(false);
-    expect(getPowerShellCommands().some((command) => command.includes('ConvertFrom-Json'))).toBe(true);
+    expect(
+      fs.existsSync(path.join(mockState.tempDir, 'system-proxy-state.json')),
+    ).toBe(false);
+    expect(
+      getPowerShellCommands().some((command) =>
+        command.includes('ConvertFrom-Json'),
+      ),
+    ).toBe(true);
     expect(hasFileInvocation('0')).toBe(false);
   });
 
@@ -155,7 +168,7 @@ describe('SystemProxyService', () => {
               proxyOverride: null,
               autoConfigUrl: null,
               autoDetect: 0,
-            })
+            }),
           );
         }
         child.emit('close', 0);
@@ -167,7 +180,9 @@ describe('SystemProxyService', () => {
     const SystemProxyService = await loadService();
     const service = new SystemProxyService('win32');
 
-    await expect(service.enable(10809, 10808)).rejects.toThrow('Proxy script exited with code 1');
+    await expect(service.enable(10809, 10808)).rejects.toThrow(
+      'Proxy script exited with code 1',
+    );
   });
 
   it('configures Linux proxy commands through gsettings', async () => {
@@ -194,7 +209,7 @@ describe('SystemProxyService', () => {
           command: 'gsettings',
           args: ['set', 'org.gnome.system.proxy.socks', 'port', '10808'],
         }),
-      ])
+      ]),
     );
   });
 
@@ -212,7 +227,7 @@ describe('SystemProxyService', () => {
     const service = new SystemProxyService('linux');
 
     await expect(service.enable(10809, 10808)).rejects.toThrow(
-      'Linux system proxy control currently requires a GNOME-compatible desktop with gsettings available.'
+      'Linux system proxy control currently requires a GNOME-compatible desktop with gsettings available.',
     );
   });
 

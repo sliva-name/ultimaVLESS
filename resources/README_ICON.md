@@ -30,6 +30,7 @@ magick convert resources/bin/logo.svg -define icon:auto-resize=256,128,64,48,32,
 ```
 
 **Проверка размера:**
+
 ```bash
 magick identify resources/bin/logo.ico
 ```
@@ -59,10 +60,12 @@ rm icon-*.png
 После создания файла `resources/bin/logo.ico`, проверьте, что он содержит размер 256x256:
 
 **Windows:**
+
 - Откройте свойства файла `logo.ico`
 - Во вкладке "Подробно" должны быть видны все размеры
 
 **ImageMagick:**
+
 ```bash
 magick identify resources/bin/logo.ico
 ```
@@ -70,4 +73,3 @@ magick identify resources/bin/logo.ico
 Должны быть видны все размеры, включая **256x256**.
 
 После создания правильного файла `resources/bin/logo.ico`, иконка будет автоматически использоваться при сборке приложения.
-
