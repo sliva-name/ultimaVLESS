@@ -432,6 +432,78 @@ describe('ConfigGenerator', () => {
     });
   });
 
+  it('prepends geoip:private direct bypass to raw routing when missing', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        rawConfig: {
+          inbounds: [],
+          outbounds: [{ tag: 'proxy', protocol: 'vless', settings: {} }],
+          routing: {
+            rules: [
+              { type: 'field', domain: ['regexp:.*'], outboundTag: 'proxy' },
+            ],
+          },
+        },
+      }),
+      '/tmp/log',
+      'proxy',
+      {
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          blockAds: false,
+          blockBittorrent: false,
+        },
+      },
+    );
+
+    expect(result.routing.rules[0]).toMatchObject({
+      type: 'field',
+      ip: ['geoip:private'],
+      outboundTag: 'direct',
+    });
+  });
+
+  it('does not duplicate geoip:private when raw routing already has it', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        rawConfig: {
+          inbounds: [],
+          outbounds: [{ tag: 'proxy', protocol: 'vless', settings: {} }],
+          routing: {
+            rules: [
+              {
+                type: 'field',
+                ip: ['geoip:private'],
+                outboundTag: 'direct',
+              },
+              { type: 'field', port: '0-65535', outboundTag: 'proxy' },
+            ],
+          },
+        },
+      }),
+      '/tmp/log',
+      'proxy',
+      {
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          blockAds: false,
+          blockBittorrent: false,
+        },
+      },
+    );
+
+    expect(
+      result.routing.rules.filter(
+        (r: { ip?: string[]; outboundTag?: string }) =>
+          r.outboundTag === 'direct' &&
+          Array.isArray(r.ip) &&
+          r.ip.includes('geoip:private'),
+      ),
+    ).toHaveLength(1);
+  });
+
   it('normalizes raw local proxy inbounds to the app ports', () => {
     const result = ConfigGenerator.generate(
       makeServer({

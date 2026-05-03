@@ -203,6 +203,8 @@ export class ConfigGenerator {
         r.outboundTag === 'block',
     );
 
+    const rulesLenBeforeInjections = rules.length;
+
     // Prepend block rules in reverse priority so the final order is:
     //   [ads?, bittorrent?, ...existing rules]
     if (perf.blockBittorrent && !hasBtBlock) {
@@ -227,7 +229,34 @@ export class ConfigGenerator {
       });
     }
 
+    const injectedBlockCount = rules.length - rulesLenBeforeInjections;
+
+    // Subscriptions often omit private / link-local bypass. Without it, Windows
+    // may deliver IPv6 link-local DNS (fe80::/10) into the TUN and Xray sends
+    // it through the remote proxy, which breaks resolution until users disable
+    // IPv6 OS-wide. Uses the same `geoip:private` → `direct` rule as
+    // buildRoutingRules(); per Project X routing docs, `geoip:private` covers
+    // private addresses (see RuleObject `ip` and `geoip:private`):
+    // https://xtls.github.io/config/routing.html
+    if (!this.routingHasPrivateIpDirectBypass(rules)) {
+      rules.splice(injectedBlockCount, 0, {
+        type: 'field',
+        ip: ['geoip:private'],
+        outboundTag: 'direct',
+      });
+    }
+
     cfg.routing.rules = rules as XrayRoutingRule[];
+  }
+
+  /** True if routing already sends geoip:private to direct (any rule). */
+  private static routingHasPrivateIpDirectBypass(
+    rules: Array<Record<string, unknown>>,
+  ): boolean {
+    return rules.some((r) => {
+      if (r.outboundTag !== 'direct' || !Array.isArray(r.ip)) return false;
+      return (r.ip as unknown[]).some((ip) => ip === 'geoip:private');
+    });
   }
 
   private static generateFromFields(
