@@ -1,6 +1,9 @@
 import net from 'net';
 import {
   TUN_ADDRESS,
+  TUN_IPV6_ADDRESS,
+  TUN_IPV6_NEXTHOP,
+  TUN_IPV6_PREFIX,
   TUN_INTERFACE_NAME,
   TUN_NEXTHOP,
   TUN_PREFIX,
@@ -185,6 +188,12 @@ export const ensureTunAddressScript = (tunInterfaceIndex: number): string => {
       if (-not $existing) {
         New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress ${TUN_ADDRESS} -PrefixLength ${TUN_PREFIX} -ErrorAction Stop
       }
+      $existing6 = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -eq "${TUN_IPV6_ADDRESS}" } |
+        Select-Object -First 1
+      if (-not $existing6) {
+        New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress "${TUN_IPV6_ADDRESS}" -PrefixLength ${TUN_IPV6_PREFIX} -ErrorAction Stop
+      }
     `;
 };
 
@@ -216,6 +225,11 @@ export const addDefaultRouteViaTunScript = (tunIdx: number): string => {
           if (-not $existing) {
             New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "${TUN_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
             Write-Output "CREATED"
+          }
+          $existing6 = Get-NetRoute -DestinationPrefix "::/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
+          if (-not $existing6) {
+            New-NetRoute -DestinationPrefix "::/0" -NextHop "${TUN_IPV6_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
+            Write-Output "CREATED_IPV6"
           }
         `;
 };
@@ -253,11 +267,13 @@ export const deleteRouteByPrefixAndMetricScript = (
 export const deleteTunDefaultRoutesByNextHopScript = (
   nextHop: string,
   metric: number,
+  destinationPrefix: string = '0.0.0.0/0',
 ): string => {
   validateIpOrPrefix(nextHop);
+  validateIpOrPrefix(destinationPrefix);
   validateMetric(metric);
   return `
-      Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
+      Get-NetRoute -DestinationPrefix "${destinationPrefix}" -ErrorAction SilentlyContinue |
         Where-Object {
           $_.RouteMetric -eq ${metric} -and $_.NextHop -eq "${nextHop}"
         } |

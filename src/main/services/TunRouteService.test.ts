@@ -115,9 +115,12 @@ describe('TunRouteService support policy', () => {
     const deleteCalls = runPowerShell.mock.calls
       .slice(callsBeforeDisable)
       .filter(([script]) => String(script).includes('Remove-NetRoute'));
-    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls).toHaveLength(2);
     expect(String(deleteCalls[0][0])).toContain(
       'Get-NetRoute -DestinationPrefix "0.0.0.0/0"',
+    );
+    expect(String(deleteCalls[1][0])).toContain(
+      'Get-NetRoute -DestinationPrefix "::/0"',
     );
   });
 

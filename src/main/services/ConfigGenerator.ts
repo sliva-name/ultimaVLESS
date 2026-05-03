@@ -13,6 +13,14 @@ import {
   XrayRoutingRule,
 } from '@/shared/xray-types';
 import { APP_CONSTANTS } from '@/shared/constants';
+import {
+  TUN_ADDRESS,
+  TUN_DNS_SERVERS,
+  TUN_INTERFACE_NAME,
+  TUN_IPV6_ADDRESS,
+  TUN_IPV6_PREFIX,
+  TUN_PREFIX,
+} from './tunRoute/constants';
 
 type MutableConfigNode = Record<string, unknown>;
 
@@ -647,14 +655,21 @@ export class ConfigGenerator {
       port: 0,
       protocol: 'tun',
       settings: {
-        name: 'ultima0',
+        name: TUN_INTERFACE_NAME,
         mtu: 1500,
-        inet4_address: '172.19.0.1/30',
+        gateway: [
+          `${TUN_ADDRESS}/${TUN_PREFIX}`,
+          `${TUN_IPV6_ADDRESS}/${TUN_IPV6_PREFIX}`,
+        ],
+        dns: TUN_DNS_SERVERS,
       },
     };
     if (options.tunAutoRoute) {
-      (tunInbound.settings as MutableConfigNode).autoRoute = true;
-      (tunInbound.settings as MutableConfigNode).strictRoute = true;
+      (tunInbound.settings as MutableConfigNode).autoSystemRoutingTable = [
+        '0.0.0.0/0',
+        '::/0',
+      ];
+      (tunInbound.settings as MutableConfigNode).autoOutboundsInterface = 'auto';
     }
     return tunInbound;
   }

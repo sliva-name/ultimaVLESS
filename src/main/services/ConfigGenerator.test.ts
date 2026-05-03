@@ -251,10 +251,21 @@ describe('ConfigGenerator', () => {
     const tunInbound = getTunInbound(result);
 
     expect(tunInbound.settings).toMatchObject({
+      name: 'ultima0',
       mtu: 1500,
-      autoRoute: true,
-      strictRoute: true,
+      gateway: ['172.19.0.1/30', 'fd7a:115c:a1e0::1/126'],
+      dns: [
+        '1.1.1.1',
+        '8.8.8.8',
+        '2606:4700:4700::1111',
+        '2001:4860:4860::8888',
+      ],
+      autoSystemRoutingTable: ['0.0.0.0/0', '::/0'],
+      autoOutboundsInterface: 'auto',
     });
+    expect((tunInbound.settings as any).inet4_address).toBeUndefined();
+    expect((tunInbound.settings as any).autoRoute).toBeUndefined();
+    expect((tunInbound.settings as any).strictRoute).toBeUndefined();
     expect((tunInbound.settings as any).MTU).toBeUndefined();
     expect(result.outbounds[0].sendThrough).toBe('192.168.1.10');
   });

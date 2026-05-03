@@ -12,6 +12,7 @@ import {
   DEFAULT_ROUTE_WAIT_TIMEOUT,
   DNS_TIMEOUT,
   ENABLE_TIMEOUT,
+  TUN_IPV6_NEXTHOP,
   TUN_NEXTHOP,
   TUN_ROUTE_METRIC,
   TUN_WAIT_TIMEOUT,
@@ -46,6 +47,7 @@ interface AddedRoute {
   destination: string;
   mask: string;
   interfaceIndex?: number;
+  prefix?: string;
 }
 
 /**
@@ -418,6 +420,14 @@ export class TunRouteService {
             interfaceIndex: tunIdx,
           });
         }
+        if (out.includes('CREATED_IPV6')) {
+          this.addedRoutes.push({
+            destination: '::',
+            mask: '::',
+            interfaceIndex: tunIdx,
+            prefix: '::/0',
+          });
+        }
         return;
       } catch (error) {
         lastError = error;
@@ -439,7 +449,10 @@ export class TunRouteService {
 
   private async deleteRoute(route: AddedRoute): Promise<void> {
     const prefix =
-      route.destination === '0.0.0.0' ? '0.0.0.0/0' : `${route.destination}/32`;
+      route.prefix ??
+      (route.destination === '0.0.0.0'
+        ? '0.0.0.0/0'
+        : `${route.destination}/32`);
     await this.runPowerShell(deleteRouteScript(prefix, route.interfaceIndex), {
       allowNonZeroExit: true,
     });
@@ -463,6 +476,20 @@ export class TunRouteService {
           },
         );
       });
+      await this.deleteRouteByPrefixAndMetric(
+        '::/0',
+        TUN_ROUTE_METRIC,
+        tunIndex,
+      ).catch((error) => {
+        logger.warn(
+          'TunRouteService',
+          'Failed to cleanup stale TUN IPv6 default route',
+          {
+            interfaceIndex: tunIndex,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+      });
     } else {
       // Fallback: remove stale default route candidates by next hop/metric even if
       // interface alias changed (e.g. "ultima0 #2") and exact index is unknown.
@@ -475,6 +502,20 @@ export class TunRouteService {
           'Failed to cleanup stale TUN default routes by next hop',
           {
             nextHop: TUN_NEXTHOP,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+      });
+      await this.deleteTunDefaultRoutesByNextHop(
+        TUN_IPV6_NEXTHOP,
+        TUN_ROUTE_METRIC,
+        '::/0',
+      ).catch((error) => {
+        logger.warn(
+          'TunRouteService',
+          'Failed to cleanup stale TUN IPv6 default routes by next hop',
+          {
+            nextHop: TUN_IPV6_NEXTHOP,
             error: error instanceof Error ? error.message : String(error),
           },
         );
@@ -527,9 +568,10 @@ export class TunRouteService {
   private async deleteTunDefaultRoutesByNextHop(
     nextHop: string,
     metric: number,
+    destinationPrefix: string = '0.0.0.0/0',
   ): Promise<void> {
     await this.runPowerShell(
-      deleteTunDefaultRoutesByNextHopScript(nextHop, metric),
+      deleteTunDefaultRoutesByNextHopScript(nextHop, metric, destinationPrefix),
       { allowNonZeroExit: true },
     );
   }
