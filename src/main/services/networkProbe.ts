@@ -125,6 +125,8 @@ function probeHttpThroughProxyAny(
     { host: 'connectivitycheck.gstatic.com', path: '/generate_204' },
     { host: '1.1.1.1', path: '/' },
     { host: 'captive.apple.com', path: '/hotspot-detect.html' },
+    // Windows NCSI-style plain HTTP; improves odds when Google/Cloudflare are flaky.
+    { host: 'www.msftncsi.com', path: '/ncsi.txt' },
   ];
 
   return new Promise((resolve) => {

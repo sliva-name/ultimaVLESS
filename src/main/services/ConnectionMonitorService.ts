@@ -63,6 +63,12 @@ export class ConnectionMonitorService extends EventEmitter {
   private healthCheckInFlight: boolean = false;
   /** Consecutive HTTP tunnel probe failures (flaky checks should not spam Last Error). */
   private tunnelProbeFailStreak: number = 0;
+  /**
+   * Number of consecutive failed 30s health ticks before surfacing the
+   * remote-endpoint tunnel error to the user. Single flaky probes are common on
+   * slow or lossy tunnels; notifying too early makes users think VPN "stopped".
+   */
+  private static readonly TUNNEL_PROBE_STREAK_BEFORE_NOTIFY = 3;
 
   constructor() {
     super();
@@ -389,8 +395,11 @@ export class ConnectionMonitorService extends EventEmitter {
         logger.warn('ConnectionMonitorService', 'HTTP tunnel probe failed', {
           streak: this.tunnelProbeFailStreak,
         });
-        // Surface error exactly once when reaching the streak threshold
-        if (this.tunnelProbeFailStreak === 2) {
+        // Surface error once when reaching the streak threshold (see class JSDoc).
+        if (
+          this.tunnelProbeFailStreak ===
+          ConnectionMonitorService.TUNNEL_PROBE_STREAK_BEFORE_NOTIFY
+        ) {
           this.recordError(failureReason, this.status.currentServer);
         }
         return;
