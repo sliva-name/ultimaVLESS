@@ -14,6 +14,9 @@ const BLOCKING_ERROR_PATTERNS = [
   // Network-level: the remote is entirely unreachable
   /network unreachable/i,
   /no route to host/i,
+  // ConnectionMonitorService: end-to-end HTTP via local proxy failed repeatedly
+  // (tunnel unusable; user expects auto-switch to another server).
+  /Remote endpoint check via proxy failed/i,
 ];
 
 export function isBlockingErrorText(text: string): boolean {

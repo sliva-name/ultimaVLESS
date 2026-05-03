@@ -146,6 +146,21 @@ describe('ConnectionMonitorService', () => {
     expect(svc.getStatus().lastHealthState).toBe('failed');
   });
 
+  it('marks server blocked when tunnel probe failure is recorded (auto-switch path)', async () => {
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+    const server = makeServer({ uuid: 'tunnel-dead' });
+
+    svc.on('error', () => {});
+    svc.startMonitoring(server);
+    svc.recordError(
+      'Remote endpoint check via proxy failed after retries (tunnel may be slow or blocked)',
+    );
+
+    expect(svc.getStatus().blockedServers).toEqual(['tunnel-dead']);
+    expect(svc.getStatus().lastHealthState).toBe('failed');
+  });
+
   it('handles unexpected disconnects through the public API', async () => {
     const ConnectionMonitorService = await loadService();
     const svc = new ConnectionMonitorService();
@@ -213,7 +228,22 @@ describe('ConnectionMonitorService', () => {
     );
   });
 
-  it('sets lastError after two consecutive HTTP tunnel probe failures', async () => {
+  it('still does not set lastError after two consecutive HTTP tunnel probe failures', async () => {
+    probeHttpThroughProxyMock.mockResolvedValue(false);
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+    const server = makeServer({ uuid: 'server-1', name: 'Example' });
+
+    svc.on('error', () => {});
+    svc.startMonitoring(server);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(svc.getStatus().lastError).toBeNull();
+    expect(svc.getStatus().lastHealthState).toBe('degraded');
+  });
+
+  it('sets lastError after several consecutive HTTP tunnel probe failures', async () => {
     probeHttpThroughProxyMock.mockResolvedValue(false);
     const ConnectionMonitorService = await loadService();
     const svc = new ConnectionMonitorService();
@@ -222,6 +252,7 @@ describe('ConnectionMonitorService', () => {
     const errors: string[] = [];
     svc.on('error', (e) => errors.push(e.error ?? ''));
     svc.startMonitoring(server);
+    await vi.advanceTimersByTimeAsync(30_000);
     await vi.advanceTimersByTimeAsync(30_000);
     await vi.advanceTimersByTimeAsync(30_000);
 
