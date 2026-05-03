@@ -436,7 +436,7 @@ describe('ConfigGenerator', () => {
       },
     );
 
-    expect(result.routing.rules[0]).toMatchObject({
+    expect(result.routing.rules[1]).toMatchObject({
       type: 'field',
       domain: ['geosite:category-ads-all'],
       outboundTag: 'block',
@@ -468,7 +468,49 @@ describe('ConfigGenerator', () => {
       },
     );
 
+    expect(result.routing.rules[1]).toMatchObject({
+      type: 'field',
+      ip: ['geoip:private'],
+      outboundTag: 'direct',
+    });
+  });
+
+  it('keeps the API routing rule before broad raw direct rules', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        rawConfig: {
+          inbounds: [],
+          outbounds: [{ tag: 'proxy', protocol: 'vless', settings: {} }],
+          routing: {
+            rules: [
+              {
+                type: 'field',
+                ip: ['geoip:private'],
+                outboundTag: 'direct',
+              },
+              { type: 'field', port: '0-65535', outboundTag: 'proxy' },
+            ],
+          },
+        },
+      }),
+      '/tmp/log',
+      'proxy',
+      {
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          blockAds: false,
+          blockBittorrent: false,
+        },
+      },
+    );
+
     expect(result.routing.rules[0]).toMatchObject({
+      type: 'field',
+      inboundTag: ['api'],
+      outboundTag: 'api',
+    });
+    expect(result.routing.rules[1]).toMatchObject({
       type: 'field',
       ip: ['geoip:private'],
       outboundTag: 'direct',

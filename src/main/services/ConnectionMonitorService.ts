@@ -63,12 +63,15 @@ export class ConnectionMonitorService extends EventEmitter {
   private healthCheckInFlight: boolean = false;
   /** Consecutive HTTP tunnel probe failures (flaky checks should not spam Last Error). */
   private tunnelProbeFailStreak: number = 0;
+  /** Consecutive local listener probe failures; single misses can happen under Windows socket pressure. */
+  private localProxyFailStreak: number = 0;
   /**
    * Number of consecutive failed 30s health ticks before surfacing the
    * remote-endpoint tunnel error to the user. Single flaky probes are common on
    * slow or lossy tunnels; notifying too early makes users think VPN "stopped".
    */
   private static readonly TUNNEL_PROBE_STREAK_BEFORE_NOTIFY = 3;
+  private static readonly LOCAL_PROXY_STREAK_BEFORE_NOTIFY = 2;
 
   constructor() {
     super();
@@ -115,6 +118,7 @@ export class ConnectionMonitorService extends EventEmitter {
     this.status.lastHealthFailureReason = null;
     this.status.localProxyReachable = null;
     this.tunnelProbeFailStreak = 0;
+    this.localProxyFailStreak = 0;
     this.resetLogCursorToFileEnd();
 
     // Начинаем периодическую проверку соединения
@@ -153,6 +157,7 @@ export class ConnectionMonitorService extends EventEmitter {
     this.status.currentServer = null;
     this.status.localProxyReachable = null;
     this.tunnelProbeFailStreak = 0;
+    this.localProxyFailStreak = 0;
     this.status.lastHealthState = 'idle';
     this.status.lastHealthFailureReason = null;
     if (!preserveLastError) {
@@ -354,33 +359,39 @@ export class ConnectionMonitorService extends EventEmitter {
 
       if (!localProxyReachable) {
         this.tunnelProbeFailStreak = 0;
+        this.localProxyFailStreak += 1;
         const xrayState = xrayService.getHealthStatus();
         const failureReason =
           xrayState.lastReadinessError ||
           'Local proxy listeners are unreachable';
 
-        const previousState = this.status.lastHealthState;
-        const previousReason = this.status.lastHealthFailureReason;
-
         this.status.lastHealthState =
           xrayState.state === 'failed' ? 'failed' : 'degraded';
         this.status.lastHealthFailureReason = failureReason;
 
-        if (
-          previousReason !== failureReason ||
-          previousState !== this.status.lastHealthState
-        ) {
+        logger.warn('ConnectionMonitorService', 'Local proxy probe failed', {
+          streak: this.localProxyFailStreak,
+          failureReason,
+        });
+
+        const shouldSurface =
+          xrayState.state === 'failed' ||
+          this.localProxyFailStreak >=
+            ConnectionMonitorService.LOCAL_PROXY_STREAK_BEFORE_NOTIFY;
+
+        if (shouldSurface && this.status.lastError !== failureReason) {
           this.recordError(failureReason, this.status.currentServer);
         } else {
           logger.debug(
             'ConnectionMonitorService',
-            'Local proxy listeners still unreachable',
-            { failureReason },
+            'Local proxy listeners still unreachable or below notify threshold',
+            { failureReason, streak: this.localProxyFailStreak },
           );
         }
         return;
       }
 
+      this.localProxyFailStreak = 0;
       // Verify end-to-end connectivity through the tunnel via a lightweight HTTP probe.
       const tunnelOk = await probeHttpThroughProxy(APP_CONSTANTS.PORTS.HTTP);
       if (isStale()) {
@@ -406,6 +417,9 @@ export class ConnectionMonitorService extends EventEmitter {
       }
 
       this.tunnelProbeFailStreak = 0;
+      if (this.status.lastHealthState === 'degraded') {
+        this.status.lastError = null;
+      }
       logger.debug('ConnectionMonitorService', 'HTTP tunnel probe passed');
 
       // Читаем только новые строки со времени старта текущей сессии.

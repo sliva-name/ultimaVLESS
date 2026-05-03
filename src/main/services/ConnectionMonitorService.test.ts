@@ -180,7 +180,7 @@ describe('ConnectionMonitorService', () => {
     expect(svc.getStatus().lastError).toBe('core exited');
   });
 
-  it('fails health checks when local proxy listeners are unreachable', async () => {
+  it('does not set lastError on the first local proxy listener miss', async () => {
     probeTcpPortMock.mockResolvedValue(false);
     xrayServiceMock.getHealthStatus.mockReturnValue({
       state: 'degraded',
@@ -207,8 +207,78 @@ describe('ConnectionMonitorService', () => {
       lastHealthState: 'degraded',
       localProxyReachable: false,
       lastHealthFailureReason: 'listeners unreachable',
+      lastError: null,
+    });
+  });
+
+  it('sets lastError after consecutive local proxy listener misses', async () => {
+    probeTcpPortMock.mockResolvedValue(false);
+    xrayServiceMock.getHealthStatus.mockReturnValue({
+      state: 'degraded',
+      ready: false,
+      xrayRunning: true,
+      lastStartAt: Date.now(),
+      lastReadyAt: null,
+      lastReadinessCheckAt: Date.now(),
+      localProxyReachable: false,
+      lastFailureAt: Date.now(),
+      lastFailureReason: 'listeners unreachable',
+      lastReadinessError: 'listeners unreachable',
+    });
+
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+    const server = makeServer({ uuid: 'server-1', name: 'Example' });
+
+    const errors: string[] = [];
+    svc.on('error', (e) => errors.push(e.error ?? ''));
+    svc.startMonitoring(server);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(svc.getStatus()).toMatchObject({
+      lastHealthState: 'degraded',
+      localProxyReachable: false,
+      lastHealthFailureReason: 'listeners unreachable',
       lastError: 'listeners unreachable',
     });
+    expect(errors).toContain('listeners unreachable');
+  });
+
+  it('clears transient degraded health errors after a successful health check', async () => {
+    probeTcpPortMock
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true);
+    xrayServiceMock.getHealthStatus.mockReturnValue({
+      state: 'degraded',
+      ready: false,
+      xrayRunning: true,
+      lastStartAt: Date.now(),
+      lastReadyAt: null,
+      lastReadinessCheckAt: Date.now(),
+      localProxyReachable: false,
+      lastFailureAt: Date.now(),
+      lastFailureReason: 'listeners unreachable',
+      lastReadinessError: 'listeners unreachable',
+    });
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+    const server = makeServer({ uuid: 'server-1', name: 'Example' });
+
+    svc.on('error', () => {});
+    svc.startMonitoring(server);
+    await (svc as any).checkConnectionHealth();
+    await (svc as any).checkConnectionHealth();
+    expect(svc.getStatus().lastError).toBe('listeners unreachable');
+
+    await (svc as any).checkConnectionHealth();
+
+    expect(svc.getStatus().lastHealthState).toBe('healthy');
+    expect(svc.getStatus().lastHealthFailureReason).toBeNull();
+    expect(svc.getStatus().lastError).toBeNull();
   });
 
   it('does not set lastError on the first consecutive HTTP tunnel probe failure', async () => {

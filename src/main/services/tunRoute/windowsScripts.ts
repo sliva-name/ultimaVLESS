@@ -1,6 +1,7 @@
 import net from 'net';
 import {
   TUN_ADDRESS,
+  TUN_DNS_SERVERS,
   TUN_IPV6_ADDRESS,
   TUN_IPV6_NEXTHOP,
   TUN_IPV6_PREFIX,
@@ -182,6 +183,7 @@ export const getTunInterfaceIndexScript = (): string => `
 
 export const ensureTunAddressScript = (tunInterfaceIndex: number): string => {
   validateInterfaceIndex(tunInterfaceIndex);
+  const dnsServers = TUN_DNS_SERVERS.map((server) => `"${server}"`).join(', ');
   return `
       $existing = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Select-Object -First 1
@@ -194,6 +196,7 @@ export const ensureTunAddressScript = (tunInterfaceIndex: number): string => {
       if (-not $existing6) {
         New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress "${TUN_IPV6_ADDRESS}" -PrefixLength ${TUN_IPV6_PREFIX} -ErrorAction Stop
       }
+      Set-DnsClientServerAddress -InterfaceIndex ${tunInterfaceIndex} -ServerAddresses @(${dnsServers}) -ErrorAction Stop
     `;
 };
 

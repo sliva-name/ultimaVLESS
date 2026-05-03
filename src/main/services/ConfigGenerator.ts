@@ -474,12 +474,20 @@ export class ConfigGenerator {
     const hasApiRule = rules.some(
       (r) => r && Array.isArray(r.inboundTag) && r.inboundTag.includes('api'),
     );
-    if (!hasApiRule) {
-      // Append at the end: the api rule only matches the dedicated `api`
-      // inbound, so it never competes with user rules and preserving the
-      // original ordering keeps ad/bittorrent blockers as the first match.
-      rules.push({ type: 'field', inboundTag: ['api'], outboundTag: 'api' });
-    }
+    const apiRule = hasApiRule
+      ? rules.find(
+          (r) =>
+            r && Array.isArray(r.inboundTag) && r.inboundTag.includes('api'),
+        )
+      : { type: 'field', inboundTag: ['api'], outboundTag: 'api' };
+    const nonApiRules = rules.filter(
+      (r) => !(r && Array.isArray(r.inboundTag) && r.inboundTag.includes('api')),
+    );
+
+    // Keep the API rule first. Raw configs can contain broad direct rules like
+    // `geoip:private -> direct`; if they match 127.0.0.1 before the API rule,
+    // Xray loops its StatsService traffic back into the API inbound.
+    cfg.routing.rules = [apiRule, ...nonApiRules] as XrayRoutingRule[];
   }
 
   private static buildOutboundSettings(
