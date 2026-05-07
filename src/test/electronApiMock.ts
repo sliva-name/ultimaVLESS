@@ -144,7 +144,7 @@ export function createElectronApiMock(
     pingAllServers: vi.fn(async (_force?: boolean) => []),
     getPerformanceSettings: vi.fn(
       async (): Promise<PerformanceSettings> => ({
-        muxEnabled: true,
+        muxEnabled: false,
         muxConcurrency: 8,
         xudpConcurrency: 16,
         xudpProxyUDP443: 'reject',
@@ -152,9 +152,9 @@ export function createElectronApiMock(
         sniffingRouteOnly: true,
         logLevel: 'warning',
         fingerprint: 'chrome',
-        blockAds: true,
-        blockBittorrent: true,
-        domainStrategy: 'IPIfNonMatch',
+        blockAds: false,
+        blockBittorrent: false,
+        domainStrategy: 'AsIs',
       }),
     ),
     setPerformanceSettings: vi.fn(

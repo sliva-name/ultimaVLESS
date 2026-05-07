@@ -44,7 +44,6 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    setModeError(null);
 
     window.electronAPI
       .getConnectionMode()

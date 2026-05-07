@@ -41,6 +41,16 @@ export async function probeTlsHandshake(
 ): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
+    const normalizedSni = sni.trim();
+    const connectOptions: tls.ConnectionOptions = {
+      host,
+      port,
+      rejectUnauthorized: false,
+      enableTrace: false,
+    };
+    if (normalizedSni && net.isIP(normalizedSni) === 0) {
+      connectOptions.servername = normalizedSni;
+    }
 
     const finish = (result: boolean) => {
       if (settled) return;
@@ -53,13 +63,7 @@ export async function probeTlsHandshake(
       resolve(result);
     };
 
-    const socket = tls.connect({
-      host,
-      port,
-      servername: sni,
-      rejectUnauthorized: false,
-      enableTrace: false,
-    });
+    const socket = tls.connect(connectOptions);
 
     socket.setTimeout(timeoutMs);
     socket.once('secureConnect', () => finish(true));

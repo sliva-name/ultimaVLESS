@@ -51,7 +51,7 @@ vi.mock('./ConfigGenerator', () => ({
 vi.mock('./ConfigService', () => ({
   configService: {
     getPerformanceSettings: vi.fn(() => ({
-      muxEnabled: true,
+      muxEnabled: false,
       muxConcurrency: 8,
       xudpConcurrency: 16,
       xudpProxyUDP443: 'reject',
@@ -59,9 +59,9 @@ vi.mock('./ConfigService', () => ({
       sniffingRouteOnly: true,
       logLevel: 'warning',
       fingerprint: 'chrome',
-      blockAds: true,
-      blockBittorrent: true,
-      domainStrategy: 'IPIfNonMatch',
+      blockAds: false,
+      blockBittorrent: false,
+      domainStrategy: 'AsIs',
     })),
   },
 }));

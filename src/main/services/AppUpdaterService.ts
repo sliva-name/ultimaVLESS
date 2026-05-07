@@ -23,6 +23,7 @@ const TRANSIENT_ERROR_THRESHOLD = 3;
 /** Backoff after a transient failure: 30s -> 60s -> 120s -> 240s, capped at
  *  the regular interval so we don't dwarf it. */
 const TRANSIENT_RETRY_BACKOFF_MS = [30_000, 60_000, 120_000, 240_000] as const;
+let electronUpdaterDep0190FilterInstalled = false;
 
 const TRANSIENT_ERROR_PATTERNS = [
   /ERR_ADDRESS_UNREACHABLE/i,
@@ -46,6 +47,62 @@ const TRANSIENT_ERROR_PATTERNS = [
 
 function isTransientNetworkError(message: string): boolean {
   return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function getWarningCode(
+  warning: string | Error,
+  args: unknown[],
+): string | undefined {
+  if (warning instanceof Error) {
+    return (warning as Error & { code?: string }).code;
+  }
+  const maybeOptions = args[0];
+  if (
+    maybeOptions &&
+    typeof maybeOptions === 'object' &&
+    'code' in maybeOptions
+  ) {
+    const maybeCode = (maybeOptions as { code?: unknown }).code;
+    return typeof maybeCode === 'string' ? maybeCode : undefined;
+  }
+  const maybeCode = args[1];
+  return typeof maybeCode === 'string' ? maybeCode : undefined;
+}
+
+function getWarningMessage(warning: string | Error): string {
+  return warning instanceof Error ? warning.message : warning;
+}
+
+/**
+ * electron-updater currently emits DEP0190 on Windows while verifying update
+ * signatures because its upstream PowerShell runner uses execFile with
+ * `shell: true` and an args array. The verifier still performs its own path
+ * validation; this only keeps Node's dependency warning from leaking to users.
+ */
+function installElectronUpdaterDep0190Filter(): void {
+  if (electronUpdaterDep0190FilterInstalled || process.platform !== 'win32') {
+    return;
+  }
+  electronUpdaterDep0190FilterInstalled = true;
+  const originalEmitWarning = process.emitWarning.bind(process);
+  process.emitWarning = ((warning, ...args) => {
+    const code = getWarningCode(warning, args);
+    const message = getWarningMessage(warning);
+    if (
+      code === 'DEP0190' &&
+      message.includes('child process with shell option true')
+    ) {
+      logger.debug(
+        'AppUpdaterService',
+        'Suppressed electron-updater DEP0190 warning',
+      );
+      return;
+    }
+    return (originalEmitWarning as (...emitArgs: unknown[]) => void)(
+      warning,
+      ...args,
+    );
+  }) as typeof process.emitWarning;
 }
 
 type AutoUpdaterLike = {
@@ -144,6 +201,7 @@ export class AppUpdaterService extends EventEmitter {
     }
 
     try {
+      installElectronUpdaterDep0190Filter();
       const mod = await import('electron-updater');
       const updater = (mod.autoUpdater ?? mod.default?.autoUpdater) as
         | AutoUpdaterLike
