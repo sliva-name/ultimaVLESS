@@ -103,7 +103,7 @@ export interface PerformanceSettings {
 }
 
 export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
-  muxEnabled: true,
+  muxEnabled: false,
   muxConcurrency: 8,
   xudpConcurrency: 16,
   xudpProxyUDP443: 'reject',
@@ -111,7 +111,7 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   sniffingRouteOnly: true,
   logLevel: 'warning',
   fingerprint: 'chrome',
-  blockAds: true,
-  blockBittorrent: true,
-  domainStrategy: 'IPIfNonMatch',
+  blockAds: false,
+  blockBittorrent: false,
+  domainStrategy: 'AsIs',
 };

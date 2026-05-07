@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ConnectionMonitorEvent,
   ConnectionStatus as MonitorStatus,
@@ -17,31 +17,35 @@ export function useSettingsMonitor({ isOpen }: UseSettingsMonitorOptions) {
   );
   const [autoSwitching, setAutoSwitching] = useState(true);
   const [hasLoadedMonitorStatus, setHasLoadedMonitorStatus] = useState(false);
-  const loadMonitorStatusRef = useRef<(() => Promise<void>) | null>(null);
+
+  const applyMonitorStatus = useCallback((status: MonitorStatus) => {
+    setMonitorStatus(status);
+    setAutoSwitching(status.autoSwitchingEnabled ?? true);
+  }, []);
 
   const loadMonitorStatus = useCallback(async () => {
     try {
       const status = await window.electronAPI.getConnectionMonitorStatus();
-      setMonitorStatus(status);
-      setAutoSwitching(status.autoSwitchingEnabled ?? true);
+      applyMonitorStatus(status);
     } catch (err) {
       console.error('Failed to load monitor status:', err);
     } finally {
       setHasLoadedMonitorStatus(true);
     }
-  }, []);
-
-  loadMonitorStatusRef.current = loadMonitorStatus;
+  }, [applyMonitorStatus]);
 
   useEffect(() => {
     if (!isOpen) return;
-    setHasLoadedMonitorStatus(false);
 
-    void loadMonitorStatus();
+    window.electronAPI
+      .getConnectionMonitorStatus()
+      .then(applyMonitorStatus)
+      .catch((err) => console.error('Failed to load monitor status:', err))
+      .finally(() => setHasLoadedMonitorStatus(true));
 
     const handleMonitorEvent = (event: ConnectionMonitorEvent) => {
       setRecentEvents((prev) => [event, ...prev].slice(0, 10));
-      void loadMonitorStatusRef.current?.();
+      void loadMonitorStatus();
     };
 
     const removeMonitorListener =
@@ -52,7 +56,7 @@ export function useSettingsMonitor({ isOpen }: UseSettingsMonitorOptions) {
       removeMonitorListener();
       clearInterval(interval);
     };
-  }, [isOpen, loadMonitorStatus]);
+  }, [isOpen, loadMonitorStatus, applyMonitorStatus]);
 
   return {
     monitorStatus,

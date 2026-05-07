@@ -41,9 +41,6 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    setManualSaveError(null);
-    setImportMobileError(null);
-    setAddError(null);
 
     window.electronAPI
       .getManualLinks()

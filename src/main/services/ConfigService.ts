@@ -17,6 +17,19 @@ import { redactUrl } from '@/main/utils/redactUrl';
 
 const LEGACY_DEFAULT_SUBSCRIPTION_URL = MOBILE_WHITE_LIST_RAW_URL;
 const DEFAULT_SUBSCRIPTION_URL = YANDEX_TRANSLATED_MOBILE_LIST_URL;
+const LEGACY_PERFORMANCE_DEFAULTS: PerformanceSettings = {
+  muxEnabled: true,
+  muxConcurrency: 8,
+  xudpConcurrency: 16,
+  xudpProxyUDP443: 'reject',
+  tcpFastOpen: true,
+  sniffingRouteOnly: true,
+  logLevel: 'warning',
+  fingerprint: 'chrome',
+  blockAds: true,
+  blockBittorrent: true,
+  domainStrategy: 'IPIfNonMatch',
+};
 
 export type UiLanguage = 'en' | 'ru';
 
@@ -57,6 +70,7 @@ export class ConfigService {
     });
 
     this.migrateLegacySubscriptionUrl();
+    this.migrateLegacyPerformanceDefaults();
     logger.info('ConfigService', 'Initialized', { path: this.store.path });
   }
 
@@ -111,6 +125,42 @@ export class ConfigService {
     // Remove the legacy key regardless so it does not linger.
     (this.store as unknown as { delete: (key: string) => void }).delete(
       'subscriptionUrl',
+    );
+  }
+
+  /**
+   * Older builds defaulted to a feature-heavy Xray config (TCP mux, ad/BT
+   * routing, IPIfNonMatch). Move users who never changed those settings to the
+   * lean current defaults while preserving explicitly customized values.
+   */
+  private migrateLegacyPerformanceDefaults(): void {
+    const stored = this.store.get('performanceSettings');
+    if (!stored || !this.matchesPerformanceSettings(stored)) {
+      return;
+    }
+    this.store.set('performanceSettings', DEFAULT_PERFORMANCE_SETTINGS);
+    logger.info(
+      'ConfigService',
+      'Migrated legacy performance defaults to lean Xray defaults',
+    );
+  }
+
+  private matchesPerformanceSettings(settings: PerformanceSettings): boolean {
+    return (
+      settings.muxEnabled === LEGACY_PERFORMANCE_DEFAULTS.muxEnabled &&
+      settings.muxConcurrency === LEGACY_PERFORMANCE_DEFAULTS.muxConcurrency &&
+      settings.xudpConcurrency === LEGACY_PERFORMANCE_DEFAULTS.xudpConcurrency &&
+      settings.xudpProxyUDP443 ===
+        LEGACY_PERFORMANCE_DEFAULTS.xudpProxyUDP443 &&
+      settings.tcpFastOpen === LEGACY_PERFORMANCE_DEFAULTS.tcpFastOpen &&
+      settings.sniffingRouteOnly ===
+        LEGACY_PERFORMANCE_DEFAULTS.sniffingRouteOnly &&
+      settings.logLevel === LEGACY_PERFORMANCE_DEFAULTS.logLevel &&
+      settings.fingerprint === LEGACY_PERFORMANCE_DEFAULTS.fingerprint &&
+      settings.blockAds === LEGACY_PERFORMANCE_DEFAULTS.blockAds &&
+      settings.blockBittorrent ===
+        LEGACY_PERFORMANCE_DEFAULTS.blockBittorrent &&
+      settings.domainStrategy === LEGACY_PERFORMANCE_DEFAULTS.domainStrategy
     );
   }
 

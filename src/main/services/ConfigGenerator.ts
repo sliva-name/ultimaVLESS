@@ -62,7 +62,11 @@ export class ConfigGenerator {
     connectionMode: ConnectionMode = 'proxy',
     options: ConfigGeneratorOptions = {},
   ): XrayConfig {
-    if (config.rawConfig) {
+    if (
+      config.rawConfig &&
+      (config.source !== 'subscription' ||
+        !this.canGenerateFromStructuredFields(config))
+    ) {
       return this.applyRawConfig(
         config.rawConfig,
         logPath,
@@ -71,6 +75,12 @@ export class ConfigGenerator {
       );
     }
     return this.generateFromFields(config, logPath, connectionMode, options);
+  }
+
+  private static canGenerateFromStructuredFields(config: VlessConfig): boolean {
+    if (!config.address || !config.port) return false;
+    if (config.protocol === 'trojan') return !!config.password;
+    return !!(config.userId || config.uuid);
   }
 
   private static applyRawConfig(
@@ -140,6 +150,7 @@ export class ConfigGenerator {
         continue;
 
       if (!outbound.streamSettings) outbound.streamSettings = {};
+      this.normalizeStreamSettings(outbound.streamSettings);
       if (!outbound.streamSettings.sockopt) {
         outbound.streamSettings.sockopt = { tcpFastOpen: perf.tcpFastOpen };
       } else if (outbound.streamSettings.sockopt.tcpFastOpen === undefined) {
@@ -148,19 +159,44 @@ export class ConfigGenerator {
 
       if (!outbound.mux) {
         const hasVisionFlow = this.outboundHasVisionFlow(outbound);
-        outbound.mux = hasVisionFlow
-          ? {
-              enabled: true,
-              concurrency: -1,
-              xudpConcurrency: perf.xudpConcurrency,
-              xudpProxyUDP443: perf.xudpProxyUDP443,
-            }
-          : {
-              enabled: perf.muxEnabled,
-              concurrency: perf.muxConcurrency,
-              xudpConcurrency: perf.xudpConcurrency,
-              xudpProxyUDP443: perf.xudpProxyUDP443,
-            };
+        outbound.mux = this.buildMuxSettings(
+          outbound.streamSettings.network,
+          hasVisionFlow,
+          perf,
+        );
+      }
+    }
+  }
+
+  private static normalizeStreamSettings(
+    streamSettings: MutableStreamSettings,
+  ): void {
+    const realitySettings = streamSettings.realitySettings;
+    if (
+      realitySettings &&
+      typeof realitySettings === 'object' &&
+      !Array.isArray(realitySettings)
+    ) {
+      const reality = realitySettings as Record<string, unknown>;
+      if (reality.password === undefined && reality.publicKey !== undefined) {
+        reality.password = reality.publicKey;
+      }
+      delete reality.publicKey;
+    }
+
+    const grpcSettings = streamSettings.grpcSettings;
+    if (
+      grpcSettings &&
+      typeof grpcSettings === 'object' &&
+      !Array.isArray(grpcSettings)
+    ) {
+      const grpc = grpcSettings as Record<string, unknown>;
+      if (grpc.multiMode === undefined && typeof grpc.mode === 'boolean') {
+        grpc.multiMode = grpc.mode;
+      }
+      delete grpc.mode;
+      if (grpc.authority === '') {
+        delete grpc.authority;
       }
     }
   }
@@ -345,19 +381,11 @@ export class ConfigGenerator {
 
     const hasVisionFlow =
       protocol === 'vless' && !!(config.flow && config.flow.trim() !== '');
-    const mux: XrayMuxSettings = hasVisionFlow
-      ? {
-          enabled: true,
-          concurrency: -1,
-          xudpConcurrency: perf.xudpConcurrency,
-          xudpProxyUDP443: perf.xudpProxyUDP443,
-        }
-      : {
-          enabled: perf.muxEnabled,
-          concurrency: perf.muxConcurrency,
-          xudpConcurrency: perf.xudpConcurrency,
-          xudpProxyUDP443: perf.xudpProxyUDP443,
-        };
+    const mux = this.buildMuxSettings(
+      streamSettings.network,
+      hasVisionFlow,
+      perf,
+    );
 
     const outbound: XrayOutbound = {
       protocol,
@@ -518,6 +546,30 @@ export class ConfigGenerator {
           users: [vlessUser],
         },
       ],
+    };
+  }
+
+  private static buildMuxSettings(
+    network: unknown,
+    hasVisionFlow: boolean,
+    perf: PerformanceSettings,
+  ): XrayMuxSettings {
+    if (network === 'grpc') {
+      return { enabled: false };
+    }
+    if (hasVisionFlow) {
+      return {
+        enabled: true,
+        concurrency: -1,
+        xudpConcurrency: perf.xudpConcurrency,
+        xudpProxyUDP443: perf.xudpProxyUDP443,
+      };
+    }
+    return {
+      enabled: perf.muxEnabled,
+      concurrency: perf.muxConcurrency,
+      xudpConcurrency: perf.xudpConcurrency,
+      xudpProxyUDP443: perf.xudpProxyUDP443,
     };
   }
 

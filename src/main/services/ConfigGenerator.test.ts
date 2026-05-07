@@ -89,7 +89,7 @@ describe('ConfigGenerator', () => {
     });
   });
 
-  it('enables full mux when no flow is set', () => {
+  it('disables mux by default when no flow is set', () => {
     const result = ConfigGenerator.generate(
       makeServer({ ...baseConfig, flow: undefined }),
       '/tmp/log',
@@ -97,9 +97,33 @@ describe('ConfigGenerator', () => {
     const mux = result.outbounds[0].mux;
 
     expect(mux).toMatchObject({
-      enabled: true,
+      enabled: false,
       concurrency: 8,
       xudpConcurrency: 16,
+    });
+  });
+
+  it('disables mux for grpc transport because grpc already uses HTTP/2 multiplexing', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        type: 'grpc',
+        flow: undefined,
+        serviceName: 'api',
+      }),
+      '/tmp/log',
+      'proxy',
+      {
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          muxEnabled: true,
+        },
+      },
+    );
+
+    expect(result.outbounds[0].mux).toEqual({ enabled: false });
+    expect(result.outbounds[0].streamSettings?.grpcSettings).toEqual({
+      serviceName: 'api',
     });
   });
 
@@ -162,8 +186,13 @@ describe('ConfigGenerator', () => {
     });
   });
 
-  it('routes bittorrent traffic to the block outbound', () => {
-    const result = ConfigGenerator.generate(baseConfig, '/tmp/log');
+  it('routes bittorrent traffic to the block outbound when enabled', () => {
+    const result = ConfigGenerator.generate(baseConfig, '/tmp/log', 'proxy', {
+      performanceSettings: {
+        ...DEFAULT_PERFORMANCE_SETTINGS,
+        blockBittorrent: true,
+      },
+    });
 
     expect(
       result.routing.rules.some(
@@ -321,7 +350,7 @@ describe('ConfigGenerator', () => {
     const proxy = result.outbounds.find((o: any) => o.tag === 'proxy');
     expect(proxy.streamSettings.sockopt.tcpFastOpen).toBe(true);
     expect(proxy.mux).toBeDefined();
-    expect(proxy.mux.enabled).toBe(true);
+    expect(proxy.mux.enabled).toBe(false);
     expect(proxy.mux.concurrency).toBe(8);
 
     const direct = result.outbounds.find((o: any) => o.tag === 'direct');
