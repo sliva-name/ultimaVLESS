@@ -82,6 +82,35 @@ export class LoggerService {
     return this.writeQueue;
   }
 
+  public clear(): Promise<void> {
+    this.writeQueue = this.writeQueue.then(async () => {
+      try {
+        this.ensureLogDirExists();
+        const backupPaths = Array.from(
+          { length: LoggerService.MAX_LOG_BACKUPS },
+          (_, index) => `${this.logPath}.${index + 1}`,
+        );
+
+        await Promise.all(
+          backupPaths.map(async (backupPath) => {
+            try {
+              await fs.promises.unlink(backupPath);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                throw error;
+              }
+            }
+          }),
+        );
+        await fs.promises.writeFile(this.logPath, '');
+      } catch (e) {
+        console.error('Failed to clear log file', e);
+      }
+    });
+
+    return this.writeQueue;
+  }
+
   private rotateIfNeeded(): void {
     if (!fs.existsSync(this.logPath)) {
       return;

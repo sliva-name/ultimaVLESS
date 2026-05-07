@@ -1,4 +1,5 @@
 import { app, BrowserWindow } from 'electron';
+import fs from 'fs/promises';
 import { performance } from 'perf_hooks';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -31,6 +32,21 @@ async function stopNetworkStack(): Promise<void> {
     ]);
   connectionMonitorService.stopMonitoring();
   await connectionStackService.resetNetworkingStack({ stopXray: true });
+}
+
+async function truncateFileIfExists(filePath: string): Promise<void> {
+  try {
+    await fs.truncate(filePath, 0);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
+}
+
+async function clearShutdownLogs(): Promise<void> {
+  const xrayLogPath = path.join(app.getPath('userData'), 'xray.log');
+  await Promise.all([truncateFileIfExists(xrayLogPath), logger.clear()]);
 }
 
 /** Must match build.appId — Windows taskbar, jump lists, toasts. @see https://www.electron.build/nsis */
@@ -492,6 +508,11 @@ app.on('before-quit', (event) => {
     } finally {
       clearUnresponsiveRecoveryTimer();
       await logger.flush();
+      try {
+        await clearShutdownLogs();
+      } catch (error) {
+        console.error('Failed to clear shutdown logs', error);
+      }
       clearTimeout(forceExitTimeout);
       app.exit(0);
     }
