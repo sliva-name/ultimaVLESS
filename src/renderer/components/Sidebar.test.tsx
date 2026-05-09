@@ -131,6 +131,32 @@ describe('Sidebar', () => {
     expect(screen.getAllByText('—')).toHaveLength(2);
   });
 
+  it('marks stale ping as last known', async () => {
+    const staleServer = makeServer({
+      uuid: 'stale-server',
+      name: 'Stale Server',
+      ping: 96,
+      pingTime: 1000,
+      pingStale: true,
+    });
+
+    render(
+      <Sidebar
+        servers={[staleServer]}
+        subscriptions={[]}
+        selectedServer={null}
+        isConnected={false}
+        onSelectServer={() => {}}
+        onOpenSettings={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
+    expect(screen.getByTitle('sidebar.pingLastKnown')).toHaveTextContent(
+      '96 sidebar.ms*',
+    );
+  });
+
   it('disables ping refresh while connected', async () => {
     render(
       <Sidebar

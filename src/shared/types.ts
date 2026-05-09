@@ -44,6 +44,11 @@ export interface VlessConfig {
   // Ping information
   ping?: number | null;
   pingTime?: number;
+  /**
+   * True when the latency is the last known value carried through a refresh,
+   * but has not been confirmed by a safe idle-state ping yet.
+   */
+  pingStale?: boolean;
 
   // Full Xray config from JSON subscription
   rawConfig?: XrayConfig;

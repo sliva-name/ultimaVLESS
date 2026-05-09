@@ -183,8 +183,40 @@ export function createSubscriptionRefreshManager(
     type StoredPing = { ping: number | null; pingTime: number | undefined };
     const pingByUuid = new Map<string, StoredPing>();
     const pingByEndpoint = new Map<string, StoredPing>();
+    const pingBySourceName = new Map<string, StoredPing>();
     const endpointKey = (cfg: VlessConfig): string =>
       `${cfg.protocol ?? 'vless'}|${cfg.address}:${cfg.port}`;
+    const sourceNameKey = (cfg: VlessConfig): string | null => {
+      if (!cfg.name.trim()) return null;
+      const sourceKey =
+        cfg.source === 'subscription' && cfg.subscriptionId
+          ? `subscription:${cfg.subscriptionId}`
+          : cfg.source === 'manual'
+            ? 'manual'
+            : null;
+      if (!sourceKey) return null;
+      return `${sourceKey}|${cfg.name.trim().toLocaleLowerCase()}`;
+    };
+    const setFreshestPing = (
+      index: Map<string, StoredPing>,
+      key: string | null,
+      stored: StoredPing,
+    ): void => {
+      if (!key) return;
+      const previous = index.get(key);
+      if (!previous || (stored.pingTime ?? 0) > (previous.pingTime ?? 0)) {
+        index.set(key, stored);
+      }
+    };
+    const applyStoredPing = (
+      config: VlessConfig,
+      stored: StoredPing,
+    ): VlessConfig => ({
+      ...config,
+      ping: stored.ping,
+      pingTime: stored.pingTime,
+      pingStale: stored.ping != null,
+    });
 
     existingServers.forEach((server) => {
       if (server.ping === undefined && server.pingTime === undefined) return;
@@ -193,26 +225,33 @@ export function createSubscriptionRefreshManager(
         pingTime: server.pingTime,
       };
       pingByUuid.set(server.uuid, stored);
-      const key = endpointKey(server);
-      const previous = pingByEndpoint.get(key);
       // Prefer the freshest sample if multiple stored entries share an endpoint
       // (e.g. a rotated server still co-existing with its previous incarnation
       // from `preserveActiveServerIfNeeded`).
-      if (!previous || (stored.pingTime ?? 0) > (previous.pingTime ?? 0)) {
-        pingByEndpoint.set(key, stored);
-      }
+      setFreshestPing(pingByEndpoint, endpointKey(server), stored);
+      // Some providers rotate both internal ids and hostnames during the startup
+      // refresh after the UAC relaunch. While connected we cannot re-ping, so
+      // keep the last known value for the same named entry in the same source.
+      setFreshestPing(pingBySourceName, sourceNameKey(server), stored);
     });
 
     const configsWithPing = mergedConfigs.map((config) => {
       const direct = pingByUuid.get(config.uuid);
       if (direct) {
-        return { ...config, ping: direct.ping, pingTime: direct.pingTime };
+        return applyStoredPing(config, direct);
       }
       const fuzzy = pingByEndpoint.get(endpointKey(config));
       if (fuzzy) {
-        return { ...config, ping: fuzzy.ping, pingTime: fuzzy.pingTime };
+        return applyStoredPing(config, fuzzy);
       }
-      return { ...config, ping: null };
+      const configSourceNameKey = sourceNameKey(config);
+      const bySourceName = configSourceNameKey
+        ? pingBySourceName.get(configSourceNameKey)
+        : undefined;
+      if (bySourceName) {
+        return applyStoredPing(config, bySourceName);
+      }
+      return { ...config, ping: null, pingStale: false };
     });
 
     const monitorStatus = deps.connectionMonitorService.getStatus();

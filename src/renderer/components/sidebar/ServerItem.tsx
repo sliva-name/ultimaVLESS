@@ -88,12 +88,17 @@ export const ServerItem = React.memo<ServerItemProps>(
               </div>
               {server.ping != null ? (
                 <div
+                  title={
+                    server.pingStale ? t('sidebar.pingLastKnown') : undefined
+                  }
                   className={clsx(
                     'text-xs font-semibold px-1.5 py-0.5 rounded shrink-0',
                     pingBadgeClass(server.ping),
+                    server.pingStale && 'opacity-75 ring-1 ring-current/20',
                   )}
                 >
                   {server.ping} {t('sidebar.ms')}
+                  {server.pingStale && '*'}
                 </div>
               ) : (
                 <div className="text-xs text-gray-500 shrink-0">—</div>
