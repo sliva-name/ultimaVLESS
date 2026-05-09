@@ -14,6 +14,8 @@ const resources = {
         settings: 'Settings',
         noServers: 'No servers or subscriptions added yet.',
         ms: 'ms',
+        pingLastKnown:
+          'Last known ping. It will refresh when the connection is idle.',
         connected: 'Connected',
         subscriptionShort: 'Subscription',
         manualShort: 'Manual',
@@ -188,6 +190,8 @@ const resources = {
         settings: 'Настройки',
         noServers: 'Серверы или подписки пока не добавлены.',
         ms: 'мс',
+        pingLastKnown:
+          'Последний известный пинг. Обновится, когда подключение будет в покое.',
         connected: 'Подключено',
         subscriptionShort: 'Подписка',
         manualShort: 'Ручные',

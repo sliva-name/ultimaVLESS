@@ -35,6 +35,14 @@ export function registerPingHandlers({
 
   /** Serialize ping-all-servers so overlapping invokes are not invalidated as "stale". */
   const pingAllQueue = createSerialQueue();
+  const isUnsafePingState = (): boolean => {
+    const monitorStatus = deps.connectionMonitorService.getStatus();
+    return (
+      deps.xrayService.isRunning() ||
+      monitorStatus.isConnected ||
+      isConnectionBusy()
+    );
+  };
 
   ipcMain.handle(
     IPC_INVOKE_CHANNELS.pingServer,
@@ -72,12 +80,7 @@ export function registerPingHandlers({
     force: boolean,
   ): Promise<Array<{ uuid: string; latency: number | null }>> {
     const servers = deps.configService.getServers();
-    const monitorStatus = deps.connectionMonitorService.getStatus();
-    if (
-      deps.xrayService.isRunning() ||
-      monitorStatus.isConnected ||
-      isConnectionBusy()
-    ) {
+    if (isUnsafePingState()) {
       logger.debug(
         'IPC',
         'Skipping ping-all-servers while VPN is connected or busy',
@@ -126,6 +129,16 @@ export function registerPingHandlers({
 
     const currentServers = deps.configService.getServers();
     const currentFingerprint = buildServersFingerprint(currentServers);
+    if (isUnsafePingState()) {
+      logger.debug(
+        'IPC',
+        'Dropping ping-all-servers result (network state changed)',
+      );
+      return currentServers.map((server) => ({
+        uuid: server.uuid,
+        latency: server.ping ?? null,
+      }));
+    }
 
     // Drop results only if the server list changed while this ping was in flight.
     if (currentFingerprint !== startFingerprint) {
@@ -147,7 +160,7 @@ export function registerPingHandlers({
     const updatedServers = servers.map((server) => {
       const key = server.uuid;
       const ping = results.get(key) ?? null;
-      return { ...server, ping, pingTime };
+      return { ...server, ping, pingTime, pingStale: false };
     });
 
     deps.configService.setServers(updatedServers);
@@ -176,6 +189,13 @@ export function registerPingHandlers({
 
         const latestServers = deps.configService.getServers();
         const latestFingerprint = buildServersFingerprint(latestServers);
+        if (isUnsafePingState()) {
+          logger.debug(
+            'IPC',
+            'Dropping retry ping results (network state changed)',
+          );
+          return;
+        }
         if (latestFingerprint !== startFingerprint) {
           logger.debug(
             'IPC',
@@ -194,6 +214,7 @@ export function registerPingHandlers({
             ...server,
             ping: retryLatency,
             pingTime: retryPingTime,
+            pingStale: false,
           };
         });
 

@@ -60,54 +60,50 @@ export async function loadInitialState(
   );
   actions.sendToRenderer(IPC_EVENT_CHANNELS.updateSubscriptions, subscriptions);
 
-  let pendingTunReconnectJob: Promise<boolean> | null = null;
-  if (pendingTunReconnectServerId) {
-    pendingTunReconnectJob = actions.attemptPendingTunReconnect(
-      pendingTunReconnectServerId,
-      runtimeDeps,
-      {
-        emitErrorOnFailure: !(
-          subscriptions.some((s) => s.enabled) || manualLinks
-        ),
-      },
-    );
-  }
-
   const hasInput = subscriptions.some((s) => s.enabled) || !!manualLinks.trim();
+  const attemptPendingReconnectAfterRefresh = async (): Promise<void> => {
+    if (!pendingTunReconnectServerId) return;
+    const reconnectServerId =
+      deps.configService.getSelectedServerId() ?? pendingTunReconnectServerId;
+    await actions.attemptPendingTunReconnect(reconnectServerId, runtimeDeps, {
+      emitErrorOnFailure: true,
+    });
+  };
+  const handleRefreshResult = (result: {
+    configCount: number;
+    reason?: string;
+    partialErrors?: string[];
+  }): void => {
+    if (result.configCount === 0) {
+      actions.reportSubscriptionRefreshIssue(
+        result.reason || 'No valid configuration links were found',
+      );
+    } else if (result.partialErrors && result.partialErrors.length > 0) {
+      logger.warn('IPC', 'Some subscriptions failed on initial load', {
+        errors: result.partialErrors,
+      });
+    }
+  };
+
   if (hasInput) {
     const refreshJob = actions.queueRefreshAllSubscriptions(manualLinks);
-    void refreshJob
-      .then((result) => {
-        if (result.configCount === 0) {
-          actions.reportSubscriptionRefreshIssue(
-            result.reason || 'No valid configuration links were found',
-          );
-        } else if (result.partialErrors && result.partialErrors.length > 0) {
-          logger.warn('IPC', 'Some subscriptions failed on initial load', {
-            errors: result.partialErrors,
-          });
-        }
-      })
+    const refreshCompletion = refreshJob
+      .then(handleRefreshResult)
       .catch((error) => {
         const reason = error instanceof Error ? error.message : String(error);
         actions.reportSubscriptionRefreshIssue(reason);
       });
 
     if (pendingTunReconnectServerId) {
-      void refreshJob
+      void refreshCompletion
         .then(async () => {
-          if (pendingTunReconnectJob) {
-            try {
-              await pendingTunReconnectJob;
-            } catch {
-              // attemptPendingTunReconnect already logs and handles errors
-            }
-          }
           const monitorStatus = deps.connectionMonitorService.getStatus();
           const alreadyConnected =
             deps.xrayService.isRunning() &&
             monitorStatus.isConnected &&
-            monitorStatus.currentServer?.uuid === pendingTunReconnectServerId;
+            (monitorStatus.currentServer?.uuid === pendingTunReconnectServerId ||
+              monitorStatus.currentServer?.uuid ===
+                deps.configService.getSelectedServerId());
           if (alreadyConnected) {
             logger.info(
               'IPC',
@@ -118,11 +114,7 @@ export async function loadInitialState(
             );
             return;
           }
-          return actions.attemptPendingTunReconnect(
-            pendingTunReconnectServerId,
-            runtimeDeps,
-            { emitErrorOnFailure: true },
-          );
+          await attemptPendingReconnectAfterRefresh();
         })
         .catch((error) => {
           logger.error(
@@ -136,5 +128,8 @@ export async function loadInitialState(
   } else {
     logger.info('IPC', 'No enabled subscriptions or manual links saved');
     deps.stopAutoRefreshTimer();
+    void attemptPendingReconnectAfterRefresh().catch((error) => {
+      logger.error('IPC', 'Pending TUN reconnect without refresh failed', error);
+    });
   }
 }
