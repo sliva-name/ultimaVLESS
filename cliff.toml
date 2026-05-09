@@ -51,3 +51,8 @@ commit_parsers = [
 link_parsers = [
   { pattern = "#(\\d+)", href = "https://github.com/sliva-name/ultimaVLESS/issues/$1" },
 ]
+
+[bump]
+features_always_bump_minor = true
+breaking_always_bump_major = true
+initial_tag = "4.1.0"

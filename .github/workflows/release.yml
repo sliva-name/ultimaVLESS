@@ -21,31 +21,50 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve release tag
-        id: release-version
-        run: |
-          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-          TAG_NAME="v${PACKAGE_VERSION}"
-          if git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
-            echo "Release tag ${TAG_NAME} already exists. Bump package.json version before releasing."
-            exit 1
-          fi
-          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: Create release tag
-        run: |
-          git tag "${{ steps.release-version.outputs.tag_name }}"
-          git push origin "refs/tags/${{ steps.release-version.outputs.tag_name }}"
-
-      - name: Generate release notes with git-cliff
+      - name: Generate release notes and bumped version with git-cliff
+        id: git-cliff
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
-          args: --current --verbose
+          args: --unreleased --bump --verbose
         env:
           OUTPUT: RELEASE_NOTES.md
           GITHUB_REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve release tag
+        id: release-version
+        run: |
+          NEXT_VERSION="${{ steps.git-cliff.outputs.version }}"
+          NEXT_VERSION="${NEXT_VERSION#v}"
+          if [ -z "$NEXT_VERSION" ]; then
+            echo "git-cliff did not return a bumped version."
+            exit 1
+          fi
+          TAG_NAME="v${NEXT_VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
+            echo "Release tag ${TAG_NAME} already exists. This version has already been released."
+            exit 1
+          fi
+          echo "version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Update package version
+        run: npm version "${{ steps.release-version.outputs.version }}" --no-git-tag-version
+
+      - name: Create release tag
+        run: |
+          git add package.json package-lock.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "chore(release): ${{ steps.release-version.outputs.tag_name }}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git tag "${{ steps.release-version.outputs.tag_name }}"
+          git push origin "refs/tags/${{ steps.release-version.outputs.tag_name }}"
 
       - name: Create GitHub Release with generated notes
         uses: softprops/action-gh-release@v3
@@ -64,6 +83,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.create-release.outputs.tag_name }}
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -142,6 +163,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.create-release.outputs.tag_name }}
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -250,6 +273,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.create-release.outputs.tag_name }}
 
       - name: Setup Node
         uses: actions/setup-node@v5
