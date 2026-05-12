@@ -54,6 +54,13 @@ export type XrayQuicSettings = {
   header?: { type: string; domain?: string };
 };
 
+export type XrayXhttpSettings = {
+  path?: string;
+  host?: string;
+  mode?: string;
+  extra?: Record<string, unknown>;
+};
+
 export type XrayMuxSettings = {
   enabled: boolean;
   concurrency?: number;
@@ -70,7 +77,8 @@ export type XrayStreamSettings = {
     | 'http'
     | 'domainsocket'
     | 'quic'
-    | 'grpc';
+    | 'grpc'
+    | 'xhttp';
   security: 'none' | 'tls' | 'reality';
   tlsSettings?: XrayTlsSettings;
   realitySettings?: XrayRealitySettings;
@@ -79,6 +87,7 @@ export type XrayStreamSettings = {
   kcpSettings?: XrayKcpSettings;
   httpSettings?: XrayHttpObfsSettings;
   quicSettings?: XrayQuicSettings;
+  xhttpSettings?: XrayXhttpSettings;
   tcpSettings?: XrayTcpSettings;
   sockopt?: {
     mark?: number;
