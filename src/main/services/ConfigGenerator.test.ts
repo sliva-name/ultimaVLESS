@@ -175,6 +175,39 @@ describe('ConfigGenerator', () => {
     });
   });
 
+  it('adds xhttpSettings for xhttp transport', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        type: 'xhttp',
+        security: 'tls',
+        path: '/userapi',
+        host: 'cdn.test',
+        mode: 'auto',
+        xhttpExtra: {
+          scMaxConcurrentPosts: 100,
+          xPaddingBytes: '100-1000',
+        },
+        noGRPCHeader: false,
+      }),
+      '/tmp/log',
+    );
+
+    expect(result.outbounds[0].streamSettings).toMatchObject({
+      network: 'xhttp',
+      xhttpSettings: {
+        path: '/userapi',
+        host: 'cdn.test',
+        mode: 'auto',
+        extra: {
+          scMaxConcurrentPosts: 100,
+          xPaddingBytes: '100-1000',
+          noGRPCHeader: false,
+        },
+      },
+    });
+  });
+
   it('adds quicSettings for quic transport', () => {
     const result = ConfigGenerator.generate(
       makeServer({ ...baseConfig, type: 'quic', security: 'tls' }),

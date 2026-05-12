@@ -36,7 +36,9 @@ function createDeps(existingServers: VlessConfig[], refreshed: VlessConfig[]) {
         setSelectedServerId: vi.fn(),
       },
       subscriptionService: {
-        fetchAndParseDetailed: vi.fn().mockResolvedValue({ configs: refreshed }),
+        fetchAndParseDetailed: vi
+          .fn()
+          .mockResolvedValue({ configs: refreshed }),
         parseDirectLinksFromText: vi.fn().mockReturnValue([]),
       },
       connectionMonitorService: {
@@ -52,6 +54,33 @@ function createDeps(existingServers: VlessConfig[], refreshed: VlessConfig[]) {
 }
 
 describe('createSubscriptionRefreshManager', () => {
+  it('does not collapse subscription variants that share the same endpoint', async () => {
+    const first = makeServer({
+      uuid: 'variant-1',
+      address: 'same.example.com',
+      port: 443,
+      type: 'xhttp',
+      path: '/one',
+    });
+    const second = makeServer({
+      uuid: 'variant-2',
+      address: 'same.example.com',
+      port: 443,
+      type: 'xhttp',
+      path: '/two',
+    });
+    const harness = createDeps([], [first, second]);
+
+    const manager = createSubscriptionRefreshManager(harness.deps);
+    await manager.queueRefreshAllSubscriptions('');
+
+    expect(harness.getServers()).toHaveLength(2);
+    expect(harness.getServers().map((server) => server.uuid)).toEqual([
+      'variant-1',
+      'variant-2',
+    ]);
+  });
+
   it('preserves ping across startup refresh when id and endpoint rotate', async () => {
     const existing = makeServer({
       uuid: 'old-id',

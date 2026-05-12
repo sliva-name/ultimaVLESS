@@ -189,6 +189,34 @@ describe('SubscriptionService', () => {
       expect(config.port).toBe(443);
     });
 
+    it('keeps repeated subscription lines as separate server variants', () => {
+      const link =
+        'vless://uuid@example.com:443?type=tcp&security=tls&sni=example.com#Same';
+      const configs = service.parseDirectLinksFromText([link, link].join('\n'));
+
+      expect(configs).toHaveLength(2);
+      expect(configs[0].uuid).not.toBe(configs[1].uuid);
+    });
+
+    it('parses VLESS XHTTP transport settings', () => {
+      const [config] = service.parseDirectLinksFromText(
+        'vless://uuid@example.com:443?type=xhttp&security=tls&path=%2Fuserapi&host=cdn.example.com&mode=auto&extra=%7B%22scMaxConcurrentPosts%22%3A100%2C%22noGRPCHeader%22%3Afalse%7D&noGRPCHeader=1&allowInsecure=1#XHTTP',
+      );
+
+      expect(config).toMatchObject({
+        type: 'xhttp',
+        path: '/userapi',
+        host: 'cdn.example.com',
+        mode: 'auto',
+        noGRPCHeader: true,
+        allowInsecure: true,
+        xhttpExtra: {
+          scMaxConcurrentPosts: 100,
+          noGRPCHeader: false,
+        },
+      });
+    });
+
     it('creates unique internal ids for links that differ by routing fields', () => {
       const byShortId = service.parseDirectLinksFromText(
         [

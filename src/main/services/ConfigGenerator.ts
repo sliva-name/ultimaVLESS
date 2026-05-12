@@ -350,6 +350,28 @@ export class ConfigGenerator {
       };
     }
 
+    if (streamSettings.network === 'xhttp') {
+      const extra =
+        config.xhttpExtra || config.noGRPCHeader !== undefined
+          ? {
+              ...(config.xhttpExtra ?? {}),
+              ...(config.noGRPCHeader !== undefined
+                ? { noGRPCHeader: config.noGRPCHeader }
+                : {}),
+            }
+          : undefined;
+      streamSettings.xhttpSettings = {
+        path: config.path || '/',
+        host: config.host || config.sni || '',
+      };
+      if (config.mode) {
+        streamSettings.xhttpSettings.mode = config.mode;
+      }
+      if (extra) {
+        streamSettings.xhttpSettings.extra = extra;
+      }
+    }
+
     if (streamSettings.network === 'kcp') {
       streamSettings.kcpSettings = {
         mtu: 1350,
@@ -509,7 +531,8 @@ export class ConfigGenerator {
         )
       : { type: 'field', inboundTag: ['api'], outboundTag: 'api' };
     const nonApiRules = rules.filter(
-      (r) => !(r && Array.isArray(r.inboundTag) && r.inboundTag.includes('api')),
+      (r) =>
+        !(r && Array.isArray(r.inboundTag) && r.inboundTag.includes('api')),
     );
 
     // Keep the API rule first. Raw configs can contain broad direct rules like
@@ -729,7 +752,8 @@ export class ConfigGenerator {
         '0.0.0.0/0',
         '::/0',
       ];
-      (tunInbound.settings as MutableConfigNode).autoOutboundsInterface = 'auto';
+      (tunInbound.settings as MutableConfigNode).autoOutboundsInterface =
+        'auto';
     }
     return tunInbound;
   }
