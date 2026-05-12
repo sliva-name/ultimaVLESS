@@ -26,7 +26,7 @@ export interface VlessConfig {
   allowInsecure?: boolean;
   flow?: string; // xtls-rprx-vision
   encryption?: string;
-  type?: 'tcp' | 'raw' | 'kcp' | 'ws' | 'http' | 'grpc' | 'quic';
+  type?: 'tcp' | 'raw' | 'kcp' | 'ws' | 'http' | 'grpc' | 'quic' | 'xhttp';
   security?: 'reality' | 'tls' | 'none';
   sni?: string;
   fp?: string; // chrome, firefox, safari, etc.
@@ -37,6 +37,11 @@ export interface VlessConfig {
   // WS specific
   path?: string;
   host?: string;
+
+  // XHTTP specific
+  mode?: string;
+  xhttpExtra?: Record<string, unknown>;
+  noGRPCHeader?: boolean;
 
   // gRPC specific
   serviceName?: string;

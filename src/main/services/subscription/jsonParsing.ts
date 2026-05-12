@@ -138,6 +138,9 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
       let path = '';
       let host = '';
       let serviceName = '';
+      let mode = '';
+      let xhttpExtra: Record<string, unknown> | undefined;
+      let noGRPCHeader = false;
 
       if (security === 'reality') {
         const rs = asRecord(stream.realitySettings);
@@ -166,9 +169,19 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
       if (grpcSettings) {
         serviceName = asString(grpcSettings.serviceName);
       }
+      const xhttpSettings = asRecord(stream.xhttpSettings);
+      if (xhttpSettings) {
+        path = asString(xhttpSettings.path);
+        host = asString(xhttpSettings.host);
+        mode = asString(xhttpSettings.mode);
+        xhttpExtra = asRecord(xhttpSettings.extra) ?? undefined;
+        noGRPCHeader = xhttpExtra?.noGRPCHeader === true;
+      }
 
       const networkType = (
-        ['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(network)
+        ['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic', 'xhttp'].includes(
+          network,
+        )
           ? network
           : undefined
       ) as VlessConfig['type'];
@@ -195,6 +208,9 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         serviceName,
         flow,
         encryption,
+        mode,
+        JSON.stringify(xhttpExtra ?? {}),
+        String(noGRPCHeader),
       ]);
 
       results.push({
@@ -215,6 +231,9 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         path,
         host,
         serviceName,
+        mode,
+        xhttpExtra,
+        noGRPCHeader,
         rawConfig: cfg as Record<string, unknown>,
       });
     } catch (error) {

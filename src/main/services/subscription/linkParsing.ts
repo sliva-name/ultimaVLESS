@@ -16,6 +16,20 @@ function isTruthyQueryParam(value: string | null): boolean {
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
+function parseOptionalBooleanQueryParam(
+  value: string | null,
+): boolean | undefined {
+  if (!value) return undefined;
+  const normalized = value.toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === '0' || normalized === 'false' || normalized === 'no') {
+    return false;
+  }
+  return undefined;
+}
+
 function makeServerIdentity(
   authToken: string,
   address: string,
@@ -39,6 +53,23 @@ function normalizeLinkForParsing(link: string): string {
   return link.trim().replace(/&amp;/gi, '&');
 }
 
+function parseJsonObjectParam(
+  value: string | null,
+): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    logger.warn('SubscriptionService', 'Ignoring invalid JSON query param', {
+      param: value.substring(0, 50) + '...',
+    });
+  }
+  return undefined;
+}
+
 export function isSupportedLink(link: string): boolean {
   return link.startsWith('vless://') || link.startsWith('trojan://');
 }
@@ -58,7 +89,10 @@ export function extractSupportedLinks(input: string): string[] {
     .filter((link) => isSupportedLink(link));
 }
 
-function parseVlessLink(link: string): VlessConfig | null {
+function parseVlessLink(
+  link: string,
+  identitySalt?: string,
+): VlessConfig | null {
   try {
     const normalizedLink = normalizeLinkForParsing(link);
     const parsedUrl = new URL(normalizedLink);
@@ -84,7 +118,9 @@ function parseVlessLink(link: string): VlessConfig | null {
     const typeValue = params.get('type') || 'tcp';
     const securityValue = params.get('security') || 'none';
     const type = (
-      ['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic'].includes(typeValue)
+      ['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic', 'xhttp'].includes(
+        typeValue,
+      )
         ? typeValue
         : 'tcp'
     ) as VlessConfig['type'];
@@ -103,7 +139,16 @@ function parseVlessLink(link: string): VlessConfig | null {
     const path = params.get('path') ?? undefined;
     const host = params.get('host') ?? undefined;
     const serviceName = params.get('serviceName') ?? undefined;
+    const mode = params.get('mode') ?? undefined;
+    const xhttpExtra = parseJsonObjectParam(params.get('extra'));
+    const noGRPCHeader = parseOptionalBooleanQueryParam(
+      params.get('noGRPCHeader'),
+    );
+    const allowInsecure =
+      isTruthyQueryParam(params.get('insecure')) ||
+      isTruthyQueryParam(params.get('allowInsecure'));
     const stableId = makeServerIdentity(uuid, address, port, [
+      identitySalt,
       type,
       security,
       sni,
@@ -116,6 +161,10 @@ function parseVlessLink(link: string): VlessConfig | null {
       serviceName,
       flow,
       encryption,
+      mode,
+      params.get('extra') ?? undefined,
+      noGRPCHeader === undefined ? undefined : String(noGRPCHeader),
+      String(allowInsecure),
     ]);
 
     return {
@@ -136,6 +185,10 @@ function parseVlessLink(link: string): VlessConfig | null {
       path,
       host,
       serviceName,
+      mode,
+      xhttpExtra,
+      noGRPCHeader,
+      allowInsecure,
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing VLESS link', {
@@ -217,9 +270,9 @@ function parseTrojanLink(link: string): VlessConfig | null {
   }
 }
 
-function parseLink(link: string): VlessConfig | null {
+function parseLink(link: string, identitySalt?: string): VlessConfig | null {
   if (link.startsWith('vless://')) {
-    return parseVlessLink(link);
+    return parseVlessLink(link, identitySalt);
   }
   if (link.startsWith('trojan://')) {
     return parseTrojanLink(link);
@@ -234,8 +287,8 @@ export function parseDirectLinksFromText(input: string): VlessConfig[] {
   }
 
   const configs: VlessConfig[] = [];
-  for (const line of candidates) {
-    const config = parseLink(line);
+  for (const [index, line] of candidates.entries()) {
+    const config = parseLink(line, `${index}:${line}`);
     if (config) configs.push(config);
   }
   return configs;

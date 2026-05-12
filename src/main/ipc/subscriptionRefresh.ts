@@ -140,18 +140,16 @@ export function createSubscriptionRefreshManager(
       );
     }
 
-    const uniqueConfigs = Array.from(
-      new Map(configs.map((cfg) => [getDedupKey(cfg), cfg])).values(),
-    );
-    logger.info('IPC', 'refreshAllSubscriptions dedup', {
-      total: uniqueConfigs.length,
+    const refreshedConfigs = configs;
+    logger.info('IPC', 'refreshAllSubscriptions parsed configs', {
+      total: refreshedConfigs.length,
     });
 
     const existingServers = deps.configService.getServers();
 
-    let mergedConfigs = uniqueConfigs;
+    let mergedConfigs = refreshedConfigs;
     if (failedSubscriptionIds.size > 0) {
-      const freshKeys = new Set(uniqueConfigs.map(getDedupKey));
+      const freshKeys = new Set(refreshedConfigs.map(getDedupKey));
       const preservedFromFailed = existingServers.filter(
         (s) =>
           s.subscriptionId &&
@@ -167,7 +165,7 @@ export function createSubscriptionRefreshManager(
             failedCount: failedSubscriptionIds.size,
           },
         );
-        mergedConfigs = [...uniqueConfigs, ...preservedFromFailed];
+        mergedConfigs = [...refreshedConfigs, ...preservedFromFailed];
       }
     }
 
