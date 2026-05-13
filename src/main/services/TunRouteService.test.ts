@@ -97,10 +97,7 @@ describe('TunRouteService support policy', () => {
     vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(42);
     vi.spyOn(service as any, 'ensureTunAddress').mockResolvedValue(undefined);
 
-    runPowerShell
-      .mockResolvedValueOnce('')
-      .mockResolvedValueOnce('')
-      .mockResolvedValueOnce('');
+    runPowerShell.mockResolvedValue('');
 
     await service.enable({
       uuid: 'server-1',
@@ -124,7 +121,68 @@ describe('TunRouteService support policy', () => {
     );
   });
 
-  it('includes resolved domain IPs when cleaning up stale routes', async () => {
+  it('does not resolve every known server during regular disable', async () => {
+    configServiceMock.getServers.mockReturnValue([
+      { uuid: 'server-1', name: 'Server 1', address: 'example.com', port: 443 },
+    ]);
+
+    const TunRouteService = await loadService();
+    const service = new TunRouteService('win32');
+    const resolveProxyAddresses = vi
+      .spyOn(service as any, 'resolveProxyAddresses')
+      .mockResolvedValue(['203.0.113.10']);
+    vi.spyOn(service as any, 'getTunInterfaceIndex').mockResolvedValue(null);
+    const deleteHostRoutes = vi
+      .spyOn(service as any, 'deleteHostRoutesByPrefixesAndMetric')
+      .mockResolvedValue(1);
+    vi.spyOn(
+      service as any,
+      'deleteTunDefaultRoutesByNextHop',
+    ).mockResolvedValue(undefined);
+
+    await service.disable();
+
+    expect(resolveProxyAddresses).not.toHaveBeenCalled();
+    expect(deleteHostRoutes).not.toHaveBeenCalled();
+  });
+
+  it('cleans only the current proxy host route before enabling TUN', async () => {
+    const TunRouteService = await loadService();
+    const service = new TunRouteService('win32');
+    vi.spyOn(service as any, 'prepareRoutingPlan').mockResolvedValue({
+      defaultRoute: {
+        gateway: '192.168.1.1',
+        interfaceIndex: 7,
+        interfaceName: 'Ethernet',
+        localAddress: '192.168.1.10',
+      },
+      proxyIps: ['203.0.113.10'],
+    });
+    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(42);
+    vi.spyOn(service as any, 'ensureTunAddress').mockResolvedValue(undefined);
+    vi.spyOn(service as any, 'addRoute').mockResolvedValue(true);
+    vi.spyOn(service as any, 'addDefaultRouteViaTun').mockResolvedValue(
+      undefined,
+    );
+    const deleteHostRoutes = vi
+      .spyOn(service as any, 'deleteHostRoutesByPrefixesAndMetric')
+      .mockResolvedValue(1);
+
+    await service.enable({
+      uuid: 'server-1',
+      name: 'Server 1',
+      address: 'example.com',
+      port: 443,
+    });
+
+    expect(deleteHostRoutes).toHaveBeenCalledWith(
+      ['203.0.113.10/32'],
+      1,
+      expect.objectContaining({ timeoutMs: 5000 }),
+    );
+  });
+
+  it('can still run known server host route cleanup when requested', async () => {
     configServiceMock.getServers.mockReturnValue([
       { uuid: 'server-1', name: 'Server 1', address: 'example.com', port: 443 },
     ]);
@@ -143,8 +201,14 @@ describe('TunRouteService support policy', () => {
       'deleteTunDefaultRoutesByNextHop',
     ).mockResolvedValue(undefined);
 
-    await service.disable();
+    await (service as any).cleanupStaleTunRoutes({
+      includeKnownServerHostRoutes: true,
+    });
 
-    expect(deleteHostRoutes).toHaveBeenCalledWith(['203.0.113.10/32'], 1);
+    expect(deleteHostRoutes).toHaveBeenCalledWith(
+      ['203.0.113.10/32'],
+      1,
+      expect.objectContaining({ timeoutMs: 5000 }),
+    );
   });
 });

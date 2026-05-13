@@ -12,6 +12,7 @@ import {
   DEFAULT_ROUTE_WAIT_TIMEOUT,
   DNS_TIMEOUT,
   ENABLE_TIMEOUT,
+  STALE_ROUTE_CLEANUP_TIMEOUT,
   TUN_IPV6_NEXTHOP,
   TUN_NEXTHOP,
   TUN_ROUTE_METRIC,
@@ -48,6 +49,10 @@ interface AddedRoute {
   mask: string;
   interfaceIndex?: number;
   prefix?: string;
+}
+
+interface StaleRouteCleanupOptions {
+  includeKnownServerHostRoutes?: boolean;
 }
 
 /**
@@ -149,6 +154,9 @@ export class TunRouteService {
         gateway: defaultRoute.gateway,
         localAddress: defaultRoute.localAddress,
       });
+
+      await this.cleanupCurrentProxyHostRoutes(proxyIps);
+      this.ensureWithinDeadline(deadline, 'cleanup stale proxy host routes');
 
       await this.ensureTunAddress(tunInterfaceIndex);
       this.ensureWithinDeadline(deadline, 'set TUN interface address');
@@ -304,9 +312,12 @@ export class TunRouteService {
     return idx;
   }
 
-  private async getTunInterfaceIndex(): Promise<number | null> {
+  private async getTunInterfaceIndex(
+    options: RunPowerShellOptions = {},
+  ): Promise<number | null> {
     const out = await this.runPowerShell(getTunInterfaceIndexScript(), {
       allowNonZeroExit: true,
+      ...options,
     });
     const n = parseInt(out.trim(), 10);
     return Number.isNaN(n) ? null : n;
@@ -369,6 +380,10 @@ export class TunRouteService {
       n >>>= 1;
     }
     return bits;
+  }
+
+  private hostPrefixForIp(ip: string): string {
+    return `${ip}/${net.isIP(ip) === 6 ? 128 : 32}`;
   }
 
   // ---- Windows route mutation ----------------------------------------------
@@ -447,6 +462,27 @@ export class TunRouteService {
       : new Error('Failed to add default route via TUN');
   }
 
+  private async cleanupCurrentProxyHostRoutes(proxyIps: string[]): Promise<void> {
+    try {
+      const removedHostRoutes = await this.deleteHostRoutesByPrefixesAndMetric(
+        proxyIps.map((ip) => this.hostPrefixForIp(ip)),
+        1,
+        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
+      );
+      if (removedHostRoutes > 0) {
+        logger.info('TunRouteService', 'Removed stale proxy host routes', {
+          removedHostRoutes,
+          proxyIpCount: proxyIps.length,
+        });
+      }
+    } catch (error) {
+      logger.warn('TunRouteService', 'Failed to cleanup proxy host routes', {
+        proxyIpCount: proxyIps.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   private async deleteRoute(route: AddedRoute): Promise<void> {
     const prefix =
       route.prefix ??
@@ -458,14 +494,19 @@ export class TunRouteService {
     });
   }
 
-  private async cleanupStaleTunRoutes(): Promise<void> {
-    const knownServerIps = await this.getKnownServerIps();
-    const tunIndex = await this.getTunInterfaceIndex();
+  private async cleanupStaleTunRoutes(
+    options: StaleRouteCleanupOptions = {},
+  ): Promise<void> {
+    const { includeKnownServerHostRoutes = false } = options;
+    const tunIndex = await this.getTunInterfaceIndex({
+      timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT,
+    });
     if (tunIndex != null) {
       await this.deleteRouteByPrefixAndMetric(
         '0.0.0.0/0',
         TUN_ROUTE_METRIC,
         tunIndex,
+        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
       ).catch((error) => {
         logger.warn(
           'TunRouteService',
@@ -480,6 +521,7 @@ export class TunRouteService {
         '::/0',
         TUN_ROUTE_METRIC,
         tunIndex,
+        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
       ).catch((error) => {
         logger.warn(
           'TunRouteService',
@@ -496,6 +538,8 @@ export class TunRouteService {
       await this.deleteTunDefaultRoutesByNextHop(
         TUN_NEXTHOP,
         TUN_ROUTE_METRIC,
+        '0.0.0.0/0',
+        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
       ).catch((error) => {
         logger.warn(
           'TunRouteService',
@@ -510,6 +554,7 @@ export class TunRouteService {
         TUN_IPV6_NEXTHOP,
         TUN_ROUTE_METRIC,
         '::/0',
+        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
       ).catch((error) => {
         logger.warn(
           'TunRouteService',
@@ -522,23 +567,29 @@ export class TunRouteService {
       });
     }
 
+    let knownServerIps: string[] = [];
     let removedHostRoutes = 0;
-    try {
-      removedHostRoutes = await this.deleteHostRoutesByPrefixesAndMetric(
-        knownServerIps.map((ip) => `${ip}/32`),
-        1,
-      );
-    } catch (error) {
-      logger.warn('TunRouteService', 'Failed to cleanup stale host routes', {
-        count: knownServerIps.length,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    if (includeKnownServerHostRoutes) {
+      knownServerIps = await this.getKnownServerIps();
+      try {
+        removedHostRoutes = await this.deleteHostRoutesByPrefixesAndMetric(
+          knownServerIps.map((ip) => this.hostPrefixForIp(ip)),
+          1,
+          { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
+        );
+      } catch (error) {
+        logger.warn('TunRouteService', 'Failed to cleanup stale host routes', {
+          count: knownServerIps.length,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     logger.info('TunRouteService', 'Stale route cleanup finished', {
       removedHostRouteCandidates: knownServerIps.length,
       removedHostRoutes,
       checkedTunDefaultRoute: tunIndex != null,
+      checkedKnownServerHostRoutes: includeKnownServerHostRoutes,
     });
   }
 
@@ -554,6 +605,7 @@ export class TunRouteService {
     destinationPrefix: string,
     metric: number,
     interfaceIndex?: number,
+    options: RunPowerShellOptions = {},
   ): Promise<void> {
     await this.runPowerShell(
       deleteRouteByPrefixAndMetricScript(
@@ -561,7 +613,7 @@ export class TunRouteService {
         metric,
         interfaceIndex,
       ),
-      { allowNonZeroExit: true },
+      { allowNonZeroExit: true, ...options },
     );
   }
 
@@ -569,21 +621,23 @@ export class TunRouteService {
     nextHop: string,
     metric: number,
     destinationPrefix: string = '0.0.0.0/0',
+    options: RunPowerShellOptions = {},
   ): Promise<void> {
     await this.runPowerShell(
       deleteTunDefaultRoutesByNextHopScript(nextHop, metric, destinationPrefix),
-      { allowNonZeroExit: true },
+      { allowNonZeroExit: true, ...options },
     );
   }
 
   private async deleteHostRoutesByPrefixesAndMetric(
     destinationPrefixes: string[],
     metric: number,
+    options: RunPowerShellOptions = {},
   ): Promise<number> {
     if (destinationPrefixes.length === 0) return 0;
     const out = await this.runPowerShell(
       deleteHostRoutesByPrefixesAndMetricScript(destinationPrefixes, metric),
-      { allowNonZeroExit: true },
+      { allowNonZeroExit: true, ...options },
     );
     const parsed = parseInt(out.trim(), 10);
     return Number.isNaN(parsed) ? 0 : parsed;
