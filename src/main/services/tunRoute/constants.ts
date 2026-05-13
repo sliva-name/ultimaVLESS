@@ -15,6 +15,7 @@ export const TUN_ROUTE_METRIC = 1;
 export const TUN_WAIT_TIMEOUT = 20000;
 export const TUN_WAIT_INTERVAL = 300;
 export const POWERSHELL_TIMEOUT = 30000;
+export const STALE_ROUTE_CLEANUP_TIMEOUT = 5000;
 export const DNS_TIMEOUT = 8000;
 export const ENABLE_TIMEOUT = 60000;
 export const DEFAULT_ROUTE_WAIT_TIMEOUT = 12000;

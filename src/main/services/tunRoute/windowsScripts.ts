@@ -300,14 +300,16 @@ export const deleteHostRoutesByPrefixesAndMetricScript = (
         $targetSet[$target] = $true
       }
       $removed = 0
-      Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object {
-          $_.RouteMetric -eq ${metric} -and $targetSet.ContainsKey($_.DestinationPrefix)
-        } |
-        ForEach-Object {
-          Remove-NetRoute -DestinationPrefix $_.DestinationPrefix -InterfaceIndex $_.InterfaceIndex -NextHop $_.NextHop -Confirm:$false -ErrorAction SilentlyContinue
-          $removed++
-        }
+      foreach ($target in $targets) {
+        Get-NetRoute -DestinationPrefix $target -ErrorAction SilentlyContinue |
+          Where-Object {
+            $_.RouteMetric -eq ${metric} -and $targetSet.ContainsKey($_.DestinationPrefix)
+          } |
+          ForEach-Object {
+            Remove-NetRoute -DestinationPrefix $_.DestinationPrefix -InterfaceIndex $_.InterfaceIndex -NextHop $_.NextHop -Confirm:$false -ErrorAction SilentlyContinue
+            $removed++
+          }
+      }
       Write-Output $removed
     `;
 };

@@ -4,6 +4,7 @@ import { POWERSHELL_TIMEOUT } from './constants';
 
 export interface RunPowerShellOptions {
   allowNonZeroExit?: boolean;
+  timeoutMs?: number;
 }
 
 /**
@@ -16,6 +17,7 @@ export function runPowerShell(
   options: RunPowerShellOptions = {},
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    const timeoutMs = options.timeoutMs ?? POWERSHELL_TIMEOUT;
     const normalizedScript = `$ProgressPreference = 'SilentlyContinue'\n${script}`;
     const encodedScript = Buffer.from(normalizedScript, 'utf16le').toString(
       'base64',
@@ -38,10 +40,10 @@ export function runPowerShell(
       ps.kill('SIGTERM');
       reject(
         new Error(
-          `PowerShell command timed out after ${POWERSHELL_TIMEOUT / 1000}s`,
+          `PowerShell command timed out after ${timeoutMs / 1000}s`,
         ),
       );
-    }, POWERSHELL_TIMEOUT);
+    }, timeoutMs);
 
     let stdout = '';
     let stderr = '';
