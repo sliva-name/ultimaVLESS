@@ -53,7 +53,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div className="flex-1 flex flex-col items-stretch sm:items-center justify-center p-3 sm:p-4 md:p-6 animate-[fadeIn_0.3s_ease-out] min-h-0 min-w-0 overflow-hidden">
-      <div className="w-full max-w-2xl max-h-[min(85dvh,760px)] min-h-0 bg-linear-to-br from-surface via-surface to-surface/95 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl shadow-black/50 relative overflow-hidden flex flex-col mx-auto">
+      <div className="w-full max-w-2xl max-h-[min(85dvh,760px)] min-h-0 bg-linear-to-br from-surface via-surface to-surface/95 rounded-2xl border border-gray-700/50 shadow-2xl shadow-black/50 relative overflow-hidden flex flex-col mx-auto">
         <div className="absolute inset-0 bg-linear-to-br from-primary/5 via-transparent to-transparent pointer-events-none z-0" />
 
         <header className="relative z-10 shrink-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b border-gray-800/50">
