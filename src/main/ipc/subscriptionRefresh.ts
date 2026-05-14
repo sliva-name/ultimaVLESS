@@ -44,6 +44,7 @@ interface SubscriptionRefreshManagerDeps {
 }
 
 const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+const MAX_CONCURRENT_SUBSCRIPTION_FETCHES = 4;
 
 function getDedupKey(config: VlessConfig): string {
   return [
@@ -99,36 +100,56 @@ export function createSubscriptionRefreshManager(
     });
 
     const configs: VlessConfig[] = [];
-    const partialErrors: string[] = [];
+    const partialErrorsByIndex: Array<string | null> = enabled.map(() => null);
     const failedSubscriptionIds = new Set<string>();
+    const subscriptionConfigsByIndex: VlessConfig[][] = enabled.map(() => []);
 
-    for (const sub of enabled) {
-      try {
-        const result = await deps.subscriptionService.fetchAndParseDetailed(
-          sub.url.trim(),
-        );
-        configs.push(
-          ...result.configs.map((cfg) => ({
+    let nextSubscriptionIndex = 0;
+    const fetchNextSubscription = async (): Promise<void> => {
+      while (nextSubscriptionIndex < enabled.length) {
+        const index = nextSubscriptionIndex;
+        nextSubscriptionIndex += 1;
+        const sub = enabled[index];
+        if (!sub) {
+          return;
+        }
+        try {
+          const result = await deps.subscriptionService.fetchAndParseDetailed(
+            sub.url.trim(),
+          );
+          subscriptionConfigsByIndex[index] = result.configs.map((cfg) => ({
             ...cfg,
             source: 'subscription' as const,
             subscriptionId: sub.id,
-          })),
-        );
-        logger.info('IPC', `Fetched subscription "${sub.name}"`, {
-          count: result.configs.length,
-          redactedUrl: redactUrl(sub.url),
-        });
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        partialErrors.push(`${sub.name}: ${msg}`);
-        failedSubscriptionIds.add(sub.id);
-        logger.error(
-          'IPC',
-          `Failed to fetch subscription "${sub.name}"`,
-          error,
-        );
+          }));
+          logger.info('IPC', `Fetched subscription "${sub.name}"`, {
+            count: result.configs.length,
+            redactedUrl: redactUrl(sub.url),
+          });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          partialErrorsByIndex[index] = `${sub.name}: ${msg}`;
+          failedSubscriptionIds.add(sub.id);
+          logger.error(
+            'IPC',
+            `Failed to fetch subscription "${sub.name}"`,
+            error,
+          );
+        }
       }
-    }
+    };
+
+    const workerCount = Math.min(
+      MAX_CONCURRENT_SUBSCRIPTION_FETCHES,
+      enabled.length,
+    );
+    await Promise.all(
+      Array.from({ length: workerCount }, () => fetchNextSubscription()),
+    );
+    configs.push(...subscriptionConfigsByIndex.flat());
+    const partialErrors = partialErrorsByIndex.filter(
+      (msg): msg is string => msg !== null,
+    );
 
     const effectiveManualLinksText = manualLinks.trim();
     if (effectiveManualLinksText) {

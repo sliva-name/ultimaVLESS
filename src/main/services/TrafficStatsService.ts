@@ -1,9 +1,7 @@
-import { execFile } from 'child_process';
-import path from 'path';
 import { EventEmitter } from 'events';
 import { APP_CONSTANTS } from '@/shared/constants';
-import { getBinResourcesPath } from '@/main/utils/runtimePaths';
 import { logger } from './LoggerService';
+import { XrayStatsClient } from './XrayStatsClient';
 
 export interface TrafficSnapshot {
   /** Monotonically increasing total bytes uploaded for the session. */
@@ -27,16 +25,12 @@ interface RawCounters {
   downloadBytes: number;
 }
 
-const POLL_INTERVAL_MS = 3000;
-const QUERY_TIMEOUT_MS = 1800;
+const POLL_INTERVAL_MS = 1000;
+const QUERY_TIMEOUT_MS = 900;
 
 /**
- * Polls Xray's gRPC StatsService via the bundled `xray api statsquery`
- * subcommand and emits `snapshot` events with cumulative + instantaneous
- * traffic counters for the active outbound tagged `proxy`.
- *
- * Falls back silently if the stats endpoint is unavailable — in that case no
- * snapshots are emitted and consumers only see the session timer.
+ * Polls Xray's gRPC StatsService and emits `snapshot` events with cumulative
+ * + instantaneous traffic counters for the active outbound tagged `proxy`.
  */
 export class TrafficStatsService extends EventEmitter {
   private timer: NodeJS.Timeout | null = null;
@@ -46,6 +40,7 @@ export class TrafficStatsService extends EventEmitter {
   private lastRawAt = 0;
   private inFlight = false;
   private lastLoggedFailure = 0;
+  private statsClient: XrayStatsClient | null = null;
 
   public start(connectedAt = Date.now()): void {
     this.stop();
@@ -80,6 +75,8 @@ export class TrafficStatsService extends EventEmitter {
     this.lastSnapshot = null;
     this.lastRaw = null;
     this.lastRawAt = 0;
+    this.statsClient?.close();
+    this.statsClient = null;
     this.emit('stopped');
   }
 
@@ -92,21 +89,9 @@ export class TrafficStatsService extends EventEmitter {
     this.inFlight = true;
     try {
       const raw = await this.queryCounters();
+      if (this.connectedAt === 0) return;
       const now = Date.now();
       if (!raw) {
-        // Still emit a session-only tick so the timer keeps updating even if
-        // the stats endpoint is unreachable.
-        const snapshot: TrafficSnapshot = {
-          uploadBytes: this.lastSnapshot?.uploadBytes ?? 0,
-          downloadBytes: this.lastSnapshot?.downloadBytes ?? 0,
-          uploadBps: 0,
-          downloadBps: 0,
-          sessionDurationMs: Math.max(0, now - this.connectedAt),
-          connectedAt: this.connectedAt,
-          sampledAt: now,
-        };
-        this.lastSnapshot = snapshot;
-        this.emit('snapshot', snapshot);
         return;
       }
 
@@ -142,65 +127,41 @@ export class TrafficStatsService extends EventEmitter {
     }
   }
 
-  private queryCounters(): Promise<RawCounters | null> {
-    const binName = process.platform === 'win32' ? 'xray.exe' : 'xray';
-    const binPath = path.join(getBinResourcesPath(), binName);
+  private async queryCounters(): Promise<RawCounters | null> {
     const server = `127.0.0.1:${APP_CONSTANTS.PORTS.API}`;
 
-    return new Promise((resolve) => {
-      execFile(
-        binPath,
-        [
-          'api',
-          'statsquery',
-          `--server=${server}`,
-          '-pattern',
-          'outbound>>>proxy',
-        ],
-        { timeout: QUERY_TIMEOUT_MS, windowsHide: true },
-        (error, stdout) => {
-          if (error) {
-            const now = Date.now();
-            if (now - this.lastLoggedFailure > 30_000) {
-              this.lastLoggedFailure = now;
-              logger.debug('TrafficStatsService', 'Stats query failed', {
-                message: error.message,
-              });
-            }
-            resolve(null);
-            return;
-          }
-          try {
-            const parsed = JSON.parse(stdout) as {
-              stat?: Array<{ name: string; value?: string | number }>;
-            };
-            const statList = parsed.stat ?? [];
-            let upload = 0;
-            let download = 0;
-            for (const entry of statList) {
-              if (!entry || typeof entry.name !== 'string') continue;
-              const numeric = Number(entry.value ?? 0);
-              if (!Number.isFinite(numeric)) continue;
-              if (entry.name.endsWith('uplink')) upload += numeric;
-              else if (entry.name.endsWith('downlink')) download += numeric;
-            }
-            resolve({ uploadBytes: upload, downloadBytes: download });
-          } catch (parseError) {
-            logger.debug(
-              'TrafficStatsService',
-              'Failed to parse stats response',
-              {
-                error:
-                  parseError instanceof Error
-                    ? parseError.message
-                    : String(parseError),
-              },
-            );
-            resolve(null);
-          }
-        },
+    try {
+      const statList = await this.getStatsClient(server).queryStats(
+        'outbound>>>proxy',
+        QUERY_TIMEOUT_MS,
       );
-    });
+      let upload = 0;
+      let download = 0;
+      for (const entry of statList) {
+        if (!entry || typeof entry.name !== 'string') continue;
+        const numeric = Number(entry.value ?? 0);
+        if (!Number.isFinite(numeric)) continue;
+        if (entry.name.endsWith('uplink')) upload += numeric;
+        else if (entry.name.endsWith('downlink')) download += numeric;
+      }
+      return { uploadBytes: upload, downloadBytes: download };
+    } catch (error) {
+      const now = Date.now();
+      if (now - this.lastLoggedFailure > 30_000) {
+        this.lastLoggedFailure = now;
+        logger.debug('TrafficStatsService', 'Stats query failed', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return null;
+    }
+  }
+
+  private getStatsClient(server: string): XrayStatsClient {
+    if (!this.statsClient) {
+      this.statsClient = new XrayStatsClient(server);
+    }
+    return this.statsClient;
   }
 }
 

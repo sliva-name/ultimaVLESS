@@ -115,4 +115,66 @@ describe('createSubscriptionRefreshManager', () => {
       }),
     ]);
   });
+
+  it('fetches subscriptions concurrently while preserving subscription order', async () => {
+    const first = makeServer({ uuid: 'first', name: 'First' });
+    const second = makeServer({ uuid: 'second', name: 'Second' });
+    let servers: VlessConfig[] = [];
+    const pendingFetches: Array<(value: { configs: VlessConfig[] }) => void> =
+      [];
+    const fetchAndParseDetailed = vi.fn(
+      () =>
+        new Promise<{ configs: VlessConfig[] }>((resolve) => {
+          pendingFetches.push(resolve);
+        }),
+    );
+
+    const manager = createSubscriptionRefreshManager({
+      getWindow: () => null,
+      configService: {
+        getSubscriptions: () => [
+          {
+            id: 'sub-1',
+            name: 'First subscription',
+            url: 'https://example.com/first',
+            enabled: true,
+          },
+          {
+            id: 'sub-2',
+            name: 'Second subscription',
+            url: 'https://example.com/second',
+            enabled: true,
+          },
+        ],
+        getManualLinksInput: () => '',
+        getServers: () => servers,
+        setServers: (next: VlessConfig[]) => {
+          servers = next;
+        },
+        getSelectedServerId: () => null,
+        setSelectedServerId: vi.fn(),
+      },
+      subscriptionService: {
+        fetchAndParseDetailed,
+        parseDirectLinksFromText: vi.fn().mockReturnValue([]),
+      },
+      connectionMonitorService: {
+        getStatus: () => makeMonitorStatus(),
+        syncCurrentServer: vi.fn().mockReturnValue(null),
+      },
+      xrayService: {
+        isRunning: () => false,
+      },
+    });
+
+    const refresh = manager.queueRefreshAllSubscriptions('');
+    await Promise.resolve();
+
+    expect(fetchAndParseDetailed).toHaveBeenCalledTimes(2);
+    pendingFetches[1]?.({ configs: [second] });
+    pendingFetches[0]?.({ configs: [first] });
+    await refresh;
+
+    expect(servers.map((server) => server.uuid)).toEqual(['first', 'second']);
+  });
 });
