@@ -318,7 +318,7 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
                     onChange={(e) => setManualLinks(e.target.value)}
                     rows={6}
                     placeholder={t('settings.sources.manualPlaceholder')}
-                    className="w-full resize-y min-h-[120px] bg-black/40 backdrop-blur-sm border border-gray-600/50 rounded-xl px-3 py-3 text-sm text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-200 hover:border-gray-500/70 leading-relaxed"
+                    className="w-full resize-y min-h-[120px] bg-black/40 border border-gray-600/50 rounded-xl px-3 py-3 text-sm text-white placeholder:text-gray-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-200 hover:border-gray-500/70 leading-relaxed"
                   />
                   <div className="absolute inset-0 rounded-xl bg-linear-to-r from-primary/0 via-primary/5 to-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                 </div>

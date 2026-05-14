@@ -97,10 +97,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [onPingAll, isPinging]);
 
   return (
-    <div className="w-full md:w-72 md:shrink-0 max-h-[44vh] md:max-h-none min-h-0 bg-linear-to-b from-surface via-surface to-surface/95 backdrop-blur-xl border-b md:border-b-0 md:border-r border-gray-800/50 flex flex-col shadow-2xl shadow-black/30 relative overflow-hidden">
+    <div className="w-full md:w-72 md:shrink-0 max-h-[44vh] md:max-h-none min-h-0 bg-linear-to-b from-surface via-surface to-surface/95 border-b md:border-b-0 md:border-r border-gray-800/50 flex flex-col shadow-2xl shadow-black/30 relative overflow-hidden">
       <div className="absolute inset-0 bg-linear-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
 
-      <div className="relative z-10 p-5 border-b border-gray-800/50 bg-linear-to-r from-surface to-surface/95 backdrop-blur-sm">
+      <div className="relative z-10 p-5 border-b border-gray-800/50 bg-linear-to-r from-surface to-surface/95">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-1.5 rounded-xl bg-linear-to-br from-primary/20 to-primary/10 border border-primary/30 shadow-lg shadow-primary/10">
@@ -209,7 +209,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      <div className="relative z-10 p-4 border-t border-gray-800/50 bg-linear-to-r from-surface to-surface/95 backdrop-blur-sm">
+      <div className="relative z-10 p-4 border-t border-gray-800/50 bg-linear-to-r from-surface to-surface/95">
         <div className="flex items-center justify-between">
           {appVersion && (
             <div className="text-xs text-gray-500 font-medium">
