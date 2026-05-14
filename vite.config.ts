@@ -1,6 +1,6 @@
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vite';
-import electron from 'vite-plugin-electron/simple';
+import electron from 'vite-plugin-electron';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
@@ -71,8 +71,8 @@ export default defineConfig({
   plugins: [
     electronCspMetaPlugin(),
     react(),
-    electron({
-      main: {
+    electron([
+      {
         entry: 'src/main/main.ts',
         vite: {
           // Sub-builds for main/preload are isolated from the root config,
@@ -89,17 +89,27 @@ export default defineConfig({
           },
         },
       },
-      preload: {
-        // Shortcut of `build.rollupOptions.input`.
-        input: 'src/main/preload.ts',
+      {
+        entry: 'src/main/preload.ts',
+        onstart(args) {
+          args.reload();
+        },
         vite: {
           resolve: { tsconfigPaths: true },
           build: {
             codeSplitting: false,
+            rollupOptions: {
+              output: {
+                format: 'cjs',
+                entryFileNames: '[name].js',
+                chunkFileNames: '[name].js',
+                assetFileNames: '[name].[ext]',
+              },
+            },
           },
         },
       },
-    }),
+    ]),
   ],
   // Resolves `@/*` (and any other `paths` entries in tsconfig.json) natively
   // in Vite >= 7.1. No external plugin needed.

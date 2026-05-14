@@ -1,13 +1,123 @@
 import React from 'react';
 import { getCountryCode } from '@/renderer/utils/countryFlags';
 import { Globe } from 'lucide-react';
-import * as Flags from 'country-flag-icons/react/3x2';
+import {
+  AE,
+  AR,
+  AT,
+  AU,
+  BE,
+  BR,
+  CA,
+  CH,
+  CL,
+  CN,
+  CO,
+  CZ,
+  DE,
+  DK,
+  EE,
+  EG,
+  ES,
+  FI,
+  FR,
+  GB,
+  GR,
+  HK,
+  HU,
+  ID,
+  IE,
+  IL,
+  IN,
+  IT,
+  JP,
+  KR,
+  LT,
+  LV,
+  MX,
+  MY,
+  NL,
+  NO,
+  NZ,
+  PH,
+  PL,
+  PT,
+  RO,
+  RU,
+  SA,
+  SE,
+  SG,
+  TH,
+  TR,
+  TW,
+  UA,
+  US,
+  VN,
+  ZA,
+} from 'country-flag-icons/react/3x2';
 
 interface CountryFlagProps {
   server: { name: string; address: string };
   className?: string;
   size?: number;
 }
+
+type FlagComponent = typeof US;
+
+const flagRegistry: Record<string, FlagComponent> = {
+  AE,
+  AR,
+  AT,
+  AU,
+  BE,
+  BR,
+  CA,
+  CH,
+  CL,
+  CN,
+  CO,
+  CZ,
+  DE,
+  DK,
+  EE,
+  EG,
+  ES,
+  FI,
+  FR,
+  GB,
+  GR,
+  HK,
+  HU,
+  ID,
+  IE,
+  IL,
+  IN,
+  IT,
+  JP,
+  KR,
+  LT,
+  LV,
+  MX,
+  MY,
+  NL,
+  NO,
+  NZ,
+  PH,
+  PL,
+  PT,
+  RO,
+  RU,
+  SA,
+  SE,
+  SG,
+  TH,
+  TR,
+  TW,
+  UA,
+  US,
+  VN,
+  ZA,
+};
 
 export const CountryFlag: React.FC<CountryFlagProps> = ({
   server,
@@ -23,10 +133,6 @@ export const CountryFlag: React.FC<CountryFlagProps> = ({
     );
   }
 
-  const flagRegistry = Flags as Record<
-    string,
-    React.ComponentType<React.SVGProps<SVGSVGElement>>
-  >;
   const FlagComponent = flagRegistry[countryCode];
 
   if (!FlagComponent) {
