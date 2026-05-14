@@ -72,8 +72,8 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
     ? t('status.disconnectingHint')
     : t('status.connectingHint');
 
-  // Tick every second so the session timer keeps running even when the main
-  // process throttles traffic snapshots to every ~1.5s.
+  // Tick every second so the session timer keeps running between traffic
+  // snapshots or short-lived stats API misses.
   const [tick, setTick] = useState(() => Date.now());
   useEffect(() => {
     if (!isConnected || !trafficSnapshot) return;
