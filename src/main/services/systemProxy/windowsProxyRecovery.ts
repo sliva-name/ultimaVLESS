@@ -1,0 +1,298 @@
+import fs from 'fs';
+import path from 'path';
+import { logger } from '@/main/services/LoggerService';
+import { runCommand } from './runCommand';
+
+export const WINDOWS_PROXY_RECOVERY_TASK_NAME = 'UltimaVLESS_ProxyRecovery';
+const LEGACY_SCHEDULED_TASK_NAME = 'UltimaVLESS System Proxy Recovery';
+export const RUN_KEY_VALUE_NAME = 'UltimaVLESSProxyRecovery';
+const RUN_KEY_PATH =
+  'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+
+const TASK_TIMEOUT_MS = 15000;
+const RECOVERY_SCRIPT_FILE = 'recover_system_proxy.ps1';
+const RECOVERY_CMD_FILE = 'recover_proxy.cmd';
+const RECOVERY_TARGET_FILE = 'recovery-target.txt';
+
+const RECOVERY_SCRIPT = String.raw`param()
+$ErrorActionPreference = 'Stop'
+
+function Write-RecoveryLog([string]$Message) {
+  $logDir = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'UltimaVLESS'
+  if (-not (Test-Path -LiteralPath $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+  $logPath = Join-Path $logDir 'recovery.log'
+  Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format o) $Message" -Encoding UTF8
+}
+
+function Refresh-InternetSettings {
+  $codes = @"
+using System;
+using System.Runtime.InteropServices;
+public class InternetSettings {
+    [DllImport("wininet.dll")]
+    public static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);
+    public const int INTERNET_OPTION_SETTINGS_CHANGED = 39;
+    public const int INTERNET_OPTION_REFRESH = 37;
+}
+"@
+  Add-Type -TypeDefinition $codes -ErrorAction SilentlyContinue
+  [InternetSettings]::InternetSetOption([IntPtr]::Zero, [InternetSettings]::INTERNET_OPTION_SETTINGS_CHANGED, [IntPtr]::Zero, 0) | Out-Null
+  [InternetSettings]::InternetSetOption([IntPtr]::Zero, [InternetSettings]::INTERNET_OPTION_REFRESH, [IntPtr]::Zero, 0) | Out-Null
+}
+
+function Disable-LocalhostProxyFallback {
+  $reg = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+  $props = Get-ItemProperty -Path $reg
+  $enabled = [int]($props.ProxyEnable | Select-Object -First 1)
+  $server = [string]($props.ProxyServer | Select-Object -First 1)
+  if ($enabled -eq 1 -and $server -match '127\.0\.0\.1') {
+    Set-ItemProperty -Path $reg -Name ProxyEnable -Value 0
+    Refresh-InternetSettings
+    Write-RecoveryLog 'Disabled orphaned localhost proxy (fallback)'
+    return $true
+  }
+  return $false
+}
+
+$programDataDir = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'UltimaVLESS'
+$targetFile = Join-Path $programDataDir 'recovery-target.txt'
+if (-not (Test-Path -LiteralPath $targetFile)) {
+  Disable-LocalhostProxyFallback | Out-Null
+  exit 0
+}
+
+$snapshotPath = (Get-Content -LiteralPath $targetFile -Raw -Encoding UTF8).Trim()
+if ([string]::IsNullOrWhiteSpace($snapshotPath)) {
+  Remove-Item -LiteralPath $targetFile -Force -ErrorAction SilentlyContinue
+  Disable-LocalhostProxyFallback | Out-Null
+  exit 0
+}
+
+if (-not (Test-Path -LiteralPath $snapshotPath)) {
+  Write-RecoveryLog "Snapshot missing at $snapshotPath"
+  Remove-Item -LiteralPath $targetFile -Force -ErrorAction SilentlyContinue
+  if (Disable-LocalhostProxyFallback) { exit 0 }
+  exit 0
+}
+
+$reg = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+try {
+  $json = Get-Content -LiteralPath $snapshotPath -Raw -Encoding UTF8
+  $state = $json | ConvertFrom-Json
+  Set-ItemProperty -Path $reg -Name ProxyEnable -Value ([int]$state.proxyEnable)
+  if ($null -eq $state.proxyServer -or $state.proxyServer -eq '') {
+    Remove-ItemProperty -Path $reg -Name ProxyServer -ErrorAction SilentlyContinue
+  } else {
+    Set-ItemProperty -Path $reg -Name ProxyServer -Value ([string]$state.proxyServer)
+  }
+  if ($null -eq $state.proxyOverride -or $state.proxyOverride -eq '') {
+    Remove-ItemProperty -Path $reg -Name ProxyOverride -ErrorAction SilentlyContinue
+  } else {
+    Set-ItemProperty -Path $reg -Name ProxyOverride -Value ([string]$state.proxyOverride)
+  }
+  if ($null -eq $state.autoConfigUrl -or $state.autoConfigUrl -eq '') {
+    Remove-ItemProperty -Path $reg -Name AutoConfigURL -ErrorAction SilentlyContinue
+  } else {
+    Set-ItemProperty -Path $reg -Name AutoConfigURL -Value ([string]$state.autoConfigUrl)
+  }
+  Set-ItemProperty -Path $reg -Name AutoDetect -Value ([int]$state.autoDetect)
+  Remove-Item -LiteralPath $snapshotPath -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $targetFile -Force -ErrorAction SilentlyContinue
+  Refresh-InternetSettings
+  Write-RecoveryLog "Restored proxy snapshot from $snapshotPath"
+  exit 0
+} catch {
+  Write-RecoveryLog "Recovery failed: $_"
+  Set-ItemProperty -Path $reg -Name ProxyEnable -Value 0
+  Remove-Item -LiteralPath $targetFile -Force -ErrorAction SilentlyContinue
+  Refresh-InternetSettings
+  exit 1
+}
+`;
+
+export function getProgramDataRecoveryDir(): string {
+  const base = process.env.ProgramData || 'C:\\ProgramData';
+  return path.join(base, 'UltimaVLESS');
+}
+
+function ensureRecoveryDir(): string {
+  const dir = getProgramDataRecoveryDir();
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+export function writeRecoveryTarget(snapshotPath: string): void {
+  const dir = ensureRecoveryDir();
+  fs.writeFileSync(
+    path.join(dir, RECOVERY_TARGET_FILE),
+    snapshotPath,
+    'utf8',
+  );
+}
+
+export function clearRecoveryTarget(): void {
+  try {
+    fs.unlinkSync(path.join(getProgramDataRecoveryDir(), RECOVERY_TARGET_FILE));
+  } catch {
+    // ignore missing file
+  }
+}
+
+export function getRecoveryCmdPath(): string {
+  return path.join(getProgramDataRecoveryDir(), RECOVERY_CMD_FILE);
+}
+
+export function getRecoveryScriptPath(): string {
+  return path.join(getProgramDataRecoveryDir(), RECOVERY_SCRIPT_FILE);
+}
+
+export function writeRecoveryLauncherFiles(): string {
+  const dir = ensureRecoveryDir();
+  const scriptPath = path.join(dir, RECOVERY_SCRIPT_FILE);
+  const cmdPath = path.join(dir, RECOVERY_CMD_FILE);
+  fs.writeFileSync(scriptPath, RECOVERY_SCRIPT, 'utf8');
+  fs.writeFileSync(
+    cmdPath,
+    `@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%ProgramData%\\UltimaVLESS\\${RECOVERY_SCRIPT_FILE}"\r\n`,
+    'utf8',
+  );
+  return cmdPath;
+}
+
+async function installRegistryRunKey(cmdPath: string): Promise<void> {
+  const value = `"${cmdPath}"`;
+  await runCommand(
+    'reg',
+    [
+      'add',
+      RUN_KEY_PATH,
+      '/v',
+      RUN_KEY_VALUE_NAME,
+      '/t',
+      'REG_SZ',
+      '/d',
+      value,
+      '/f',
+    ],
+    TASK_TIMEOUT_MS,
+  );
+  logger.info('SystemProxyService', 'Installed proxy recovery Run key', {
+    valueName: RUN_KEY_VALUE_NAME,
+    cmdPath,
+  });
+}
+
+async function uninstallRegistryRunKey(): Promise<void> {
+  try {
+    await runCommand(
+      'reg',
+      ['delete', RUN_KEY_PATH, '/v', RUN_KEY_VALUE_NAME, '/f'],
+      TASK_TIMEOUT_MS,
+    );
+    logger.info('SystemProxyService', 'Removed proxy recovery Run key', {
+      valueName: RUN_KEY_VALUE_NAME,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      message.includes('ERROR: The system was unable to find') ||
+      message.includes('не удается найти')
+    ) {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function removeLegacyScheduledTask(): Promise<void> {
+  try {
+    await runCommand(
+      'schtasks',
+      ['/Delete', '/TN', LEGACY_SCHEDULED_TASK_NAME, '/F'],
+      TASK_TIMEOUT_MS,
+    );
+  } catch {
+    // ignore missing legacy task
+  }
+}
+
+async function installLogonScheduledTask(cmdPath: string): Promise<void> {
+  await removeLegacyScheduledTask();
+  await runCommand(
+    'schtasks',
+    [
+      '/Create',
+      '/TN',
+      WINDOWS_PROXY_RECOVERY_TASK_NAME,
+      '/SC',
+      'ONLOGON',
+      '/TR',
+      cmdPath,
+      '/RL',
+      'LIMITED',
+      '/F',
+    ],
+    TASK_TIMEOUT_MS,
+  );
+  logger.info('SystemProxyService', 'Installed logon recovery scheduled task', {
+    taskName: WINDOWS_PROXY_RECOVERY_TASK_NAME,
+    cmdPath,
+  });
+}
+
+async function uninstallLogonScheduledTask(): Promise<void> {
+  try {
+    await runCommand(
+      'schtasks',
+      ['/Delete', '/TN', WINDOWS_PROXY_RECOVERY_TASK_NAME, '/F'],
+      TASK_TIMEOUT_MS,
+    );
+    logger.info(
+      'SystemProxyService',
+      'Removed logon recovery scheduled task',
+      {
+        taskName: WINDOWS_PROXY_RECOVERY_TASK_NAME,
+      },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      message.includes('cannot find') ||
+      message.includes('не удается найти') ||
+      message.includes('0x8004130F')
+    ) {
+      return;
+    }
+    throw error;
+  }
+}
+
+/** Registers logon recovery (Run key + scheduled task) using ASCII-only launcher paths. */
+export async function installLogonRecovery(snapshotPath: string): Promise<void> {
+  writeRecoveryTarget(snapshotPath);
+  const cmdPath = writeRecoveryLauncherFiles();
+  await installRegistryRunKey(cmdPath);
+  try {
+    await installLogonScheduledTask(cmdPath);
+  } catch (error) {
+    logger.warn(
+      'SystemProxyService',
+      'Scheduled task install failed; Run key recovery remains active',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
+  }
+}
+
+export async function uninstallLogonRecovery(): Promise<void> {
+  clearRecoveryTarget();
+  await Promise.all([
+    uninstallRegistryRunKey(),
+    uninstallLogonScheduledTask(),
+  ]);
+}
+
+// Backwards-compatible aliases used by SystemProxyService
+export const installLogonRecoveryTask = installLogonRecovery;
+export const uninstallLogonRecoveryTask = uninstallLogonRecovery;

@@ -55,6 +55,7 @@ describe('SystemProxyService', () => {
 
   beforeEach(() => {
     mockState.tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ultima-proxy-'));
+    process.env.ProgramData = mockState.tempDir;
     spawnMock.mockReset();
     spawnMock.mockImplementation((_command: string, args: string[]) => {
       const child = createMockChildProcess();
@@ -84,6 +85,7 @@ describe('SystemProxyService', () => {
   });
 
   afterEach(async () => {
+    delete process.env.ProgramData;
     const { logger } = await import('./LoggerService');
     await logger.flush();
     fs.rmSync(mockState.tempDir, { recursive: true, force: true });
@@ -107,6 +109,19 @@ describe('SystemProxyService', () => {
       ),
     ).toBe(true);
     expect(hasFileInvocation('1', proxyString)).toBe(true);
+    expect(
+      getSpawnCommands().some(
+        ({ command, args }) => command === 'reg' && args.includes('add'),
+      ),
+    ).toBe(true);
+    expect(
+      getSpawnCommands().some(
+        ({ command, args }) =>
+          command === 'schtasks' &&
+          args.includes('/Create') &&
+          args.includes('ONLOGON'),
+      ),
+    ).toBe(true);
   });
 
   it('restores a saved Windows snapshot on disable instead of falling back to proxy-off script', async () => {
@@ -136,6 +151,53 @@ describe('SystemProxyService', () => {
       ),
     ).toBe(true);
     expect(hasFileInvocation('0')).toBe(false);
+    expect(
+      getSpawnCommands().some(
+        ({ command, args }) => command === 'reg' && args.includes('delete'),
+      ),
+    ).toBe(true);
+    expect(
+      getSpawnCommands().some(
+        ({ command, args }) =>
+          command === 'schtasks' && args.includes('/Delete'),
+      ),
+    ).toBe(true);
+  });
+
+  it('recoverOrphanedState restores proxy and clears snapshot when one was left behind', async () => {
+    fs.writeFileSync(
+      path.join(mockState.tempDir, 'system-proxy-state.json'),
+      JSON.stringify({
+        platform: 'win32',
+        proxyEnable: 0,
+        proxyServer: null,
+        proxyOverride: null,
+        autoConfigUrl: null,
+        autoDetect: 0,
+      }),
+      'utf8',
+    );
+
+    const SystemProxyService = await loadService();
+    const service = new SystemProxyService('win32');
+
+    await expect(service.recoverOrphanedState()).resolves.toBe(true);
+    expect(
+      fs.existsSync(path.join(mockState.tempDir, 'system-proxy-state.json')),
+    ).toBe(false);
+    expect(
+      getPowerShellCommands().some((command) =>
+        command.includes('ConvertFrom-Json'),
+      ),
+    ).toBe(true);
+  });
+
+  it('recoverOrphanedState is a no-op when no snapshot file exists', async () => {
+    const SystemProxyService = await loadService();
+    const service = new SystemProxyService('win32');
+
+    await expect(service.recoverOrphanedState()).resolves.toBe(false);
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
   it('falls back to the raw Windows disable script when no snapshot exists', async () => {
@@ -146,6 +208,11 @@ describe('SystemProxyService', () => {
 
     expect(getPowerShellCommands()).toHaveLength(0);
     expect(hasFileInvocation('0', '')).toBe(true);
+    expect(
+      getSpawnCommands().some(
+        ({ command, args }) => command === 'reg' && args.includes('delete'),
+      ),
+    ).toBe(true);
   });
 
   it('treats PowerShell stderr from the proxy script as a failure', async () => {

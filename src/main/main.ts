@@ -34,6 +34,21 @@ async function stopNetworkStack(): Promise<void> {
   await connectionStackService.resetNetworkingStack({ stopXray: true });
 }
 
+async function recoverOrphanedNetworkState(): Promise<void> {
+  try {
+    const { systemProxyService } = await import('./services/SystemProxyService');
+    if (await systemProxyService.recoverOrphanedState()) {
+      logStartupStep('Recovered orphaned system proxy from previous session');
+    }
+  } catch (error) {
+    logger.error(
+      'Main',
+      'Failed to recover orphaned system proxy on startup',
+      error,
+    );
+  }
+}
+
 async function truncateFileIfExists(filePath: string): Promise<void> {
   try {
     await fs.truncate(filePath, 0);
@@ -423,6 +438,7 @@ async function createWindow() {
 void app.whenReady().then(async () => {
   initMainSentry();
   logStartupStep('App ready event');
+  await recoverOrphanedNetworkState();
   await createWindow();
   logStartupStep('createWindow finished');
   await ensureTray();
