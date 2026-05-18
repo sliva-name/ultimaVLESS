@@ -6,6 +6,10 @@ import { WindowsProxyAdapter } from './systemProxy/windowsProxy';
 import { DarwinProxyAdapter } from './systemProxy/darwinProxy';
 import { LinuxProxyAdapter } from './systemProxy/linuxProxy';
 import { ProxySnapshot } from './systemProxy/types';
+import {
+  installLogonRecovery,
+  uninstallLogonRecovery,
+} from './systemProxy/windowsProxyRecovery';
 
 /**
  * Coordinates system-proxy changes across Windows / macOS / Linux by delegating
@@ -54,6 +58,7 @@ export class SystemProxyService {
         const snapshot = await this.windows.captureState();
         await this.windows.enable(httpPort, socksPort);
         this.commitSnapshot(snapshot);
+        await this.installWindowsLogonRecovery();
         return;
       }
       logger.info(
@@ -64,6 +69,21 @@ export class SystemProxyService {
         },
       );
     });
+  }
+
+  /**
+   * Restores system proxy settings after an unclean exit (e.g. reboot while connected).
+   * Safe to call on every startup: no-op when no persisted snapshot exists.
+   */
+  public recoverOrphanedState(): Promise<boolean> {
+    if (!fs.existsSync(this.snapshotPath)) {
+      return Promise.resolve(false);
+    }
+    logger.info(
+      'SystemProxyService',
+      'Recovering orphaned system proxy from previous session',
+    );
+    return this.disable().then(() => true);
   }
 
   public disable(): Promise<void> {
@@ -107,11 +127,17 @@ export class SystemProxyService {
     const snapshot = this.activeSnapshot ?? this.loadSnapshot();
     if (!snapshot) {
       await fallback();
+      if (this.windows) {
+        await this.removeWindowsLogonRecovery();
+      }
       return;
     }
     await this.restoreProxyState(snapshot);
     this.activeSnapshot = null;
     this.clearSnapshot();
+    if (snapshot.platform === 'win32') {
+      await this.removeWindowsLogonRecovery();
+    }
   }
 
   private async restoreProxyState(snapshot: ProxySnapshot): Promise<void> {
@@ -158,6 +184,34 @@ export class SystemProxyService {
       logger.warn('SystemProxyService', 'Failed to persist proxy snapshot', {
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  private async installWindowsLogonRecovery(): Promise<void> {
+    try {
+      await installLogonRecovery(this.snapshotPath);
+    } catch (error) {
+      logger.warn(
+        'SystemProxyService',
+        'Failed to install Windows logon proxy recovery task',
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+  }
+
+  private async removeWindowsLogonRecovery(): Promise<void> {
+    try {
+      await uninstallLogonRecovery();
+    } catch (error) {
+      logger.warn(
+        'SystemProxyService',
+        'Failed to remove Windows logon proxy recovery task',
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
     }
   }
 
