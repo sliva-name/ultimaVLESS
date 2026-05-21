@@ -107,8 +107,46 @@ describe('parseJsonConfigs', () => {
     const [c] = parseJsonConfigs([json]);
     expect(c!.address).toBe('trojan.example.com');
     expect(c!.port).toBe(443);
+    expect(c!.protocol).toBe('trojan');
+    expect(c!.password).toBe('secret-pass');
     expect(c!.userId).toBeUndefined();
     expect(c!.rawConfig).toEqual(json);
+  });
+
+  it('imports Shadowsocks JSON outbound with flat settings', () => {
+    const json = {
+      remarks: 'SS',
+      outbounds: [
+        {
+          tag: 'proxy',
+          protocol: 'shadowsocks',
+          settings: {
+            address: 'ss.example.com',
+            port: 8388,
+            method: 'aes-256-gcm',
+            password: 'secret-pass',
+          },
+          streamSettings: {
+            network: 'websocket',
+            security: 'tls',
+            wsSettings: { path: '/ss?ed=2560', host: 'cdn.example.com' },
+            tlsSettings: { serverName: 'cdn.example.com' },
+          },
+        },
+      ],
+    };
+
+    const [c] = parseJsonConfigs([json]);
+    expect(c).toMatchObject({
+      protocol: 'shadowsocks',
+      address: 'ss.example.com',
+      port: 8388,
+      method: 'aes-256-gcm',
+      password: 'secret-pass',
+      type: 'websocket',
+      security: 'tls',
+      host: 'cdn.example.com',
+    });
   });
 
   it('keeps network raw in metadata', () => {

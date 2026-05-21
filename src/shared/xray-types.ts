@@ -73,16 +73,21 @@ export type XrayStreamSettings = {
     | 'tcp'
     | 'raw'
     | 'kcp'
+    | 'mkcp'
     | 'ws'
+    | 'websocket'
     | 'http'
     | 'domainsocket'
     | 'quic'
     | 'grpc'
-    | 'xhttp';
+    | 'xhttp'
+    | 'splithttp'
+    | 'httpupgrade';
   security: 'none' | 'tls' | 'reality';
   tlsSettings?: XrayTlsSettings;
   realitySettings?: XrayRealitySettings;
   wsSettings?: XrayWsSettings;
+  httpupgradeSettings?: XrayHttpUpgradeSettings;
   grpcSettings?: XrayGrpcSettings;
   kcpSettings?: XrayKcpSettings;
   httpSettings?: XrayHttpObfsSettings;
@@ -99,6 +104,9 @@ export type XrayStreamSettings = {
 export type XrayTlsSettings = {
   serverName?: string;
   allowInsecure?: boolean;
+  pinnedPeerCertSha256?: string;
+  verifyPeerCertByName?: string;
+  verifyPeerCertInNames?: string[];
   alpn?: string[];
   certificates?: Array<Record<string, unknown>>;
   fingerprint?: string;
@@ -128,6 +136,14 @@ export type XrayRealitySettings = {
 
 export type XrayWsSettings = {
   path?: string;
+  host?: string;
+  headers?: Record<string, string>;
+  heartbeatPeriod?: number;
+};
+
+export type XrayHttpUpgradeSettings = {
+  path?: string;
+  host?: string;
   headers?: Record<string, string>;
 };
 

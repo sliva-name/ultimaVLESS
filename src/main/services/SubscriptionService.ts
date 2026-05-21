@@ -22,7 +22,7 @@ function isYandexTranslateHost(hostname: string): boolean {
   return hostname === 'translate.yandex.ru';
 }
 
-/** Unescape common HTML entities so `vless://` and query separators survive inside markup. */
+/** Unescape common HTML entities so proxy links and query separators survive inside markup. */
 function expandHtmlEntitiesForUrlExtraction(html: string): string {
   return html
     .replace(/&amp;/gi, '&')

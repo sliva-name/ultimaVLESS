@@ -52,13 +52,17 @@ export function getServerDedupKey(config: VlessConfig): string {
     config.spx || '',
     config.path || '',
     config.host || '',
+    config.wsMaxEarlyData === undefined ? '' : String(config.wsMaxEarlyData),
     config.serviceName || '',
     config.flow || '',
     config.encryption || '',
+    config.method || '',
     config.mode || '',
     JSON.stringify(config.xhttpExtra ?? {}),
     config.noGRPCHeader === undefined ? '' : String(config.noGRPCHeader),
     config.allowInsecure === undefined ? '' : String(config.allowInsecure),
+    config.pinnedPeerCertSha256 || '',
+    config.verifyPeerCertByName || '',
   ].join('|');
 }
 

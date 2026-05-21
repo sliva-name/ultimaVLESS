@@ -32,6 +32,8 @@ type MutableOutbound = MutableConfigNode & {
   mux?: MutableConfigNode;
 };
 
+type StructuredOutboundProtocol = 'vless' | 'trojan' | 'shadowsocks';
+
 export interface ConfigGeneratorOptions {
   sendThrough?: string;
   tunAutoRoute?: boolean;
@@ -45,11 +47,7 @@ export class ConfigGenerator {
     connectionMode: ConnectionMode = 'proxy',
     options: ConfigGeneratorOptions = {},
   ): XrayConfig {
-    if (
-      config.rawConfig &&
-      (config.source !== 'subscription' ||
-        !this.canGenerateFromStructuredFields(config))
-    ) {
+    if (config.rawConfig) {
       return this.applyRawConfig(
         config.rawConfig,
         logPath,
@@ -58,12 +56,6 @@ export class ConfigGenerator {
       );
     }
     return this.generateFromFields(config, logPath, connectionMode, options);
-  }
-
-  private static canGenerateFromStructuredFields(config: VlessConfig): boolean {
-    if (!config.address || !config.port) return false;
-    if (config.protocol === 'trojan') return !!config.password;
-    return !!(config.userId || config.uuid);
   }
 
   private static applyRawConfig(
@@ -129,8 +121,7 @@ export class ConfigGenerator {
     if (!Array.isArray(cfg.outbounds)) return;
     for (const outbound of cfg.outbounds as MutableOutbound[]) {
       if (!outbound || (outbound.tag && outbound.tag !== 'proxy')) continue;
-      if (outbound.protocol !== 'vless' && outbound.protocol !== 'trojan')
-        continue;
+      if (!this.isTunableProxyProtocol(outbound.protocol)) continue;
 
       if (!outbound.streamSettings) outbound.streamSettings = {};
       this.normalizeStreamSettings(outbound.streamSettings);
@@ -149,6 +140,14 @@ export class ConfigGenerator {
         );
       }
     }
+  }
+
+  private static isTunableProxyProtocol(protocol: unknown): boolean {
+    return (
+      protocol === 'vless' ||
+      protocol === 'trojan' ||
+      protocol === 'shadowsocks'
+    );
   }
 
   private static normalizeStreamSettings(
@@ -180,6 +179,69 @@ export class ConfigGenerator {
       delete grpc.mode;
       if (grpc.authority === '') {
         delete grpc.authority;
+      }
+    }
+
+    const wsSettings = streamSettings.wsSettings;
+    if (
+      wsSettings &&
+      typeof wsSettings === 'object' &&
+      !Array.isArray(wsSettings)
+    ) {
+      const ws = wsSettings as Record<string, unknown>;
+      const headers =
+        ws.headers &&
+        typeof ws.headers === 'object' &&
+        !Array.isArray(ws.headers)
+          ? (ws.headers as Record<string, unknown>)
+          : undefined;
+      const hostHeader = headers
+        ? Object.keys(headers).find((key) => key.toLowerCase() === 'host')
+        : undefined;
+      if (hostHeader) {
+        if (
+          ws.host === undefined &&
+          typeof headers?.[hostHeader] === 'string'
+        ) {
+          ws.host = headers[hostHeader];
+        }
+        delete headers?.[hostHeader];
+      }
+      if (typeof ws.maxEarlyData === 'number') {
+        ws.path = this.withWebSocketEarlyData(
+          typeof ws.path === 'string' ? ws.path : '/',
+          ws.maxEarlyData,
+        );
+      }
+      delete ws.maxEarlyData;
+      delete ws.earlyDataHeaderName;
+    }
+
+    const xhttpSettings =
+      streamSettings.xhttpSettings || streamSettings.splithttpSettings;
+    if (
+      xhttpSettings &&
+      typeof xhttpSettings === 'object' &&
+      !Array.isArray(xhttpSettings)
+    ) {
+      const xhttp = xhttpSettings as Record<string, unknown>;
+      const headers =
+        xhttp.headers &&
+        typeof xhttp.headers === 'object' &&
+        !Array.isArray(xhttp.headers)
+          ? (xhttp.headers as Record<string, unknown>)
+          : undefined;
+      const hostHeader = headers
+        ? Object.keys(headers).find((key) => key.toLowerCase() === 'host')
+        : undefined;
+      if (hostHeader) {
+        if (
+          xhttp.host === undefined &&
+          typeof headers?.[hostHeader] === 'string'
+        ) {
+          xhttp.host = headers[hostHeader];
+        }
+        delete headers?.[hostHeader];
       }
     }
   }
@@ -286,6 +348,68 @@ export class ConfigGenerator {
     });
   }
 
+  private static getStructuredProtocol(
+    config: VlessConfig,
+  ): StructuredOutboundProtocol {
+    if (config.protocol === 'trojan') return 'trojan';
+    if (config.protocol === 'shadowsocks') return 'shadowsocks';
+    return 'vless';
+  }
+
+  private static normalizeTransport(
+    config: VlessConfig,
+  ): XrayStreamSettings['network'] {
+    const transport = config.type || 'tcp';
+    switch (transport) {
+      case 'raw':
+      case 'tcp':
+        return 'tcp';
+      case 'kcp':
+      case 'mkcp':
+        return 'mkcp';
+      case 'ws':
+      case 'websocket':
+        return 'websocket';
+      case 'grpc':
+        return 'grpc';
+      case 'xhttp':
+      case 'splithttp':
+        return 'xhttp';
+      case 'httpupgrade':
+        return 'httpupgrade';
+      case 'http':
+        throw new Error(
+          'HTTP transport is not supported by bundled Xray 26.3.27; use XHTTP instead.',
+        );
+      case 'quic':
+        throw new Error(
+          'QUIC transport is not supported by bundled Xray 26.3.27; use XHTTP/H3 instead.',
+        );
+      default:
+        return 'tcp';
+    }
+  }
+
+  private static getDefaultSecurity(
+    config: VlessConfig,
+    protocol: StructuredOutboundProtocol,
+  ): XrayStreamSettings['security'] {
+    if (config.security) return config.security;
+    return protocol === 'trojan' ? 'tls' : 'none';
+  }
+
+  private static withWebSocketEarlyData(
+    path: string,
+    maxEarlyData?: number,
+  ): string {
+    if (!maxEarlyData || maxEarlyData <= 0) return path;
+    const [pathname, query = ''] = path.split('?', 2);
+    const params = new URLSearchParams(query);
+    params.set('ed', String(Math.min(maxEarlyData, 8192)));
+    const serialized = params.toString();
+    return serialized ? `${pathname || '/'}?${serialized}` : pathname || '/';
+  }
+
   private static generateFromFields(
     config: VlessConfig,
     logPath: string,
@@ -293,13 +417,18 @@ export class ConfigGenerator {
     options: ConfigGeneratorOptions,
   ): XrayConfig {
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
-    const protocol: 'vless' | 'trojan' =
-      config.protocol === 'trojan' ? 'trojan' : 'vless';
+    const protocol = this.getStructuredProtocol(config);
 
     const streamSettings: XrayStreamSettings = {
-      network: (config.type === 'raw' ? 'raw' : config.type) || 'tcp',
-      security: config.security || (protocol === 'trojan' ? 'tls' : 'none'),
+      network: this.normalizeTransport(config),
+      security: this.getDefaultSecurity(config, protocol),
     };
+    if (
+      streamSettings.security === 'reality' &&
+      !['tcp', 'xhttp', 'grpc'].includes(streamSettings.network)
+    ) {
+      throw new Error('REALITY transport requires RAW/TCP, XHTTP, or gRPC.');
+    }
 
     const defaultFp = perf.fingerprint;
 
@@ -318,13 +447,34 @@ export class ConfigGenerator {
         alpn: ['h2', 'http/1.1'],
         fingerprint: config.fp || defaultFp,
       };
+      if (config.pinnedPeerCertSha256) {
+        streamSettings.tlsSettings.pinnedPeerCertSha256 =
+          config.pinnedPeerCertSha256;
+      }
+      if (config.verifyPeerCertByName) {
+        streamSettings.tlsSettings.verifyPeerCertByName =
+          config.verifyPeerCertByName;
+      }
     }
 
-    if (streamSettings.network === 'ws') {
+    if (streamSettings.network === 'websocket') {
       streamSettings.wsSettings = {
-        path: config.path || '/',
-        headers: { Host: config.host || config.sni || '' },
+        path: this.withWebSocketEarlyData(
+          config.path || '/',
+          config.wsMaxEarlyData,
+        ),
+        host: config.host || config.sni || '',
       };
+    }
+
+    if (streamSettings.network === 'httpupgrade') {
+      streamSettings.httpupgradeSettings = {
+        path: this.withWebSocketEarlyData(
+          config.path || '/',
+          config.wsMaxEarlyData,
+        ),
+        host: config.host || config.sni || '',
+      } as Record<string, unknown>;
     }
 
     if (streamSettings.network === 'grpc') {
@@ -355,7 +505,7 @@ export class ConfigGenerator {
       }
     }
 
-    if (streamSettings.network === 'kcp') {
+    if (streamSettings.network === 'mkcp') {
       streamSettings.kcpSettings = {
         mtu: 1350,
         tti: 20,
@@ -364,22 +514,6 @@ export class ConfigGenerator {
         congestion: true,
         readBufferSize: 4,
         writeBufferSize: 4,
-        header: { type: 'none' },
-      };
-    }
-
-    if (streamSettings.network === 'http') {
-      const h = (config.host || config.sni || '').trim();
-      streamSettings.httpSettings = {
-        path: config.path || '/',
-        host: h ? [h] : [],
-      };
-    }
-
-    if (streamSettings.network === 'quic') {
-      streamSettings.quicSettings = {
-        security: 'none',
-        key: '',
         header: { type: 'none' },
       };
     }
@@ -450,16 +584,23 @@ export class ConfigGenerator {
 
   private static buildOutboundSettings(
     config: VlessConfig,
-    protocol: 'vless' | 'trojan',
+    protocol: StructuredOutboundProtocol,
     hasVisionFlow: boolean,
   ): Record<string, unknown> {
     if (protocol === 'trojan') {
-      const server: Record<string, unknown> = {
+      return {
         address: config.address,
         port: config.port,
         password: config.password || '',
       };
-      return { servers: [server] };
+    }
+    if (protocol === 'shadowsocks') {
+      return {
+        address: config.address,
+        port: config.port,
+        method: config.method || '',
+        password: config.password || '',
+      };
     }
     const vlessUser: { id: string; encryption: string; flow?: string } = {
       id: config.userId || config.uuid,

@@ -7,6 +7,27 @@ export interface Subscription {
 
 import type { XrayConfig } from './xray-types';
 
+export type ServerProtocol = 'vless' | 'trojan' | 'shadowsocks';
+
+export type ServerTransport =
+  | 'tcp'
+  | 'raw'
+  | 'kcp'
+  | 'mkcp'
+  | 'ws'
+  | 'websocket'
+  | 'grpc'
+  | 'xhttp'
+  | 'splithttp'
+  | 'httpupgrade'
+  /**
+   * Legacy transports accepted by older Xray builds. The bundled Xray 26.3.27
+   * rejects them; ConfigGenerator keeps them in the type only to surface a
+   * precise error for persisted/imported servers.
+   */
+  | 'http'
+  | 'quic';
+
 export interface VlessConfig {
   uuid: string;
   userId?: string; // original VLESS user UUID used for auth
@@ -17,16 +38,22 @@ export interface VlessConfig {
   subscriptionId?: string; // which Subscription this server came from
   /**
    * Outbound protocol for this server. Defaults to 'vless' when absent for
-   * backwards compatibility. Set to 'trojan' for Trojan links.
+   * backwards compatibility.
    */
-  protocol?: 'vless' | 'trojan';
-  /** Trojan password (only used when protocol === 'trojan'). */
+  protocol?: ServerProtocol;
+  /** Trojan/Shadowsocks password. */
   password?: string;
+  /** Shadowsocks cipher method (only used when protocol === 'shadowsocks'). */
+  method?: string;
   /** Allow self-signed / mismatched TLS certificates (from link params). */
   allowInsecure?: boolean;
+  /** Xray 26.3.27 replacement for allowInsecure-style certificate pinning. */
+  pinnedPeerCertSha256?: string;
+  /** Xray 26.3.27 certificate name override. */
+  verifyPeerCertByName?: string;
   flow?: string; // xtls-rprx-vision
   encryption?: string;
-  type?: 'tcp' | 'raw' | 'kcp' | 'ws' | 'http' | 'grpc' | 'quic' | 'xhttp';
+  type?: ServerTransport;
   security?: 'reality' | 'tls' | 'none';
   sni?: string;
   fp?: string; // chrome, firefox, safari, etc.
@@ -37,6 +64,7 @@ export interface VlessConfig {
   // WS specific
   path?: string;
   host?: string;
+  wsMaxEarlyData?: number;
 
   // XHTTP specific
   mode?: string;

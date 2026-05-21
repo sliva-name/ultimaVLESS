@@ -38,6 +38,21 @@ function formatDuration(totalMs: number): string {
   return `${padZero(minutes)}:${padZero(seconds)}`;
 }
 
+function getProtocolLabel(server: VlessConfig): string {
+  if (server.security === 'reality') return 'REALITY';
+  switch (server.protocol) {
+    case 'trojan':
+      return 'TROJAN';
+    case 'shadowsocks':
+      return 'SHADOWSOCKS';
+    case 'vless':
+    case undefined:
+      return 'VLESS';
+    default:
+      return String(server.protocol).toUpperCase();
+  }
+}
+
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -258,7 +273,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
                   </div>
                 </div>
                 <div className="font-mono text-base sm:text-lg font-semibold bg-linear-to-r from-primary to-blue-400 bg-clip-text text-transparent">
-                  {selectedServer.security === 'reality' ? 'REALITY' : 'VLESS'}
+                  {getProtocolLabel(selectedServer)}
                 </div>
               </div>
             </div>
