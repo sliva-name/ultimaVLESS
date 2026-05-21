@@ -3,12 +3,11 @@ import { ConnectionMode, Subscription, VlessConfig } from '@/shared/types';
 import {
   AddSubscriptionPayload,
   AddSubscriptionResult,
-  ConnectResult,
-  ConnectionMonitorEvent,
   ConnectionMonitorStatus,
-  DisconnectResult,
   IPC_EVENT_CHANNELS,
   IPC_INVOKE_CHANNELS,
+  IpcEventMap,
+  IpcInvokeMap,
   ImportMobileWhiteListResult,
   PerformanceSettings,
   PingResult,
@@ -20,9 +19,19 @@ import {
   UpdateSubscriptionPayload,
 } from '@/shared/ipc';
 
-function createListener<T>(channel: string) {
-  return (callback: (data: T) => void): (() => void) => {
-    const listener = (_: Electron.IpcRendererEvent, data: T) => callback(data);
+function invoke<C extends keyof IpcInvokeMap>(
+  channel: C,
+  ...args: IpcInvokeMap[C]['args']
+): Promise<IpcInvokeMap[C]['result']> {
+  return ipcRenderer.invoke(channel, ...args) as Promise<
+    IpcInvokeMap[C]['result']
+  >;
+}
+
+function createListener<C extends keyof IpcEventMap>(channel: C) {
+  return (callback: (data: IpcEventMap[C]) => void): (() => void) => {
+    const listener = (_: Electron.IpcRendererEvent, data: IpcEventMap[C]) =>
+      callback(data);
     ipcRenderer.on(channel, listener);
     return () => {
       ipcRenderer.removeListener(channel, listener);
@@ -31,15 +40,8 @@ function createListener<T>(channel: string) {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  connect: (server: VlessConfig) =>
-    ipcRenderer.invoke(
-      IPC_INVOKE_CHANNELS.connect,
-      server,
-    ) as Promise<ConnectResult>,
-  disconnect: () =>
-    ipcRenderer.invoke(
-      IPC_INVOKE_CHANNELS.disconnect,
-    ) as Promise<DisconnectResult>,
+  connect: (server: VlessConfig) => invoke(IPC_INVOKE_CHANNELS.connect, server),
+  disconnect: () => invoke(IPC_INVOKE_CHANNELS.disconnect),
 
   // Subscriptions CRUD
   getSubscriptions: () =>
@@ -74,24 +76,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ) as Promise<SaveManualLinksResult>,
 
   // Events
-  onUpdateServers: createListener<VlessConfig[]>(
-    IPC_EVENT_CHANNELS.updateServers,
-  ),
-  onUpdateSubscriptions: createListener<Subscription[]>(
+  onUpdateServers: createListener(IPC_EVENT_CHANNELS.updateServers),
+  onUpdateServerPings: createListener(IPC_EVENT_CHANNELS.updateServerPings),
+  onUpdateSubscriptions: createListener(
     IPC_EVENT_CHANNELS.updateSubscriptions,
   ),
-  onConnectionStatus: createListener<boolean>(
-    IPC_EVENT_CHANNELS.connectionStatus,
-  ),
-  onConnectionBusy: createListener<boolean>(IPC_EVENT_CHANNELS.connectionBusy),
-  onConnectionError: createListener<string>(IPC_EVENT_CHANNELS.connectionError),
-  onConnectionMonitorEvent: createListener<ConnectionMonitorEvent>(
+  onConnectionStatus: createListener(IPC_EVENT_CHANNELS.connectionStatus),
+  onConnectionBusy: createListener(IPC_EVENT_CHANNELS.connectionBusy),
+  onConnectionError: createListener(IPC_EVENT_CHANNELS.connectionError),
+  onConnectionMonitorEvent: createListener(
     IPC_EVENT_CHANNELS.connectionMonitorEvent,
   ),
-  onTrafficStats: createListener<TrafficSnapshot | null>(
-    IPC_EVENT_CHANNELS.trafficStats,
-  ),
-  onUpdateStatus: createListener<UpdateStatus>(IPC_EVENT_CHANNELS.updateStatus),
+  onTrafficStats: createListener(IPC_EVENT_CHANNELS.trafficStats),
+  onUpdateStatus: createListener(IPC_EVENT_CHANNELS.updateStatus),
 
   getConnectionMonitorStatus: () =>
     ipcRenderer.invoke(

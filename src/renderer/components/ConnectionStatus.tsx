@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { VlessConfig } from '@/shared/types';
+import { getServerProtocolLabel } from '@/shared/serverView';
 import type { TrafficSnapshot } from '@/shared/ipc';
 import {
   Power,
@@ -72,22 +73,9 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
     ? t('status.disconnectingHint')
     : t('status.connectingHint');
 
-  // Tick every second so the session timer keeps running between traffic
-  // snapshots or short-lived stats API misses.
-  const [tick, setTick] = useState(() => Date.now());
-  const connectedAt = trafficSnapshot?.connectedAt ?? 0;
-  useEffect(() => {
-    if (!isConnected || connectedAt === 0) return;
-    const interval = window.setInterval(() => setTick(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, [isConnected, connectedAt]);
-
   const sessionActive = isConnected && !!trafficSnapshot;
   const sessionDurationMs = sessionActive
-    ? Math.max(
-        trafficSnapshot.sessionDurationMs,
-        tick - trafficSnapshot.connectedAt,
-      )
+    ? Math.max(0, trafficSnapshot.sessionDurationMs)
     : 0;
 
   return (
@@ -258,7 +246,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
                   </div>
                 </div>
                 <div className="font-mono text-base sm:text-lg font-semibold bg-linear-to-r from-primary to-blue-400 bg-clip-text text-transparent">
-                  {selectedServer.security === 'reality' ? 'REALITY' : 'VLESS'}
+                  {getServerProtocolLabel(selectedServer)}
                 </div>
               </div>
             </div>

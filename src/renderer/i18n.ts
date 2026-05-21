@@ -71,7 +71,7 @@ const resources = {
           openPreview: 'Open preview and import mobile list',
           manualConfigs: 'Manual configs (multi-paste)',
           manualPlaceholder:
-            'Paste any text from clipboard. All vless:// and trojan:// links will be extracted.',
+            'Paste any text from clipboard. All vless://, trojan:// and ss:// links will be extracted.',
           manualHint:
             'Mixed clipboard text is fine; links are extracted automatically.',
           saveManual: 'Save manual',
@@ -248,7 +248,7 @@ const resources = {
           openPreview: 'Открыть превью и импортировать мобильный список',
           manualConfigs: 'Ручные конфигурации',
           manualPlaceholder:
-            'Вставьте любой текст из буфера обмена. Все ссылки vless:// и trojan:// будут извлечены.',
+            'Вставьте любой текст из буфера обмена. Все ссылки vless://, trojan:// и ss:// будут извлечены.',
           manualHint:
             'Можно вставлять любой текст; ссылки извлекаются автоматически.',
           saveManual: 'Сохранить',

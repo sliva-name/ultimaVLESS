@@ -166,10 +166,10 @@ function probeHttpThroughProxyAny(
 export async function probeHttpThroughProxy(
   proxyPort: number,
   proxyHost: string = '127.0.0.1',
-  timeoutMs: number = 10000,
+  timeoutMs: number = 2500,
 ): Promise<boolean> {
-  const attempts = 3;
-  const gapMs = 350;
+  const attempts = 2;
+  const gapMs = 250;
   for (let i = 0; i < attempts; i++) {
     if (await probeHttpThroughProxyAny(proxyPort, proxyHost, timeoutMs)) {
       return true;

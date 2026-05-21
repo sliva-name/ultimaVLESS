@@ -95,7 +95,6 @@ describe('TunRouteService support policy', () => {
       proxyIps: ['1.2.3.4'],
     });
     vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(42);
-    vi.spyOn(service as any, 'ensureTunAddress').mockResolvedValue(undefined);
 
     runPowerShell.mockResolvedValue('');
 
@@ -146,7 +145,7 @@ describe('TunRouteService support policy', () => {
     expect(deleteHostRoutes).not.toHaveBeenCalled();
   });
 
-  it('cleans only the current proxy host route before enabling TUN', async () => {
+  it('applies current proxy host routes inside the TUN batch', async () => {
     const TunRouteService = await loadService();
     const service = new TunRouteService('win32');
     vi.spyOn(service as any, 'prepareRoutingPlan').mockResolvedValue({
@@ -159,14 +158,9 @@ describe('TunRouteService support policy', () => {
       proxyIps: ['203.0.113.10'],
     });
     vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(42);
-    vi.spyOn(service as any, 'ensureTunAddress').mockResolvedValue(undefined);
-    vi.spyOn(service as any, 'addRoute').mockResolvedValue(true);
-    vi.spyOn(service as any, 'addDefaultRouteViaTun').mockResolvedValue(
-      undefined,
-    );
-    const deleteHostRoutes = vi
-      .spyOn(service as any, 'deleteHostRoutesByPrefixesAndMetric')
-      .mockResolvedValue(1);
+    const applyBatch = vi
+      .spyOn(service as any, 'applyWindowsRoutingBatch')
+      .mockResolvedValue(undefined);
 
     await service.enable({
       uuid: 'server-1',
@@ -175,10 +169,13 @@ describe('TunRouteService support policy', () => {
       port: 443,
     });
 
-    expect(deleteHostRoutes).toHaveBeenCalledWith(
-      ['203.0.113.10/32'],
-      1,
-      expect.objectContaining({ timeoutMs: 5000 }),
+    expect(applyBatch).toHaveBeenCalledWith(
+      42,
+      ['203.0.113.10'],
+      expect.objectContaining({
+        gateway: '192.168.1.1',
+        interfaceIndex: 7,
+      }),
     );
   });
 

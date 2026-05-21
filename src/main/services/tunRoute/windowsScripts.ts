@@ -181,60 +181,71 @@ export const getTunInterfaceIndexScript = (): string => `
       if ($adapter) { Write-Output $adapter.ifIndex }
     `;
 
-export const ensureTunAddressScript = (tunInterfaceIndex: number): string => {
-  validateInterfaceIndex(tunInterfaceIndex);
-  const dnsServers = TUN_DNS_SERVERS.map((server) => `"${server}"`).join(', ');
-  return `
-      $existing = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-      if (-not $existing) {
-        New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress ${TUN_ADDRESS} -PrefixLength ${TUN_PREFIX} -ErrorAction Stop
-      }
-      $existing6 = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv6 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -eq "${TUN_IPV6_ADDRESS}" } |
-        Select-Object -First 1
-      if (-not $existing6) {
-        New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress "${TUN_IPV6_ADDRESS}" -PrefixLength ${TUN_IPV6_PREFIX} -ErrorAction Stop
-      }
-      Set-DnsClientServerAddress -InterfaceIndex ${tunInterfaceIndex} -ServerAddresses @(${dnsServers}) -ErrorAction Stop
-    `;
-};
-
-export const addRouteScript = (
-  destPrefix: string,
-  gateway: string,
-  metric: number,
-  interfaceIndex?: number,
+export const enableTunRoutingScript = (
+  tunInterfaceIndex: number,
+  proxyIps: string[],
+  defaultGateway: string,
+  defaultInterfaceIndex: number,
 ): string => {
-  validateIpOrPrefix(destPrefix);
-  validateIpOrPrefix(gateway);
-  validateMetric(metric);
-  validateInterfaceIndex(interfaceIndex);
-  const ifPart =
-    interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
+  validateInterfaceIndex(tunInterfaceIndex);
+  validateInterfaceIndex(defaultInterfaceIndex);
+  proxyIps.forEach(validateIpOrPrefix);
+  validateIpOrPrefix(defaultGateway);
+  const dnsServers = TUN_DNS_SERVERS.map((server) => `"${server}"`).join(', ');
+  const hostPrefixesLiteral = proxyIps
+    .map((ip) => `"${ip}/${net.isIP(ip) === 6 ? 128 : 32}"`)
+    .join(', ');
   return `
-      $existing = Get-NetRoute -DestinationPrefix "${destPrefix}"${ifPart} -ErrorAction SilentlyContinue | Select-Object -First 1
-      if (-not $existing) {
-        New-NetRoute -DestinationPrefix "${destPrefix}" -NextHop "${gateway}"${ifPart} -RouteMetric ${metric} -ErrorAction Stop
-        Write-Output "CREATED"
+      try {
+        $existing = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+          Select-Object -First 1
+        if (-not $existing) {
+          New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress ${TUN_ADDRESS} -PrefixLength ${TUN_PREFIX} -ErrorAction Stop
+        }
+        $existing6 = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+          Where-Object { $_.IPAddress -eq "${TUN_IPV6_ADDRESS}" } |
+          Select-Object -First 1
+        if (-not $existing6) {
+          New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress "${TUN_IPV6_ADDRESS}" -PrefixLength ${TUN_IPV6_PREFIX} -ErrorAction Stop
+        }
+        Set-DnsClientServerAddress -InterfaceIndex ${tunInterfaceIndex} -ServerAddresses @(${dnsServers}) -ErrorAction Stop
+      } catch {
+        Write-Warning ("TUN_ADDRESS_WARNING|" + $_.Exception.Message)
+      }
+
+      $hostPrefixes = @(${hostPrefixesLiteral})
+      $hostPrefixSet = @{}
+      foreach ($prefix in $hostPrefixes) {
+        $hostPrefixSet[$prefix] = $true
+      }
+      foreach ($prefix in $hostPrefixes) {
+        Get-NetRoute -DestinationPrefix $prefix -ErrorAction SilentlyContinue |
+          Where-Object { $_.RouteMetric -eq 1 -and $hostPrefixSet.ContainsKey($_.DestinationPrefix) } |
+          ForEach-Object {
+            Remove-NetRoute -DestinationPrefix $_.DestinationPrefix -InterfaceIndex $_.InterfaceIndex -NextHop $_.NextHop -Confirm:$false -ErrorAction SilentlyContinue
+            Write-Output ("REMOVED_STALE_HOST|" + $_.DestinationPrefix)
+          }
+      }
+      foreach ($prefix in $hostPrefixes) {
+        $existingHost = Get-NetRoute -DestinationPrefix $prefix -InterfaceIndex ${defaultInterfaceIndex} -ErrorAction SilentlyContinue |
+          Select-Object -First 1
+        if (-not $existingHost) {
+          New-NetRoute -DestinationPrefix $prefix -NextHop "${defaultGateway}" -InterfaceIndex ${defaultInterfaceIndex} -RouteMetric 1 -ErrorAction Stop
+          Write-Output ("CREATED_HOST|" + $prefix)
+        }
+      }
+
+      $existingDefault = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -InterfaceIndex ${tunInterfaceIndex} -ErrorAction SilentlyContinue
+      if (-not $existingDefault) {
+        New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "${TUN_NEXTHOP}" -InterfaceIndex ${tunInterfaceIndex} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
+        Write-Output "CREATED_DEFAULT"
+      }
+      $existingDefault6 = Get-NetRoute -DestinationPrefix "::/0" -InterfaceIndex ${tunInterfaceIndex} -ErrorAction SilentlyContinue
+      if (-not $existingDefault6) {
+        New-NetRoute -DestinationPrefix "::/0" -NextHop "${TUN_IPV6_NEXTHOP}" -InterfaceIndex ${tunInterfaceIndex} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
+        Write-Output "CREATED_DEFAULT_IPV6"
       }
     `;
-};
-
-export const addDefaultRouteViaTunScript = (tunIdx: number): string => {
-  validateInterfaceIndex(tunIdx);
-  return `
-          $existing = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
-          if (-not $existing) {
-            New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "${TUN_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
-            Write-Output "CREATED"
-          }
-          $existing6 = Get-NetRoute -DestinationPrefix "::/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
-          if (-not $existing6) {
-            New-NetRoute -DestinationPrefix "::/0" -NextHop "${TUN_IPV6_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
-            Write-Output "CREATED_IPV6"
-          }
-        `;
 };
 
 export const deleteRouteScript = (

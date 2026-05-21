@@ -4,13 +4,7 @@ import {
   XrayHealthStatus,
 } from '@/shared/ipc';
 import { ConnectionStatus } from '@/main/services/ConnectionMonitorService';
-import { VlessConfig } from '@/shared/types';
-
-function stripRawConfig(server: VlessConfig | null): VlessConfig | null {
-  if (!server) return server;
-  const { rawConfig: _rawConfig, ...rest } = server;
-  return rest as VlessConfig;
-}
+import { toSafeServer } from '@/shared/serverView';
 
 export function buildConnectionMonitorStatusSummary(
   status: ConnectionStatus,
@@ -20,7 +14,9 @@ export function buildConnectionMonitorStatusSummary(
 ): ConnectionMonitorStatus {
   return {
     ...status,
-    currentServer: stripRawConfig(status.currentServer),
+    currentServer: status.currentServer
+      ? toSafeServer(status.currentServer)
+      : null,
     autoSwitchingEnabled,
     lastHealthCheckAt: status.lastHealthCheckAt,
     lastHealthState: status.lastHealthState,

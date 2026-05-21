@@ -30,6 +30,12 @@ function parseOptionalBooleanQueryParam(
   return undefined;
 }
 
+function parseOptionalNumberQueryParam(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
 function makeServerIdentity(
   authToken: string,
   address: string,
@@ -71,12 +77,16 @@ function parseJsonObjectParam(
 }
 
 export function isSupportedLink(link: string): boolean {
-  return link.startsWith('vless://') || link.startsWith('trojan://');
+  return (
+    link.startsWith('vless://') ||
+    link.startsWith('trojan://') ||
+    link.startsWith('ss://')
+  );
 }
 
 export function extractSupportedLinks(input: string): string[] {
   // Stop before common HTML delimiters so links embedded in markup are still valid.
-  const matches = input.match(/(?:vless|trojan):\/\/[^\s<>"'`]+/gi);
+  const matches = input.match(/(?:vless|trojan|ss):\/\/[^\s<>"'`]+/gi);
   if (!matches) return [];
 
   return matches
@@ -198,6 +208,240 @@ function parseVlessLink(
   }
 }
 
+type V2rayPluginParams = {
+  network?: 'ws';
+  host?: string;
+  path?: string;
+  security?: 'tls' | 'none';
+  sni?: string;
+  allowInsecure?: boolean;
+  maxEarlyData?: number;
+};
+
+function decodeSsBase64(value: string): string {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const remainder = normalized.length % 4;
+  const padded =
+    remainder === 0 ? normalized : normalized + '='.repeat(4 - remainder);
+  return Buffer.from(padded, 'base64').toString('utf8');
+}
+
+function splitSsCredentials(
+  value: string,
+): { method: string; password: string } | null {
+  const colonIndex = value.indexOf(':');
+  if (colonIndex <= 0 || colonIndex >= value.length - 1) {
+    return null;
+  }
+  return {
+    method: value.slice(0, colonIndex),
+    password: value.slice(colonIndex + 1),
+  };
+}
+
+function parseSsUserinfo(userinfo: string): { method: string; password: string } | null {
+  const decodedUserinfo = safeDecodeComponent(userinfo);
+  try {
+    const decoded = decodeSsBase64(decodedUserinfo);
+    const creds = splitSsCredentials(decoded);
+    if (creds?.method) {
+      return creds;
+    }
+  } catch {
+    // Fall through to plain method:password userinfo.
+  }
+  return splitSsCredentials(decodedUserinfo);
+}
+
+function parseLegacySsPayload(
+  payload: string,
+): { method: string; password: string; address: string; port: number } | null {
+  let decoded: string;
+  try {
+    decoded = decodeSsBase64(payload);
+  } catch {
+    return null;
+  }
+
+  const atIndex = decoded.lastIndexOf('@');
+  if (atIndex <= 0) {
+    return null;
+  }
+
+  const creds = splitSsCredentials(decoded.slice(0, atIndex));
+  const hostPort = decoded.slice(atIndex + 1);
+  const colonIndex = hostPort.lastIndexOf(':');
+  if (!creds?.method || colonIndex <= 0) {
+    return null;
+  }
+
+  const address = hostPort.slice(0, colonIndex);
+  const port = Number(hostPort.slice(colonIndex + 1));
+  if (
+    !address ||
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65535
+  ) {
+    return null;
+  }
+
+  return { ...creds, address, port };
+}
+
+function parseV2rayPluginParams(
+  pluginValue: string | null,
+): V2rayPluginParams | null {
+  if (!pluginValue) return null;
+
+  const normalized = safeDecodeComponent(pluginValue);
+  const segments = normalized.split(';').map((part) => part.trim());
+  if (segments.length === 0 || !segments[0]?.startsWith('v2ray-plugin')) {
+    return null;
+  }
+
+  const params: V2rayPluginParams = {};
+  for (const segment of segments.slice(1)) {
+    if (!segment) continue;
+
+    const eqIndex = segment.indexOf('=');
+    if (eqIndex === -1) {
+      if (segment === 'tls') {
+        params.security = 'tls';
+      }
+      continue;
+    }
+
+    const key = segment.slice(0, eqIndex).trim().toLowerCase();
+    const value = segment.slice(eqIndex + 1).trim();
+    switch (key) {
+      case 'mode':
+        if (value.toLowerCase() === 'websocket' || value.toLowerCase() === 'ws') {
+          params.network = 'ws';
+        }
+        break;
+      case 'host':
+        params.host = value;
+        break;
+      case 'path':
+        params.path = value;
+        break;
+      case 'tls':
+        if (isTruthyQueryParam(value)) {
+          params.security = 'tls';
+        }
+        break;
+      case 'sni':
+        params.sni = value;
+        break;
+      case 'skip-cert-verify':
+        if (isTruthyQueryParam(value)) {
+          params.allowInsecure = true;
+        }
+        break;
+      case 'ed':
+      case 'earlydata':
+        params.maxEarlyData = parseOptionalNumberQueryParam(value);
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (params.security === undefined && segments.includes('tls')) {
+    params.security = 'tls';
+  }
+
+  return params;
+}
+
+function parseShadowsocksLink(link: string): VlessConfig | null {
+  try {
+    const normalizedLink = normalizeLinkForParsing(link);
+    const hashIndex = normalizedLink.indexOf('#');
+    const linkWithoutHash =
+      hashIndex >= 0 ? normalizedLink.slice(0, hashIndex) : normalizedLink;
+    const name =
+      hashIndex >= 0
+        ? safeDecodeComponent(normalizedLink.slice(hashIndex + 1)) ||
+          'Shadowsocks Server'
+        : 'Shadowsocks Server';
+
+    const parsedUrl = new URL(linkWithoutHash);
+    if (parsedUrl.protocol !== 'ss:') return null;
+
+    let method = '';
+    let password = '';
+    let address = parsedUrl.hostname || '';
+    let port = Number(parsedUrl.port);
+
+    if (address && parsedUrl.username) {
+      const creds = parseSsUserinfo(parsedUrl.username);
+      if (!creds) return null;
+      method = creds.method;
+      password = creds.password;
+    } else {
+      const legacyPayload = linkWithoutHash.slice('ss://'.length);
+      const legacy = parseLegacySsPayload(legacyPayload);
+      if (!legacy) return null;
+      method = legacy.method;
+      password = legacy.password;
+      address = legacy.address;
+      port = legacy.port;
+    }
+
+    if (
+      !method ||
+      !password ||
+      !address ||
+      !Number.isInteger(port) ||
+      port < 1 ||
+      port > 65535
+    ) {
+      return null;
+    }
+
+    const plugin = parseV2rayPluginParams(parsedUrl.searchParams.get('plugin'));
+    const network = plugin?.network ?? 'tcp';
+    const security = plugin?.security ?? 'none';
+    const sni = plugin?.sni;
+    const path = plugin?.path;
+    const host = plugin?.host;
+    const allowInsecure = plugin?.allowInsecure;
+    const maxEarlyData = plugin?.maxEarlyData;
+
+    return {
+      uuid: makeServerIdentity(`${method}:${password}`, address, port, [
+        network,
+        security,
+        sni,
+        path,
+        host,
+        maxEarlyData === undefined ? undefined : String(maxEarlyData),
+        String(allowInsecure),
+      ]),
+      address,
+      port,
+      name,
+      protocol: 'shadowsocks',
+      method,
+      password,
+      type: network,
+      security,
+      sni,
+      path,
+      host,
+      allowInsecure,
+      wsMaxEarlyData: maxEarlyData,
+    };
+  } catch {
+    logger.error('SubscriptionService', 'Error parsing Shadowsocks link', {
+      link: link.substring(0, 50) + '...',
+    });
+    return null;
+  }
+}
+
 function parseTrojanLink(link: string): VlessConfig | null {
   try {
     const normalizedLink = normalizeLinkForParsing(link);
@@ -227,6 +471,7 @@ function parseTrojanLink(link: string): VlessConfig | null {
     const security = (
       (params.get('security') || 'tls') === 'none' ? 'none' : 'tls'
     ) as 'tls' | 'none';
+    const level = parseOptionalNumberQueryParam(params.get('level'));
 
     // Structured fields only — rely on ConfigGenerator to produce a complete
     // Xray configuration (inbounds, block/direct outbounds, routing rules)
@@ -241,6 +486,8 @@ function parseTrojanLink(link: string): VlessConfig | null {
         params.get('path') || '',
         params.get('host') || '',
         params.get('serviceName') || '',
+        params.get('email') || '',
+        level === undefined ? undefined : String(level),
         String(
           isTruthyQueryParam(params.get('insecure')) ||
             isTruthyQueryParam(params.get('allowInsecure')),
@@ -251,6 +498,8 @@ function parseTrojanLink(link: string): VlessConfig | null {
       name,
       protocol: 'trojan',
       password,
+      email: params.get('email') ?? undefined,
+      level,
       type: network,
       security,
       sni: params.get('sni') ?? undefined,
@@ -276,6 +525,9 @@ function parseLink(link: string, identitySalt?: string): VlessConfig | null {
   }
   if (link.startsWith('trojan://')) {
     return parseTrojanLink(link);
+  }
+  if (link.startsWith('ss://')) {
+    return parseShadowsocksLink(link);
   }
   return null;
 }

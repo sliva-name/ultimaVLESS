@@ -11,6 +11,7 @@ import {
   PingResult,
   RefreshSubscriptionsResult,
   SaveManualLinksResult,
+  ServerPingPatch,
   TrafficSnapshot,
   TunCapabilityStatus,
   UpdateStatus,
@@ -39,6 +40,9 @@ export interface IElectronAPI {
 
   // Events
   onUpdateServers: (callback: (servers: VlessConfig[]) => void) => () => void;
+  onUpdateServerPings: (
+    callback: (patches: ServerPingPatch[]) => void,
+  ) => () => void;
   onUpdateSubscriptions: (
     callback: (subscriptions: Subscription[]) => void,
   ) => () => void;

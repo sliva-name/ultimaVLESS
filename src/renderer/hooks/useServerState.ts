@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Subscription, VlessConfig } from '@/shared/types';
-import type { TrafficSnapshot } from '@/shared/ipc';
+import type { ServerPingPatch } from '@/shared/ipc';
 import { hasMissingPingData, reconcileSelection } from './useServerStateUtils';
 
 export function useServerState() {
@@ -12,8 +12,6 @@ export function useServerState() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnectionBusy, setIsConnectionBusy] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [trafficSnapshot, setTrafficSnapshot] =
-    useState<TrafficSnapshot | null>(null);
   const toggleInFlightRef = useRef(false);
   const selectedServerRef = useRef<VlessConfig | null>(null);
   const connectedRef = useRef(false);
@@ -195,13 +193,48 @@ export function useServerState() {
       setSubscriptions(newSubscriptions);
     };
 
+    const handleUpdateServerPings = (patches: ServerPingPatch[]) => {
+      if (patches.length === 0) return;
+      const patchById = new Map(patches.map((patch) => [patch.uuid, patch]));
+      setServers((currentServers) => {
+        let changed = false;
+        const nextServers = currentServers.map((server) => {
+          const patch = patchById.get(server.uuid);
+          if (!patch) {
+            return server;
+          }
+          changed = true;
+          return {
+            ...server,
+            ping: patch.ping,
+            pingTime: patch.pingTime,
+            pingStale: patch.pingStale ?? false,
+          };
+        });
+
+        const currentSelected = selectedServerRef.current;
+        if (currentSelected) {
+          const selectedPatch = patchById.get(currentSelected.uuid);
+          if (selectedPatch) {
+            updateSelectedServerState({
+              ...currentSelected,
+              ping: selectedPatch.ping,
+              pingTime: selectedPatch.pingTime,
+              pingStale: selectedPatch.pingStale ?? false,
+            });
+          }
+        }
+
+        return changed ? nextServers : currentServers;
+      });
+    };
+
     const handleConnectionStatus = (status: boolean) => {
       setIsConnected(status);
       connectedRef.current = status;
       if (status) {
         setConnectionError(null);
       } else {
-        setTrafficSnapshot(null);
         // Ensure the renderer doesn't stay stuck in a "connecting" spinner when
         // a session drops; the main process will re-emit busy=true as soon as
         // the next operation begins.
@@ -262,12 +295,10 @@ export function useServerState() {
       }
     };
 
-    const handleTrafficStats = (snapshot: TrafficSnapshot | null) => {
-      setTrafficSnapshot(snapshot);
-    };
-
     const removeUpdateServers =
       window.electronAPI.onUpdateServers(handleUpdateServers);
+    const removeUpdateServerPings =
+      window.electronAPI.onUpdateServerPings(handleUpdateServerPings);
     const removeUpdateSubscriptions = window.electronAPI.onUpdateSubscriptions(
       handleUpdateSubscriptions,
     );
@@ -281,19 +312,6 @@ export function useServerState() {
     );
     const removeConnectionMonitorEvent =
       window.electronAPI.onConnectionMonitorEvent(handleConnectionMonitorEvent);
-    const removeTrafficStats =
-      window.electronAPI.onTrafficStats?.(handleTrafficStats);
-
-    // Hydrate the existing traffic snapshot on first mount so we don't wait for
-    // the next poll tick to start drawing the session counters.
-    if (window.electronAPI.getTrafficStats) {
-      void window.electronAPI
-        .getTrafficStats()
-        .then((snapshot) => {
-          if (!disposed) setTrafficSnapshot(snapshot);
-        })
-        .catch(() => undefined);
-    }
 
     return () => {
       disposed = true;
@@ -301,12 +319,12 @@ export function useServerState() {
         window.clearTimeout(pingTimer);
       }
       removeUpdateServers();
+      removeUpdateServerPings();
       removeUpdateSubscriptions();
       removeConnectionStatus();
       removeConnectionBusy();
       removeConnectionError();
       removeConnectionMonitorEvent();
-      removeTrafficStats?.();
     };
   }, [updateSelectedServerState]);
 
@@ -374,7 +392,6 @@ export function useServerState() {
     isConnected,
     connectionError,
     isConnectionBusy,
-    trafficSnapshot,
     setSelectedServer: selectServer,
     toggleConnection,
     pingAllServers,

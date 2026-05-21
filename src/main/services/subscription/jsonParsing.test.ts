@@ -93,6 +93,8 @@ describe('parseJsonConfigs', () => {
                 address: 'trojan.example.com',
                 port: 443,
                 password: 'secret-pass',
+                email: 'love@xray.com',
+                level: 1,
               },
             ],
           },
@@ -107,6 +109,10 @@ describe('parseJsonConfigs', () => {
     const [c] = parseJsonConfigs([json]);
     expect(c!.address).toBe('trojan.example.com');
     expect(c!.port).toBe(443);
+    expect(c!.protocol).toBe('trojan');
+    expect(c!.password).toBe('secret-pass');
+    expect(c!.email).toBe('love@xray.com');
+    expect(c!.level).toBe(1);
     expect(c!.userId).toBeUndefined();
     expect(c!.rawConfig).toEqual(json);
   });

@@ -7,7 +7,7 @@ import {
   IPC_EVENT_CHANNELS,
   IPC_INVOKE_CHANNELS,
 } from '@/shared/ipc';
-import { createSerialQueue } from '@/main/ipc/serialQueue';
+import { createSerialQueue } from '@/main/utils/serialQueue';
 
 interface RegisterConnectionHandlersParams {
   deps: IpcDependencies;

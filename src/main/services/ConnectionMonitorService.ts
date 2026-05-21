@@ -6,11 +6,11 @@ import { APP_CONSTANTS } from '@/shared/constants';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
 import path from 'path';
-import fs from 'fs';
 import { extractBlockingErrors, isBlockingErrorText } from './blockingErrors';
 import { probeTcpPort, probeHttpThroughProxy } from './networkProbe';
 import { xrayService } from './XrayService';
 import { ConnectionHealthState } from '@/shared/ipc';
+import { XrayLogCursor } from './connectionMonitor/XrayLogCursor';
 
 export interface ConnectionStatus {
   isConnected: boolean;
@@ -52,26 +52,28 @@ export interface ConnectionEvent {
 export class ConnectionMonitorService extends EventEmitter {
   private status: InternalConnectionStatus;
   private checkInterval: NodeJS.Timeout | null = null;
+  private firstCheckTimeout: NodeJS.Timeout | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private isAutoSwitchingEnabled: boolean = true;
-  private checkIntervalMs: number = 30000; // Проверка каждые 30 секунд
+  private checkIntervalMs: number = 10000;
+  private firstCheckDelayMs: number = 3000;
   private xrayLogPath: string;
+  private xrayLogCursor: XrayLogCursor;
   private monitoringGeneration: number = 0;
   private switchInProgress: boolean = false;
-  private logReadOffset: number = 0;
-  private logPartialLine = '';
   private healthCheckInFlight: boolean = false;
   /** Consecutive HTTP tunnel probe failures (flaky checks should not spam Last Error). */
   private tunnelProbeFailStreak: number = 0;
   /** Consecutive local listener probe failures; single misses can happen under Windows socket pressure. */
   private localProxyFailStreak: number = 0;
   /**
-   * Number of consecutive failed 30s health ticks before surfacing the
+   * Number of consecutive failed health ticks before surfacing the
    * remote-endpoint tunnel error to the user. Single flaky probes are common on
    * slow or lossy tunnels; notifying too early makes users think VPN "stopped".
    */
-  private static readonly TUNNEL_PROBE_STREAK_BEFORE_NOTIFY = 3;
+  private static readonly TUNNEL_PROBE_STREAK_BEFORE_NOTIFY = 2;
   private static readonly LOCAL_PROXY_STREAK_BEFORE_NOTIFY = 2;
+  private static readonly AUTO_SWITCH_DELAY_MS = 1000;
 
   constructor() {
     super();
@@ -90,6 +92,7 @@ export class ConnectionMonitorService extends EventEmitter {
 
     const userDataPath = app.getPath('userData');
     this.xrayLogPath = path.join(userDataPath, 'xray.log');
+    this.xrayLogCursor = new XrayLogCursor(this.xrayLogPath);
 
     logger.info('ConnectionMonitorService', 'Initialized');
   }
@@ -146,6 +149,11 @@ export class ConnectionMonitorService extends EventEmitter {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
+    }
+
+    if (this.firstCheckTimeout) {
+      clearTimeout(this.firstCheckTimeout);
+      this.firstCheckTimeout = null;
     }
 
     if (this.reconnectTimeout) {
@@ -321,7 +329,14 @@ export class ConnectionMonitorService extends EventEmitter {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
     }
+    if (this.firstCheckTimeout) {
+      clearTimeout(this.firstCheckTimeout);
+    }
 
+    this.firstCheckTimeout = setTimeout(() => {
+      this.firstCheckTimeout = null;
+      void this.checkConnectionHealth();
+    }, this.firstCheckDelayMs);
     this.checkInterval = setInterval(() => {
       void this.checkConnectionHealth();
     }, this.checkIntervalMs);
@@ -423,7 +438,7 @@ export class ConnectionMonitorService extends EventEmitter {
       logger.debug('ConnectionMonitorService', 'HTTP tunnel probe passed');
 
       // Читаем только новые строки со времени старта текущей сессии.
-      const logLines = await this.readNewLogLines(50);
+      const logLines = await this.xrayLogCursor.readNewLines(50);
       if (isStale()) {
         return;
       }
@@ -461,89 +476,8 @@ export class ConnectionMonitorService extends EventEmitter {
     }
   }
 
-  /**
-   * Reads recent lines from Xray log file.
-   */
-  private async readNewLogLines(count: number): Promise<string[]> {
-    try {
-      try {
-        await fs.promises.access(this.xrayLogPath, fs.constants.F_OK);
-      } catch {
-        return [];
-      }
-
-      const stats = await fs.promises.stat(this.xrayLogPath);
-      if (stats.size === 0) {
-        return [];
-      }
-
-      const maxChunkBytes = 128 * 1024;
-      if (stats.size < this.logReadOffset) {
-        this.logReadOffset = 0;
-        this.logPartialLine = '';
-      }
-
-      const previousOffset = this.logReadOffset;
-      const unreadLength = stats.size - previousOffset;
-      if (unreadLength <= 0) {
-        return [];
-      }
-
-      const readStart =
-        unreadLength > maxChunkBytes
-          ? stats.size - maxChunkBytes
-          : previousOffset;
-      const readLength = stats.size - readStart;
-      const buffer = Buffer.alloc(readLength);
-      const fd = await fs.promises.open(this.xrayLogPath, 'r');
-      try {
-        await fd.read(buffer, 0, readLength, readStart);
-      } finally {
-        await fd.close();
-      }
-
-      const content = buffer.toString('utf-8');
-      const combined = `${readStart === previousOffset ? this.logPartialLine : ''}${content}`;
-      this.logReadOffset = stats.size;
-      const chunks = combined.split('\n');
-      this.logPartialLine = chunks.pop() ?? '';
-      const lines = chunks
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-      return lines.slice(-count);
-    } catch (error) {
-      logger.error(
-        'ConnectionMonitorService',
-        'Failed to read log file',
-        error,
-      );
-      return [];
-    }
-  }
-
-  /**
-   * Synchronous on purpose: must complete before {@link startPeriodicCheck}
-   * fires its first tick AND before any caller appends to xray.log so the
-   * cursor lands at the true end-of-file. Called once per `startMonitoring`,
-   * not periodically — the periodic health-check uses async `fs.promises.*`.
-   */
   private resetLogCursorToFileEnd(): void {
-    try {
-      if (!fs.existsSync(this.xrayLogPath)) {
-        this.logReadOffset = 0;
-        this.logPartialLine = '';
-        return;
-      }
-      const stats = fs.statSync(this.xrayLogPath);
-      this.logReadOffset = stats.size;
-      this.logPartialLine = '';
-    } catch (error) {
-      logger.warn('ConnectionMonitorService', 'Failed to reset log cursor', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      this.logReadOffset = 0;
-      this.logPartialLine = '';
-    }
+    this.xrayLogCursor.resetToEnd();
   }
 
   /**
@@ -564,7 +498,8 @@ export class ConnectionMonitorService extends EventEmitter {
     logger.info('ConnectionMonitorService', 'Scheduling auto-switch');
     const scheduledGeneration = this.monitoringGeneration;
 
-    // Переключаемся через 5 секунд после обнаружения проблемы
+    // Switch soon after repeated probe failures; the streak threshold already
+    // filters one-off network flakes.
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
       // Bail out when the monitoring session changed (stop/new connection) —
@@ -588,7 +523,7 @@ export class ConnectionMonitorService extends EventEmitter {
         return;
       }
       void this.attemptAutoSwitch();
-    }, 5000);
+    }, ConnectionMonitorService.AUTO_SWITCH_DELAY_MS);
   }
 
   /**
@@ -712,7 +647,7 @@ export class ConnectionMonitorService extends EventEmitter {
         },
         {
           stopXray: true,
-          delayBeforeApplyMs: 1000,
+          delayBeforeApplyMs: 0,
         },
       );
       if (

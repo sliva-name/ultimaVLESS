@@ -8,6 +8,7 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   {
     ignores: [
+      'build/**',
       'dist/**',
       'dist-electron/**',
       'release/**',

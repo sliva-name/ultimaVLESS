@@ -1,7 +1,11 @@
 import { EventEmitter } from 'events';
 import tls from 'tls';
 import { describe, expect, it, vi } from 'vitest';
-import { probeTlsHandshake } from './networkProbe';
+import {
+  PROBE_HTTP_MIN_BODY_BYTES,
+  PROBE_HTTP_TARGETS,
+  probeTlsHandshake,
+} from './networkProbe';
 
 vi.mock('tls', () => ({
   default: {
@@ -21,6 +25,18 @@ function createTlsSocket(): EventEmitter & {
   socket.destroy = vi.fn();
   return socket;
 }
+
+describe('probeHttpThroughProxy targets', () => {
+  it('requires non-empty HTTP bodies and avoids 204-only endpoints', () => {
+    expect(PROBE_HTTP_MIN_BODY_BYTES).toBeGreaterThan(0);
+    expect(PROBE_HTTP_TARGETS.length).toBeGreaterThan(0);
+    expect(
+      PROBE_HTTP_TARGETS.some((target) =>
+        target.path.includes('generate_204'),
+      ),
+    ).toBe(false);
+  });
+});
 
 describe('probeTlsHandshake', () => {
   it('omits TLS servername when SNI is an IP address', async () => {

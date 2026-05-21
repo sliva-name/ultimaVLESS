@@ -270,6 +270,8 @@ const CITY_COUNTRY_MAP: Record<string, string> = {
   Jeddah: 'SA',
 };
 
+const countryCodeCache = new Map<string, string | null>();
+
 /**
  * Extracts country code from text
  */
@@ -335,5 +337,13 @@ export function getCountryCode(server: {
   name: string;
   address: string;
 }): string | null {
-  return extractCountryCode(server.name) || extractCountryCode(server.address);
+  const cacheKey = `${server.name}\n${server.address}`;
+  if (countryCodeCache.has(cacheKey)) {
+    return countryCodeCache.get(cacheKey) ?? null;
+  }
+
+  const countryCode =
+    extractCountryCode(server.name) || extractCountryCode(server.address);
+  countryCodeCache.set(cacheKey, countryCode);
+  return countryCode;
 }

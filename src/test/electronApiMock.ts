@@ -8,6 +8,7 @@ import type {
   ConnectResult,
   DisconnectResult,
   SaveManualLinksResult,
+  ServerPingPatch,
   TrafficSnapshot,
   UpdateStatus,
 } from '@/shared/ipc';
@@ -21,6 +22,7 @@ import { makeMonitorStatus } from './factories';
 
 type ListenerMap = {
   updateServers: Set<(servers: VlessConfig[]) => void>;
+  updateServerPings: Set<(patches: ServerPingPatch[]) => void>;
   updateSubscriptions: Set<(subscriptions: Subscription[]) => void>;
   connectionStatus: Set<(status: boolean) => void>;
   connectionBusy: Set<(busy: boolean) => void>;
@@ -32,6 +34,7 @@ type ListenerMap = {
 
 export interface ElectronApiMock extends IElectronAPI {
   emitUpdateServers: (servers: VlessConfig[]) => void;
+  emitUpdateServerPings: (patches: ServerPingPatch[]) => void;
   emitUpdateSubscriptions: (subscriptions: Subscription[]) => void;
   emitConnectionStatus: (status: boolean) => void;
   emitConnectionBusy: (busy: boolean) => void;
@@ -55,6 +58,7 @@ export function createElectronApiMock(
 ): ElectronApiMock {
   const listeners: ListenerMap = {
     updateServers: new Set(),
+    updateServerPings: new Set(),
     updateSubscriptions: new Set(),
     connectionStatus: new Set(),
     connectionBusy: new Set(),
@@ -96,6 +100,9 @@ export function createElectronApiMock(
 
     // Events
     onUpdateServers: createListenerRegistration(listeners.updateServers),
+    onUpdateServerPings: createListenerRegistration(
+      listeners.updateServerPings,
+    ),
     onUpdateSubscriptions: createListenerRegistration(
       listeners.updateSubscriptions,
     ),
@@ -190,6 +197,9 @@ export function createElectronApiMock(
 
     emitUpdateServers: (servers: VlessConfig[]) => {
       listeners.updateServers.forEach((listener) => listener(servers));
+    },
+    emitUpdateServerPings: (patches: ServerPingPatch[]) => {
+      listeners.updateServerPings.forEach((listener) => listener(patches));
     },
     emitUpdateSubscriptions: (subs: Subscription[]) => {
       listeners.updateSubscriptions.forEach((listener) => listener(subs));

@@ -3,6 +3,7 @@ import { logger } from './LoggerService';
 import { systemProxyService, SystemProxyService } from './SystemProxyService';
 import { tunRouteService, TunRouteService } from './TunRouteService';
 import { xrayService, XrayService } from './XrayService';
+import { createSerialQueue } from '@/main/utils/serialQueue';
 
 interface ProxyPorts {
   http: number;
@@ -19,22 +20,13 @@ interface TransitionOptions {
  * This keeps behavior consistent between manual connect and auto-switch flows.
  */
 export class ConnectionStackService {
-  private stackQueue: Promise<void> = Promise.resolve();
+  private readonly stackQueue = createSerialQueue();
 
   constructor(
     private readonly proxyService: SystemProxyService = systemProxyService,
     private readonly routeService: TunRouteService = tunRouteService,
     private readonly coreService: XrayService = xrayService,
   ) {}
-
-  private enqueue<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.stackQueue.then(task, task);
-    this.stackQueue = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
-  }
 
   private async resetNetworkingStackUnsafe(
     options: { stopXray?: boolean } = {},
@@ -84,7 +76,9 @@ export class ConnectionStackService {
   public async resetNetworkingStack(
     options: { stopXray?: boolean } = {},
   ): Promise<void> {
-    return this.enqueue(() => this.resetNetworkingStackUnsafe(options));
+    return this.stackQueue.enqueue(() =>
+      this.resetNetworkingStackUnsafe(options),
+    );
   }
 
   public async applyConnectionMode(
@@ -92,7 +86,7 @@ export class ConnectionStackService {
     mode: ConnectionMode,
     ports: ProxyPorts,
   ): Promise<void> {
-    return this.enqueue(() =>
+    return this.stackQueue.enqueue(() =>
       this.applyConnectionModeUnsafe(server, mode, ports),
     );
   }
@@ -103,13 +97,13 @@ export class ConnectionStackService {
     ports: ProxyPorts,
     options: TransitionOptions = {},
   ): Promise<void> {
-    return this.enqueue(() =>
+    return this.stackQueue.enqueue(() =>
       this.transitionToUnsafe(server, mode, ports, options),
     );
   }
 
   public async cleanupAfterFailure(): Promise<void> {
-    return this.enqueue(async () => {
+    return this.stackQueue.enqueue(async () => {
       try {
         await this.resetNetworkingStackUnsafe({ stopXray: true });
       } catch (error) {

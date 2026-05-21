@@ -43,7 +43,7 @@ function makeServerIdentity(
 function isProxyOutbound(outbound: Record<string, unknown>): boolean {
   const tag = asString(outbound.tag);
   const protocol = asString(outbound.protocol);
-  return tag === 'proxy' || ['vless', 'vmess', 'trojan'].includes(protocol);
+  return tag === 'proxy' || ['vless', 'vmess', 'trojan', 'shadowsocks'].includes(protocol);
 }
 
 export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
@@ -74,6 +74,10 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
       let flow = '';
       let encryption = 'none';
       let trojanPasswordToken = '';
+      let shadowsocksMethod = '';
+      let shadowsocksPassword = '';
+      let email = '';
+      let level: number | undefined;
 
       const settings = asRecord(outbound.settings);
       const vnext = asArray(settings?.vnext);
@@ -118,6 +122,20 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
           address = asString(s0.address);
           port = asNumber(s0.port);
           trojanPasswordToken = asString(s0.password);
+          email = asString(s0.email);
+          const parsedLevel = asNumber(s0.level, Number.NaN);
+          level = Number.isNaN(parsedLevel) ? undefined : parsedLevel;
+        }
+      }
+
+      if ((!address || !port) && protocol === 'shadowsocks' && settings) {
+        const servers = asArray(settings.servers);
+        const s0 = asRecord(servers[0]);
+        if (s0) {
+          address = asString(s0.address);
+          port = asNumber(s0.port);
+          shadowsocksMethod = asString(s0.method);
+          shadowsocksPassword = asString(s0.password);
         }
       }
 
@@ -193,7 +211,9 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
       const idToken =
         trojanPasswordToken.length > 0
           ? `tj${createHash('sha256').update(`${trojanPasswordToken}|${address}|${port}`).digest('hex').slice(0, 14)}`
-          : userUUID || 'user';
+          : shadowsocksPassword.length > 0
+            ? `ss${createHash('sha256').update(`${shadowsocksMethod}|${shadowsocksPassword}|${address}|${port}`).digest('hex').slice(0, 14)}`
+            : userUUID || 'user';
       const stableId = makeServerIdentity(idToken, address, port, [
         network,
         security,
@@ -211,6 +231,8 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         mode,
         JSON.stringify(xhttpExtra ?? {}),
         String(noGRPCHeader),
+        email,
+        level === undefined ? undefined : String(level),
       ]);
 
       results.push({
@@ -219,6 +241,24 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         address,
         port,
         name,
+        protocol:
+          protocol === 'trojan'
+            ? 'trojan'
+            : protocol === 'shadowsocks'
+              ? 'shadowsocks'
+              : 'vless',
+        method:
+          protocol === 'shadowsocks' && shadowsocksMethod
+            ? shadowsocksMethod
+            : undefined,
+        password:
+          protocol === 'trojan' && trojanPasswordToken
+            ? trojanPasswordToken
+            : protocol === 'shadowsocks' && shadowsocksPassword
+              ? shadowsocksPassword
+              : undefined,
+        email: email || undefined,
+        level,
         flow,
         encryption,
         type: networkType,

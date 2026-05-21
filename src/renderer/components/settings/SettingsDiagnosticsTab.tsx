@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   RefreshCw,
   AlertTriangle,
@@ -39,6 +39,7 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const copiedResetTimerRef = useRef<number | null>(null);
 
   const xrayStateLabel = monitorStatus?.xrayState
     ? capitalize(monitorStatus.xrayState)
@@ -74,12 +75,26 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
       const logs = await window.electronAPI.getLogs();
       await navigator.clipboard.writeText(logs);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copiedResetTimerRef.current !== null) {
+        window.clearTimeout(copiedResetTimerRef.current);
+      }
+      copiedResetTimerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        copiedResetTimerRef.current = null;
+      }, 2000);
     } catch (error) {
       console.error('Failed to copy logs', error);
       setCopyError('Failed to copy logs to clipboard.');
       setCopied(false);
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (copiedResetTimerRef.current !== null) {
+        window.clearTimeout(copiedResetTimerRef.current);
+      }
+    };
   }, []);
 
   const handleOpenFolder = useCallback(() => {

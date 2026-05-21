@@ -19,9 +19,15 @@ export interface VlessConfig {
    * Outbound protocol for this server. Defaults to 'vless' when absent for
    * backwards compatibility. Set to 'trojan' for Trojan links.
    */
-  protocol?: 'vless' | 'trojan';
-  /** Trojan password (only used when protocol === 'trojan'). */
+  protocol?: 'vless' | 'trojan' | 'shadowsocks';
+  /** Shadowsocks cipher (e.g. aes-256-gcm, chacha20-ietf-poly1305, none). */
+  method?: string;
+  /** Trojan / Shadowsocks password. */
   password?: string;
+  /** Optional Xray user identifier for Trojan outbound settings. */
+  email?: string;
+  /** Optional Xray user level for policy lookup. */
+  level?: number;
   /** Allow self-signed / mismatched TLS certificates (from link params). */
   allowInsecure?: boolean;
   flow?: string; // xtls-rprx-vision
@@ -37,6 +43,8 @@ export interface VlessConfig {
   // WS specific
   path?: string;
   host?: string;
+  /** v2ray-plugin early data (maps to wsSettings.maxEarlyData). */
+  wsMaxEarlyData?: number;
 
   // XHTTP specific
   mode?: string;

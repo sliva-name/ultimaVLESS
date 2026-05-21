@@ -10,6 +10,7 @@ import {
   installLogonRecovery,
   uninstallLogonRecovery,
 } from './systemProxy/windowsProxyRecovery';
+import { createSerialQueue } from '@/main/utils/serialQueue';
 
 /**
  * Coordinates system-proxy changes across Windows / macOS / Linux by delegating
@@ -24,7 +25,7 @@ export class SystemProxyService {
   private readonly linux: LinuxProxyAdapter | null;
   private activeSnapshot: ProxySnapshot | null = null;
   /** Serializes enable()/disable() so concurrent callers cannot interleave and corrupt snapshot. */
-  private operationChain: Promise<unknown> = Promise.resolve();
+  private readonly operationQueue = createSerialQueue();
 
   constructor(platform: NodeJS.Platform = process.platform) {
     this.platform = platform;
@@ -104,12 +105,7 @@ export class SystemProxyService {
   }
 
   private runSerialized<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.operationChain.then(
-      () => operation(),
-      () => operation(),
-    );
-    this.operationChain = next.catch(() => undefined);
-    return next;
+    return this.operationQueue.enqueue(operation);
   }
 
   /** Only persist the pre-change state *after* enable succeeds, so a failed enable cannot corrupt the restore path. */

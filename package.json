@@ -193,6 +193,7 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.3",
     "@sentry/electron": "^7.13.0",
+    "@tanstack/react-virtual": "^3.13.25",
     "clsx": "^2.1.1",
     "country-flag-icons": "^1.6.17",
     "electron-store": "^11.0.2",

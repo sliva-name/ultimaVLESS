@@ -67,6 +67,38 @@ describe('useServerState', () => {
     expect(result.current.subscriptions).toEqual([newSub]);
   });
 
+  it('merges ping patches without replacing the server list', async () => {
+    const electronApi = createElectronApiMock();
+    const server = makeServer({
+      uuid: 'server-with-ping',
+      ping: null,
+      pingTime: undefined,
+    });
+    electronApi.getServers.mockResolvedValue([server]);
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useServerState());
+    await waitFor(() => expect(result.current.servers).toHaveLength(1));
+
+    await act(async () => {
+      electronApi.emitUpdateServerPings([
+        {
+          uuid: server.uuid,
+          ping: 37,
+          pingTime: 1234,
+          pingStale: false,
+        },
+      ]);
+    });
+
+    expect(result.current.servers[0]).toEqual({
+      ...server,
+      ping: 37,
+      pingTime: 1234,
+      pingStale: false,
+    });
+  });
+
   it('keeps the live connected server selected after server list refresh removes it', async () => {
     const currentServer = makeServer({
       uuid: 'active-server',

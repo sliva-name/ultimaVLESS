@@ -127,6 +127,44 @@ describe('ConfigGenerator', () => {
     });
   });
 
+  it('generates Trojan outbound settings from server fields', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        uuid: 'trojan-server',
+        name: 'Trojan',
+        protocol: 'trojan',
+        password: 'secret-pass',
+        email: 'love@xray.com',
+        level: 1,
+        security: 'tls',
+        sni: 'trojan.example.com',
+        type: 'tcp',
+      }),
+      '/tmp/log',
+    );
+
+    expect(result.outbounds[0]).toMatchObject({
+      protocol: 'trojan',
+      settings: {
+        servers: [
+          {
+            address: 'example.com',
+            port: 443,
+            password: 'secret-pass',
+            email: 'love@xray.com',
+            level: 1,
+          },
+        ],
+      },
+      streamSettings: {
+        security: 'tls',
+        tlsSettings: {
+          serverName: 'trojan.example.com',
+        },
+      },
+    });
+  });
+
   it('places mux at outbound level, not inside streamSettings', () => {
     const result = ConfigGenerator.generate(baseConfig, '/tmp/log');
 

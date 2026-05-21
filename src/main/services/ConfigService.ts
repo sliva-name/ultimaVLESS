@@ -12,10 +12,16 @@ import {
   Subscription,
   VlessConfig,
 } from '@/shared/types';
+import type { UiLanguage } from '@/shared/mainLocales';
 import { logger } from './LoggerService';
 import { redactUrl } from '@/main/utils/redactUrl';
 
-const LEGACY_DEFAULT_SUBSCRIPTION_URL = MOBILE_WHITE_LIST_RAW_URL;
+const CURRENT_SCHEMA_VERSION = 2;
+const LEGACY_DEFAULT_SUBSCRIPTION_URLS = new Set([
+  MOBILE_WHITE_LIST_RAW_URL,
+  MOBILE_LIST_TURBOPAGES_DEFAULT_URL,
+  YANDEX_TRANSLATED_MOBILE_LIST_URL,
+]);
 const DEFAULT_SUBSCRIPTION_URL = YANDEX_TRANSLATED_MOBILE_LIST_URL;
 const LEGACY_PERFORMANCE_DEFAULTS: PerformanceSettings = {
   muxEnabled: true,
@@ -31,9 +37,10 @@ const LEGACY_PERFORMANCE_DEFAULTS: PerformanceSettings = {
   domainStrategy: 'IPIfNonMatch',
 };
 
-export type UiLanguage = 'en' | 'ru';
+const PING_PERSIST_DEBOUNCE_MS = 1000;
 
 interface StoreSchema {
+  schemaVersion: number;
   subscriptionUrl?: string; // legacy field — migrated on first init and then deleted
   subscriptions: Subscription[];
   manualLinksInput: string;
@@ -54,12 +61,15 @@ interface StoreSchema {
  */
 export class ConfigService {
   private store: Store<StoreSchema>;
+  private pendingPingPersistTimer: NodeJS.Timeout | null = null;
+  private pendingPingServers: VlessConfig[] | null = null;
 
   constructor() {
     this.store = new Store<StoreSchema>({
       name: 'app-config',
       defaults: {
         subscriptions: [],
+        schemaVersion: CURRENT_SCHEMA_VERSION,
         manualLinksInput: '',
         servers: [],
         selectedServerId: null,
@@ -69,9 +79,14 @@ export class ConfigService {
       },
     });
 
+    this.migrateStore();
+    logger.info('ConfigService', 'Initialized', { path: this.store.path });
+  }
+
+  private migrateStore(): void {
     this.migrateLegacySubscriptionUrl();
     this.migrateLegacyPerformanceDefaults();
-    logger.info('ConfigService', 'Initialized', { path: this.store.path });
+    this.store.set('schemaVersion', CURRENT_SCHEMA_VERSION);
   }
 
   /**
@@ -85,10 +100,7 @@ export class ConfigService {
       if (!existing || existing.length === 0) {
         // Normalize legacy default URLs to the current default before migrating.
         let migratedUrl = legacyUrl;
-        if (
-          migratedUrl === LEGACY_DEFAULT_SUBSCRIPTION_URL ||
-          migratedUrl === MOBILE_LIST_TURBOPAGES_DEFAULT_URL
-        ) {
+        if (LEGACY_DEFAULT_SUBSCRIPTION_URLS.has(migratedUrl)) {
           migratedUrl = DEFAULT_SUBSCRIPTION_URL;
         }
         this.store.set('subscriptions', [
@@ -249,8 +261,75 @@ export class ConfigService {
    * Updates the list of servers.
    */
   public setServers(servers: VlessConfig[]): void {
+    this.clearPendingPingPersist();
     logger.info('ConfigService', 'setServers', { count: servers.length });
     this.store.set('servers', servers);
+  }
+
+  public setServerPingPatches(
+    patches: Array<{
+      uuid: string;
+      ping: number | null;
+      pingTime: number;
+      pingStale?: boolean;
+    }>,
+    options: { debounce?: boolean } = {},
+  ): VlessConfig[] {
+    if (patches.length === 0) {
+      return this.getServers();
+    }
+
+    const patchById = new Map(patches.map((patch) => [patch.uuid, patch]));
+    const baselineServers = this.pendingPingServers ?? this.getServers();
+    const nextServers = baselineServers.map((server) => {
+      const patch = patchById.get(server.uuid);
+      if (!patch) {
+        return server;
+      }
+      return {
+        ...server,
+        ping: patch.ping,
+        pingTime: patch.pingTime,
+        pingStale: patch.pingStale ?? false,
+      };
+    });
+
+    this.pendingPingServers = nextServers;
+
+    const persist = () => {
+      const serversToPersist = this.pendingPingServers ?? nextServers;
+      logger.info('ConfigService', 'setServerPingPatches', {
+        count: serversToPersist.length,
+        patchCount: patches.length,
+      });
+      this.store.set('servers', serversToPersist);
+      this.pendingPingServers = null;
+    };
+
+    if (options.debounce) {
+      this.cancelPendingPingPersistTimer();
+      this.pendingPingPersistTimer = setTimeout(() => {
+        this.pendingPingPersistTimer = null;
+        persist();
+      }, PING_PERSIST_DEBOUNCE_MS);
+    } else {
+      this.cancelPendingPingPersistTimer();
+      persist();
+    }
+
+    return nextServers;
+  }
+
+  private clearPendingPingPersist(): void {
+    this.cancelPendingPingPersistTimer();
+    this.pendingPingServers = null;
+  }
+
+  private cancelPendingPingPersistTimer(): void {
+    if (this.pendingPingPersistTimer) {
+      clearTimeout(this.pendingPingPersistTimer);
+      this.pendingPingPersistTimer = null;
+    }
   }
 
   // ---------------------------------------------------------------------------

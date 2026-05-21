@@ -7,11 +7,8 @@ import type {
   requestCallback,
   ServiceDefinition,
 } from '@grpc/grpc-js';
-
-export interface XrayStat {
-  name: string;
-  value: number;
-}
+import type { XrayStat, XrayStatsTransport } from './xrayStats/transport';
+export type { XrayStat } from './xrayStats/transport';
 
 interface QueryStatsRequest {
   pattern: string;
@@ -214,7 +211,7 @@ const statsServiceDefinition = {
   },
 } satisfies ServiceDefinition;
 
-export class XrayStatsClient {
+export class XrayStatsClient implements XrayStatsTransport {
   private client: StatsServiceClient | null = null;
   private grpcRuntime: GrpcRuntime | null = null;
   private clientConstructor: StatsServiceClientConstructor | null = null;

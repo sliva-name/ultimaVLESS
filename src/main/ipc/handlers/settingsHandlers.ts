@@ -1,0 +1,177 @@
+import { app, IpcMainInvokeEvent, ipcMain, shell } from 'electron';
+import { normalizePerformanceSettings } from '@/shared/performanceSettings';
+import { toSafeServerList } from '@/shared/serverView';
+import { IPC_INVOKE_CHANNELS, TunCapabilityStatus } from '@/shared/ipc';
+import { configService } from '@/main/services/ConfigService';
+import { mainLocaleService } from '@/main/services/MainLocaleService';
+import { IpcDependencies } from '@/main/ipc/dependencies';
+import { assertConnectionMode } from '@/main/ipc/validators';
+
+interface RegisterSettingsHandlersParams {
+  deps: IpcDependencies;
+  assertTrustedSender: (event: IpcMainInvokeEvent) => void;
+  isConnectionBusy: () => boolean;
+}
+
+export function registerSettingsHandlers({
+  deps,
+  assertTrustedSender,
+  isConnectionBusy,
+}: RegisterSettingsHandlersParams): void {
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.openExternalUrl,
+    async (event: IpcMainInvokeEvent, url: unknown) => {
+      assertTrustedSender(event);
+      if (typeof url !== 'string' || url.length === 0) {
+        throw new Error('Invalid URL');
+      }
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        throw new Error('Invalid URL');
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('Only http(s) URLs are allowed');
+      }
+      await shell.openExternal(url);
+      return true;
+    },
+  );
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getServers, (event: IpcMainInvokeEvent) => {
+    assertTrustedSender(event);
+    return toSafeServerList(configService.getServers());
+  });
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.getSelectedServerId,
+    (event: IpcMainInvokeEvent) => {
+      assertTrustedSender(event);
+      return configService.getSelectedServerId();
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.setSelectedServerId,
+    (event: IpcMainInvokeEvent, serverId: unknown) => {
+      assertTrustedSender(event);
+      if (typeof serverId !== 'string' && serverId !== null) {
+        throw new Error('Invalid selected server id');
+      }
+      if (typeof serverId === 'string' && serverId.trim().length === 0) {
+        configService.setSelectedServerId(null);
+        return true;
+      }
+      configService.setSelectedServerId(serverId);
+      return true;
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.getConnectionMode,
+    (event: IpcMainInvokeEvent) => {
+      assertTrustedSender(event);
+      return configService.getConnectionMode();
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.setConnectionMode,
+    (event: IpcMainInvokeEvent, modeValue: unknown) => {
+      assertTrustedSender(event);
+      const mode = assertConnectionMode(modeValue);
+      if (mode === 'tun' && !deps.tunRouteService.isSupported()) {
+        throw new Error(
+          deps.tunRouteService.getUnsupportedReason() ||
+            'TUN mode is not supported on this operating system.',
+        );
+      }
+      if (deps.xrayService.isRunning()) {
+        throw new Error('Disconnect before changing connection mode.');
+      }
+      configService.setConnectionMode(mode);
+      return true;
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.getTunCapabilityStatus,
+    async (event: IpcMainInvokeEvent) => {
+      assertTrustedSender(event);
+      const supported = deps.tunRouteService.isSupported();
+      const hasPrivileges = supported ? await deps.hasTunPrivileges() : false;
+      const privilegeHint =
+        process.platform === 'win32'
+          ? 'TUN mode needs Administrator rights. Connect in TUN mode and approve the UAC prompt (or run UltimaVLESS as Administrator).'
+          : 'Run UltimaVLESS with root privileges for TUN mode.';
+      const result: TunCapabilityStatus = {
+        platform: process.platform,
+        supported,
+        hasPrivileges,
+        privilegeHint: supported && !hasPrivileges ? privilegeHint : null,
+        unsupportedReason: supported
+          ? null
+          : deps.tunRouteService.getUnsupportedReason(),
+        routeMode: supported ? deps.tunRouteService.getRouteMode() : null,
+        degradedReason: supported
+          ? deps.tunRouteService.getDegradedReason()
+          : null,
+      };
+      return result;
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.getConnectionStatus,
+    (event: IpcMainInvokeEvent) => {
+      assertTrustedSender(event);
+      return deps.connectionMonitorService.getStatus().isConnected;
+    },
+  );
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getConnectionBusy, (event) => {
+    assertTrustedSender(event);
+    return isConnectionBusy();
+  });
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getAppVersion, (event) => {
+    assertTrustedSender(event);
+    return app.getVersion();
+  });
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.getPerformanceSettings,
+    (event: IpcMainInvokeEvent) => {
+      assertTrustedSender(event);
+      return configService.getPerformanceSettings();
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.setPerformanceSettings,
+    (event: IpcMainInvokeEvent, payload: unknown) => {
+      assertTrustedSender(event);
+      const settings = normalizePerformanceSettings(payload);
+      configService.setPerformanceSettings(settings);
+      return true;
+    },
+  );
+
+  ipcMain.handle(IPC_INVOKE_CHANNELS.getUiLanguage, (event) => {
+    assertTrustedSender(event);
+    return mainLocaleService.getLanguage();
+  });
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.setUiLanguage,
+    (event: IpcMainInvokeEvent, language: unknown) => {
+      assertTrustedSender(event);
+      if (language !== 'en' && language !== 'ru') {
+        throw new Error(`Unsupported UI language: ${String(language)}`);
+      }
+      mainLocaleService.setLanguage(language);
+      return true;
+    },
+  );
+}

@@ -4,16 +4,16 @@ import {
   IpcEventChannel,
   IPC_EVENT_CHANNELS,
   IPC_INVOKE_CHANNELS,
+  ServerPingPatch,
 } from '@/shared/ipc';
 import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { assertBoolean, assertValidServerPayload } from '@/main/ipc/validators';
-import { createSerialQueue } from '@/main/ipc/serialQueue';
+import { createSerialQueue } from '@/main/utils/serialQueue';
 
 interface RegisterPingHandlersParams {
   deps: IpcDependencies;
   sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
-  toSafeServerList: (servers: VlessConfig[]) => VlessConfig[];
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
   isConnectionBusy: () => boolean;
 }
@@ -21,7 +21,6 @@ interface RegisterPingHandlersParams {
 export function registerPingHandlers({
   deps,
   sendToRenderer,
-  toSafeServerList,
   assertTrustedSender,
   isConnectionBusy,
 }: RegisterPingHandlersParams): void {
@@ -32,6 +31,42 @@ export function registerPingHandlers({
     servers.map((s) => `${s.uuid}|${s.address}:${s.port}`).join('||');
   const sleep = (ms: number): Promise<void> =>
     new Promise((resolve) => setTimeout(resolve, ms));
+  const buildPingPatches = (
+    servers: VlessConfig[],
+    results: Map<string, number | null>,
+    pingTime: number,
+    options: { includeFailures: boolean },
+  ): ServerPingPatch[] =>
+    servers.flatMap((server) => {
+      if (!results.has(server.uuid)) {
+        return [];
+      }
+      const ping = results.get(server.uuid) ?? null;
+      if (!options.includeFailures && ping == null) {
+        return [];
+      }
+      return [
+        {
+          uuid: server.uuid,
+          ping,
+          pingTime,
+          pingStale: false,
+        },
+      ];
+    });
+  const applyPingPatches = (
+    patches: ServerPingPatch[],
+    options: { debouncePersist: boolean },
+  ): VlessConfig[] => {
+    if (patches.length === 0) {
+      return deps.configService.getServers();
+    }
+    const updatedServers = deps.configService.setServerPingPatches(patches, {
+      debounce: options.debouncePersist,
+    });
+    sendToRenderer(IPC_EVENT_CHANNELS.updateServerPings, patches);
+    return updatedServers;
+  };
 
   /** Serialize ping-all-servers so overlapping invokes are not invalidated as "stale". */
   const pingAllQueue = createSerialQueue();
@@ -156,18 +191,10 @@ export function registerPingHandlers({
       }));
     }
 
-    const pingTime = Date.now();
-    const updatedServers = servers.map((server) => {
-      const key = server.uuid;
-      const ping = results.get(key) ?? null;
-      return { ...server, ping, pingTime, pingStale: false };
+    const pingPatches = buildPingPatches(servers, results, Date.now(), {
+      includeFailures: true,
     });
-
-    deps.configService.setServers(updatedServers);
-    sendToRenderer(
-      IPC_EVENT_CHANNELS.updateServers,
-      toSafeServerList(updatedServers),
-    );
+    applyPingPatches(pingPatches, { debouncePersist: true });
 
     if (failedServers.length > 0) {
       void (async () => {
@@ -204,25 +231,21 @@ export function registerPingHandlers({
           return;
         }
 
-        const retryPingTime = Date.now();
-        const mergedServers = latestServers.map((server) => {
-          const retryLatency = retryResults.get(server.uuid);
-          if (retryLatency == null) {
-            return server;
-          }
-          return {
-            ...server,
-            ping: retryLatency,
-            pingTime: retryPingTime,
-            pingStale: false,
-          };
-        });
-
-        deps.configService.setServers(mergedServers);
-        sendToRenderer(
-          IPC_EVENT_CHANNELS.updateServers,
-          toSafeServerList(mergedServers),
+        const retryPatches = buildPingPatches(
+          failedServers,
+          retryResults,
+          Date.now(),
+          {
+            includeFailures: false,
+          },
         );
+        if (retryPatches.length === 0) {
+          return;
+        }
+
+        applyPingPatches(retryPatches, {
+          debouncePersist: true,
+        });
       })().catch((error) => {
         logger.error('IPC', 'Background retry ping failed', error);
       });

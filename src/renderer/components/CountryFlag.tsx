@@ -119,38 +119,38 @@ const flagRegistry: Record<string, FlagComponent> = {
   ZA,
 };
 
-export const CountryFlag: React.FC<CountryFlagProps> = ({
-  server,
-  className = '',
-  size = 24,
-}) => {
-  const countryCode = getCountryCode(server);
+export const CountryFlag = React.memo<CountryFlagProps>(
+  ({ server, className = '', size = 24 }) => {
+    const countryCode = getCountryCode(server);
 
-  if (!countryCode) {
-    // Fallback to globe icon if country cannot be determined
+    if (!countryCode) {
+      // Fallback to globe icon if country cannot be determined
+      return (
+        <Globe className={className} style={{ width: size, height: size }} />
+      );
+    }
+
+    const FlagComponent = flagRegistry[countryCode];
+
+    if (!FlagComponent) {
+      // Fallback to globe icon if flag component doesn't exist
+      return (
+        <Globe className={className} style={{ width: size, height: size }} />
+      );
+    }
+
     return (
-      <Globe className={className} style={{ width: size, height: size }} />
+      <FlagComponent
+        className={className}
+        style={{
+          width: `${size}px`,
+          height: `${(size * 2) / 3}px`, // Maintain 3:2 aspect ratio
+          display: 'inline-block',
+          flexShrink: 0,
+        }}
+      />
     );
-  }
+  },
+);
 
-  const FlagComponent = flagRegistry[countryCode];
-
-  if (!FlagComponent) {
-    // Fallback to globe icon if flag component doesn't exist
-    return (
-      <Globe className={className} style={{ width: size, height: size }} />
-    );
-  }
-
-  return (
-    <FlagComponent
-      className={className}
-      style={{
-        width: `${size}px`,
-        height: `${(size * 2) / 3}px`, // Maintain 3:2 aspect ratio
-        display: 'inline-block',
-        flexShrink: 0,
-      }}
-    />
-  );
-};
+CountryFlag.displayName = 'CountryFlag';

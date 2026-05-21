@@ -1,19 +1,4 @@
-export interface SerialQueue {
-  enqueue<T>(job: () => Promise<T>): Promise<T>;
-}
+import { createSerialQueue, type SerialQueue } from '@/main/utils/serialQueue';
 
-export function createSerialQueue(): SerialQueue {
-  let queue: Promise<unknown> = Promise.resolve();
-
-  return {
-    enqueue<T>(job: () => Promise<T>): Promise<T> {
-      const run = async (): Promise<T> => job();
-      const operation = queue.then(run, run);
-      queue = operation.then(
-        () => undefined,
-        () => undefined,
-      );
-      return operation;
-    },
-  };
-}
+export { createSerialQueue };
+export type { SerialQueue };

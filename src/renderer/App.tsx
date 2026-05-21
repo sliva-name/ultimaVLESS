@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useServerState } from './hooks/useServerState';
+import { useTrafficStats } from './hooks/useTrafficStats';
 
 type DragRegionStyle = React.CSSProperties & {
   WebkitAppRegion: 'drag' | 'no-drag';
@@ -18,11 +19,11 @@ function App() {
     isConnected,
     isConnectionBusy,
     connectionError,
-    trafficSnapshot,
     setSelectedServer,
     toggleConnection,
     pingAllServers,
   } = useServerState();
+  const trafficSnapshot = useTrafficStats();
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 

@@ -7,25 +7,23 @@ import {
   DefaultRouteInfo,
   DEFAULT_ROUTE_ADD_RETRIES,
   DEFAULT_ROUTE_ADD_RETRY_DELAY_MS,
-  DEFAULT_ROUTE_STABLE_HITS,
   DEFAULT_ROUTE_WAIT_INTERVAL,
   DEFAULT_ROUTE_WAIT_TIMEOUT,
-  DNS_TIMEOUT,
   ENABLE_TIMEOUT,
+  PUBLIC_DNS_TIMEOUT,
   STALE_ROUTE_CLEANUP_TIMEOUT,
+  SYSTEM_DNS_TIMEOUT,
   TUN_IPV6_NEXTHOP,
   TUN_NEXTHOP,
   TUN_ROUTE_METRIC,
   TUN_WAIT_TIMEOUT,
 } from './tunRoute/constants';
 import {
-  addDefaultRouteViaTunScript,
-  addRouteScript,
   deleteHostRoutesByPrefixesAndMetricScript,
   deleteRouteByPrefixAndMetricScript,
   deleteRouteScript,
   deleteTunDefaultRoutesByNextHopScript,
-  ensureTunAddressScript,
+  enableTunRoutingScript,
   getDefaultRouteScript,
   getTunInterfaceIndexScript,
   waitForTunInterfaceScript,
@@ -38,6 +36,10 @@ import {
   runPowerShell as runPowerShellScript,
   RunPowerShellOptions,
 } from './tunRoute/powerShellRunner';
+import {
+  createPlatformTunAdapter,
+  PlatformTunAdapter,
+} from './tunRoute/platformAdapter';
 
 export interface TunRoutingPlan {
   defaultRoute: DefaultRouteInfo;
@@ -62,31 +64,26 @@ interface StaleRouteCleanupOptions {
  */
 export class TunRouteService {
   private addedRoutes: AddedRoute[] = [];
-  constructor(private readonly platform: NodeJS.Platform = process.platform) {}
+  private readonly platformAdapter: PlatformTunAdapter;
+
+  constructor(private readonly platform: NodeJS.Platform = process.platform) {
+    this.platformAdapter = createPlatformTunAdapter(platform);
+  }
 
   public isSupported(): boolean {
-    return this.platform === 'win32' || this.platform === 'linux';
+    return this.platformAdapter.isSupported();
   }
 
   public getUnsupportedReason(): string | null {
-    if (this.isSupported()) return null;
-    if (this.platform === 'darwin') {
-      return 'TUN mode is currently supported only on Windows and Linux by the bundled Xray core.';
-    }
-    return 'TUN mode is not supported on this operating system.';
+    return this.platformAdapter.getUnsupportedReason();
   }
 
   public getRouteMode(): string | null {
-    if (this.platform === 'win32') return 'windows-static-routes';
-    if (this.platform === 'linux') return 'linux-xray-auto-route';
-    return null;
+    return this.platformAdapter.getRouteMode();
   }
 
   public getDegradedReason(): string | null {
-    if (this.platform === 'linux') {
-      return 'Linux TUN routing currently relies on Xray auto-route behavior rather than explicit OS-level route teardown.';
-    }
-    return null;
+    return this.platformAdapter.getDegradedReason();
   }
 
   public async prepareRoutingPlan(
@@ -155,24 +152,12 @@ export class TunRouteService {
         localAddress: defaultRoute.localAddress,
       });
 
-      await this.cleanupCurrentProxyHostRoutes(proxyIps);
-      this.ensureWithinDeadline(deadline, 'cleanup stale proxy host routes');
-
-      await this.ensureTunAddress(tunInterfaceIndex);
-      this.ensureWithinDeadline(deadline, 'set TUN interface address');
-
-      for (const proxyIp of proxyIps) {
-        this.ensureWithinDeadline(deadline, `add host route for ${proxyIp}`);
-        await this.addRoute(
-          proxyIp,
-          '255.255.255.255',
-          defaultRoute.gateway,
-          1,
-          defaultRoute.interfaceIndex,
-        );
-      }
-      this.ensureWithinDeadline(deadline, 'add default route via TUN');
-      await this.addDefaultRouteViaTun(tunInterfaceIndex);
+      this.ensureWithinDeadline(deadline, 'apply TUN routes');
+      await this.applyWindowsRoutingBatch(
+        tunInterfaceIndex,
+        proxyIps,
+        defaultRoute,
+      );
 
       logger.info('TunRouteService', 'TUN routing enabled', {
         proxyIps,
@@ -264,27 +249,14 @@ export class TunRouteService {
 
   private async waitForDefaultRoute(): Promise<DefaultRouteInfo | null> {
     const startedAt = Date.now();
-    let previousRouteKey: string | null = null;
-    let stableHits = 0;
     let lastObservedRoute: DefaultRouteInfo | null = null;
 
     while (Date.now() - startedAt <= DEFAULT_ROUTE_WAIT_TIMEOUT) {
       const route = await this.getDefaultRoute();
       if (route) {
-        lastObservedRoute = route;
-        const routeKey = `${route.interfaceIndex}|${route.gateway}`;
-        if (routeKey === previousRouteKey) {
-          stableHits += 1;
-        } else {
-          previousRouteKey = routeKey;
-          stableHits = 1;
-        }
-        if (stableHits >= DEFAULT_ROUTE_STABLE_HITS) {
-          return route;
-        }
+        return route;
       } else {
-        previousRouteKey = null;
-        stableHits = 0;
+        lastObservedRoute = route;
       }
       await this.sleep(DEFAULT_ROUTE_WAIT_INTERVAL);
     }
@@ -323,45 +295,45 @@ export class TunRouteService {
     return Number.isNaN(n) ? null : n;
   }
 
-  private async ensureTunAddress(tunInterfaceIndex: number): Promise<void> {
-    try {
-      await this.runPowerShell(ensureTunAddressScript(tunInterfaceIndex));
-    } catch (e) {
-      logger.warn(
-        'TunRouteService',
-        'Could not set TUN address (Xray may have set it)',
-        {
-          error: e instanceof Error ? e.message : String(e),
-        },
-      );
-    }
-  }
-
   // ---- DNS / route arithmetic ----------------------------------------------
 
   private async resolveProxyAddresses(address: string): Promise<string[]> {
     if (this.isIp(address)) return [address];
-    let timeoutHandle: NodeJS.Timeout | null = null;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutHandle = setTimeout(
-        () => reject(new Error('DNS lookup timeout')),
-        DNS_TIMEOUT,
+
+    const uniqueIpv4 = (values: string[]) => [...new Set(values)];
+
+    try {
+      const systemResults = await this.withTimeout(
+        dns.promises.lookup(address, { all: true, family: 4 }),
+        SYSTEM_DNS_TIMEOUT,
+        'System DNS lookup timeout',
       );
-    });
+      const ips = uniqueIpv4(systemResults.map((entry) => entry.address));
+      if (ips.length > 0) {
+        return ips;
+      }
+    } catch (error) {
+      logger.debug('TunRouteService', 'System DNS lookup failed', {
+        address,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     try {
       const resolver = new dns.promises.Resolver();
       resolver.setServers(['8.8.8.8', '1.1.1.1']);
-      const result = await Promise.race<string[]>([
+      const ips = await this.withTimeout(
         resolver.resolve4(address),
-        timeoutPromise,
-      ]);
-      return [...new Set(result)];
-    } catch {
+        PUBLIC_DNS_TIMEOUT,
+        'Public DNS lookup timeout',
+      );
+      return uniqueIpv4(ips);
+    } catch (error) {
+      logger.warn('TunRouteService', 'Failed to resolve proxy address', {
+        address,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return [];
-    } finally {
-      if (timeoutHandle !== null) {
-        clearTimeout(timeoutHandle);
-      }
     }
   }
 
@@ -370,85 +342,39 @@ export class TunRouteService {
     return net.isIP(str) !== 0;
   }
 
-  private maskToPrefix(mask: string): number {
-    const parts = mask.split('.').map(Number);
-    let n = 0;
-    for (const p of parts) n = (n << 8) | p;
-    let bits = 0;
-    while (n) {
-      bits += n & 1;
-      n >>>= 1;
-    }
-    return bits;
-  }
-
   private hostPrefixForIp(ip: string): string {
     return `${ip}/${net.isIP(ip) === 6 ? 128 : 32}`;
   }
 
   // ---- Windows route mutation ----------------------------------------------
 
-  private async addRoute(
-    destination: string,
-    mask: string,
-    gateway: string,
-    metric: number,
-    interfaceIndex?: number,
-  ): Promise<boolean> {
-    if (net.isIP(destination) === 0) {
-      throw new Error(
-        `Refusing to add route for non-IP destination: ${destination}`,
-      );
-    }
-    if (net.isIP(gateway) === 0) {
-      throw new Error(`Refusing to add route with non-IP gateway: ${gateway}`);
-    }
-    if (!Number.isInteger(metric) || metric < 0 || metric > 65535) {
-      throw new Error(`Invalid route metric: ${metric}`);
-    }
-    if (interfaceIndex != null && !Number.isInteger(interfaceIndex)) {
-      throw new Error(`Invalid interface index: ${interfaceIndex}`);
-    }
-    const prefixLen = this.maskToPrefix(mask);
-    const destPrefix = `${destination}/${prefixLen}`;
-    const out = await this.runPowerShell(
-      addRouteScript(destPrefix, gateway, metric, interfaceIndex),
-    );
-    const created = out.includes('CREATED');
-    if (created) {
-      this.addedRoutes.push({ destination, mask, interfaceIndex });
-    }
-    return created;
-  }
-
-  private async addDefaultRouteViaTun(tunIdx: number): Promise<void> {
+  private async applyWindowsRoutingBatch(
+    tunInterfaceIndex: number,
+    proxyIps: string[],
+    defaultRoute: DefaultRouteInfo,
+  ): Promise<void> {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= DEFAULT_ROUTE_ADD_RETRIES; attempt += 1) {
       try {
         const out = await this.runPowerShell(
-          addDefaultRouteViaTunScript(tunIdx),
+          enableTunRoutingScript(
+            tunInterfaceIndex,
+            proxyIps,
+            defaultRoute.gateway,
+            defaultRoute.interfaceIndex,
+          ),
         );
-        if (out.includes('CREATED')) {
-          this.addedRoutes.push({
-            destination: '0.0.0.0',
-            mask: '0.0.0.0',
-            interfaceIndex: tunIdx,
-          });
-        }
-        if (out.includes('CREATED_IPV6')) {
-          this.addedRoutes.push({
-            destination: '::',
-            mask: '::',
-            interfaceIndex: tunIdx,
-            prefix: '::/0',
-          });
-        }
+        this.trackCreatedRoutesFromBatch(
+          out,
+          tunInterfaceIndex,
+          defaultRoute.interfaceIndex,
+        );
         return;
       } catch (error) {
         lastError = error;
         if (attempt < DEFAULT_ROUTE_ADD_RETRIES) {
-          logger.warn('TunRouteService', 'Retrying add default route via TUN', {
-            interfaceIndex: tunIdx,
+          logger.warn('TunRouteService', 'Retrying batched TUN route apply', {
+            interfaceIndex: tunInterfaceIndex,
             attempt,
             maxAttempts: DEFAULT_ROUTE_ADD_RETRIES,
             error: error instanceof Error ? error.message : String(error),
@@ -459,27 +385,39 @@ export class TunRouteService {
     }
     throw lastError instanceof Error
       ? lastError
-      : new Error('Failed to add default route via TUN');
+      : new Error('Failed to apply TUN routes');
   }
 
-  private async cleanupCurrentProxyHostRoutes(proxyIps: string[]): Promise<void> {
-    try {
-      const removedHostRoutes = await this.deleteHostRoutesByPrefixesAndMetric(
-        proxyIps.map((ip) => this.hostPrefixForIp(ip)),
-        1,
-        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
-      );
-      if (removedHostRoutes > 0) {
-        logger.info('TunRouteService', 'Removed stale proxy host routes', {
-          removedHostRoutes,
-          proxyIpCount: proxyIps.length,
+  private trackCreatedRoutesFromBatch(
+    output: string,
+    tunInterfaceIndex: number,
+    defaultInterfaceIndex: number,
+  ): void {
+    for (const line of output.split(/\r?\n/).map((value) => value.trim())) {
+      if (line.startsWith('CREATED_HOST|')) {
+        const prefix = line.slice('CREATED_HOST|'.length);
+        const [destination, prefixLength] = prefix.split('/');
+        if (!destination || !prefixLength) continue;
+        this.addedRoutes.push({
+          destination,
+          mask: net.isIP(destination) === 6 ? '::' : '255.255.255.255',
+          interfaceIndex: defaultInterfaceIndex,
+          prefix,
+        });
+      } else if (line === 'CREATED_DEFAULT') {
+        this.addedRoutes.push({
+          destination: '0.0.0.0',
+          mask: '0.0.0.0',
+          interfaceIndex: tunInterfaceIndex,
+        });
+      } else if (line === 'CREATED_DEFAULT_IPV6') {
+        this.addedRoutes.push({
+          destination: '::',
+          mask: '::',
+          interfaceIndex: tunInterfaceIndex,
+          prefix: '::/0',
         });
       }
-    } catch (error) {
-      logger.warn('TunRouteService', 'Failed to cleanup proxy host routes', {
-        proxyIpCount: proxyIps.length,
-        error: error instanceof Error ? error.message : String(error),
-      });
     }
   }
 
@@ -665,6 +603,22 @@ export class TunRouteService {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    message: string,
+  ): Promise<T> {
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timeoutHandle !== null) {
+        clearTimeout(timeoutHandle);
+      }
+    });
   }
 }
 

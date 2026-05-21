@@ -30,15 +30,16 @@ interface SidebarProps {
   onPingAll?: () => Promise<void>;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
-  servers,
-  subscriptions,
-  selectedServer,
-  isConnected,
-  onSelectServer,
-  onOpenSettings,
-  onPingAll,
-}) => {
+export const Sidebar = React.memo<SidebarProps>(
+  ({
+    servers,
+    subscriptions,
+    selectedServer,
+    isConnected,
+    onSelectServer,
+    onOpenSettings,
+    onPingAll,
+  }) => {
   const { t } = useTranslation();
   const [appVersion, setAppVersion] = useState<string>('');
   const [isPinging, setIsPinging] = useState(false);
@@ -228,4 +229,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
     </div>
   );
-};
+  },
+);
+
+Sidebar.displayName = 'Sidebar';

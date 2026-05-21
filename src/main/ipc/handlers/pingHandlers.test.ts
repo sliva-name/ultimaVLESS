@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerPingHandlers } from './pingHandlers';
-import { IPC_INVOKE_CHANNELS } from '@/shared/ipc';
+import { IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '@/shared/ipc';
 import { makeMonitorStatus, makeServer } from '@/test/factories';
 
 const ipcHandleMock = vi.hoisted(() => vi.fn());
@@ -68,7 +68,6 @@ describe('registerPingHandlers', () => {
         },
       } as never,
       sendToRenderer: vi.fn(),
-      toSafeServerList: (servers) => servers,
       assertTrustedSender: vi.fn(),
       isConnectionBusy: () => busy,
     });
@@ -85,5 +84,68 @@ describe('registerPingHandlers', () => {
       { uuid: server.uuid, latency: 42 },
     ]);
     expect(setServers).not.toHaveBeenCalled();
+  });
+
+  it('emits ping patches instead of broadcasting the full server list', async () => {
+    const server = makeServer({
+      uuid: 'server-1',
+      address: 'example.com',
+      ping: null,
+    });
+    const setServerPingPatches = vi.fn(() => [
+      { ...server, ping: 24, pingTime: 1000, pingStale: false },
+    ]);
+    const sendToRenderer = vi.fn();
+
+    registerPingHandlers({
+      deps: {
+        configService: {
+          getServers: vi.fn(() => [server]),
+          setServers: vi.fn(),
+          setServerPingPatches,
+        },
+        connectionMonitorService: {
+          getStatus: vi.fn(() => makeMonitorStatus()),
+        },
+        xrayService: {
+          isRunning: vi.fn(() => false),
+        },
+        pingService: {
+          pingServers: vi.fn(async () => new Map([[server.uuid, 24]])),
+          pingServer: vi.fn(),
+        },
+      } as never,
+      sendToRenderer,
+      assertTrustedSender: vi.fn(),
+      isConnectionBusy: () => false,
+    });
+
+    const handler = handlers.get(IPC_INVOKE_CHANNELS.pingAllServers);
+    await handler!({} as never, true);
+
+    expect(setServerPingPatches).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          uuid: server.uuid,
+          ping: 24,
+          pingStale: false,
+        }),
+      ],
+      { debounce: true },
+    );
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      IPC_EVENT_CHANNELS.updateServerPings,
+      [
+        expect.objectContaining({
+          uuid: server.uuid,
+          ping: 24,
+          pingStale: false,
+        }),
+      ],
+    );
+    expect(sendToRenderer).not.toHaveBeenCalledWith(
+      IPC_EVENT_CHANNELS.updateServers,
+      expect.anything(),
+    );
   });
 });

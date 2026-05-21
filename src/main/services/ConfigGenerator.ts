@@ -21,6 +21,7 @@ import {
   TUN_IPV6_PREFIX,
   TUN_PREFIX,
 } from './tunRoute/constants';
+import { selectConfigBuildStrategy } from './configGenerator/strategy';
 
 type MutableConfigNode = Record<string, unknown>;
 
@@ -62,11 +63,7 @@ export class ConfigGenerator {
     connectionMode: ConnectionMode = 'proxy',
     options: ConfigGeneratorOptions = {},
   ): XrayConfig {
-    if (
-      config.rawConfig &&
-      (config.source !== 'subscription' ||
-        !this.canGenerateFromStructuredFields(config))
-    ) {
+    if (selectConfigBuildStrategy(config) === 'raw' && config.rawConfig) {
       return this.applyRawConfig(
         config.rawConfig,
         logPath,
@@ -75,12 +72,6 @@ export class ConfigGenerator {
       );
     }
     return this.generateFromFields(config, logPath, connectionMode, options);
-  }
-
-  private static canGenerateFromStructuredFields(config: VlessConfig): boolean {
-    if (!config.address || !config.port) return false;
-    if (config.protocol === 'trojan') return !!config.password;
-    return !!(config.userId || config.uuid);
   }
 
   private static applyRawConfig(
@@ -146,7 +137,11 @@ export class ConfigGenerator {
     if (!Array.isArray(cfg.outbounds)) return;
     for (const outbound of cfg.outbounds as MutableOutbound[]) {
       if (!outbound || (outbound.tag && outbound.tag !== 'proxy')) continue;
-      if (outbound.protocol !== 'vless' && outbound.protocol !== 'trojan')
+      if (
+        outbound.protocol !== 'vless' &&
+        outbound.protocol !== 'trojan' &&
+        outbound.protocol !== 'shadowsocks'
+      )
         continue;
 
       if (!outbound.streamSettings) outbound.streamSettings = {};
@@ -310,12 +305,17 @@ export class ConfigGenerator {
     options: ConfigGeneratorOptions,
   ): XrayConfig {
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
-    const protocol: 'vless' | 'trojan' =
-      config.protocol === 'trojan' ? 'trojan' : 'vless';
+    const protocol: 'vless' | 'trojan' | 'shadowsocks' =
+      config.protocol === 'trojan'
+        ? 'trojan'
+        : config.protocol === 'shadowsocks'
+          ? 'shadowsocks'
+          : 'vless';
 
     const streamSettings: XrayStreamSettings = {
       network: (config.type === 'raw' ? 'raw' : config.type) || 'tcp',
-      security: config.security || (protocol === 'trojan' ? 'tls' : 'none'),
+      security:
+        config.security ?? (protocol === 'trojan' ? 'tls' : 'none'),
     };
 
     const defaultFp = perf.fingerprint;
@@ -341,6 +341,12 @@ export class ConfigGenerator {
       streamSettings.wsSettings = {
         path: config.path || '/',
         headers: { Host: config.host || config.sni || '' },
+        ...(config.wsMaxEarlyData !== undefined
+          ? {
+              maxEarlyData: config.wsMaxEarlyData,
+              earlyDataHeaderName: 'Sec-WebSocket-Protocol',
+            }
+          : {}),
       };
     }
 
@@ -543,15 +549,33 @@ export class ConfigGenerator {
 
   private static buildOutboundSettings(
     config: VlessConfig,
-    protocol: 'vless' | 'trojan',
+    protocol: 'vless' | 'trojan' | 'shadowsocks',
     hasVisionFlow: boolean,
   ): Record<string, unknown> {
+    if (protocol === 'shadowsocks') {
+      return {
+        servers: [
+          {
+            address: config.address,
+            port: config.port,
+            method: config.method || 'none',
+            password: config.password || '',
+          },
+        ],
+      };
+    }
     if (protocol === 'trojan') {
       const server: Record<string, unknown> = {
         address: config.address,
         port: config.port,
         password: config.password || '',
       };
+      if (config.email) {
+        server.email = config.email;
+      }
+      if (config.level !== undefined) {
+        server.level = config.level;
+      }
       return { servers: [server] };
     }
     const vlessUser: { id: string; encryption: string; flow?: string } = {

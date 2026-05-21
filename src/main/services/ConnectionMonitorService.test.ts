@@ -201,7 +201,7 @@ describe('ConnectionMonitorService', () => {
 
     svc.on('error', () => {});
     svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await (svc as any).checkConnectionHealth();
 
     expect(svc.getStatus()).toMatchObject({
       lastHealthState: 'degraded',
@@ -233,8 +233,8 @@ describe('ConnectionMonitorService', () => {
     const errors: string[] = [];
     svc.on('error', (e) => errors.push(e.error ?? ''));
     svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await (svc as any).checkConnectionHealth();
+    await (svc as any).checkConnectionHealth();
 
     expect(svc.getStatus()).toMatchObject({
       lastHealthState: 'degraded',
@@ -289,7 +289,7 @@ describe('ConnectionMonitorService', () => {
 
     svc.on('error', () => {});
     svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await (svc as any).checkConnectionHealth();
 
     expect(svc.getStatus().lastError).toBeNull();
     expect(svc.getStatus().lastHealthState).toBe('degraded');
@@ -298,7 +298,7 @@ describe('ConnectionMonitorService', () => {
     );
   });
 
-  it('still does not set lastError after two consecutive HTTP tunnel probe failures', async () => {
+  it('sets lastError after two consecutive HTTP tunnel probe failures', async () => {
     probeHttpThroughProxyMock.mockResolvedValue(false);
     const ConnectionMonitorService = await loadService();
     const svc = new ConnectionMonitorService();
@@ -306,14 +306,14 @@ describe('ConnectionMonitorService', () => {
 
     svc.on('error', () => {});
     svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await (svc as any).checkConnectionHealth();
+    await (svc as any).checkConnectionHealth();
 
-    expect(svc.getStatus().lastError).toBeNull();
-    expect(svc.getStatus().lastHealthState).toBe('degraded');
+    expect(svc.getStatus().lastError).toContain('Remote endpoint check');
+    expect(svc.getStatus().lastHealthState).toBe('failed');
   });
 
-  it('sets lastError after several consecutive HTTP tunnel probe failures', async () => {
+  it('emits an error after repeated HTTP tunnel probe failures', async () => {
     probeHttpThroughProxyMock.mockResolvedValue(false);
     const ConnectionMonitorService = await loadService();
     const svc = new ConnectionMonitorService();
@@ -322,9 +322,8 @@ describe('ConnectionMonitorService', () => {
     const errors: string[] = [];
     svc.on('error', (e) => errors.push(e.error ?? ''));
     svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await (svc as any).checkConnectionHealth();
+    await (svc as any).checkConnectionHealth();
 
     expect(svc.getStatus().lastError).toContain('Remote endpoint check');
     expect(errors.length).toBeGreaterThanOrEqual(1);
