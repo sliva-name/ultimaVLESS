@@ -392,6 +392,7 @@ export class ConnectionMonitorService extends EventEmitter {
       this.status.lastHealthCheckAt = Date.now();
       const probeResult = await runConnectionHealthProbe({
         getXrayHealthStatus: () => xrayService.getHealthStatus(),
+        connectionMode: configService.getConnectionMode(),
       });
       if (isStale()) {
         return;

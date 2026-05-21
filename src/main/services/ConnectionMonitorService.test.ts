@@ -17,6 +17,9 @@ const connectionStackServiceMock = vi.hoisted(() => ({
 }));
 const probeTcpPortMock = vi.hoisted(() => vi.fn(async () => true));
 const probeHttpThroughProxyMock = vi.hoisted(() => vi.fn(async () => true));
+const probeDirectInternetConnectivityMock = vi.hoisted(() =>
+  vi.fn(async () => true),
+);
 const xrayServiceMock = vi.hoisted(() => ({
   getHealthStatus: vi.fn(() => ({
     state: 'running',
@@ -49,6 +52,7 @@ vi.mock('./ConnectionStackService', () => ({
 vi.mock('./networkProbe', () => ({
   probeTcpPort: probeTcpPortMock,
   probeHttpThroughProxy: probeHttpThroughProxyMock,
+  probeDirectInternetConnectivity: probeDirectInternetConnectivityMock,
 }));
 
 vi.mock('./XrayService', () => ({
@@ -87,6 +91,8 @@ describe('ConnectionMonitorService', () => {
     probeTcpPortMock.mockResolvedValue(true);
     probeHttpThroughProxyMock.mockReset();
     probeHttpThroughProxyMock.mockResolvedValue(true);
+    probeDirectInternetConnectivityMock.mockReset();
+    probeDirectInternetConnectivityMock.mockResolvedValue(true);
     xrayServiceMock.getHealthStatus.mockReset();
     xrayServiceMock.getHealthStatus.mockReturnValue({
       state: 'running',
@@ -340,6 +346,69 @@ describe('ConnectionMonitorService', () => {
 
     expect(svc.getStatus().lastError).toContain('Remote endpoint check');
     expect(errors.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('defers auto-switch when the host has no direct internet connectivity', async () => {
+    const current = makeServer({ uuid: 'current', name: 'Current' });
+    const next = makeServer({ uuid: 'next', name: 'Next' });
+    configServiceMock.getServers.mockReturnValue([current, next]);
+    probeHttpThroughProxyMock.mockResolvedValue(false);
+    probeDirectInternetConnectivityMock.mockResolvedValue(false);
+
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+
+    const errors: string[] = [];
+    svc.on('error', (e) => errors.push(e.error ?? ''));
+    svc.startMonitoring(current);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(svc.getStatus()).toMatchObject({
+      lastHealthState: 'degraded',
+      lastError: null,
+      blockedServers: [],
+    });
+    expect(svc.getStatus().lastHealthFailureReason).toContain(
+      'Host internet connectivity',
+    );
+    expect(errors).toHaveLength(0);
+    expect(configServiceMock.setSelectedServerId).not.toHaveBeenCalled();
+    expect(connectionStackServiceMock.transitionTo).not.toHaveBeenCalled();
+  });
+
+  it('does not use direct host connectivity as an offline guard in TUN mode', async () => {
+    const current = makeServer({ uuid: 'current', name: 'Current' });
+    const next = makeServer({ uuid: 'next', name: 'Next' });
+    configServiceMock.getConnectionMode.mockReturnValue('tun');
+    configServiceMock.getServers.mockReturnValue([current, next]);
+    probeHttpThroughProxyMock.mockResolvedValue(false);
+    probeDirectInternetConnectivityMock.mockResolvedValue(false);
+
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+
+    svc.on('error', () => {});
+    svc.startMonitoring(current);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(probeDirectInternetConnectivityMock).not.toHaveBeenCalled();
+    expect(svc.getStatus().lastError).toContain('Remote endpoint check');
+    expect(svc.getStatus().lastHealthFailureReason).toContain(
+      'Remote endpoint check',
+    );
+    expect(svc.getStatus().blockedServers).toEqual(['current']);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(configServiceMock.setSelectedServerId).toHaveBeenCalledWith(
+      next.uuid,
+    );
+    expect(connectionStackServiceMock.transitionTo).toHaveBeenCalled();
   });
 
   it('auto-switches from failed Xray health without waiting for tunnel probe streaks', async () => {

@@ -76,6 +76,14 @@ export async function probeTlsHandshake(
 const sleep = (ms: number): Promise<void> =>
   new Promise((r) => setTimeout(r, ms));
 
+const CONNECTIVITY_TARGETS = [
+  { host: 'connectivitycheck.gstatic.com', path: '/generate_204' },
+  { host: '1.1.1.1', path: '/' },
+  { host: 'captive.apple.com', path: '/hotspot-detect.html' },
+  // Windows NCSI-style plain HTTP; improves odds when Google/Cloudflare are flaky.
+  { host: 'www.msftncsi.com', path: '/ncsi.txt' },
+];
+
 function probeHttpThroughProxyOnce(
   proxyPort: number,
   proxyHost: string,
@@ -125,19 +133,11 @@ function probeHttpThroughProxyAny(
   proxyHost: string,
   timeoutMs: number,
 ): Promise<boolean> {
-  const targets = [
-    { host: 'connectivitycheck.gstatic.com', path: '/generate_204' },
-    { host: '1.1.1.1', path: '/' },
-    { host: 'captive.apple.com', path: '/hotspot-detect.html' },
-    // Windows NCSI-style plain HTTP; improves odds when Google/Cloudflare are flaky.
-    { host: 'www.msftncsi.com', path: '/ncsi.txt' },
-  ];
-
   return new Promise((resolve) => {
-    let pending = targets.length;
+    let pending = CONNECTIVITY_TARGETS.length;
     let resolved = false;
 
-    for (const target of targets) {
+    for (const target of CONNECTIVITY_TARGETS) {
       probeHttpThroughProxyOnce(
         proxyPort,
         proxyHost,
@@ -179,4 +179,68 @@ export async function probeHttpThroughProxy(
     }
   }
   return false;
+}
+
+function probeDirectHttpOnce(
+  targetHost: string,
+  targetPath: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const finish = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    const req = http.request({
+      host: targetHost,
+      port: 80,
+      path: targetPath,
+      method: 'GET',
+      headers: {
+        Host: targetHost,
+        'User-Agent': 'Mozilla/5.0',
+        Connection: 'close',
+      },
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      finish(false);
+    });
+
+    req.once('response', (res) => {
+      res.resume();
+      const status = res.statusCode || 0;
+      finish(status >= 100 && status < 600);
+    });
+
+    req.once('error', () => finish(false));
+    req.end();
+  });
+}
+
+export function probeDirectInternetConnectivity(
+  timeoutMs: number = 2500,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    let pending = CONNECTIVITY_TARGETS.length;
+    let resolved = false;
+
+    for (const target of CONNECTIVITY_TARGETS) {
+      probeDirectHttpOnce(target.host, target.path, timeoutMs).then((res) => {
+        if (resolved) return;
+        if (res) {
+          resolved = true;
+          resolve(true);
+        } else {
+          pending--;
+          if (pending === 0) resolve(false);
+        }
+      });
+    }
+  });
 }

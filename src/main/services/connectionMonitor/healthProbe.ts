@@ -1,5 +1,6 @@
 import { APP_CONSTANTS } from '@/shared/constants';
 import type { XrayHealthStatus } from '@/shared/ipc';
+import type { ConnectionMode } from '@/shared/types';
 import {
   probeDirectInternetConnectivity,
   probeHttpThroughProxy,
@@ -36,6 +37,7 @@ export type ConnectionHealthProbeResult =
 
 interface RunConnectionHealthProbeOptions {
   getXrayHealthStatus: () => XrayHealthStatus;
+  connectionMode: ConnectionMode;
 }
 
 function getXrayFailureReason(xrayState: XrayHealthStatus): string {
@@ -48,6 +50,7 @@ function getXrayFailureReason(xrayState: XrayHealthStatus): string {
 
 export async function runConnectionHealthProbe({
   getXrayHealthStatus,
+  connectionMode,
 }: RunConnectionHealthProbeOptions): Promise<ConnectionHealthProbeResult> {
   const initialXrayState = getXrayHealthStatus();
   if (initialXrayState.state === 'failed') {
@@ -77,8 +80,10 @@ export async function runConnectionHealthProbe({
 
   const tunnelOk = await probeHttpThroughProxy(APP_CONSTANTS.PORTS.HTTP);
   if (!tunnelOk) {
-    const hostOnline = await probeDirectInternetConnectivity();
-    if (!hostOnline) {
+    if (
+      connectionMode !== 'tun' &&
+      !(await probeDirectInternetConnectivity())
+    ) {
       return {
         type: 'host-offline',
         localProxyReachable: true,
