@@ -13,6 +13,7 @@ import { ConnectionHealthState, XrayHealthStatus } from '@/shared/ipc';
 import { runConnectionHealthProbe } from './connectionMonitor/healthProbe';
 import { XrayLogCursor } from './connectionMonitor/xrayLogCursor';
 import { selectAutoSwitchCandidates } from './connectionMonitor/autoSwitchPolicy';
+import { CONNECTION_MONITOR_TIMING } from './connectionMonitor/timing';
 import { probeHttpThroughProxy, probeTcpPort } from './networkProbe';
 
 export interface ConnectionStatus {
@@ -61,9 +62,11 @@ export interface ConnectionEvent {
 export class ConnectionMonitorService extends EventEmitter {
   private status: InternalConnectionStatus;
   private checkInterval: NodeJS.Timeout | null = null;
+  private initialHealthCheckTimer: NodeJS.Timeout | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private isAutoSwitchingEnabled: boolean = true;
-  private checkIntervalMs: number = 30000; // Проверка каждые 30 секунд
+  private checkIntervalMs: number =
+    CONNECTION_MONITOR_TIMING.healthCheckIntervalMs;
   private xrayLogCursor: XrayLogCursor;
   private monitoringGeneration: number = 0;
   private switchInProgress: boolean = false;
@@ -73,13 +76,12 @@ export class ConnectionMonitorService extends EventEmitter {
   /** Consecutive local listener probe failures; single misses can happen under Windows socket pressure. */
   private localProxyFailStreak: number = 0;
   private autoSwitchFailedAt: Map<string, number> = new Map();
-  /**
-   * Number of consecutive failed 30s health ticks before surfacing the
-   * remote-endpoint tunnel error to the user. Single flaky probes are common on
-   * slow or lossy tunnels; notifying too early makes users think VPN "stopped".
-   */
-  private static readonly TUNNEL_PROBE_STREAK_BEFORE_NOTIFY = 3;
-  private static readonly LOCAL_PROXY_STREAK_BEFORE_NOTIFY = 2;
+  private static readonly TUNNEL_PROBE_STREAK_BEFORE_NOTIFY =
+    CONNECTION_MONITOR_TIMING.tunnelProbeStreakBeforeAction;
+  private static readonly LOCAL_PROXY_STREAK_BEFORE_NOTIFY =
+    CONNECTION_MONITOR_TIMING.localProxyStreakBeforeNotify;
+  private static readonly AUTO_SWITCH_DELAY_MS =
+    CONNECTION_MONITOR_TIMING.autoSwitchDelayMs;
   private static readonly AUTO_SWITCH_CANDIDATE_LIMIT = 30;
   private static readonly AUTO_SWITCH_VALIDATION_TIMEOUT_MS = 2000;
   private static readonly AUTO_SWITCH_VALIDATION_ATTEMPTS = 1;
@@ -157,6 +159,11 @@ export class ConnectionMonitorService extends EventEmitter {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
+    }
+
+    if (this.initialHealthCheckTimer) {
+      clearTimeout(this.initialHealthCheckTimer);
+      this.initialHealthCheckTimer = null;
     }
 
     if (this.reconnectTimeout) {
@@ -372,10 +379,21 @@ export class ConnectionMonitorService extends EventEmitter {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
     }
+    if (this.initialHealthCheckTimer) {
+      clearTimeout(this.initialHealthCheckTimer);
+      this.initialHealthCheckTimer = null;
+    }
 
-    this.checkInterval = setInterval(() => {
+    const runCheck = () => {
       void this.checkConnectionHealth();
-    }, this.checkIntervalMs);
+    };
+
+    // First tick after a short warmup; only then start the 15s interval so we
+    // do not get two probes within a few seconds (interval at 15s + initial at 5s).
+    this.initialHealthCheckTimer = setTimeout(() => {
+      runCheck();
+      this.checkInterval = setInterval(runCheck, this.checkIntervalMs);
+    }, CONNECTION_MONITOR_TIMING.healthCheckInitialDelayMs);
   }
 
   /**
@@ -401,6 +419,11 @@ export class ConnectionMonitorService extends EventEmitter {
       const probeResult = await runConnectionHealthProbe({
         getXrayHealthStatus: () => xrayService.getHealthStatus(),
         connectionMode: configService.getConnectionMode(),
+        tunnelProbe: {
+          timeoutMs: CONNECTION_MONITOR_TIMING.healthTunnelProbeTimeoutMs,
+          attempts: CONNECTION_MONITOR_TIMING.healthTunnelProbeAttempts,
+          gapMs: CONNECTION_MONITOR_TIMING.healthTunnelProbeGapMs,
+        },
       });
       if (isStale()) {
         return;
@@ -568,7 +591,6 @@ export class ConnectionMonitorService extends EventEmitter {
     logger.info('ConnectionMonitorService', 'Scheduling auto-switch');
     const scheduledGeneration = this.monitoringGeneration;
 
-    // Переключаемся через 5 секунд после обнаружения проблемы
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
       // Bail out when the monitoring session changed (stop/new connection) —
@@ -592,7 +614,7 @@ export class ConnectionMonitorService extends EventEmitter {
         return;
       }
       void this.attemptAutoSwitch();
-    }, 5000);
+    }, ConnectionMonitorService.AUTO_SWITCH_DELAY_MS);
     return true;
   }
 

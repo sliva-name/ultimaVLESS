@@ -1,6 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import { makeServer } from '@/test/factories';
+import { CONNECTION_MONITOR_TIMING } from './connectionMonitor/timing';
+
+const {
+  healthCheckIntervalMs,
+  healthCheckInitialDelayMs,
+  autoSwitchDelayMs,
+  tunnelProbeStreakBeforeAction,
+} = CONNECTION_MONITOR_TIMING;
+
+/** Advances fake timers through N consecutive health-check ticks. */
+async function advanceHealthCheckTicks(tickCount: number): Promise<void> {
+  await vi.advanceTimersByTimeAsync(healthCheckInitialDelayMs);
+  for (let i = 1; i < tickCount; i += 1) {
+    await vi.advanceTimersByTimeAsync(healthCheckIntervalMs);
+  }
+}
 
 const mockState = vi.hoisted(() => ({
   tempDir: '',
@@ -125,7 +141,7 @@ describe('ConnectionMonitorService', () => {
     });
 
     svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceHealthCheckTicks(1);
 
     expect(errorEvents).toHaveLength(0);
     expect(svc.getStatus().lastError).toBeNull();
@@ -144,7 +160,7 @@ describe('ConnectionMonitorService', () => {
     svc.startMonitoring(server);
     fs.appendFileSync(logPath, 'failed to dial new-server\n', 'utf8');
 
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceHealthCheckTicks(1);
     await errorPromise;
 
     expect(svc.getStatus().lastError).toContain('failed to dial');
@@ -222,7 +238,7 @@ describe('ConnectionMonitorService', () => {
 
     svc.on('error', () => {});
     svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceHealthCheckTicks(1);
 
     expect(svc.getStatus()).toMatchObject({
       lastHealthState: 'degraded',
@@ -254,8 +270,9 @@ describe('ConnectionMonitorService', () => {
     const errors: string[] = [];
     svc.on('error', (e) => errors.push(e.error ?? ''));
     svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceHealthCheckTicks(
+      CONNECTION_MONITOR_TIMING.localProxyStreakBeforeNotify,
+    );
 
     expect(svc.getStatus()).toMatchObject({
       lastHealthState: 'degraded',
@@ -310,7 +327,7 @@ describe('ConnectionMonitorService', () => {
 
     svc.on('error', () => {});
     svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceHealthCheckTicks(1);
 
     expect(svc.getStatus().lastError).toBeNull();
     expect(svc.getStatus().lastHealthState).toBe('degraded');
@@ -319,22 +336,7 @@ describe('ConnectionMonitorService', () => {
     );
   });
 
-  it('still does not set lastError after two consecutive HTTP tunnel probe failures', async () => {
-    probeHttpThroughProxyMock.mockResolvedValue(false);
-    const ConnectionMonitorService = await loadService();
-    const svc = new ConnectionMonitorService();
-    const server = makeServer({ uuid: 'server-1', name: 'Example' });
-
-    svc.on('error', () => {});
-    svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
-
-    expect(svc.getStatus().lastError).toBeNull();
-    expect(svc.getStatus().lastHealthState).toBe('degraded');
-  });
-
-  it('sets lastError after several consecutive HTTP tunnel probe failures', async () => {
+  it('sets lastError and schedules auto-switch after consecutive tunnel probe failures reach threshold', async () => {
     probeHttpThroughProxyMock.mockResolvedValue(false);
     const ConnectionMonitorService = await loadService();
     const svc = new ConnectionMonitorService();
@@ -343,12 +345,11 @@ describe('ConnectionMonitorService', () => {
     const errors: string[] = [];
     svc.on('error', (e) => errors.push(e.error ?? ''));
     svc.startMonitoring(server);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceHealthCheckTicks(tunnelProbeStreakBeforeAction);
 
     expect(svc.getStatus().lastError).toContain('Remote endpoint check');
     expect(errors.length).toBeGreaterThanOrEqual(1);
+    expect(svc.getStatus().blockedServers).toEqual(['server-1']);
   });
 
   it('defers auto-switch when the host has no direct internet connectivity', async () => {
@@ -364,10 +365,8 @@ describe('ConnectionMonitorService', () => {
     const errors: string[] = [];
     svc.on('error', (e) => errors.push(e.error ?? ''));
     svc.startMonitoring(current);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(5_000);
+    await advanceHealthCheckTicks(tunnelProbeStreakBeforeAction);
+    await vi.advanceTimersByTimeAsync(autoSwitchDelayMs);
 
     expect(svc.getStatus()).toMatchObject({
       lastHealthState: 'degraded',
@@ -395,9 +394,7 @@ describe('ConnectionMonitorService', () => {
 
     svc.on('error', () => {});
     svc.startMonitoring(current);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceHealthCheckTicks(tunnelProbeStreakBeforeAction);
 
     expect(probeDirectInternetConnectivityMock).not.toHaveBeenCalled();
     expect(svc.getStatus().lastError).toContain('Remote endpoint check');
@@ -406,7 +403,7 @@ describe('ConnectionMonitorService', () => {
     );
     expect(svc.getStatus().blockedServers).toEqual(['current']);
 
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(autoSwitchDelayMs);
 
     expect(configServiceMock.setSelectedServerId).not.toHaveBeenCalledWith(
       next.uuid,
@@ -467,7 +464,7 @@ describe('ConnectionMonitorService', () => {
     svc.on('error', () => {});
     svc.startMonitoring(current);
     await (svc as any).checkConnectionHealth();
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(autoSwitchDelayMs);
 
     expect(connectionStackServiceMock.transitionTo).toHaveBeenCalledTimes(1);
     expect(connectionStackServiceMock.transitionTo.mock.calls[0]?.[0]).toBe(
@@ -530,7 +527,7 @@ describe('ConnectionMonitorService', () => {
     svc.on('error', () => {});
     svc.startMonitoring(current);
     await (svc as any).checkConnectionHealth();
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(autoSwitchDelayMs);
 
     expect(connectionStackServiceMock.transitionTo).toHaveBeenCalledTimes(2);
     expect(connectionStackServiceMock.transitionTo.mock.calls[0]?.[0]).toBe(
@@ -588,7 +585,7 @@ describe('ConnectionMonitorService', () => {
       blockedServers: ['current'],
     });
 
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(autoSwitchDelayMs);
 
     expect(configServiceMock.setSelectedServerId).toHaveBeenCalledWith(
       next.uuid,
@@ -615,7 +612,7 @@ describe('ConnectionMonitorService', () => {
     svc.on('error', () => {});
     svc.startMonitoring(server);
 
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(healthCheckInitialDelayMs);
     svc.stopMonitoring();
     releaseProbe?.();
     await Promise.resolve();

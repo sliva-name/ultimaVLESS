@@ -35,9 +35,16 @@ export type ConnectionHealthProbeResult =
       localProxyReachable: true;
     };
 
+interface TunnelProbeOptions {
+  timeoutMs: number;
+  attempts: number;
+  gapMs: number;
+}
+
 interface RunConnectionHealthProbeOptions {
   getXrayHealthStatus: () => XrayHealthStatus;
   connectionMode: ConnectionMode;
+  tunnelProbe?: TunnelProbeOptions;
 }
 
 function getXrayFailureReason(xrayState: XrayHealthStatus): string {
@@ -51,6 +58,7 @@ function getXrayFailureReason(xrayState: XrayHealthStatus): string {
 export async function runConnectionHealthProbe({
   getXrayHealthStatus,
   connectionMode,
+  tunnelProbe,
 }: RunConnectionHealthProbeOptions): Promise<ConnectionHealthProbeResult> {
   const initialXrayState = getXrayHealthStatus();
   if (initialXrayState.state === 'failed') {
@@ -78,7 +86,13 @@ export async function runConnectionHealthProbe({
     };
   }
 
-  const tunnelOk = await probeHttpThroughProxy(APP_CONSTANTS.PORTS.HTTP);
+  const tunnelOk = await probeHttpThroughProxy(
+    APP_CONSTANTS.PORTS.HTTP,
+    '127.0.0.1',
+    tunnelProbe?.timeoutMs ?? 10_000,
+    tunnelProbe?.attempts ?? 3,
+    tunnelProbe?.gapMs ?? 350,
+  );
   if (!tunnelOk) {
     if (
       connectionMode !== 'tun' &&
