@@ -85,8 +85,11 @@ describe('ConnectionMonitorService', () => {
     configServiceMock.getConnectionMode.mockReturnValue('proxy');
     configServiceMock.setSelectedServerId.mockReset();
     connectionStackServiceMock.transitionTo.mockClear();
+    connectionStackServiceMock.transitionTo.mockResolvedValue(undefined);
     connectionStackServiceMock.resetNetworkingStack.mockClear();
+    connectionStackServiceMock.resetNetworkingStack.mockResolvedValue(undefined);
     connectionStackServiceMock.cleanupAfterFailure.mockClear();
+    connectionStackServiceMock.cleanupAfterFailure.mockResolvedValue(undefined);
     probeTcpPortMock.mockReset();
     probeTcpPortMock.mockResolvedValue(true);
     probeHttpThroughProxyMock.mockReset();
@@ -405,28 +408,170 @@ describe('ConnectionMonitorService', () => {
 
     await vi.advanceTimersByTimeAsync(5_000);
 
-    expect(configServiceMock.setSelectedServerId).toHaveBeenCalledWith(
+    expect(configServiceMock.setSelectedServerId).not.toHaveBeenCalledWith(
       next.uuid,
     );
     expect(connectionStackServiceMock.transitionTo).toHaveBeenCalled();
+  });
+
+  it('uses advisory ping ranking to choose a reachable candidate from a large list quickly', async () => {
+    const current = makeServer({ uuid: 'current', name: 'Current' });
+    const deadServers = Array.from({ length: 40 }, (_, index) =>
+      makeServer({
+        uuid: `dead-${index}`,
+        name: `Dead ${index}`,
+        ping: null,
+      }),
+    );
+    const good = makeServer({
+      uuid: 'good',
+      name: 'Good',
+      ping: 12,
+      pingTime: Date.now(),
+      pingStale: false,
+    });
+    configServiceMock.getServers.mockReturnValue([
+      current,
+      ...deadServers,
+      good,
+    ]);
+    xrayServiceMock.getHealthStatus
+      .mockReturnValueOnce({
+        state: 'failed',
+        ready: false,
+        xrayRunning: false,
+        lastStartAt: Date.now(),
+        lastReadyAt: null,
+        lastReadinessCheckAt: Date.now(),
+        localProxyReachable: false,
+        lastFailureAt: Date.now(),
+        lastFailureReason: 'current server failed',
+        lastReadinessError: 'current server failed',
+      })
+      .mockReturnValue({
+        state: 'running',
+        ready: true,
+        xrayRunning: true,
+        lastStartAt: Date.now(),
+        lastReadyAt: Date.now(),
+        lastReadinessCheckAt: Date.now(),
+        localProxyReachable: true,
+        lastFailureAt: null,
+        lastFailureReason: null,
+        lastReadinessError: null,
+      });
+
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+
+    svc.on('error', () => {});
+    svc.startMonitoring(current);
+    await (svc as any).checkConnectionHealth();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(connectionStackServiceMock.transitionTo).toHaveBeenCalledTimes(1);
+    expect(connectionStackServiceMock.transitionTo.mock.calls[0]?.[0]).toBe(
+      good,
+    );
+    expect(configServiceMock.setSelectedServerId).toHaveBeenLastCalledWith(
+      good.uuid,
+    );
+  });
+
+  it('skips a ping-positive server when real traffic validation fails', async () => {
+    const current = makeServer({ uuid: 'current', name: 'Current' });
+    const pingOnly = makeServer({
+      uuid: 'ping-only',
+      name: 'Ping Only',
+      ping: 5,
+      pingTime: Date.now(),
+      pingStale: false,
+    });
+    const working = makeServer({
+      uuid: 'working',
+      name: 'Working',
+      ping: 50,
+      pingTime: Date.now(),
+      pingStale: false,
+    });
+    configServiceMock.getServers.mockReturnValue([current, pingOnly, working]);
+    xrayServiceMock.getHealthStatus
+      .mockReturnValueOnce({
+        state: 'failed',
+        ready: false,
+        xrayRunning: false,
+        lastStartAt: Date.now(),
+        lastReadyAt: null,
+        lastReadinessCheckAt: Date.now(),
+        localProxyReachable: false,
+        lastFailureAt: Date.now(),
+        lastFailureReason: 'current server failed',
+        lastReadinessError: 'current server failed',
+      })
+      .mockReturnValue({
+        state: 'running',
+        ready: true,
+        xrayRunning: true,
+        lastStartAt: Date.now(),
+        lastReadyAt: Date.now(),
+        lastReadinessCheckAt: Date.now(),
+        localProxyReachable: true,
+        lastFailureAt: null,
+        lastFailureReason: null,
+        lastReadinessError: null,
+      });
+    probeHttpThroughProxyMock
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+
+    svc.on('error', () => {});
+    svc.startMonitoring(current);
+    await (svc as any).checkConnectionHealth();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(connectionStackServiceMock.transitionTo).toHaveBeenCalledTimes(2);
+    expect(connectionStackServiceMock.transitionTo.mock.calls[0]?.[0]).toBe(
+      pingOnly,
+    );
+    expect(connectionStackServiceMock.transitionTo.mock.calls[1]?.[0]).toBe(
+      working,
+    );
+    expect(svc.getStatus().blockedServers).toContain(pingOnly.uuid);
+    expect(svc.getStatus().currentServer?.uuid).toBe(working.uuid);
   });
 
   it('auto-switches from failed Xray health without waiting for tunnel probe streaks', async () => {
     const current = makeServer({ uuid: 'current', name: 'Current' });
     const next = makeServer({ uuid: 'next', name: 'Next' });
     configServiceMock.getServers.mockReturnValue([current, next]);
-    xrayServiceMock.getHealthStatus.mockReturnValue({
-      state: 'failed',
-      ready: false,
-      xrayRunning: false,
-      lastStartAt: Date.now(),
-      lastReadyAt: null,
-      lastReadinessCheckAt: Date.now(),
-      localProxyReachable: false,
-      lastFailureAt: Date.now(),
-      lastFailureReason: 'Xray reported remote server failure',
-      lastReadinessError: 'Xray reported remote server failure',
-    });
+    xrayServiceMock.getHealthStatus
+      .mockReturnValueOnce({
+        state: 'failed',
+        ready: false,
+        xrayRunning: false,
+        lastStartAt: Date.now(),
+        lastReadyAt: null,
+        lastReadinessCheckAt: Date.now(),
+        localProxyReachable: false,
+        lastFailureAt: Date.now(),
+        lastFailureReason: 'Xray reported remote server failure',
+        lastReadinessError: 'Xray reported remote server failure',
+      })
+      .mockReturnValue({
+        state: 'running',
+        ready: true,
+        xrayRunning: true,
+        lastStartAt: Date.now(),
+        lastReadyAt: Date.now(),
+        lastReadinessCheckAt: Date.now(),
+        localProxyReachable: true,
+        lastFailureAt: null,
+        lastFailureReason: null,
+        lastReadinessError: null,
+      });
 
     const ConnectionMonitorService = await loadService();
     const svc = new ConnectionMonitorService();
