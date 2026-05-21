@@ -12,10 +12,12 @@ export function useServerState() {
   );
   const [isConnected, setIsConnected] = useState(false);
   const [isConnectionBusy, setIsConnectionBusy] = useState(false);
+  const [isRefreshingPings, setIsRefreshingPings] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [trafficSnapshot, setTrafficSnapshot] =
     useState<TrafficSnapshot | null>(null);
   const toggleInFlightRef = useRef(false);
+  const pingRefreshInFlightRef = useRef(false);
   const selectedServerRef = useRef<VlessConfig | null>(null);
   const connectedRef = useRef(false);
   const busyRef = useRef(false);
@@ -28,6 +30,19 @@ export function useServerState() {
     },
     [],
   );
+
+  const refreshServerLatency = useCallback(async (force: boolean) => {
+    if (pingRefreshInFlightRef.current) return;
+
+    pingRefreshInFlightRef.current = true;
+    setIsRefreshingPings(true);
+    try {
+      await window.electronAPI.pingAllServers(force);
+    } finally {
+      pingRefreshInFlightRef.current = false;
+      setIsRefreshingPings(false);
+    }
+  }, []);
 
   useEffect(() => {
     let pingTimer: number | null = null;
@@ -46,7 +61,7 @@ export function useServerState() {
             window.electronAPI.getConnectionBusy(),
           ]);
           if (connectedNow || busyNow) return;
-          await window.electronAPI.pingAllServers(force);
+          await refreshServerLatency(force);
         })().catch((error) => {
           console.error('Failed to ping servers', error);
           setConnectionError('Failed to refresh server latency');
@@ -317,7 +332,7 @@ export function useServerState() {
       removeConnectionMonitorEvent();
       removeTrafficStats?.();
     };
-  }, [updateSelectedServerState]);
+  }, [refreshServerLatency, updateSelectedServerState]);
 
   const toggleConnection = useConnectionActions({
     selectedServer,
@@ -331,12 +346,12 @@ export function useServerState() {
   const pingAllServers = useCallback(async () => {
     if (connectedRef.current || busyRef.current) return;
     try {
-      await window.electronAPI.pingAllServers(true);
+      await refreshServerLatency(true);
     } catch (error) {
       console.error('Failed to ping all servers', error);
       setConnectionError('Failed to refresh server latency');
     }
-  }, []);
+  }, [refreshServerLatency]);
 
   const selectServer = useCallback(
     (server: VlessConfig) => {
@@ -357,6 +372,7 @@ export function useServerState() {
     isConnected,
     connectionError,
     isConnectionBusy,
+    isRefreshingPings,
     trafficSnapshot,
     setSelectedServer: selectServer,
     toggleConnection,

@@ -173,4 +173,25 @@ describe('Sidebar', () => {
     expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
     expect(screen.getByTitle('sidebar.pingAll')).toBeDisabled();
   });
+
+  it('shows ping refresh state from automatic updates', async () => {
+    render(
+      <Sidebar
+        servers={mockServers}
+        subscriptions={[]}
+        selectedServer={null}
+        isConnected={false}
+        isRefreshingPings={true}
+        onSelectServer={() => {}}
+        onOpenSettings={() => {}}
+        onPingAll={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('v2.1.2')).toBeInTheDocument();
+    const button = screen.getByTitle('sidebar.pingRefreshing');
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button.querySelector('svg')).toHaveClass('animate-spin');
+  });
 });

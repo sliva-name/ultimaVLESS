@@ -17,6 +17,7 @@ function App() {
     selectedServer,
     isConnected,
     isConnectionBusy,
+    isRefreshingPings,
     connectionError,
     trafficSnapshot,
     setSelectedServer,
@@ -38,6 +39,7 @@ function App() {
         subscriptions={subscriptions}
         selectedServer={selectedServer}
         isConnected={isConnected}
+        isRefreshingPings={isRefreshingPings}
         onSelectServer={setSelectedServer}
         onOpenSettings={handleOpenSettings}
         onPingAll={pingAllServers}

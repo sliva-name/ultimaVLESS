@@ -11,6 +11,7 @@ const resources = {
       sidebar: {
         servers: 'Servers',
         pingAll: 'Ping all',
+        pingRefreshing: 'Refreshing ping...',
         settings: 'Settings',
         noServers: 'No servers or subscriptions added yet.',
         ms: 'ms',
@@ -187,6 +188,7 @@ const resources = {
       sidebar: {
         servers: 'Серверы',
         pingAll: 'Пинг всех',
+        pingRefreshing: 'Обновление пинга...',
         settings: 'Настройки',
         noServers: 'Серверы или подписки пока не добавлены.',
         ms: 'мс',

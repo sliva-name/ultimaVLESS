@@ -25,6 +25,7 @@ interface SidebarProps {
   subscriptions: Subscription[];
   selectedServer: VlessConfig | null;
   isConnected: boolean;
+  isRefreshingPings?: boolean;
   onSelectServer: (server: VlessConfig) => void;
   onOpenSettings: () => void;
   onPingAll?: () => Promise<void>;
@@ -35,6 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   subscriptions,
   selectedServer,
   isConnected,
+  isRefreshingPings = false,
   onSelectServer,
   onOpenSettings,
   onPingAll,
@@ -55,6 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     [servers],
   );
   const manualServers = useMemo(() => buildManualServers(servers), [servers]);
+  const pingInProgress = isPinging || isRefreshingPings;
 
   useEffect(() => {
     window.electronAPI
@@ -87,14 +90,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [selectedServer, servers]);
 
   const handlePingAll = useCallback(async () => {
-    if (!onPingAll || isPinging) return;
+    if (!onPingAll || pingInProgress) return;
     setIsPinging(true);
     try {
       await onPingAll();
     } finally {
       setIsPinging(false);
     }
-  }, [onPingAll, isPinging]);
+  }, [onPingAll, pingInProgress]);
 
   return (
     <div className="w-full md:w-72 md:shrink-0 max-h-[44vh] md:max-h-none min-h-0 bg-linear-to-b from-surface via-surface to-surface/95 border-b md:border-b-0 md:border-r border-gray-800/50 flex flex-col shadow-2xl shadow-black/30 relative overflow-hidden">
@@ -143,18 +146,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {onPingAll && (
                 <button
                   onClick={handlePingAll}
-                  disabled={isPinging || isConnected}
+                  disabled={pingInProgress || isConnected}
+                  aria-busy={pingInProgress}
+                  aria-label={t(
+                    pingInProgress ? 'sidebar.pingRefreshing' : 'sidebar.pingAll',
+                  )}
                   className={clsx(
                     'p-1.5 rounded-lg transition-all duration-200',
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                    isPinging || isConnected
+                    pingInProgress || isConnected
                       ? 'text-gray-600 cursor-not-allowed'
                       : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50',
                   )}
-                  title={t('sidebar.pingAll')}
+                  title={t(
+                    pingInProgress ? 'sidebar.pingRefreshing' : 'sidebar.pingAll',
+                  )}
                 >
                   <RefreshCw
-                    className={clsx('w-3.5 h-3.5', isPinging && 'animate-spin')}
+                    className={clsx(
+                      'w-3.5 h-3.5',
+                      pingInProgress && 'animate-spin',
+                    )}
                   />
                 </button>
               )}
