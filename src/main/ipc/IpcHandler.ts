@@ -81,7 +81,13 @@ async function handleUnexpectedXrayExit(
     });
     beginConnectionBusy();
     try {
-      deps.connectionMonitorService.handleUnexpectedDisconnect(message);
+      const autoSwitchScheduled =
+        deps.connectionMonitorService.handleCriticalConnectionFailure(message, {
+          localProxyReachable: false,
+        });
+      if (!autoSwitchScheduled) {
+        deps.connectionMonitorService.handleUnexpectedDisconnect(message);
+      }
       sendToRenderer(IPC_EVENT_CHANNELS.connectionError, message);
       await deps.connectionStackService.cleanupAfterFailure();
     } catch (error) {
@@ -269,6 +275,10 @@ export function registerIpcHandlers(
   deps.xrayService.removeAllListeners('unexpected-exit');
   deps.xrayService.on('unexpected-exit', (event) => {
     void handleUnexpectedXrayExit(event.reason, deps);
+  });
+  deps.xrayService.removeAllListeners('health-changed');
+  deps.xrayService.on('health-changed', (healthStatus) => {
+    deps.connectionMonitorService.handleXrayHealthStatusChanged(healthStatus);
   });
   deps.connectionMonitorService.removeAllListeners('switch-operation-started');
   deps.connectionMonitorService.removeAllListeners('switch-operation-finished');

@@ -10,6 +10,11 @@ const configServiceMock = vi.hoisted(() => ({
   getConnectionMode: vi.fn(() => 'proxy'),
   setSelectedServerId: vi.fn(),
 }));
+const connectionStackServiceMock = vi.hoisted(() => ({
+  transitionTo: vi.fn(async () => undefined),
+  resetNetworkingStack: vi.fn(async () => undefined),
+  cleanupAfterFailure: vi.fn(async () => undefined),
+}));
 const probeTcpPortMock = vi.hoisted(() => vi.fn(async () => true));
 const probeHttpThroughProxyMock = vi.hoisted(() => vi.fn(async () => true));
 const xrayServiceMock = vi.hoisted(() => ({
@@ -35,6 +40,10 @@ vi.mock('electron', () => ({
 
 vi.mock('./ConfigService', () => ({
   configService: configServiceMock,
+}));
+
+vi.mock('./ConnectionStackService', () => ({
+  connectionStackService: connectionStackServiceMock,
 }));
 
 vi.mock('./networkProbe', () => ({
@@ -71,6 +80,9 @@ describe('ConnectionMonitorService', () => {
     configServiceMock.getConnectionMode.mockReset();
     configServiceMock.getConnectionMode.mockReturnValue('proxy');
     configServiceMock.setSelectedServerId.mockReset();
+    connectionStackServiceMock.transitionTo.mockClear();
+    connectionStackServiceMock.resetNetworkingStack.mockClear();
+    connectionStackServiceMock.cleanupAfterFailure.mockClear();
     probeTcpPortMock.mockReset();
     probeTcpPortMock.mockResolvedValue(true);
     probeHttpThroughProxyMock.mockReset();
@@ -328,6 +340,49 @@ describe('ConnectionMonitorService', () => {
 
     expect(svc.getStatus().lastError).toContain('Remote endpoint check');
     expect(errors.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('auto-switches from failed Xray health without waiting for tunnel probe streaks', async () => {
+    const current = makeServer({ uuid: 'current', name: 'Current' });
+    const next = makeServer({ uuid: 'next', name: 'Next' });
+    configServiceMock.getServers.mockReturnValue([current, next]);
+    xrayServiceMock.getHealthStatus.mockReturnValue({
+      state: 'failed',
+      ready: false,
+      xrayRunning: false,
+      lastStartAt: Date.now(),
+      lastReadyAt: null,
+      lastReadinessCheckAt: Date.now(),
+      localProxyReachable: false,
+      lastFailureAt: Date.now(),
+      lastFailureReason: 'Xray reported remote server failure',
+      lastReadinessError: 'Xray reported remote server failure',
+    });
+
+    const ConnectionMonitorService = await loadService();
+    const svc = new ConnectionMonitorService();
+
+    svc.on('error', () => {});
+    svc.startMonitoring(current);
+    await (svc as any).checkConnectionHealth();
+
+    expect(probeTcpPortMock).not.toHaveBeenCalled();
+    expect(probeHttpThroughProxyMock).not.toHaveBeenCalled();
+    expect(svc.getStatus()).toMatchObject({
+      lastHealthState: 'failed',
+      lastError: 'Xray reported remote server failure',
+      blockedServers: ['current'],
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(configServiceMock.setSelectedServerId).toHaveBeenCalledWith(
+      next.uuid,
+    );
+    expect(connectionStackServiceMock.transitionTo).toHaveBeenCalled();
+    expect(connectionStackServiceMock.transitionTo.mock.calls[0]?.[0]).toBe(
+      next,
+    );
   });
 
   it('ignores in-flight health check results after monitoring stops', async () => {

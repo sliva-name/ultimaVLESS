@@ -9,7 +9,7 @@ import { app } from 'electron';
 import path from 'path';
 import { extractBlockingErrors, isBlockingErrorText } from './blockingErrors';
 import { xrayService } from './XrayService';
-import { ConnectionHealthState } from '@/shared/ipc';
+import { ConnectionHealthState, XrayHealthStatus } from '@/shared/ipc';
 import { runConnectionHealthProbe } from './connectionMonitor/healthProbe';
 import { XrayLogCursor } from './connectionMonitor/xrayLogCursor';
 import { selectNextServerForAutoSwitch } from './connectionMonitor/autoSwitchPolicy';
@@ -38,6 +38,10 @@ interface InternalConnectionStatus {
   lastHealthState: ConnectionHealthState;
   lastHealthFailureReason: string | null;
   localProxyReachable: boolean | null;
+}
+
+interface RecordErrorOptions {
+  forceBlocking?: boolean;
 }
 
 export interface ConnectionEvent {
@@ -194,6 +198,39 @@ export class ConnectionMonitorService extends EventEmitter {
     return true;
   }
 
+  public handleXrayHealthStatusChanged(xrayState: XrayHealthStatus): boolean {
+    if (xrayState.state !== 'failed') {
+      return false;
+    }
+
+    return this.handleCriticalConnectionFailure(
+      this.getXrayFailureReason(xrayState),
+      {
+        localProxyReachable: xrayState.localProxyReachable,
+      },
+    );
+  }
+
+  public handleCriticalConnectionFailure(
+    error: string,
+    options: { localProxyReachable?: boolean | null } = {},
+  ): boolean {
+    if (!this.status.isConnected || !this.status.currentServer) {
+      return false;
+    }
+
+    if ('localProxyReachable' in options) {
+      this.status.localProxyReachable = options.localProxyReachable ?? null;
+    }
+    this.status.lastHealthCheckAt = Date.now();
+    this.tunnelProbeFailStreak = 0;
+    this.localProxyFailStreak = 0;
+
+    return this.recordError(error, this.status.currentServer, {
+      forceBlocking: true,
+    });
+  }
+
   /**
    * Returns the up-to-date reference of the currently tracked server after a
    * server list refresh, or `null` if monitoring isn't tracking anything.
@@ -244,8 +281,13 @@ export class ConnectionMonitorService extends EventEmitter {
   /**
    * Records a connection error.
    */
-  public recordError(error: string, server?: VlessConfig): void {
+  public recordError(
+    error: string,
+    server?: VlessConfig,
+    options: RecordErrorOptions = {},
+  ): boolean {
     const targetServer = server || this.status.currentServer;
+    const isBlocking = options.forceBlocking || this.isBlockingError(error);
 
     logger.error('ConnectionMonitorService', 'Connection error detected', {
       error,
@@ -255,9 +297,7 @@ export class ConnectionMonitorService extends EventEmitter {
 
     this.status.lastError = error;
     this.status.connectionAttempts++;
-    this.status.lastHealthState = this.isBlockingError(error)
-      ? 'failed'
-      : 'degraded';
+    this.status.lastHealthState = isBlocking ? 'failed' : 'degraded';
     this.status.lastHealthFailureReason = error;
 
     if (targetServer) {
@@ -269,14 +309,16 @@ export class ConnectionMonitorService extends EventEmitter {
       } as ConnectionEvent);
 
       // Если ошибка указывает на блокировку, помечаем сервер
-      if (this.isBlockingError(error)) {
+      if (isBlocking) {
         this.markServerAsBlocked(targetServer.uuid);
 
         if (this.isAutoSwitchingEnabled && this.status.isConnected) {
-          this.scheduleAutoSwitch();
+          return this.scheduleAutoSwitch();
         }
       }
     }
+
+    return false;
   }
 
   /**
@@ -284,6 +326,14 @@ export class ConnectionMonitorService extends EventEmitter {
    */
   private isBlockingError(error: string): boolean {
     return isBlockingErrorText(error);
+  }
+
+  private getXrayFailureReason(xrayState: XrayHealthStatus): string {
+    return (
+      xrayState.lastFailureReason ||
+      xrayState.lastReadinessError ||
+      'Xray reported failed health status'
+    );
   }
 
   /**
@@ -348,10 +398,21 @@ export class ConnectionMonitorService extends EventEmitter {
       }
       this.status.localProxyReachable = probeResult.localProxyReachable;
 
+      if (probeResult.type === 'xray-failed') {
+        logger.warn('ConnectionMonitorService', 'Xray health reported failed', {
+          failureReason: probeResult.failureReason,
+        });
+        this.handleCriticalConnectionFailure(probeResult.failureReason, {
+          localProxyReachable: probeResult.localProxyReachable,
+        });
+        return;
+      }
+
       if (probeResult.type === 'local-proxy-failed') {
         this.tunnelProbeFailStreak = 0;
         this.localProxyFailStreak += 1;
         const { failureReason, xrayState } = probeResult;
+        const forceBlocking = xrayState.state === 'failed';
 
         this.status.lastHealthState =
           xrayState.state === 'failed' ? 'failed' : 'degraded';
@@ -368,7 +429,9 @@ export class ConnectionMonitorService extends EventEmitter {
             ConnectionMonitorService.LOCAL_PROXY_STREAK_BEFORE_NOTIFY;
 
         if (shouldSurface && this.status.lastError !== failureReason) {
-          this.recordError(failureReason, this.status.currentServer);
+          this.recordError(failureReason, this.status.currentServer, {
+            forceBlocking,
+          });
         } else {
           logger.debug(
             'ConnectionMonitorService',
@@ -380,6 +443,18 @@ export class ConnectionMonitorService extends EventEmitter {
       }
 
       this.localProxyFailStreak = 0;
+      if (probeResult.type === 'host-offline') {
+        this.tunnelProbeFailStreak = 0;
+        this.status.lastHealthState = 'degraded';
+        this.status.lastHealthFailureReason = probeResult.failureReason;
+        this.status.lastError = null;
+        logger.warn(
+          'ConnectionMonitorService',
+          'Host internet connectivity unavailable; auto-switch deferred',
+        );
+        return;
+      }
+
       if (probeResult.type === 'tunnel-failed') {
         const { failureReason } = probeResult;
         this.tunnelProbeFailStreak += 1;
@@ -470,9 +545,15 @@ export class ConnectionMonitorService extends EventEmitter {
   /**
    * Schedules automatic server switching.
    */
-  private scheduleAutoSwitch(): void {
+  private scheduleAutoSwitch(): boolean {
+    if (!this.status.isConnected || !this.status.currentServer) {
+      return false;
+    }
     if (this.reconnectTimeout) {
-      return; // Уже запланировано переключение
+      return true; // Уже запланировано переключение
+    }
+    if (this.switchInProgress) {
+      return true;
     }
 
     logger.info('ConnectionMonitorService', 'Scheduling auto-switch');
@@ -503,6 +584,7 @@ export class ConnectionMonitorService extends EventEmitter {
       }
       void this.attemptAutoSwitch();
     }, 5000);
+    return true;
   }
 
   /**
