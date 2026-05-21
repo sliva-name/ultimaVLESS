@@ -52,8 +52,18 @@ interface StoreSchema {
  * Service for managing persistent application configuration.
  * Uses electron-store to save user preferences and server lists to disk.
  */
+function buildServersStoreFingerprint(servers: VlessConfig[]): string {
+  return servers
+    .map(
+      (s) =>
+        `${s.uuid}|${s.address}:${s.port}|${s.ping ?? ''}|${s.pingTime ?? ''}|${s.pingStale ? 1 : 0}`,
+    )
+    .join('||');
+}
+
 export class ConfigService {
   private store: Store<StoreSchema>;
+  private lastPersistedServersFingerprint: string | null = null;
 
   constructor() {
     this.store = new Store<StoreSchema>({
@@ -149,7 +159,8 @@ export class ConfigService {
     return (
       settings.muxEnabled === LEGACY_PERFORMANCE_DEFAULTS.muxEnabled &&
       settings.muxConcurrency === LEGACY_PERFORMANCE_DEFAULTS.muxConcurrency &&
-      settings.xudpConcurrency === LEGACY_PERFORMANCE_DEFAULTS.xudpConcurrency &&
+      settings.xudpConcurrency ===
+        LEGACY_PERFORMANCE_DEFAULTS.xudpConcurrency &&
       settings.xudpProxyUDP443 ===
         LEGACY_PERFORMANCE_DEFAULTS.xudpProxyUDP443 &&
       settings.tcpFastOpen === LEGACY_PERFORMANCE_DEFAULTS.tcpFastOpen &&
@@ -249,6 +260,14 @@ export class ConfigService {
    * Updates the list of servers.
    */
   public setServers(servers: VlessConfig[]): void {
+    const fingerprint = buildServersStoreFingerprint(servers);
+    if (fingerprint === this.lastPersistedServersFingerprint) {
+      logger.debug('ConfigService', 'setServers skipped (unchanged fingerprint)', {
+        count: servers.length,
+      });
+      return;
+    }
+    this.lastPersistedServersFingerprint = fingerprint;
     logger.info('ConfigService', 'setServers', { count: servers.length });
     this.store.set('servers', servers);
   }

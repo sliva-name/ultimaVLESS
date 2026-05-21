@@ -2,6 +2,10 @@ import { BrowserWindow } from 'electron';
 import { IPC_EVENT_CHANNELS } from '@/shared/ipc';
 import { toSafeServerList } from '@/shared/serverView';
 import { logger } from '@/main/services/LoggerService';
+import { PerfTimer } from '@/shared/perfMetrics';
+
+/** Defer subscription refresh slightly so first paint is not blocked. */
+const SUBSCRIPTION_REFRESH_DEFER_MS = 800;
 import { IpcDependencies } from './dependencies';
 
 interface InitialStateDeps {
@@ -17,9 +21,7 @@ interface InitialStateActions {
     channel: (typeof IPC_EVENT_CHANNELS)[keyof typeof IPC_EVENT_CHANNELS],
     ...args: unknown[]
   ) => void;
-  queueRefreshAllSubscriptions: (
-    manualLinks: string,
-  ) => Promise<{
+  queueRefreshAllSubscriptions: (manualLinks: string) => Promise<{
     configCount: number;
     reason?: string;
     partialErrors?: string[];
@@ -86,7 +88,33 @@ export async function loadInitialState(
   };
 
   if (hasInput) {
-    const refreshJob = actions.queueRefreshAllSubscriptions(manualLinks);
+    const refreshDeferMs = pendingTunReconnectServerId
+      ? 0
+      : SUBSCRIPTION_REFRESH_DEFER_MS;
+    const refreshJob = new Promise<{
+      configCount: number;
+      reason?: string;
+      partialErrors?: string[];
+    }>((resolve, reject) => {
+      const runRefresh = () => {
+        const timer = new PerfTimer('IPC', 'initial subscription refresh');
+        actions
+          .queueRefreshAllSubscriptions(manualLinks)
+          .then((result) => {
+            timer.end({ configCount: result.configCount });
+            resolve(result);
+          })
+          .catch((error) => {
+            timer.end({ failed: true });
+            reject(error);
+          });
+      };
+      if (refreshDeferMs > 0) {
+        setTimeout(runRefresh, refreshDeferMs);
+      } else {
+        runRefresh();
+      }
+    });
     const refreshCompletion = refreshJob
       .then(handleRefreshResult)
       .catch((error) => {
@@ -101,7 +129,8 @@ export async function loadInitialState(
           const alreadyConnected =
             deps.xrayService.isRunning() &&
             monitorStatus.isConnected &&
-            (monitorStatus.currentServer?.uuid === pendingTunReconnectServerId ||
+            (monitorStatus.currentServer?.uuid ===
+              pendingTunReconnectServerId ||
               monitorStatus.currentServer?.uuid ===
                 deps.configService.getSelectedServerId());
           if (alreadyConnected) {
@@ -129,7 +158,11 @@ export async function loadInitialState(
     logger.info('IPC', 'No enabled subscriptions or manual links saved');
     deps.stopAutoRefreshTimer();
     void attemptPendingReconnectAfterRefresh().catch((error) => {
-      logger.error('IPC', 'Pending TUN reconnect without refresh failed', error);
+      logger.error(
+        'IPC',
+        'Pending TUN reconnect without refresh failed',
+        error,
+      );
     });
   }
 }

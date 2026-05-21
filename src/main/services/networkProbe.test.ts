@@ -44,11 +44,7 @@ describe('probeTlsHandshake', () => {
     const socket = createTlsSocket();
     vi.mocked(tls.connect).mockReturnValue(socket as tls.TLSSocket);
 
-    const resultPromise = probeTlsHandshake(
-      '193.27.19.70',
-      443,
-      'apple.com',
-    );
+    const resultPromise = probeTlsHandshake('193.27.19.70', 443, 'apple.com');
     socket.emit('secureConnect');
 
     await expect(resultPromise).resolves.toBe(true);

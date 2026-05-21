@@ -6,11 +6,12 @@ const resources = {
     translation: {
       app: {
         title: 'UltimaVLESS',
-        subtitle: 'VLESS VPN Client',
+        subtitle: 'Xray VPN Client',
       },
       sidebar: {
         servers: 'Servers',
         pingAll: 'Ping all',
+        pingRefreshing: 'Refreshing ping...',
         settings: 'Settings',
         noServers: 'No servers or subscriptions added yet.',
         ms: 'ms',
@@ -71,7 +72,7 @@ const resources = {
           openPreview: 'Open preview and import mobile list',
           manualConfigs: 'Manual configs (multi-paste)',
           manualPlaceholder:
-            'Paste any text from clipboard. All vless:// and trojan:// links will be extracted.',
+            'Paste any text from clipboard. All vless://, trojan://, and ss:// links will be extracted.',
           manualHint:
             'Mixed clipboard text is fine; links are extracted automatically.',
           saveManual: 'Save manual',
@@ -182,11 +183,12 @@ const resources = {
     translation: {
       app: {
         title: 'UltimaVLESS',
-        subtitle: 'VLESS VPN-клиент',
+        subtitle: 'Xray VPN-клиент',
       },
       sidebar: {
         servers: 'Серверы',
         pingAll: 'Пинг всех',
+        pingRefreshing: 'Обновление пинга...',
         settings: 'Настройки',
         noServers: 'Серверы или подписки пока не добавлены.',
         ms: 'мс',
@@ -248,7 +250,7 @@ const resources = {
           openPreview: 'Открыть превью и импортировать мобильный список',
           manualConfigs: 'Ручные конфигурации',
           manualPlaceholder:
-            'Вставьте любой текст из буфера обмена. Все ссылки vless:// и trojan:// будут извлечены.',
+            'Вставьте любой текст из буфера обмена. Все ссылки vless://, trojan:// и ss:// будут извлечены.',
           manualHint:
             'Можно вставлять любой текст; ссылки извлекаются автоматически.',
           saveManual: 'Сохранить',

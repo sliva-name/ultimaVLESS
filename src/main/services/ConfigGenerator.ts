@@ -12,35 +12,18 @@ import {
   XrayMuxSettings,
   XrayRoutingRule,
 } from '@/shared/xray-types';
-import { APP_CONSTANTS } from '@/shared/constants';
 import {
-  TUN_ADDRESS,
-  TUN_DNS_SERVERS,
-  TUN_INTERFACE_NAME,
-  TUN_IPV6_ADDRESS,
-  TUN_IPV6_PREFIX,
-  TUN_PREFIX,
-} from './tunRoute/constants';
+  createLocalProxyInbounds,
+  createTunInbound,
+  ensureLocalProxyInbounds,
+} from './configGenerator/inbounds';
+import { buildDefaultRoutingRules } from './configGenerator/routing';
+import { applyStatsApi } from './configGenerator/statsApi';
 
 type MutableConfigNode = Record<string, unknown>;
 
 type MutableSockopt = MutableConfigNode & { tcpFastOpen?: boolean };
 type MutableStreamSettings = MutableConfigNode & { sockopt?: MutableSockopt };
-type MutableSniffing = MutableConfigNode & {
-  enabled?: boolean;
-  destOverride?: string[];
-  routeOnly?: boolean;
-};
-
-type MutableInbound = MutableConfigNode & {
-  protocol?: string;
-  tag?: string;
-  port?: number;
-  listen?: string;
-  settings?: MutableConfigNode;
-  sniffing?: MutableSniffing;
-};
-
 type MutableOutbound = MutableConfigNode & {
   protocol?: string;
   tag?: string;
@@ -48,6 +31,8 @@ type MutableOutbound = MutableConfigNode & {
   streamSettings?: MutableStreamSettings;
   mux?: MutableConfigNode;
 };
+
+type StructuredOutboundProtocol = 'vless' | 'trojan' | 'shadowsocks';
 
 export interface ConfigGeneratorOptions {
   sendThrough?: string;
@@ -62,11 +47,7 @@ export class ConfigGenerator {
     connectionMode: ConnectionMode = 'proxy',
     options: ConfigGeneratorOptions = {},
   ): XrayConfig {
-    if (
-      config.rawConfig &&
-      (config.source !== 'subscription' ||
-        !this.canGenerateFromStructuredFields(config))
-    ) {
+    if (config.rawConfig) {
       return this.applyRawConfig(
         config.rawConfig,
         logPath,
@@ -75,12 +56,6 @@ export class ConfigGenerator {
       );
     }
     return this.generateFromFields(config, logPath, connectionMode, options);
-  }
-
-  private static canGenerateFromStructuredFields(config: VlessConfig): boolean {
-    if (!config.address || !config.port) return false;
-    if (config.protocol === 'trojan') return !!config.password;
-    return !!(config.userId || config.uuid);
   }
 
   private static applyRawConfig(
@@ -102,13 +77,13 @@ export class ConfigGenerator {
       cfg.inbounds = [];
     }
 
-    this.ensureLocalProxyInbounds(cfg.inbounds, perf.sniffingRouteOnly);
+    ensureLocalProxyInbounds(cfg.inbounds, perf.sniffingRouteOnly);
     const hasTun = cfg.inbounds.some(
       (ib) => ib?.protocol === 'tun' || ib?.tag === 'tun-in',
     );
 
     if (connectionMode === 'tun' && !hasTun) {
-      cfg.inbounds.unshift(this.createTunInbound(options));
+      cfg.inbounds.unshift(createTunInbound(options));
       this.applySendThroughIfNeeded(cfg, options.sendThrough);
     }
 
@@ -119,7 +94,7 @@ export class ConfigGenerator {
     this.ensureAuxiliaryOutbounds(cfg);
     this.applyPerfToOutbounds(cfg, perf);
     this.applyPerfToRouting(cfg, perf);
-    this.applyStatsApi(cfg);
+    applyStatsApi(cfg);
 
     return cfg;
   }
@@ -146,8 +121,7 @@ export class ConfigGenerator {
     if (!Array.isArray(cfg.outbounds)) return;
     for (const outbound of cfg.outbounds as MutableOutbound[]) {
       if (!outbound || (outbound.tag && outbound.tag !== 'proxy')) continue;
-      if (outbound.protocol !== 'vless' && outbound.protocol !== 'trojan')
-        continue;
+      if (!this.isTunableProxyProtocol(outbound.protocol)) continue;
 
       if (!outbound.streamSettings) outbound.streamSettings = {};
       this.normalizeStreamSettings(outbound.streamSettings);
@@ -166,6 +140,14 @@ export class ConfigGenerator {
         );
       }
     }
+  }
+
+  private static isTunableProxyProtocol(protocol: unknown): boolean {
+    return (
+      protocol === 'vless' ||
+      protocol === 'trojan' ||
+      protocol === 'shadowsocks'
+    );
   }
 
   private static normalizeStreamSettings(
@@ -197,6 +179,69 @@ export class ConfigGenerator {
       delete grpc.mode;
       if (grpc.authority === '') {
         delete grpc.authority;
+      }
+    }
+
+    const wsSettings = streamSettings.wsSettings;
+    if (
+      wsSettings &&
+      typeof wsSettings === 'object' &&
+      !Array.isArray(wsSettings)
+    ) {
+      const ws = wsSettings as Record<string, unknown>;
+      const headers =
+        ws.headers &&
+        typeof ws.headers === 'object' &&
+        !Array.isArray(ws.headers)
+          ? (ws.headers as Record<string, unknown>)
+          : undefined;
+      const hostHeader = headers
+        ? Object.keys(headers).find((key) => key.toLowerCase() === 'host')
+        : undefined;
+      if (hostHeader) {
+        if (
+          ws.host === undefined &&
+          typeof headers?.[hostHeader] === 'string'
+        ) {
+          ws.host = headers[hostHeader];
+        }
+        delete headers?.[hostHeader];
+      }
+      if (typeof ws.maxEarlyData === 'number') {
+        ws.path = this.withWebSocketEarlyData(
+          typeof ws.path === 'string' ? ws.path : '/',
+          ws.maxEarlyData,
+        );
+      }
+      delete ws.maxEarlyData;
+      delete ws.earlyDataHeaderName;
+    }
+
+    const xhttpSettings =
+      streamSettings.xhttpSettings || streamSettings.splithttpSettings;
+    if (
+      xhttpSettings &&
+      typeof xhttpSettings === 'object' &&
+      !Array.isArray(xhttpSettings)
+    ) {
+      const xhttp = xhttpSettings as Record<string, unknown>;
+      const headers =
+        xhttp.headers &&
+        typeof xhttp.headers === 'object' &&
+        !Array.isArray(xhttp.headers)
+          ? (xhttp.headers as Record<string, unknown>)
+          : undefined;
+      const hostHeader = headers
+        ? Object.keys(headers).find((key) => key.toLowerCase() === 'host')
+        : undefined;
+      if (hostHeader) {
+        if (
+          xhttp.host === undefined &&
+          typeof headers?.[hostHeader] === 'string'
+        ) {
+          xhttp.host = headers[hostHeader];
+        }
+        delete headers?.[hostHeader];
       }
     }
   }
@@ -303,6 +348,68 @@ export class ConfigGenerator {
     });
   }
 
+  private static getStructuredProtocol(
+    config: VlessConfig,
+  ): StructuredOutboundProtocol {
+    if (config.protocol === 'trojan') return 'trojan';
+    if (config.protocol === 'shadowsocks') return 'shadowsocks';
+    return 'vless';
+  }
+
+  private static normalizeTransport(
+    config: VlessConfig,
+  ): XrayStreamSettings['network'] {
+    const transport = config.type || 'tcp';
+    switch (transport) {
+      case 'raw':
+      case 'tcp':
+        return 'tcp';
+      case 'kcp':
+      case 'mkcp':
+        return 'mkcp';
+      case 'ws':
+      case 'websocket':
+        return 'websocket';
+      case 'grpc':
+        return 'grpc';
+      case 'xhttp':
+      case 'splithttp':
+        return 'xhttp';
+      case 'httpupgrade':
+        return 'httpupgrade';
+      case 'http':
+        throw new Error(
+          'HTTP transport is not supported by bundled Xray 26.3.27; use XHTTP instead.',
+        );
+      case 'quic':
+        throw new Error(
+          'QUIC transport is not supported by bundled Xray 26.3.27; use XHTTP/H3 instead.',
+        );
+      default:
+        return 'tcp';
+    }
+  }
+
+  private static getDefaultSecurity(
+    config: VlessConfig,
+    protocol: StructuredOutboundProtocol,
+  ): XrayStreamSettings['security'] {
+    if (config.security) return config.security;
+    return protocol === 'trojan' ? 'tls' : 'none';
+  }
+
+  private static withWebSocketEarlyData(
+    path: string,
+    maxEarlyData?: number,
+  ): string {
+    if (!maxEarlyData || maxEarlyData <= 0) return path;
+    const [pathname, query = ''] = path.split('?', 2);
+    const params = new URLSearchParams(query);
+    params.set('ed', String(Math.min(maxEarlyData, 8192)));
+    const serialized = params.toString();
+    return serialized ? `${pathname || '/'}?${serialized}` : pathname || '/';
+  }
+
   private static generateFromFields(
     config: VlessConfig,
     logPath: string,
@@ -310,13 +417,18 @@ export class ConfigGenerator {
     options: ConfigGeneratorOptions,
   ): XrayConfig {
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
-    const protocol: 'vless' | 'trojan' =
-      config.protocol === 'trojan' ? 'trojan' : 'vless';
+    const protocol = this.getStructuredProtocol(config);
 
     const streamSettings: XrayStreamSettings = {
-      network: (config.type === 'raw' ? 'raw' : config.type) || 'tcp',
-      security: config.security || (protocol === 'trojan' ? 'tls' : 'none'),
+      network: this.normalizeTransport(config),
+      security: this.getDefaultSecurity(config, protocol),
     };
+    if (
+      streamSettings.security === 'reality' &&
+      !['tcp', 'xhttp', 'grpc'].includes(streamSettings.network)
+    ) {
+      throw new Error('REALITY transport requires RAW/TCP, XHTTP, or gRPC.');
+    }
 
     const defaultFp = perf.fingerprint;
 
@@ -335,13 +447,34 @@ export class ConfigGenerator {
         alpn: ['h2', 'http/1.1'],
         fingerprint: config.fp || defaultFp,
       };
+      if (config.pinnedPeerCertSha256) {
+        streamSettings.tlsSettings.pinnedPeerCertSha256 =
+          config.pinnedPeerCertSha256;
+      }
+      if (config.verifyPeerCertByName) {
+        streamSettings.tlsSettings.verifyPeerCertByName =
+          config.verifyPeerCertByName;
+      }
     }
 
-    if (streamSettings.network === 'ws') {
+    if (streamSettings.network === 'websocket') {
       streamSettings.wsSettings = {
-        path: config.path || '/',
-        headers: { Host: config.host || config.sni || '' },
+        path: this.withWebSocketEarlyData(
+          config.path || '/',
+          config.wsMaxEarlyData,
+        ),
+        host: config.host || config.sni || '',
       };
+    }
+
+    if (streamSettings.network === 'httpupgrade') {
+      streamSettings.httpupgradeSettings = {
+        path: this.withWebSocketEarlyData(
+          config.path || '/',
+          config.wsMaxEarlyData,
+        ),
+        host: config.host || config.sni || '',
+      } as Record<string, unknown>;
     }
 
     if (streamSettings.network === 'grpc') {
@@ -372,7 +505,7 @@ export class ConfigGenerator {
       }
     }
 
-    if (streamSettings.network === 'kcp') {
+    if (streamSettings.network === 'mkcp') {
       streamSettings.kcpSettings = {
         mtu: 1350,
         tti: 20,
@@ -381,22 +514,6 @@ export class ConfigGenerator {
         congestion: true,
         readBufferSize: 4,
         writeBufferSize: 4,
-        header: { type: 'none' },
-      };
-    }
-
-    if (streamSettings.network === 'http') {
-      const h = (config.host || config.sni || '').trim();
-      streamSettings.httpSettings = {
-        path: config.path || '/',
-        host: h ? [h] : [],
-      };
-    }
-
-    if (streamSettings.network === 'quic') {
-      streamSettings.quicSettings = {
-        security: 'none',
-        key: '',
         header: { type: 'none' },
       };
     }
@@ -423,11 +540,11 @@ export class ConfigGenerator {
       outbound.sendThrough = options.sendThrough;
     }
 
-    const inbounds: XrayInbound[] = this.createLocalProxyInbounds(
+    const inbounds: XrayInbound[] = createLocalProxyInbounds(
       perf.sniffingRouteOnly,
     );
     if (connectionMode === 'tun') {
-      inbounds.unshift(this.createTunInbound(options) as XrayInbound);
+      inbounds.unshift(createTunInbound(options) as XrayInbound);
     }
 
     const cfg: XrayConfig = {
@@ -457,102 +574,33 @@ export class ConfigGenerator {
       ],
       routing: {
         domainStrategy: perf.domainStrategy,
-        rules: this.buildRoutingRules(perf),
+        rules: buildDefaultRoutingRules(perf),
       },
     };
 
-    this.applyStatsApi(cfg);
+    applyStatsApi(cfg);
     return cfg;
-  }
-
-  /**
-   * Enables Xray's StatsService on a loopback gRPC port so the renderer can
-   * display per-session upload/download counters. Adds the matching `api`
-   * inbound, routing rule, policy counters, and outbound stub.
-   */
-  private static applyStatsApi(cfg: XrayConfig): void {
-    cfg.stats = cfg.stats ?? {};
-    cfg.api = cfg.api ?? { tag: 'api', services: ['StatsService'] };
-
-    const policy = (cfg.policy ?? {}) as Record<string, unknown>;
-    const levels =
-      (policy.levels as Record<string, Record<string, unknown>>) ?? {};
-    const levelZero = levels['0'] ?? {};
-    levels['0'] = {
-      ...levelZero,
-      statsUserUplink: true,
-      statsUserDownlink: true,
-    };
-    const system = (policy.system as Record<string, unknown>) ?? {};
-    policy.levels = levels;
-    policy.system = {
-      ...system,
-      statsInboundUplink: true,
-      statsInboundDownlink: true,
-      statsOutboundUplink: true,
-      statsOutboundDownlink: true,
-    };
-    cfg.policy = policy;
-
-    if (!Array.isArray(cfg.inbounds)) {
-      cfg.inbounds = [];
-    }
-    const inbounds = cfg.inbounds as MutableInbound[];
-    if (!inbounds.some((ib) => ib?.tag === 'api')) {
-      inbounds.push({
-        tag: 'api',
-        port: APP_CONSTANTS.PORTS.API,
-        listen: '127.0.0.1',
-        protocol: 'dokodemo-door',
-        settings: { address: '127.0.0.1' },
-      });
-    }
-
-    if (!Array.isArray(cfg.outbounds)) cfg.outbounds = [];
-    const outbounds = cfg.outbounds as MutableOutbound[];
-    if (!outbounds.some((o) => o?.tag === 'api')) {
-      outbounds.push({ tag: 'api', protocol: 'freedom', settings: {} });
-    }
-
-    if (!cfg.routing || typeof cfg.routing !== 'object') {
-      cfg.routing = { domainStrategy: 'AsIs', rules: [] };
-    }
-    if (!Array.isArray(cfg.routing.rules)) {
-      cfg.routing.rules = [];
-    }
-    const rules = cfg.routing.rules as XrayRoutingRule[];
-    const hasApiRule = rules.some(
-      (r) => r && Array.isArray(r.inboundTag) && r.inboundTag.includes('api'),
-    );
-    const apiRule = hasApiRule
-      ? rules.find(
-          (r) =>
-            r && Array.isArray(r.inboundTag) && r.inboundTag.includes('api'),
-        )
-      : { type: 'field', inboundTag: ['api'], outboundTag: 'api' };
-    const nonApiRules = rules.filter(
-      (r) =>
-        !(r && Array.isArray(r.inboundTag) && r.inboundTag.includes('api')),
-    );
-
-    // Keep the API rule first. Raw configs can contain broad direct rules like
-    // `geoip:private -> direct`; if they match 127.0.0.1 before the API rule,
-    // Xray loops its StatsService traffic back into the API inbound.
-    cfg.routing.rules = [apiRule, ...nonApiRules] as XrayRoutingRule[];
   }
 
   private static buildOutboundSettings(
     config: VlessConfig,
-    protocol: 'vless' | 'trojan',
+    protocol: StructuredOutboundProtocol,
     hasVisionFlow: boolean,
   ): Record<string, unknown> {
     if (protocol === 'trojan') {
-      const server: Record<string, unknown> = {
+      return {
         address: config.address,
         port: config.port,
         password: config.password || '',
       };
-      return { servers: [server] };
+    }
+    if (protocol === 'shadowsocks') {
+      return {
+        address: config.address,
+        port: config.port,
+        method: config.method || '',
+        password: config.password || '',
+      };
     }
     const vlessUser: { id: string; encryption: string; flow?: string } = {
       id: config.userId || config.uuid,
@@ -614,147 +662,5 @@ export class ConfigGenerator {
       return;
     }
     preferred.sendThrough = sendThrough;
-  }
-
-  private static createLocalProxyInbounds(
-    sniffingRouteOnly = true,
-  ): XrayInbound[] {
-    const sniffing = {
-      enabled: true,
-      destOverride: ['http', 'tls', 'quic'],
-      routeOnly: sniffingRouteOnly,
-    };
-    return [
-      {
-        tag: 'socks',
-        port: APP_CONSTANTS.PORTS.SOCKS,
-        listen: '127.0.0.1',
-        protocol: 'socks',
-        settings: { udp: true },
-        sniffing,
-      },
-      {
-        tag: 'http',
-        port: APP_CONSTANTS.PORTS.HTTP,
-        listen: '127.0.0.1',
-        protocol: 'http',
-        settings: {},
-        sniffing,
-      },
-    ];
-  }
-
-  private static ensureLocalProxyInbounds(
-    inbounds: MutableInbound[],
-    sniffingRouteOnly = true,
-  ): void {
-    let hasSocks = false;
-    let hasHttp = false;
-
-    const ensureSniffing = (inbound: MutableInbound) => {
-      if (!inbound.sniffing) {
-        inbound.sniffing = {
-          enabled: true,
-          destOverride: ['http', 'tls', 'quic'],
-          routeOnly: sniffingRouteOnly,
-        };
-      } else {
-        inbound.sniffing.routeOnly = sniffingRouteOnly;
-      }
-    };
-
-    for (const inbound of inbounds) {
-      if (inbound.protocol === 'socks') {
-        inbound.tag ??= 'socks';
-        inbound.port = APP_CONSTANTS.PORTS.SOCKS;
-        inbound.listen = '127.0.0.1';
-        inbound.settings = {
-          auth: 'noauth',
-          ...inbound.settings,
-          udp: true,
-        };
-        ensureSniffing(inbound);
-        hasSocks = true;
-      }
-      if (inbound.protocol === 'http') {
-        inbound.tag ??= 'http';
-        inbound.port = APP_CONSTANTS.PORTS.HTTP;
-        inbound.listen = '127.0.0.1';
-        inbound.settings = {
-          allowTransparent: false,
-          ...inbound.settings,
-        };
-        ensureSniffing(inbound);
-        hasHttp = true;
-      }
-    }
-
-    if (!hasSocks || !hasHttp) {
-      const defaults = this.createLocalProxyInbounds(sniffingRouteOnly);
-      if (!hasSocks) {
-        inbounds.push(defaults[0] as MutableInbound);
-      }
-      if (!hasHttp) {
-        inbounds.push(defaults[1] as MutableInbound);
-      }
-    }
-  }
-
-  private static buildRoutingRules(
-    perf: PerformanceSettings,
-  ): XrayRoutingRule[] {
-    const rules: XrayRoutingRule[] = [];
-    if (perf.blockAds) {
-      rules.push({
-        type: 'field',
-        domain: ['geosite:category-ads-all'],
-        outboundTag: 'block',
-      });
-    }
-    if (perf.blockBittorrent) {
-      rules.push({
-        type: 'field',
-        protocol: ['bittorrent'],
-        outboundTag: 'block',
-      });
-    }
-    rules.push(
-      { type: 'field', domain: ['geosite:cn'], outboundTag: 'direct' },
-      {
-        type: 'field',
-        ip: ['geoip:private', 'geoip:cn'],
-        outboundTag: 'direct',
-      },
-      { type: 'field', port: '0-65535', outboundTag: 'proxy' },
-    );
-    return rules;
-  }
-
-  private static createTunInbound(
-    options: ConfigGeneratorOptions,
-  ): XrayInbound {
-    const tunInbound: XrayInbound = {
-      tag: 'tun-in',
-      port: 0,
-      protocol: 'tun',
-      settings: {
-        name: TUN_INTERFACE_NAME,
-        mtu: 1500,
-        gateway: [
-          `${TUN_ADDRESS}/${TUN_PREFIX}`,
-          `${TUN_IPV6_ADDRESS}/${TUN_IPV6_PREFIX}`,
-        ],
-        dns: TUN_DNS_SERVERS,
-      },
-    };
-    if (options.tunAutoRoute) {
-      (tunInbound.settings as MutableConfigNode).autoSystemRoutingTable = [
-        '0.0.0.0/0',
-        '::/0',
-      ];
-      (tunInbound.settings as MutableConfigNode).autoOutboundsInterface =
-        'auto';
-    }
-    return tunInbound;
   }
 }

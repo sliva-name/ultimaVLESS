@@ -2,23 +2,27 @@ import * as net from 'net';
 import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { probeTlsHandshake } from './networkProbe';
+import { PerfTimer } from '@/shared/perfMetrics';
+
+interface TlsCacheEntry {
+  ok: boolean;
+  expiresAt: number;
+}
+
+export interface PingServersOptions {
+  onResult?: (uuid: string, latency: number | null) => void;
+}
 
 /**
  * Service for checking server latency (ping) via TCP connection attempts.
- * Measures the time it takes to establish a TCP connection to the server.
  */
 export class PingService {
-  private readonly DEFAULT_TIMEOUT = 1800; // Fast first result for UI
-  private readonly MAX_CONCURRENT_PINGS = 20; // Higher concurrency for large server lists
+  private readonly DEFAULT_TIMEOUT = 1800;
+  private readonly MAX_CONCURRENT_PINGS = 20;
+  private static readonly TLS_OK_TTL_MS = 5 * 60 * 1000;
+  private static readonly TLS_FAIL_TTL_MS = 60 * 1000;
+  private readonly tlsCache = new Map<string, TlsCacheEntry>();
 
-  /**
-   * Pings a single server.
-   * For TLS/Reality servers, performs TCP connect followed by a TLS handshake
-   * to detect servers that pass raw TCP but fail in practice (broken config, DPI block, etc.).
-   * @param server - The server configuration to ping.
-   * @param timeout - Connection timeout in milliseconds (default: 1800ms).
-   * @returns Promise resolving to latency in milliseconds, or null if connection failed.
-   */
   public async pingServer(
     server: VlessConfig,
     timeout: number = this.DEFAULT_TIMEOUT,
@@ -30,13 +34,7 @@ export class PingService {
 
     if (this.requiresTlsCheck(server)) {
       const sni = server.sni || server.address;
-      const tlsTimeout = Math.max(timeout, 4000);
-      const tlsOk = await probeTlsHandshake(
-        server.address,
-        server.port,
-        sni,
-        tlsTimeout,
-      );
+      const tlsOk = await this.validateTls(server, sni, timeout);
       if (!tlsOk) {
         logger.debug(
           'PingService',
@@ -53,9 +51,39 @@ export class PingService {
     return tcpLatency;
   }
 
-  /** Returns true if the server uses TLS or Reality and should be validated via TLS handshake. */
   private requiresTlsCheck(server: VlessConfig): boolean {
     return server.security === 'tls' || server.security === 'reality';
+  }
+
+  private tlsCacheKey(server: VlessConfig, sni: string): string {
+    return `${server.address}:${server.port}:${sni}`;
+  }
+
+  private async validateTls(
+    server: VlessConfig,
+    sni: string,
+    timeout: number,
+  ): Promise<boolean> {
+    const key = this.tlsCacheKey(server, sni);
+    const cached = this.tlsCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.ok;
+    }
+
+    const tlsTimeout = Math.max(timeout, 4000);
+    const tlsOk = await probeTlsHandshake(
+      server.address,
+      server.port,
+      sni,
+      tlsTimeout,
+    );
+    this.tlsCache.set(key, {
+      ok: tlsOk,
+      expiresAt:
+        Date.now() +
+        (tlsOk ? PingService.TLS_OK_TTL_MS : PingService.TLS_FAIL_TTL_MS),
+    });
+    return tlsOk;
   }
 
   private async tcpPing(
@@ -113,19 +141,16 @@ export class PingService {
     });
   }
 
-  /**
-   * Pings multiple servers with concurrency control.
-   * @param servers - Array of server configurations to ping.
-   * @param timeout - Connection timeout in milliseconds (default: 5000ms).
-   * @returns Promise resolving to a map keyed by server uuid with measured latency.
-   */
   public async pingServers(
     servers: VlessConfig[],
     timeout: number = this.DEFAULT_TIMEOUT,
+    options: PingServersOptions = {},
   ): Promise<Map<string, number | null>> {
     const results = new Map<string, number | null>();
+    const timer = new PerfTimer('PingService', 'pingServers');
 
     if (servers.length === 0) {
+      timer.end({ count: 0 });
       return results;
     }
 
@@ -140,33 +165,21 @@ export class PingService {
         if (!server) break;
 
         const latency = await this.pingServer(server, timeout);
-        logger.debug('PingService', `Ping result for ${server.name}`, {
-          uuid: server.uuid.substring(0, 8) + '...',
-          address: server.address,
-          port: server.port,
-          latency,
-        });
         results.set(server.uuid, latency);
+        options.onResult?.(server.uuid, latency);
       }
     };
 
     await Promise.all(Array.from({ length: workersCount }, () => runWorker()));
 
-    logger.debug('PingService', 'All ping results', {
+    timer.end({
       totalServers: servers.length,
       resultsCount: results.size,
-      uniqueUUIDs: new Set(servers.map((s) => s.uuid)).size,
     });
 
     return results;
   }
 
-  /**
-   * Pings a single server and returns the result with server info.
-   * @param server - The server configuration to ping.
-   * @param timeout - Connection timeout in milliseconds (default: 5000ms).
-   * @returns Promise resolving to ping result object.
-   */
   public async pingServerWithResult(
     server: VlessConfig,
     timeout: number = this.DEFAULT_TIMEOUT,

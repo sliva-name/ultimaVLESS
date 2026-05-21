@@ -150,6 +150,11 @@ describe('SystemProxyService', () => {
         command.includes('ConvertFrom-Json'),
       ),
     ).toBe(true);
+    expect(
+      getPowerShellCommands().some((command) =>
+        command.includes('netsh winhttp reset proxy'),
+      ),
+    ).toBe(true);
     expect(hasFileInvocation('0')).toBe(false);
     expect(
       getSpawnCommands().some(
@@ -208,6 +213,11 @@ describe('SystemProxyService', () => {
 
     expect(getPowerShellCommands()).toHaveLength(0);
     expect(hasFileInvocation('0', '')).toBe(true);
+    expect(
+      fs
+        .readFileSync(path.join(mockState.tempDir, 'proxy_manager.ps1'), 'utf8')
+        .includes('netsh winhttp reset proxy'),
+    ).toBe(true);
     expect(
       getSpawnCommands().some(
         ({ command, args }) => command === 'reg' && args.includes('delete'),

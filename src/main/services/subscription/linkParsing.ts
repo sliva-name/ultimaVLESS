@@ -1,5 +1,8 @@
-import { createHash } from 'crypto';
 import { VlessConfig } from '@/shared/types';
+import {
+  createHashedIdentityToken,
+  createStableServerId,
+} from '@/shared/serverIdentity';
 import { logger } from '@/main/services/LoggerService';
 
 function safeDecodeComponent(value: string): string {
@@ -30,27 +33,58 @@ function parseOptionalBooleanQueryParam(
   return undefined;
 }
 
-function makeServerIdentity(
-  authToken: string,
-  address: string,
-  port: number,
-  parts: Array<string | undefined>,
-): string {
-  const signature = [
-    authToken,
-    address,
-    String(port),
-    ...parts.map((part) => part || ''),
-  ].join('|');
-  const digest = createHash('sha256')
-    .update(signature)
-    .digest('hex')
-    .slice(0, 16);
-  return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
+function parseOptionalIntegerQueryParam(
+  value: string | null,
+): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function normalizeLinkForParsing(link: string): string {
   return link.trim().replace(/&amp;/gi, '&');
+}
+
+function decodeBase64Url(value: string): string | null {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(
+    normalized.length + ((4 - (normalized.length % 4)) % 4),
+    '=',
+  );
+  try {
+    return Buffer.from(padded, 'base64').toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+function parseMethodPassword(value: string): {
+  method: string;
+  password: string;
+} | null {
+  const colonIndex = value.indexOf(':');
+  if (colonIndex <= 0) return null;
+  const method = value.slice(0, colonIndex);
+  const password = value.slice(colonIndex + 1);
+  if (!method || !password) return null;
+  return { method, password };
+}
+
+function parsePluginParams(value: string | null): Map<string, string> {
+  const params = new Map<string, string>();
+  if (!value) return params;
+  for (const part of value.split(';')) {
+    if (!part) continue;
+    const equalsIndex = part.indexOf('=');
+    if (equalsIndex < 0) {
+      params.set(part.toLowerCase(), 'true');
+      continue;
+    }
+    const key = part.slice(0, equalsIndex).toLowerCase();
+    const rawValue = part.slice(equalsIndex + 1);
+    params.set(key, safeDecodeComponent(rawValue));
+  }
+  return params;
 }
 
 function parseJsonObjectParam(
@@ -71,12 +105,17 @@ function parseJsonObjectParam(
 }
 
 export function isSupportedLink(link: string): boolean {
-  return link.startsWith('vless://') || link.startsWith('trojan://');
+  const normalized = link.toLowerCase();
+  return (
+    normalized.startsWith('vless://') ||
+    normalized.startsWith('trojan://') ||
+    normalized.startsWith('ss://')
+  );
 }
 
 export function extractSupportedLinks(input: string): string[] {
   // Stop before common HTML delimiters so links embedded in markup are still valid.
-  const matches = input.match(/(?:vless|trojan):\/\/[^\s<>"'`]+/gi);
+  const matches = input.match(/(?:vless|trojan|ss):\/\/[^\s<>"'`]+/gi);
   if (!matches) return [];
 
   return matches
@@ -118,9 +157,19 @@ function parseVlessLink(
     const typeValue = params.get('type') || 'tcp';
     const securityValue = params.get('security') || 'none';
     const type = (
-      ['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic', 'xhttp'].includes(
-        typeValue,
-      )
+      [
+        'tcp',
+        'raw',
+        'kcp',
+        'mkcp',
+        'ws',
+        'websocket',
+        'http',
+        'grpc',
+        'quic',
+        'xhttp',
+        'httpupgrade',
+      ].includes(typeValue)
         ? typeValue
         : 'tcp'
     ) as VlessConfig['type'];
@@ -147,7 +196,7 @@ function parseVlessLink(
     const allowInsecure =
       isTruthyQueryParam(params.get('insecure')) ||
       isTruthyQueryParam(params.get('allowInsecure'));
-    const stableId = makeServerIdentity(uuid, address, port, [
+    const stableId = createStableServerId(uuid, address, port, [
       identitySalt,
       type,
       security,
@@ -189,6 +238,8 @@ function parseVlessLink(
       xhttpExtra,
       noGRPCHeader,
       allowInsecure,
+      pinnedPeerCertSha256: params.get('pinnedPeerCertSha256') ?? undefined,
+      verifyPeerCertByName: params.get('verifyPeerCertByName') ?? undefined,
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing VLESS link', {
@@ -233,19 +284,24 @@ function parseTrojanLink(link: string): VlessConfig | null {
     // instead of a half-baked rawConfig that would crash Xray once routing
     // references `outboundTag: "block"` / `"direct"`.
     return {
-      uuid: makeServerIdentity(password || 'trojan', address, port, [
-        network,
-        security,
-        params.get('sni') || '',
-        params.get('fp') || '',
-        params.get('path') || '',
-        params.get('host') || '',
-        params.get('serviceName') || '',
-        String(
-          isTruthyQueryParam(params.get('insecure')) ||
-            isTruthyQueryParam(params.get('allowInsecure')),
-        ),
-      ]),
+      uuid: createStableServerId(
+        createHashedIdentityToken('tj', password || 'trojan', address, port),
+        address,
+        port,
+        [
+          network,
+          security,
+          params.get('sni') || '',
+          params.get('fp') || '',
+          params.get('path') || '',
+          params.get('host') || '',
+          params.get('serviceName') || '',
+          String(
+            isTruthyQueryParam(params.get('insecure')) ||
+              isTruthyQueryParam(params.get('allowInsecure')),
+          ),
+        ],
+      ),
       address,
       port,
       name,
@@ -261,6 +317,8 @@ function parseTrojanLink(link: string): VlessConfig | null {
       allowInsecure:
         isTruthyQueryParam(params.get('insecure')) ||
         isTruthyQueryParam(params.get('allowInsecure')),
+      pinnedPeerCertSha256: params.get('pinnedPeerCertSha256') ?? undefined,
+      verifyPeerCertByName: params.get('verifyPeerCertByName') ?? undefined,
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing Trojan link', {
@@ -270,12 +328,151 @@ function parseTrojanLink(link: string): VlessConfig | null {
   }
 }
 
+function parseShadowsocksCredentials(
+  normalizedLink: string,
+  parsedUrl: URL,
+): { method: string; password: string; address: string; port: number } | null {
+  const address = parsedUrl.hostname || '';
+  const port = Number(parsedUrl.port);
+  const encodedUserInfo = safeDecodeComponent(
+    parsedUrl.password
+      ? `${parsedUrl.username}:${parsedUrl.password}`
+      : parsedUrl.username || '',
+  );
+  const decodedUserInfo = decodeBase64Url(encodedUserInfo);
+  const credentials =
+    (decodedUserInfo ? parseMethodPassword(decodedUserInfo) : null) ??
+    parseMethodPassword(encodedUserInfo);
+  if (credentials && address && Number.isInteger(port)) {
+    return { ...credentials, address, port };
+  }
+
+  const withoutSchemeAndFragment = normalizedLink
+    .slice('ss://'.length)
+    .split('#', 1)[0]!
+    .split('?', 1)[0]!;
+  const decodedFull = decodeBase64Url(withoutSchemeAndFragment);
+  if (!decodedFull) return null;
+  const atIndex = decodedFull.lastIndexOf('@');
+  if (atIndex <= 0) return null;
+  const decodedCredentials = parseMethodPassword(decodedFull.slice(0, atIndex));
+  if (!decodedCredentials) return null;
+  const endpoint = decodedFull.slice(atIndex + 1);
+  const endpointUrl = new URL(`ss://${endpoint}`);
+  const decodedPort = Number(endpointUrl.port);
+  return {
+    ...decodedCredentials,
+    address: endpointUrl.hostname || '',
+    port: decodedPort,
+  };
+}
+
+function parseShadowsocksLink(link: string): VlessConfig | null {
+  try {
+    const normalizedLink = normalizeLinkForParsing(link);
+    const parsedUrl = new URL(normalizedLink);
+    if (parsedUrl.protocol !== 'ss:') return null;
+
+    const parsed = parseShadowsocksCredentials(normalizedLink, parsedUrl);
+    if (
+      !parsed ||
+      !parsed.method ||
+      !parsed.password ||
+      !parsed.address ||
+      !Number.isInteger(parsed.port) ||
+      parsed.port < 1 ||
+      parsed.port > 65535
+    ) {
+      return null;
+    }
+
+    const name = parsedUrl.hash
+      ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Shadowsocks Server'
+      : 'Shadowsocks Server';
+    const params = parsedUrl.searchParams;
+    const pluginParams = parsePluginParams(params.get('plugin'));
+    const mode = (pluginParams.get('mode') || params.get('type') || '')
+      .toLowerCase()
+      .trim();
+    const isWebSocket =
+      mode === 'websocket' ||
+      mode === 'ws' ||
+      pluginParams.has('tls') ||
+      params.get('type') === 'ws';
+    const host = pluginParams.get('host') || params.get('host') || undefined;
+    const path = pluginParams.get('path') || params.get('path') || undefined;
+    const sni = pluginParams.get('sni') || params.get('sni') || host;
+    const wsMaxEarlyData =
+      parseOptionalIntegerQueryParam(pluginParams.get('ed') ?? null) ??
+      parseOptionalIntegerQueryParam(params.get('ed'));
+    const allowInsecure =
+      isTruthyQueryParam(pluginParams.get('skip-cert-verify') ?? null) ||
+      isTruthyQueryParam(params.get('insecure')) ||
+      isTruthyQueryParam(params.get('allowInsecure'));
+    const security =
+      pluginParams.has('tls') || params.get('security') === 'tls'
+        ? 'tls'
+        : 'none';
+    const type = isWebSocket ? 'ws' : 'tcp';
+
+    const uuid = createStableServerId(
+      createHashedIdentityToken(
+        'ss',
+        `${parsed.method}:${parsed.password}`,
+        parsed.address,
+        parsed.port,
+      ),
+      parsed.address,
+      parsed.port,
+      [
+        parsed.method,
+        type,
+        security,
+        sni,
+        host,
+        path,
+        wsMaxEarlyData === undefined ? undefined : String(wsMaxEarlyData),
+        String(allowInsecure),
+        params.get('plugin') ?? undefined,
+      ],
+    );
+
+    return {
+      uuid,
+      address: parsed.address,
+      port: parsed.port,
+      name,
+      protocol: 'shadowsocks',
+      method: parsed.method,
+      password: parsed.password,
+      type,
+      security,
+      sni,
+      host,
+      path,
+      wsMaxEarlyData,
+      allowInsecure,
+      pinnedPeerCertSha256: params.get('pinnedPeerCertSha256') ?? undefined,
+      verifyPeerCertByName: params.get('verifyPeerCertByName') ?? undefined,
+    };
+  } catch {
+    logger.error('SubscriptionService', 'Error parsing Shadowsocks link', {
+      link: link.substring(0, 50) + '...',
+    });
+    return null;
+  }
+}
+
 function parseLink(link: string, identitySalt?: string): VlessConfig | null {
-  if (link.startsWith('vless://')) {
+  const normalized = link.toLowerCase();
+  if (normalized.startsWith('vless://')) {
     return parseVlessLink(link, identitySalt);
   }
-  if (link.startsWith('trojan://')) {
+  if (normalized.startsWith('trojan://')) {
     return parseTrojanLink(link);
+  }
+  if (normalized.startsWith('ss://')) {
+    return parseShadowsocksLink(link);
   }
   return null;
 }

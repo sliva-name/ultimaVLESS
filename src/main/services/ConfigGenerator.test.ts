@@ -152,27 +152,50 @@ describe('ConfigGenerator', () => {
       makeServer({ ...baseConfig, type: 'kcp', security: 'none' }),
       '/tmp/log',
     );
-    expect(result.outbounds[0].streamSettings?.network).toBe('kcp');
+    expect(result.outbounds[0].streamSettings?.network).toBe('mkcp');
     expect(result.outbounds[0].streamSettings?.kcpSettings?.header).toEqual({
       type: 'none',
     });
   });
 
-  it('adds httpSettings for http transport', () => {
+  it('rejects the removed HTTP transport on Xray 26.3.27', () => {
+    expect(() =>
+      ConfigGenerator.generate(
+        makeServer({
+          ...baseConfig,
+          type: 'http',
+          security: 'tls',
+          path: '/p',
+          host: 'cdn.test',
+        }),
+        '/tmp/log',
+      ),
+    ).toThrow(/HTTP transport is not supported/);
+  });
+
+  it('generates WebSocket settings using Xray 26.3.27 host and ed path fields', () => {
     const result = ConfigGenerator.generate(
       makeServer({
         ...baseConfig,
-        type: 'http',
+        type: 'ws',
         security: 'tls',
         path: '/p',
         host: 'cdn.test',
+        wsMaxEarlyData: 2560,
       }),
       '/tmp/log',
     );
-    expect(result.outbounds[0].streamSettings?.httpSettings).toEqual({
-      path: '/p',
-      host: ['cdn.test'],
+
+    expect(result.outbounds[0].streamSettings).toMatchObject({
+      network: 'websocket',
+      wsSettings: {
+        path: '/p?ed=2560',
+        host: 'cdn.test',
+      },
     });
+    expect(
+      result.outbounds[0].streamSettings?.wsSettings?.headers,
+    ).toBeUndefined();
   });
 
   it('adds xhttpSettings for xhttp transport', () => {
@@ -208,15 +231,13 @@ describe('ConfigGenerator', () => {
     });
   });
 
-  it('adds quicSettings for quic transport', () => {
-    const result = ConfigGenerator.generate(
-      makeServer({ ...baseConfig, type: 'quic', security: 'tls' }),
-      '/tmp/log',
-    );
-    expect(result.outbounds[0].streamSettings?.network).toBe('quic');
-    expect(result.outbounds[0].streamSettings?.quicSettings?.header).toEqual({
-      type: 'none',
-    });
+  it('rejects the removed QUIC transport on Xray 26.3.27', () => {
+    expect(() =>
+      ConfigGenerator.generate(
+        makeServer({ ...baseConfig, type: 'quic', security: 'tls' }),
+        '/tmp/log',
+      ),
+    ).toThrow(/QUIC transport is not supported/);
   });
 
   it('routes bittorrent traffic to the block outbound when enabled', () => {
@@ -388,6 +409,91 @@ describe('ConfigGenerator', () => {
 
     const direct = result.outbounds.find((o: any) => o.tag === 'direct');
     expect(direct.mux).toBeUndefined();
+  });
+
+  it('preserves subscription raw outbound fields instead of regenerating structured VLESS', () => {
+    const result = ConfigGenerator.generate(
+      makeServer({
+        ...baseConfig,
+        source: 'subscription',
+        rawConfig: {
+          inbounds: [],
+          outbounds: [
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                vnext: [
+                  {
+                    address: 'play.roxgame.online',
+                    port: 443,
+                    users: [
+                      {
+                        id: '123-uuid',
+                        encryption: 'none',
+                        flow: 'xtls-rprx-vision',
+                      },
+                    ],
+                  },
+                ],
+              },
+              streamSettings: {
+                network: 'tcp',
+                security: 'reality',
+                realitySettings: {
+                  serverName: 'play.roxgame.online',
+                  publicKey: 'public-key',
+                  shortId: 'short-id',
+                  fingerprint: 'safari',
+                },
+              },
+              fragment: {
+                packets: '1-3',
+                length: '50-100',
+                interval: '10-20',
+              },
+            },
+          ],
+          routing: {
+            domainStrategy: 'IPIfNonMatch',
+            rules: [
+              {
+                type: 'field',
+                domain: ['domain:yandex.ru'],
+                outboundTag: 'direct',
+              },
+            ],
+          },
+        },
+      }),
+      '/tmp/log',
+    );
+
+    expect(result.outbounds[0]).toMatchObject({
+      tag: 'proxy',
+      fragment: {
+        packets: '1-3',
+        length: '50-100',
+        interval: '10-20',
+      },
+      streamSettings: {
+        realitySettings: {
+          password: 'public-key',
+        },
+      },
+    });
+    expect(
+      result.outbounds[0].streamSettings?.realitySettings?.publicKey,
+    ).toBeUndefined();
+    expect(result.routing.domainStrategy).toBe('IPIfNonMatch');
+    expect(result.routing.rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          domain: ['domain:yandex.ru'],
+          outboundTag: 'direct',
+        }),
+      ]),
+    );
   });
 
   it('disables TCP mux for raw config outbounds with Vision flow', () => {

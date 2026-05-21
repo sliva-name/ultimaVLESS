@@ -1,5 +1,8 @@
-import { createHash } from 'crypto';
 import { VlessConfig } from '@/shared/types';
+import {
+  createHashedIdentityToken,
+  createStableServerId,
+} from '@/shared/serverIdentity';
 import { logger } from '@/main/services/LoggerService';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -21,29 +24,13 @@ function asNumber(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function makeServerIdentity(
-  authToken: string,
-  address: string,
-  port: number,
-  parts: Array<string | undefined>,
-): string {
-  const signature = [
-    authToken,
-    address,
-    String(port),
-    ...parts.map((part) => part || ''),
-  ].join('|');
-  const digest = createHash('sha256')
-    .update(signature)
-    .digest('hex')
-    .slice(0, 16);
-  return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
-}
-
 function isProxyOutbound(outbound: Record<string, unknown>): boolean {
   const tag = asString(outbound.tag);
   const protocol = asString(outbound.protocol);
-  return tag === 'proxy' || ['vless', 'vmess', 'trojan'].includes(protocol);
+  return (
+    tag === 'proxy' ||
+    ['vless', 'vmess', 'trojan', 'shadowsocks'].includes(protocol)
+  );
 }
 
 export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
@@ -74,6 +61,8 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
       let flow = '';
       let encryption = 'none';
       let trojanPasswordToken = '';
+      let shadowsocksPasswordToken = '';
+      let shadowsocksMethod = '';
 
       const settings = asRecord(outbound.settings);
       const vnext = asArray(settings?.vnext);
@@ -113,12 +102,19 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
 
       if ((!address || !port) && protocol === 'trojan' && settings) {
         const servers = asArray(settings.servers);
-        const s0 = asRecord(servers[0]);
-        if (s0) {
-          address = asString(s0.address);
-          port = asNumber(s0.port);
-          trojanPasswordToken = asString(s0.password);
-        }
+        const s0 = asRecord(servers[0]) ?? settings;
+        address = asString(s0.address);
+        port = asNumber(s0.port);
+        trojanPasswordToken = asString(s0.password);
+      }
+
+      if ((!address || !port) && protocol === 'shadowsocks' && settings) {
+        const servers = asArray(settings.servers);
+        const s0 = asRecord(servers[0]) ?? settings;
+        address = asString(s0.address);
+        port = asNumber(s0.port);
+        shadowsocksMethod = asString(s0.method);
+        shadowsocksPasswordToken = asString(s0.password);
       }
 
       if (!address || !port) {
@@ -162,14 +158,16 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
       const wsSettings = asRecord(stream.wsSettings);
       if (wsSettings) {
         path = asString(wsSettings.path);
+        host = asString(wsSettings.host);
         const headers = asRecord(wsSettings.headers);
-        host = asString(headers?.Host);
+        host = host || asString(headers?.Host);
       }
       const grpcSettings = asRecord(stream.grpcSettings);
       if (grpcSettings) {
         serviceName = asString(grpcSettings.serviceName);
       }
-      const xhttpSettings = asRecord(stream.xhttpSettings);
+      const xhttpSettings =
+        asRecord(stream.xhttpSettings) ?? asRecord(stream.splithttpSettings);
       if (xhttpSettings) {
         path = asString(xhttpSettings.path);
         host = asString(xhttpSettings.host);
@@ -179,9 +177,20 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
       }
 
       const networkType = (
-        ['tcp', 'raw', 'kcp', 'ws', 'http', 'grpc', 'quic', 'xhttp'].includes(
-          network,
-        )
+        [
+          'tcp',
+          'raw',
+          'kcp',
+          'mkcp',
+          'ws',
+          'websocket',
+          'http',
+          'grpc',
+          'quic',
+          'xhttp',
+          'splithttp',
+          'httpupgrade',
+        ].includes(network)
           ? network
           : undefined
       ) as VlessConfig['type'];
@@ -189,12 +198,19 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         ['reality', 'tls', 'none'].includes(security) ? security : undefined
       ) as VlessConfig['security'];
 
-      // Avoid embedding raw trojan password in uuid (makeServerIdentity prefixes authToken).
+      // Avoid embedding raw trojan password in uuid (stable ids prefix authToken).
       const idToken =
         trojanPasswordToken.length > 0
-          ? `tj${createHash('sha256').update(`${trojanPasswordToken}|${address}|${port}`).digest('hex').slice(0, 14)}`
-          : userUUID || 'user';
-      const stableId = makeServerIdentity(idToken, address, port, [
+          ? createHashedIdentityToken('tj', trojanPasswordToken, address, port)
+          : shadowsocksPasswordToken.length > 0
+            ? createHashedIdentityToken(
+                'ss',
+                `${shadowsocksMethod}:${shadowsocksPasswordToken}`,
+                address,
+                port,
+              )
+            : userUUID || 'user';
+      const stableId = createStableServerId(idToken, address, port, [
         network,
         security,
         protocol,
@@ -213,12 +229,24 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         String(noGRPCHeader),
       ]);
 
+      const outboundProtocol = ['vless', 'trojan', 'shadowsocks'].includes(
+        protocol,
+      )
+        ? (protocol as VlessConfig['protocol'])
+        : undefined;
+
       results.push({
         uuid: stableId,
-        userId: trojanPasswordToken ? undefined : userUUID || undefined,
+        userId:
+          trojanPasswordToken || shadowsocksPasswordToken
+            ? undefined
+            : userUUID || undefined,
         address,
         port,
         name,
+        protocol: outboundProtocol,
+        password: trojanPasswordToken || shadowsocksPasswordToken || undefined,
+        method: shadowsocksMethod || undefined,
         flow,
         encryption,
         type: networkType,

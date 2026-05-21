@@ -113,7 +113,7 @@ describe('SubscriptionService', () => {
 
     it('uses browser-like headers when fetching translate.yandex.ru HTML', async () => {
       mockFetchText(
-        `<!DOCTYPE html><html><body>${mockVlessLink}</body></html>`,
+        `<!DOCTYPE html><html lang=""><body>${mockVlessLink}</body></html>`,
       );
 
       await service.fetchAndParse(

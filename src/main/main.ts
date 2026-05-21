@@ -4,6 +4,7 @@ import { performance } from 'perf_hooks';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { logger } from './services/LoggerService';
+import { PerfTimer } from '@/shared/perfMetrics';
 import { appRecoveryService } from './services/AppRecoveryService';
 import { initMainSentry } from './services/SentryService';
 import { trayService } from './services/TrayService';
@@ -35,8 +36,10 @@ async function stopNetworkStack(): Promise<void> {
 }
 
 async function recoverOrphanedNetworkState(): Promise<void> {
+  const recoveryTimer = new PerfTimer('Startup', 'recoverOrphanedNetworkState');
   try {
-    const { systemProxyService } = await import('./services/SystemProxyService');
+    const { systemProxyService } =
+      await import('./services/SystemProxyService');
     if (await systemProxyService.recoverOrphanedState()) {
       logStartupStep('Recovered orphaned system proxy from previous session');
     }
@@ -46,7 +49,23 @@ async function recoverOrphanedNetworkState(): Promise<void> {
       'Failed to recover orphaned system proxy on startup',
       error,
     );
+  } finally {
+    recoveryTimer.end();
   }
+}
+
+function scheduleDeferredStartupWork(): void {
+  if (deferredStartupWorkScheduled) {
+    return;
+  }
+  deferredStartupWorkScheduled = true;
+  deferredStartupWorkTimer = setTimeout(() => {
+    deferredStartupWorkTimer = null;
+    logStartupStep('Running deferred startup work');
+    void appUpdaterService.start().catch((error) => {
+      logger.warn('Main', 'Auto-updater failed to start', error);
+    });
+  }, DEFERRED_STARTUP_WORK_MS);
 }
 
 async function truncateFileIfExists(filePath: string): Promise<void> {
@@ -74,10 +93,14 @@ let isQuitting = false;
 let isShuttingDown = false;
 const startupPerfOriginMs = performance.now();
 const SHUTDOWN_TIMEOUT_MS = 15000;
+/** Delay non-critical background work until after the first window paint. */
+const DEFERRED_STARTUP_WORK_MS = 1500;
 const DID_FAIL_LOAD_ABORTED = -3;
 const UNRESPONSIVE_RECOVERY_DELAY_MS = 4000;
 const FATAL_EXIT_DELAY_MS = 1500;
 let unresponsiveRecoveryTimer: NodeJS.Timeout | null = null;
+let deferredStartupWorkScheduled = false;
+let deferredStartupWorkTimer: NodeJS.Timeout | null = null;
 
 function logStartupStep(step: string, data?: Record<string, unknown>) {
   logger.info('Startup', step, {
@@ -358,6 +381,7 @@ async function createWindow() {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
       logStartupStep('Main window ready-to-show');
+      scheduleDeferredStartupWork();
     }
   });
 
@@ -443,9 +467,6 @@ void app.whenReady().then(async () => {
   logStartupStep('createWindow finished');
   await ensureTray();
   logStartupStep('ensureTray finished');
-  void appUpdaterService.start().catch((error) => {
-    logger.warn('Main', 'Auto-updater failed to start', error);
-  });
   // loadInitialState runs from did-finish-load so the renderer has subscribed to
   // update-servers; calling it here as well duplicated refresh/ping work and
   // caused overlapping ping-all-servers requests to be discarded as stale.
@@ -523,6 +544,10 @@ app.on('before-quit', (event) => {
       logger.error('Main', 'Failed to stop network stack on quit', error);
     } finally {
       clearUnresponsiveRecoveryTimer();
+      if (deferredStartupWorkTimer) {
+        clearTimeout(deferredStartupWorkTimer);
+        deferredStartupWorkTimer = null;
+      }
       await logger.flush();
       try {
         await clearShutdownLogs();

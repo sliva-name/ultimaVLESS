@@ -38,6 +38,10 @@ import {
   runPowerShell as runPowerShellScript,
   RunPowerShellOptions,
 } from './tunRoute/powerShellRunner';
+import {
+  createPlatformTunAdapter,
+  PlatformTunAdapter,
+} from './tunRoute/platformAdapter';
 
 export interface TunRoutingPlan {
   defaultRoute: DefaultRouteInfo;
@@ -62,31 +66,26 @@ interface StaleRouteCleanupOptions {
  */
 export class TunRouteService {
   private addedRoutes: AddedRoute[] = [];
-  constructor(private readonly platform: NodeJS.Platform = process.platform) {}
+  private readonly platformAdapter: PlatformTunAdapter;
+
+  constructor(private readonly platform: NodeJS.Platform = process.platform) {
+    this.platformAdapter = createPlatformTunAdapter(platform);
+  }
 
   public isSupported(): boolean {
-    return this.platform === 'win32' || this.platform === 'linux';
+    return this.platformAdapter.isSupported();
   }
 
   public getUnsupportedReason(): string | null {
-    if (this.isSupported()) return null;
-    if (this.platform === 'darwin') {
-      return 'TUN mode is currently supported only on Windows and Linux by the bundled Xray core.';
-    }
-    return 'TUN mode is not supported on this operating system.';
+    return this.platformAdapter.getUnsupportedReason();
   }
 
   public getRouteMode(): string | null {
-    if (this.platform === 'win32') return 'windows-static-routes';
-    if (this.platform === 'linux') return 'linux-xray-auto-route';
-    return null;
+    return this.platformAdapter.getRouteMode();
   }
 
   public getDegradedReason(): string | null {
-    if (this.platform === 'linux') {
-      return 'Linux TUN routing currently relies on Xray auto-route behavior rather than explicit OS-level route teardown.';
-    }
-    return null;
+    return this.platformAdapter.getDegradedReason();
   }
 
   public async prepareRoutingPlan(
@@ -462,7 +461,9 @@ export class TunRouteService {
       : new Error('Failed to add default route via TUN');
   }
 
-  private async cleanupCurrentProxyHostRoutes(proxyIps: string[]): Promise<void> {
+  private async cleanupCurrentProxyHostRoutes(
+    proxyIps: string[],
+  ): Promise<void> {
     try {
       const removedHostRoutes = await this.deleteHostRoutesByPrefixesAndMetric(
         proxyIps.map((ip) => this.hostPrefixForIp(ip)),

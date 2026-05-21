@@ -1,7 +1,8 @@
 /* @vitest-environment jsdom */
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { useServerState } from './useServerState';
+import type { PingResult } from '@/shared/ipc';
 import {
   createElectronApiMock,
   installElectronApiMock,
@@ -155,5 +156,33 @@ describe('useServerState', () => {
 
     expect(electronApi.disconnect).toHaveBeenCalledTimes(1);
     expect(electronApi.connect).not.toHaveBeenCalled();
+  });
+
+  it('exposes ping refresh state while ping all is in flight', async () => {
+    const electronApi = createElectronApiMock();
+    let resolvePing!: (results: PingResult[]) => void;
+    electronApi.pingAllServers = vi.fn(
+      () =>
+        new Promise<PingResult[]>((resolve) => {
+          resolvePing = resolve;
+        }),
+    );
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useServerState());
+    let pingPromise!: Promise<void>;
+
+    act(() => {
+      pingPromise = result.current.pingAllServers();
+    });
+
+    await waitFor(() => expect(result.current.isRefreshingPings).toBe(true));
+
+    await act(async () => {
+      resolvePing([]);
+      await pingPromise;
+    });
+
+    expect(result.current.isRefreshingPings).toBe(false);
   });
 });

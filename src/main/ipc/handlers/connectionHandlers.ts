@@ -40,6 +40,23 @@ export function registerConnectionHandlers({
       }
     });
   };
+  const handleConnectFailure = async (error: unknown) => {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error('IPC', 'Failed to connect', error);
+    deps.connectionMonitorService.recordError(errorMessage);
+
+    try {
+      await deps.connectionStackService.cleanupAfterFailure();
+    } catch (cleanupError) {
+      logger.error(
+        'IPC',
+        'Failed to cleanup network stack after connect failure',
+        cleanupError,
+      );
+    }
+    sendToRenderer(IPC_EVENT_CHANNELS.connectionError, errorMessage);
+    return { ok: false as const, error: errorMessage };
+  };
 
   ipcMain.handle(
     IPC_INVOKE_CHANNELS.connect,
@@ -58,8 +75,8 @@ export function registerConnectionHandlers({
             (s) => s.uuid === requestedConfig.uuid,
           );
           if (!fullConfig) {
-            throw new Error(
-              'Selected server was not found in local configuration',
+            return handleConnectFailure(
+              new Error('Selected server was not found in local configuration'),
             );
           }
 
@@ -84,9 +101,11 @@ export function registerConnectionHandlers({
           }
 
           if (connectionMode === 'tun' && !deps.tunRouteService.isSupported()) {
-            throw new Error(
-              deps.tunRouteService.getUnsupportedReason() ||
-                'TUN mode is not supported on this operating system.',
+            return handleConnectFailure(
+              new Error(
+                deps.tunRouteService.getUnsupportedReason() ||
+                  'TUN mode is not supported on this operating system.',
+              ),
             );
           }
 
@@ -109,12 +128,16 @@ export function registerConnectionHandlers({
                 };
               }
               deps.configService.clearPendingTunReconnect();
-              throw new Error(
-                'TUN mode requires Administrator rights. Please approve UAC prompt or run UltimaVLESS as Administrator.',
+              return handleConnectFailure(
+                new Error(
+                  'TUN mode requires Administrator rights. Please approve UAC prompt or run UltimaVLESS as Administrator.',
+                ),
               );
             }
-            throw new Error(
-              'TUN mode requires root privileges on this operating system. Please run the app with elevated permissions.',
+            return handleConnectFailure(
+              new Error(
+                'TUN mode requires root privileges on this operating system. Please run the app with elevated permissions.',
+              ),
             );
           }
 
@@ -132,22 +155,7 @@ export function registerConnectionHandlers({
           deps.connectionMonitorService.startMonitoring(fullConfig);
           return { ok: true as const };
         } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          logger.error('IPC', 'Failed to connect', error);
-          deps.connectionMonitorService.recordError(errorMessage);
-
-          try {
-            await deps.connectionStackService.cleanupAfterFailure();
-          } catch (cleanupError) {
-            logger.error(
-              'IPC',
-              'Failed to cleanup network stack after connect failure',
-              cleanupError,
-            );
-          }
-          sendToRenderer(IPC_EVENT_CHANNELS.connectionError, errorMessage);
-          return { ok: false as const, error: errorMessage };
+          return handleConnectFailure(error);
         }
       });
     },
