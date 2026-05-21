@@ -36,7 +36,8 @@ async function stopNetworkStack(): Promise<void> {
 
 async function recoverOrphanedNetworkState(): Promise<void> {
   try {
-    const { systemProxyService } = await import('./services/SystemProxyService');
+    const { systemProxyService } =
+      await import('./services/SystemProxyService');
     if (await systemProxyService.recoverOrphanedState()) {
       logStartupStep('Recovered orphaned system proxy from previous session');
     }

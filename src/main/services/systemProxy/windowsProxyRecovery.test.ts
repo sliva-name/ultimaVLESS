@@ -36,7 +36,8 @@ describe('windowsProxyRecovery', () => {
   });
 
   it('writes ProgramData launcher files and registers Run key + scheduled task', async () => {
-    const snapshotPath = 'C:\\Users\\Test\\AppData\\Roaming\\UltimaVLESS\\system-proxy-state.json';
+    const snapshotPath =
+      'C:\\Users\\Test\\AppData\\Roaming\\UltimaVLESS\\system-proxy-state.json';
     const {
       installLogonRecovery,
       getRecoveryCmdPath,
@@ -51,15 +52,21 @@ describe('windowsProxyRecovery', () => {
     expect(fs.existsSync(path.join(recoveryDir, 'recovery-target.txt'))).toBe(
       true,
     );
-    expect(fs.readFileSync(path.join(recoveryDir, 'recovery-target.txt'), 'utf8')).toBe(
-      snapshotPath,
-    );
+    expect(
+      fs.readFileSync(path.join(recoveryDir, 'recovery-target.txt'), 'utf8'),
+    ).toBe(snapshotPath);
     expect(fs.existsSync(getRecoveryCmdPath())).toBe(true);
 
     const cmdPath = getRecoveryCmdPath();
     expect(spawnMock).toHaveBeenCalledWith(
       'reg',
-      expect.arrayContaining(['add', '/v', RUN_KEY_VALUE_NAME, '/d', `"${cmdPath}"`]),
+      expect.arrayContaining([
+        'add',
+        '/v',
+        RUN_KEY_VALUE_NAME,
+        '/d',
+        `"${cmdPath}"`,
+      ]),
       expect.objectContaining({ windowsHide: true }),
     );
     expect(spawnMock).toHaveBeenCalledWith(
@@ -90,7 +97,9 @@ describe('windowsProxyRecovery', () => {
     await uninstallLogonRecovery();
 
     expect(
-      fs.existsSync(path.join(getProgramDataRecoveryDir(), 'recovery-target.txt')),
+      fs.existsSync(
+        path.join(getProgramDataRecoveryDir(), 'recovery-target.txt'),
+      ),
     ).toBe(false);
     expect(spawnMock).toHaveBeenCalledWith(
       'reg',

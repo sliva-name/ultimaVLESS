@@ -1,5 +1,8 @@
-import { spawn } from 'child_process';
 import { logger } from '@/main/services/LoggerService';
+import {
+  combineCommandOutput,
+  runProcessWithOutput,
+} from '@/main/services/platform/commandRunner';
 import { POWERSHELL_TIMEOUT } from './constants';
 
 export interface RunPowerShellOptions {
@@ -12,76 +15,47 @@ export interface RunPowerShellOptions {
  * Extracted so the huge TunRouteService coordinator class stays focused
  * on orchestration rather than IO plumbing.
  */
-export function runPowerShell(
+export async function runPowerShell(
   script: string,
   options: RunPowerShellOptions = {},
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const timeoutMs = options.timeoutMs ?? POWERSHELL_TIMEOUT;
-    const normalizedScript = `$ProgressPreference = 'SilentlyContinue'\n${script}`;
-    const encodedScript = Buffer.from(normalizedScript, 'utf16le').toString(
-      'base64',
-    );
-    const ps = spawn(
-      'powershell.exe',
-      [
-        '-NoLogo',
-        '-NonInteractive',
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-EncodedCommand',
-        encodedScript,
-      ],
-      { windowsHide: true },
-    );
+  const timeoutMs = options.timeoutMs ?? POWERSHELL_TIMEOUT;
+  const normalizedScript = `$ProgressPreference = 'SilentlyContinue'\n${script}`;
+  const encodedScript = Buffer.from(normalizedScript, 'utf16le').toString(
+    'base64',
+  );
+  const output = await runProcessWithOutput(
+    'powershell.exe',
+    [
+      '-NoLogo',
+      '-NonInteractive',
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-EncodedCommand',
+      encodedScript,
+    ],
+    { timeoutMs, windowsHide: true },
+  );
 
-    const timeout = setTimeout(() => {
-      ps.kill('SIGTERM');
-      reject(
-        new Error(
-          `PowerShell command timed out after ${timeoutMs / 1000}s`,
-        ),
-      );
-    }, timeoutMs);
+  if (output.code === 0) {
+    return output.stdout;
+  }
+  if (options.allowNonZeroExit && output.stderr.trim().length === 0) {
+    return output.stdout;
+  }
 
-    let stdout = '';
-    let stderr = '';
-    ps.stdout?.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-    ps.stderr?.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    ps.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    ps.on('close', (code) => {
-      clearTimeout(timeout);
-      if (code === 0) {
-        resolve(stdout);
-        return;
-      }
-      if (options.allowNonZeroExit && stderr.trim().length === 0) {
-        resolve(stdout);
-        return;
-      }
-      const combined = `${stderr}\n${stdout}`.trim();
-      const cleaned = cleanPowerShellError(combined);
-      const fallbackMessage = `PowerShell exited with code ${code} (no stdout/stderr).`;
-      const message = cleaned || fallbackMessage;
-      logger.warn('TunRouteService', 'PowerShell command failed', {
-        code,
-        message,
-        stdoutBytes: Buffer.byteLength(stdout, 'utf8'),
-        stderrBytes: Buffer.byteLength(stderr, 'utf8'),
-        scriptPreview: scriptPreview(script),
-      });
-      reject(new Error(message));
-    });
+  const cleaned = cleanPowerShellError(combineCommandOutput(output));
+  const fallbackMessage = `PowerShell exited with code ${output.code} (no stdout/stderr).`;
+  const message = cleaned || fallbackMessage;
+  logger.warn('TunRouteService', 'PowerShell command failed', {
+    code: output.code,
+    message,
+    stdoutBytes: Buffer.byteLength(output.stdout, 'utf8'),
+    stderrBytes: Buffer.byteLength(output.stderr, 'utf8'),
+    scriptPreview: scriptPreview(script),
   });
+  throw new Error(message);
 }
 
 function cleanPowerShellError(message: string): string {

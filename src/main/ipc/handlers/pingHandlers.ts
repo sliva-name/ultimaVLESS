@@ -54,7 +54,12 @@ export function registerPingHandlers({
           .getServers()
           .find((server) => server.uuid === requestedServer.uuid);
         if (!storedServer) {
-          throw new Error('Server not found');
+          logger.error(
+            'IPC',
+            'ping-server failed',
+            new Error('Server not found'),
+          );
+          return { uuid: requestedServer.uuid, latency: null };
         }
 
         const latency = await deps.pingService.pingServer(storedServer);

@@ -1,5 +1,5 @@
-import { spawn } from 'child_process';
 import { app } from 'electron';
+import { runProcessWithOutput } from './platform/commandRunner';
 
 /**
  * Checks whether the current process has elevated rights on Windows.
@@ -11,40 +11,22 @@ export async function isElevatedOnWindows(): Promise<boolean> {
     return true;
   }
 
-  return new Promise<boolean>((resolve) => {
-    const ps = spawn(
+  try {
+    const output = await runProcessWithOutput(
       'powershell',
       [
         '-NoProfile',
         '-Command',
         '[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent() | ForEach-Object { $_.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }',
       ],
-      { windowsHide: true },
+      { timeoutMs: 5000, windowsHide: true },
     );
-
-    const timeout = setTimeout(() => {
-      ps.kill('SIGTERM');
-      resolve(false);
-    }, 5000);
-
-    let stdout = '';
-    ps.stdout?.on('data', (d) => {
-      stdout += d.toString();
-    });
-    ps.on('close', (code) => {
-      clearTimeout(timeout);
-      if (code !== 0) {
-        resolve(false);
-        return;
-      }
-      const output = stdout.trim().toLowerCase();
-      resolve(output.includes('true'));
-    });
-    ps.on('error', () => {
-      clearTimeout(timeout);
-      resolve(false);
-    });
-  });
+    return (
+      output.code === 0 && output.stdout.trim().toLowerCase().includes('true')
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -55,26 +37,21 @@ export async function relaunchAsAdminOnWindows(): Promise<boolean> {
   if (process.platform !== 'win32') return false;
   if (!app.isPackaged) return false;
 
-  return new Promise<boolean>((resolve) => {
+  try {
     const escapedExePath = process.execPath.replace(/'/g, "''");
-    const ps = spawn(
+    const output = await runProcessWithOutput(
       'powershell',
       [
         '-NoProfile',
         '-Command',
         `Start-Process -FilePath '${escapedExePath}' -Verb RunAs`,
       ],
-      { windowsHide: true },
+      { timeoutMs: 10000, windowsHide: true },
     );
-
-    ps.on('close', (code) => {
-      resolve(code === 0);
-    });
-
-    ps.on('error', () => {
-      resolve(false);
-    });
-  });
+    return output.code === 0;
+  } catch {
+    return false;
+  }
 }
 
 async function isUnixRoot(): Promise<boolean> {

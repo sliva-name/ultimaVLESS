@@ -1,4 +1,5 @@
 import { VlessConfig } from '@/shared/types';
+import { isSameServerIdentity } from '@/shared/serverIdentity';
 import { logger } from './LoggerService';
 import { configService } from './ConfigService';
 import { connectionStackService } from './ConnectionStackService';
@@ -6,11 +7,12 @@ import { APP_CONSTANTS } from '@/shared/constants';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
 import path from 'path';
-import fs from 'fs';
 import { extractBlockingErrors, isBlockingErrorText } from './blockingErrors';
-import { probeTcpPort, probeHttpThroughProxy } from './networkProbe';
 import { xrayService } from './XrayService';
 import { ConnectionHealthState } from '@/shared/ipc';
+import { runConnectionHealthProbe } from './connectionMonitor/healthProbe';
+import { XrayLogCursor } from './connectionMonitor/xrayLogCursor';
+import { selectNextServerForAutoSwitch } from './connectionMonitor/autoSwitchPolicy';
 
 export interface ConnectionStatus {
   isConnected: boolean;
@@ -55,11 +57,9 @@ export class ConnectionMonitorService extends EventEmitter {
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private isAutoSwitchingEnabled: boolean = true;
   private checkIntervalMs: number = 30000; // Проверка каждые 30 секунд
-  private xrayLogPath: string;
+  private xrayLogCursor: XrayLogCursor;
   private monitoringGeneration: number = 0;
   private switchInProgress: boolean = false;
-  private logReadOffset: number = 0;
-  private logPartialLine = '';
   private healthCheckInFlight: boolean = false;
   /** Consecutive HTTP tunnel probe failures (flaky checks should not spam Last Error). */
   private tunnelProbeFailStreak: number = 0;
@@ -89,7 +89,7 @@ export class ConnectionMonitorService extends EventEmitter {
     };
 
     const userDataPath = app.getPath('userData');
-    this.xrayLogPath = path.join(userDataPath, 'xray.log');
+    this.xrayLogCursor = new XrayLogCursor(path.join(userDataPath, 'xray.log'));
 
     logger.info('ConnectionMonitorService', 'Initialized');
   }
@@ -219,16 +219,9 @@ export class ConnectionMonitorService extends EventEmitter {
       return exact;
     }
 
-    const currentProtocol = currentServer.protocol ?? 'vless';
-    const fuzzy = servers.find((server) => {
-      if (
-        server.address !== currentServer.address ||
-        server.port !== currentServer.port
-      ) {
-        return false;
-      }
-      return (server.protocol ?? 'vless') === currentProtocol;
-    });
+    const fuzzy = servers.find((server) =>
+      isSameServerIdentity(server, currentServer),
+    );
 
     if (fuzzy) {
       logger.info(
@@ -347,23 +340,18 @@ export class ConnectionMonitorService extends EventEmitter {
     this.healthCheckInFlight = true;
     try {
       this.status.lastHealthCheckAt = Date.now();
-      const [socksReady, httpReady] = await Promise.all([
-        probeTcpPort(APP_CONSTANTS.PORTS.SOCKS),
-        probeTcpPort(APP_CONSTANTS.PORTS.HTTP),
-      ]);
+      const probeResult = await runConnectionHealthProbe({
+        getXrayHealthStatus: () => xrayService.getHealthStatus(),
+      });
       if (isStale()) {
         return;
       }
-      const localProxyReachable = socksReady && httpReady;
-      this.status.localProxyReachable = localProxyReachable;
+      this.status.localProxyReachable = probeResult.localProxyReachable;
 
-      if (!localProxyReachable) {
+      if (probeResult.type === 'local-proxy-failed') {
         this.tunnelProbeFailStreak = 0;
         this.localProxyFailStreak += 1;
-        const xrayState = xrayService.getHealthStatus();
-        const failureReason =
-          xrayState.lastReadinessError ||
-          'Local proxy listeners are unreachable';
+        const { failureReason, xrayState } = probeResult;
 
         this.status.lastHealthState =
           xrayState.state === 'failed' ? 'failed' : 'degraded';
@@ -392,14 +380,8 @@ export class ConnectionMonitorService extends EventEmitter {
       }
 
       this.localProxyFailStreak = 0;
-      // Verify end-to-end connectivity through the tunnel via a lightweight HTTP probe.
-      const tunnelOk = await probeHttpThroughProxy(APP_CONSTANTS.PORTS.HTTP);
-      if (isStale()) {
-        return;
-      }
-      if (!tunnelOk) {
-        const failureReason =
-          'Remote endpoint check via proxy failed after retries (tunnel may be slow or blocked)';
+      if (probeResult.type === 'tunnel-failed') {
+        const { failureReason } = probeResult;
         this.tunnelProbeFailStreak += 1;
         this.status.lastHealthState = 'degraded';
         this.status.lastHealthFailureReason = failureReason;
@@ -465,60 +447,7 @@ export class ConnectionMonitorService extends EventEmitter {
    * Reads recent lines from Xray log file.
    */
   private async readNewLogLines(count: number): Promise<string[]> {
-    try {
-      try {
-        await fs.promises.access(this.xrayLogPath, fs.constants.F_OK);
-      } catch {
-        return [];
-      }
-
-      const stats = await fs.promises.stat(this.xrayLogPath);
-      if (stats.size === 0) {
-        return [];
-      }
-
-      const maxChunkBytes = 128 * 1024;
-      if (stats.size < this.logReadOffset) {
-        this.logReadOffset = 0;
-        this.logPartialLine = '';
-      }
-
-      const previousOffset = this.logReadOffset;
-      const unreadLength = stats.size - previousOffset;
-      if (unreadLength <= 0) {
-        return [];
-      }
-
-      const readStart =
-        unreadLength > maxChunkBytes
-          ? stats.size - maxChunkBytes
-          : previousOffset;
-      const readLength = stats.size - readStart;
-      const buffer = Buffer.alloc(readLength);
-      const fd = await fs.promises.open(this.xrayLogPath, 'r');
-      try {
-        await fd.read(buffer, 0, readLength, readStart);
-      } finally {
-        await fd.close();
-      }
-
-      const content = buffer.toString('utf-8');
-      const combined = `${readStart === previousOffset ? this.logPartialLine : ''}${content}`;
-      this.logReadOffset = stats.size;
-      const chunks = combined.split('\n');
-      this.logPartialLine = chunks.pop() ?? '';
-      const lines = chunks
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-      return lines.slice(-count);
-    } catch (error) {
-      logger.error(
-        'ConnectionMonitorService',
-        'Failed to read log file',
-        error,
-      );
-      return [];
-    }
+    return this.xrayLogCursor.readNewLines(count);
   }
 
   /**
@@ -528,22 +457,7 @@ export class ConnectionMonitorService extends EventEmitter {
    * not periodically — the periodic health-check uses async `fs.promises.*`.
    */
   private resetLogCursorToFileEnd(): void {
-    try {
-      if (!fs.existsSync(this.xrayLogPath)) {
-        this.logReadOffset = 0;
-        this.logPartialLine = '';
-        return;
-      }
-      const stats = fs.statSync(this.xrayLogPath);
-      this.logReadOffset = stats.size;
-      this.logPartialLine = '';
-    } catch (error) {
-      logger.warn('ConnectionMonitorService', 'Failed to reset log cursor', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      this.logReadOffset = 0;
-      this.logPartialLine = '';
-    }
+    this.xrayLogCursor.resetToFileEnd();
   }
 
   /**
@@ -603,7 +517,13 @@ export class ConnectionMonitorService extends EventEmitter {
     logger.info('ConnectionMonitorService', 'Attempting auto-switch');
 
     const servers = configService.getServers();
-    if (servers.length === 0) {
+    const selection = selectNextServerForAutoSwitch(
+      servers,
+      this.status.currentServer,
+      this.status.blockedServers,
+    );
+
+    if (selection.type === 'no-servers') {
       logger.warn(
         'ConnectionMonitorService',
         'No servers available for switching',
@@ -611,15 +531,7 @@ export class ConnectionMonitorService extends EventEmitter {
       return;
     }
 
-    // Находим следующий доступный сервер
-    const currentIndex = servers.findIndex(
-      (s) => s.uuid === this.status.currentServer!.uuid,
-    );
-    const availableServers = servers.filter(
-      (s) => !this.status.blockedServers.has(s.uuid),
-    );
-
-    if (availableServers.length === 0) {
+    if (selection.type === 'all-blocked') {
       logger.warn(
         'ConnectionMonitorService',
         'All servers appear to be blocked',
@@ -628,61 +540,36 @@ export class ConnectionMonitorService extends EventEmitter {
       return;
     }
 
-    // Выбираем следующий сервер (циклически)
-    let nextServer: VlessConfig | null = null;
-
-    if (currentIndex >= 0) {
-      // Ищем следующий сервер после текущего
-      for (let i = 1; i < servers.length; i++) {
-        const candidate = servers[(currentIndex + i) % servers.length];
-        if (!this.status.blockedServers.has(candidate.uuid)) {
-          nextServer = candidate;
-          break;
-        }
-      }
-    }
-
-    if (!nextServer) {
-      // Если не нашли, берем первый доступный
-      nextServer = availableServers[0];
-    }
-
-    if (
-      nextServer &&
-      this.status.currentServer &&
-      nextServer.uuid === this.status.currentServer.uuid
-    ) {
+    if (selection.type === 'same-server') {
       logger.warn(
         'ConnectionMonitorService',
         'Auto-switch skipped because next server equals current server',
         {
-          server: nextServer.name,
+          server: selection.server.name,
         },
       );
       return;
     }
 
-    if (nextServer) {
-      logger.info('ConnectionMonitorService', 'Switching to server', {
-        from: this.status.currentServer.name,
-        to: nextServer.name,
-      });
+    const nextServer = selection.server;
+    logger.info('ConnectionMonitorService', 'Switching to server', {
+      from: this.status.currentServer.name,
+      to: nextServer.name,
+    });
 
-      this.emit('switch-operation-started');
-      this.emit('switching', {
-        type: 'switching',
-        server: nextServer,
-        message: `Switching from ${this.status.currentServer.name} to ${nextServer.name}`,
-      } as ConnectionEvent);
+    this.emit('switch-operation-started');
+    this.emit('switching', {
+      type: 'switching',
+      server: nextServer,
+      message: `Switching from ${this.status.currentServer.name} to ${nextServer.name}`,
+    } as ConnectionEvent);
 
-      // Переключаемся на новый сервер
-      this.switchInProgress = true;
-      try {
-        await this.switchToServer(nextServer, generationAtStart);
-      } finally {
-        this.switchInProgress = false;
-        this.emit('switch-operation-finished');
-      }
+    this.switchInProgress = true;
+    try {
+      await this.switchToServer(nextServer, generationAtStart);
+    } finally {
+      this.switchInProgress = false;
+      this.emit('switch-operation-finished');
     }
   }
 

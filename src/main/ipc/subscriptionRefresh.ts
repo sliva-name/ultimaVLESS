@@ -2,6 +2,10 @@ import { BrowserWindow } from 'electron';
 import { VlessConfig } from '@/shared/types';
 import { IpcEventChannel, IPC_EVENT_CHANNELS } from '@/shared/ipc';
 import { toSafeServerList } from '@/shared/serverView';
+import {
+  getServerDedupKey,
+  getServerEndpointKey,
+} from '@/shared/serverIdentity';
 import { logger } from '@/main/services/LoggerService';
 import { preserveActiveServerIfNeeded } from './refreshUtils';
 import { redactUrl } from './validators';
@@ -45,27 +49,6 @@ interface SubscriptionRefreshManagerDeps {
 
 const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const MAX_CONCURRENT_SUBSCRIPTION_FETCHES = 4;
-
-function getDedupKey(config: VlessConfig): string {
-  return [
-    config.uuid || '',
-    config.protocol || 'vless',
-    config.address || '',
-    String(config.port || 0),
-    config.type || '',
-    config.security || '',
-    config.sni || '',
-    config.fp || '',
-    config.pbk || '',
-    config.sid || '',
-    config.spx || '',
-    config.path || '',
-    config.host || '',
-    config.serviceName || '',
-    config.flow || '',
-    config.encryption || '',
-  ].join('|');
-}
 
 export function createSubscriptionRefreshManager(
   deps: SubscriptionRefreshManagerDeps,
@@ -170,12 +153,12 @@ export function createSubscriptionRefreshManager(
 
     let mergedConfigs = refreshedConfigs;
     if (failedSubscriptionIds.size > 0) {
-      const freshKeys = new Set(refreshedConfigs.map(getDedupKey));
+      const freshKeys = new Set(refreshedConfigs.map(getServerDedupKey));
       const preservedFromFailed = existingServers.filter(
         (s) =>
           s.subscriptionId &&
           failedSubscriptionIds.has(s.subscriptionId) &&
-          !freshKeys.has(getDedupKey(s)),
+          !freshKeys.has(getServerDedupKey(s)),
       );
       if (preservedFromFailed.length > 0) {
         logger.warn(
@@ -203,8 +186,6 @@ export function createSubscriptionRefreshManager(
     const pingByUuid = new Map<string, StoredPing>();
     const pingByEndpoint = new Map<string, StoredPing>();
     const pingBySourceName = new Map<string, StoredPing>();
-    const endpointKey = (cfg: VlessConfig): string =>
-      `${cfg.protocol ?? 'vless'}|${cfg.address}:${cfg.port}`;
     const sourceNameKey = (cfg: VlessConfig): string | null => {
       if (!cfg.name.trim()) return null;
       const sourceKey =
@@ -247,7 +228,7 @@ export function createSubscriptionRefreshManager(
       // Prefer the freshest sample if multiple stored entries share an endpoint
       // (e.g. a rotated server still co-existing with its previous incarnation
       // from `preserveActiveServerIfNeeded`).
-      setFreshestPing(pingByEndpoint, endpointKey(server), stored);
+      setFreshestPing(pingByEndpoint, getServerEndpointKey(server), stored);
       // Some providers rotate both internal ids and hostnames during the startup
       // refresh after the UAC relaunch. While connected we cannot re-ping, so
       // keep the last known value for the same named entry in the same source.
@@ -259,7 +240,7 @@ export function createSubscriptionRefreshManager(
       if (direct) {
         return applyStoredPing(config, direct);
       }
-      const fuzzy = pingByEndpoint.get(endpointKey(config));
+      const fuzzy = pingByEndpoint.get(getServerEndpointKey(config));
       if (fuzzy) {
         return applyStoredPing(config, fuzzy);
       }

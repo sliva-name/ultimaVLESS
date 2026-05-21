@@ -1,5 +1,8 @@
-import { createHash } from 'crypto';
 import { VlessConfig } from '@/shared/types';
+import {
+  createHashedIdentityToken,
+  createStableServerId,
+} from '@/shared/serverIdentity';
 import { logger } from '@/main/services/LoggerService';
 
 function safeDecodeComponent(value: string): string {
@@ -28,25 +31,6 @@ function parseOptionalBooleanQueryParam(
     return false;
   }
   return undefined;
-}
-
-function makeServerIdentity(
-  authToken: string,
-  address: string,
-  port: number,
-  parts: Array<string | undefined>,
-): string {
-  const signature = [
-    authToken,
-    address,
-    String(port),
-    ...parts.map((part) => part || ''),
-  ].join('|');
-  const digest = createHash('sha256')
-    .update(signature)
-    .digest('hex')
-    .slice(0, 16);
-  return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
 }
 
 function normalizeLinkForParsing(link: string): string {
@@ -147,7 +131,7 @@ function parseVlessLink(
     const allowInsecure =
       isTruthyQueryParam(params.get('insecure')) ||
       isTruthyQueryParam(params.get('allowInsecure'));
-    const stableId = makeServerIdentity(uuid, address, port, [
+    const stableId = createStableServerId(uuid, address, port, [
       identitySalt,
       type,
       security,
@@ -233,19 +217,24 @@ function parseTrojanLink(link: string): VlessConfig | null {
     // instead of a half-baked rawConfig that would crash Xray once routing
     // references `outboundTag: "block"` / `"direct"`.
     return {
-      uuid: makeServerIdentity(password || 'trojan', address, port, [
-        network,
-        security,
-        params.get('sni') || '',
-        params.get('fp') || '',
-        params.get('path') || '',
-        params.get('host') || '',
-        params.get('serviceName') || '',
-        String(
-          isTruthyQueryParam(params.get('insecure')) ||
-            isTruthyQueryParam(params.get('allowInsecure')),
-        ),
-      ]),
+      uuid: createStableServerId(
+        createHashedIdentityToken('tj', password || 'trojan', address, port),
+        address,
+        port,
+        [
+          network,
+          security,
+          params.get('sni') || '',
+          params.get('fp') || '',
+          params.get('path') || '',
+          params.get('host') || '',
+          params.get('serviceName') || '',
+          String(
+            isTruthyQueryParam(params.get('insecure')) ||
+              isTruthyQueryParam(params.get('allowInsecure')),
+          ),
+        ],
+      ),
       address,
       port,
       name,

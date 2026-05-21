@@ -85,7 +85,7 @@ function format(
   template: string,
   params: Record<string, string | number | null | undefined>,
 ): string {
-  return template.replace(/\{(\w+)\}/g, (_, key: string) => {
+  return template.replace(/{(\w+)}/g, (_, key: string) => {
     const value = params[key];
     return value === null || value === undefined ? '' : String(value);
   });

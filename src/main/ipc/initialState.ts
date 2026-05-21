@@ -17,9 +17,7 @@ interface InitialStateActions {
     channel: (typeof IPC_EVENT_CHANNELS)[keyof typeof IPC_EVENT_CHANNELS],
     ...args: unknown[]
   ) => void;
-  queueRefreshAllSubscriptions: (
-    manualLinks: string,
-  ) => Promise<{
+  queueRefreshAllSubscriptions: (manualLinks: string) => Promise<{
     configCount: number;
     reason?: string;
     partialErrors?: string[];
@@ -101,7 +99,8 @@ export async function loadInitialState(
           const alreadyConnected =
             deps.xrayService.isRunning() &&
             monitorStatus.isConnected &&
-            (monitorStatus.currentServer?.uuid === pendingTunReconnectServerId ||
+            (monitorStatus.currentServer?.uuid ===
+              pendingTunReconnectServerId ||
               monitorStatus.currentServer?.uuid ===
                 deps.configService.getSelectedServerId());
           if (alreadyConnected) {
@@ -129,7 +128,11 @@ export async function loadInitialState(
     logger.info('IPC', 'No enabled subscriptions or manual links saved');
     deps.stopAutoRefreshTimer();
     void attemptPendingReconnectAfterRefresh().catch((error) => {
-      logger.error('IPC', 'Pending TUN reconnect without refresh failed', error);
+      logger.error(
+        'IPC',
+        'Pending TUN reconnect without refresh failed',
+        error,
+      );
     });
   }
 }

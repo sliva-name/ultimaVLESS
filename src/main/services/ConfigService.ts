@@ -149,7 +149,8 @@ export class ConfigService {
     return (
       settings.muxEnabled === LEGACY_PERFORMANCE_DEFAULTS.muxEnabled &&
       settings.muxConcurrency === LEGACY_PERFORMANCE_DEFAULTS.muxConcurrency &&
-      settings.xudpConcurrency === LEGACY_PERFORMANCE_DEFAULTS.xudpConcurrency &&
+      settings.xudpConcurrency ===
+        LEGACY_PERFORMANCE_DEFAULTS.xudpConcurrency &&
       settings.xudpProxyUDP443 ===
         LEGACY_PERFORMANCE_DEFAULTS.xudpProxyUDP443 &&
       settings.tcpFastOpen === LEGACY_PERFORMANCE_DEFAULTS.tcpFastOpen &&

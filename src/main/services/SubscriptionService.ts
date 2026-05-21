@@ -45,6 +45,29 @@ async function fetchWithTimeout(
   }
 }
 
+async function lookupPublicHostAddresses(
+  hostname: string,
+  timeoutMs = 1000,
+): Promise<dns.LookupAddress[] | null> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timeout = setTimeout(() => resolve(null), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      dns.promises.lookup(hostname, { all: true }),
+      timeoutPromise,
+    ]);
+  } catch {
+    return null;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 function isPrivateOrLoopbackHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
   if (normalized === 'localhost' || normalized.endsWith('.localhost'))
@@ -114,10 +137,9 @@ export class SubscriptionService {
     // but a malicious authoritative DNS could still flip records with TTL=0.
     // For full protection, the fetch agent would need to pin to one of the
     // pre-validated IPs (out of scope here).
-    try {
-      const lookupResults = await dns.promises.lookup(parsedUrl.hostname, {
-        all: true,
-      });
+    const lookupResults = await lookupPublicHostAddresses(parsedUrl.hostname);
+
+    if (lookupResults) {
       if (lookupResults.length === 0) {
         throw new Error('Subscription URL did not resolve to any address');
       }
@@ -126,15 +148,6 @@ export class SubscriptionService {
           throw new Error('Subscription URL resolves to a private IP');
         }
       }
-    } catch (err) {
-      if (
-        err instanceof Error &&
-        /private IP|did not resolve/.test(err.message)
-      ) {
-        throw err;
-      }
-      // Other DNS failures (NXDOMAIN, timeout) — let fetch surface a clearer
-      // error; nothing we could safely connect to here.
     }
 
     return parsedUrl;
@@ -188,147 +201,150 @@ export class SubscriptionService {
       redactedUrl: redactUrl(url),
     });
     try {
-      const directLinksFromInput = this.extractSupportedLinksFromText(url);
-      if (directLinksFromInput.length > 0) {
-        const directConfigs = this.parseDirectLinksFromText(url);
-        logger.info('SubscriptionService', 'Detected direct link input', {
-          count: directConfigs.length,
-        });
-        return {
-          configs: directConfigs,
-          extractedLinks: directLinksFromInput,
-        };
-      }
-
-      const validatedUrl = await this.validateRemoteSubscriptionUrl(url);
-      const yandexHtml = isYandexTranslateHost(validatedUrl.hostname);
-      if (yandexHtml) {
-        logger.info(
-          'SubscriptionService',
-          'Subscription URL is Yandex Translate; fetching HTML with browser headers',
-        );
-      }
-      const response = await this.fetchValidatedResponse(
-        validatedUrl,
-        yandexHtml ? { headers: YANDEX_TRANSLATE_FETCH_HEADERS } : undefined,
-      );
-      if (!response.ok) {
-        throw new Error(`Subscription request failed: HTTP ${response.status}`);
-      }
-
-      const contentLengthHeader = response.headers?.get?.('content-length');
-      if (contentLengthHeader) {
-        const contentLength = Number(contentLengthHeader);
-        if (
-          !Number.isNaN(contentLength) &&
-          contentLength > SubscriptionService.MAX_RESPONSE_BODY_LENGTH
-        ) {
-          throw new Error('Subscription response is too large');
-        }
-      }
-
-      const rawText = await response.text();
-      if (rawText.length > SubscriptionService.MAX_RESPONSE_BODY_LENGTH) {
-        throw new Error('Subscription response is too large');
-      }
-      if (!rawText.trim()) {
-        throw new Error('Empty response from subscription URL');
-      }
-
-      const trimmed = rawText.trim();
-      let body: string | unknown[] | Record<string, unknown>;
-      if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-        try {
-          body = JSON.parse(trimmed) as unknown[] | Record<string, unknown>;
-        } catch {
-          body = rawText;
-        }
-      } else {
-        body = rawText;
-      }
-
-      if (Array.isArray(body)) {
-        logger.info('SubscriptionService', 'Detected JSON array format', {
-          count: body.length,
-        });
-        return {
-          configs: parseJsonConfigs(body),
-          extractedLinks: [],
-        };
-      }
-
-      // Single Xray configuration object (e.g. a full `{ outbounds: [...] }` export).
-      // `body` is typed as `string | unknown[] | Record<string, unknown>` — the array case
-      // is handled above, so `typeof === 'object'` uniquely identifies the Record branch.
-      if (typeof body === 'object') {
-        logger.info(
-          'SubscriptionService',
-          'Detected single JSON object format',
-        );
-        return {
-          configs: parseJsonConfigs([body]),
-          extractedLinks: [],
-        };
-      }
-
-      // Reaching here means `body` was not array/object, so it is the raw text response.
-      let textBody = body.trim();
-      if (yandexHtml) {
-        textBody = expandHtmlEntitiesForUrlExtraction(textBody);
-        logger.info(
-          'SubscriptionService',
-          'Parsing Yandex Translate HTML for subscription links',
-          {
-            approxLength: textBody.length,
-          },
-        );
-      }
-      const directLinksFromBody = this.extractSupportedLinksFromText(textBody);
-      if (directLinksFromBody.length > 0) {
-        logger.info(
-          'SubscriptionService',
-          'Detected direct links in response body',
-          {
-            count: directLinksFromBody.length,
-            yandexHtml,
-          },
-        );
-        return {
-          configs: this.parseDirectLinksFromText(textBody),
-          extractedLinks: directLinksFromBody,
-        };
-      }
-
-      if (textBody.startsWith('[') || textBody.startsWith('{')) {
-        try {
-          const parsed = JSON.parse(textBody);
-          const arr = Array.isArray(parsed) ? parsed : [parsed];
-          logger.info('SubscriptionService', 'Detected JSON string format', {
-            count: arr.length,
-          });
-          return {
-            configs: parseJsonConfigs(arr),
-            extractedLinks: [],
-          };
-        } catch {
-          // Not valid JSON, try base64
-        }
-      }
-
-      const cleanBase64 = textBody.replace(/\s/g, '');
-      if (!isValid(cleanBase64)) {
-        throw new Error('Invalid Base64 response');
-      }
-      const decoded = decode(cleanBase64);
-      return {
-        configs: this.parseBase64(textBody),
-        extractedLinks: this.extractSupportedLinksFromText(decoded),
-      };
+      return await this.fetchAndParseDetailedUnchecked(url);
     } catch (error) {
       const e = error instanceof Error ? error : new Error(String(error));
       logger.error('SubscriptionService', 'fetchAndParse failed', e);
       throw e;
     }
+  }
+
+  private async fetchAndParseDetailedUnchecked(
+    url: string,
+  ): Promise<{ configs: VlessConfig[]; extractedLinks: string[] }> {
+    const directLinksFromInput = this.extractSupportedLinksFromText(url);
+    if (directLinksFromInput.length > 0) {
+      const directConfigs = this.parseDirectLinksFromText(url);
+      logger.info('SubscriptionService', 'Detected direct link input', {
+        count: directConfigs.length,
+      });
+      return {
+        configs: directConfigs,
+        extractedLinks: directLinksFromInput,
+      };
+    }
+
+    const validatedUrl = await this.validateRemoteSubscriptionUrl(url);
+    const yandexHtml = isYandexTranslateHost(validatedUrl.hostname);
+    if (yandexHtml) {
+      logger.info(
+        'SubscriptionService',
+        'Subscription URL is Yandex Translate; fetching HTML with browser headers',
+      );
+    }
+    const response = await this.fetchValidatedResponse(
+      validatedUrl,
+      yandexHtml ? { headers: YANDEX_TRANSLATE_FETCH_HEADERS } : undefined,
+    );
+    if (!response.ok) {
+      throw new Error(`Subscription request failed: HTTP ${response.status}`);
+    }
+
+    const contentLengthHeader = response.headers?.get?.('content-length');
+    if (contentLengthHeader) {
+      const contentLength = Number(contentLengthHeader);
+      if (
+        !Number.isNaN(contentLength) &&
+        contentLength > SubscriptionService.MAX_RESPONSE_BODY_LENGTH
+      ) {
+        throw new Error('Subscription response is too large');
+      }
+    }
+
+    const rawText = await response.text();
+    if (rawText.length > SubscriptionService.MAX_RESPONSE_BODY_LENGTH) {
+      throw new Error('Subscription response is too large');
+    }
+    if (!rawText.trim()) {
+      throw new Error('Empty response from subscription URL');
+    }
+
+    const trimmed = rawText.trim();
+    let body: string | unknown[] | Record<string, unknown>;
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      try {
+        body = JSON.parse(trimmed) as unknown[] | Record<string, unknown>;
+      } catch {
+        body = rawText;
+      }
+    } else {
+      body = rawText;
+    }
+
+    if (Array.isArray(body)) {
+      logger.info('SubscriptionService', 'Detected JSON array format', {
+        count: body.length,
+      });
+      return {
+        configs: parseJsonConfigs(body),
+        extractedLinks: [],
+      };
+    }
+
+    // Single Xray configuration object (e.g. a full `{ outbounds: [...] }` export).
+    // `body` is typed as `string | unknown[] | Record<string, unknown>` — the array case
+    // is handled above, so `typeof === 'object'` uniquely identifies the Record branch.
+    if (typeof body === 'object') {
+      logger.info('SubscriptionService', 'Detected single JSON object format');
+      return {
+        configs: parseJsonConfigs([body]),
+        extractedLinks: [],
+      };
+    }
+
+    // Reaching here means `body` was not array/object, so it is the raw text response.
+    let textBody = body.trim();
+    if (yandexHtml) {
+      textBody = expandHtmlEntitiesForUrlExtraction(textBody);
+      logger.info(
+        'SubscriptionService',
+        'Parsing Yandex Translate HTML for subscription links',
+        {
+          approxLength: textBody.length,
+        },
+      );
+    }
+    const directLinksFromBody = this.extractSupportedLinksFromText(textBody);
+    if (directLinksFromBody.length > 0) {
+      logger.info(
+        'SubscriptionService',
+        'Detected direct links in response body',
+        {
+          count: directLinksFromBody.length,
+          yandexHtml,
+        },
+      );
+      return {
+        configs: this.parseDirectLinksFromText(textBody),
+        extractedLinks: directLinksFromBody,
+      };
+    }
+
+    if (textBody.startsWith('[') || textBody.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(textBody);
+        const arr = Array.isArray(parsed) ? parsed : [parsed];
+        logger.info('SubscriptionService', 'Detected JSON string format', {
+          count: arr.length,
+        });
+        return {
+          configs: parseJsonConfigs(arr),
+          extractedLinks: [],
+        };
+      } catch {
+        // Not valid JSON, try base64
+      }
+    }
+
+    const cleanBase64 = textBody.replace(/\s/g, '');
+    if (!isValid(cleanBase64)) {
+      throw new Error('Invalid Base64 response');
+    }
+    const decoded = decode(cleanBase64);
+    return {
+      configs: this.parseBase64(textBody),
+      extractedLinks: this.extractSupportedLinksFromText(decoded),
+    };
   }
 
   public async fetchAndParse(url: string): Promise<VlessConfig[]> {

@@ -1,5 +1,8 @@
-import { createHash } from 'crypto';
 import { VlessConfig } from '@/shared/types';
+import {
+  createHashedIdentityToken,
+  createStableServerId,
+} from '@/shared/serverIdentity';
 import { logger } from '@/main/services/LoggerService';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -19,25 +22,6 @@ function asString(value: unknown, fallback = ''): string {
 
 function asNumber(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-}
-
-function makeServerIdentity(
-  authToken: string,
-  address: string,
-  port: number,
-  parts: Array<string | undefined>,
-): string {
-  const signature = [
-    authToken,
-    address,
-    String(port),
-    ...parts.map((part) => part || ''),
-  ].join('|');
-  const digest = createHash('sha256')
-    .update(signature)
-    .digest('hex')
-    .slice(0, 16);
-  return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
 }
 
 function isProxyOutbound(outbound: Record<string, unknown>): boolean {
@@ -189,12 +173,12 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         ['reality', 'tls', 'none'].includes(security) ? security : undefined
       ) as VlessConfig['security'];
 
-      // Avoid embedding raw trojan password in uuid (makeServerIdentity prefixes authToken).
+      // Avoid embedding raw trojan password in uuid (stable ids prefix authToken).
       const idToken =
         trojanPasswordToken.length > 0
-          ? `tj${createHash('sha256').update(`${trojanPasswordToken}|${address}|${port}`).digest('hex').slice(0, 14)}`
+          ? createHashedIdentityToken('tj', trojanPasswordToken, address, port)
           : userUUID || 'user';
-      const stableId = makeServerIdentity(idToken, address, port, [
+      const stableId = createStableServerId(idToken, address, port, [
         network,
         security,
         protocol,
