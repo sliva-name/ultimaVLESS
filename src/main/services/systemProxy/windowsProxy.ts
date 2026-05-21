@@ -9,6 +9,29 @@ const PROXY_SCRIPT = `
 param($enable, $proxy)
 $ErrorActionPreference = "Stop"
 $reg = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"
+function Disable-LocalhostWinHttpProxyFallback {
+    try {
+        $output = (& netsh winhttp dump 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "WinHTTP proxy inspection skipped: $output"
+            return
+        }
+        $proxyServer = $null
+        if ($output -match 'proxy-server="([^"]*)"') {
+            $proxyServer = $Matches[1]
+        }
+        if ($proxyServer -match '(?i)(127\\.0\\.0\\.1|localhost|\\[::1\\])') {
+            & netsh winhttp reset proxy | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "WinHTTP localhost proxy reset"
+            } else {
+                Write-Host "WinHTTP proxy reset skipped: exit code $LASTEXITCODE"
+            }
+        }
+    } catch {
+        Write-Host "WinHTTP proxy cleanup skipped: $_"
+    }
+}
 try {
     if ($enable -eq "1") {
         Set-ItemProperty -Path $reg -Name ProxyEnable -Value 1
@@ -16,6 +39,7 @@ try {
         Write-Host "Proxy enabled: $proxy"
     } else {
         Set-ItemProperty -Path $reg -Name ProxyEnable -Value 0
+        Disable-LocalhostWinHttpProxyFallback
         Write-Host "Proxy disabled"
     }
 
@@ -90,6 +114,29 @@ export class WindowsProxyAdapter {
       'base64',
     );
     await this.runPowerShellCommand(`
+      function Disable-LocalhostWinHttpProxyFallback {
+        try {
+          $output = (& netsh winhttp dump 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "WinHTTP proxy inspection skipped: $output"
+            return
+          }
+          $proxyServer = $null
+          if ($output -match 'proxy-server="([^"]*)"') {
+            $proxyServer = $Matches[1]
+          }
+          if ($proxyServer -match '(?i)(127\\.0\\.0\\.1|localhost|\\[::1\\])') {
+            & netsh winhttp reset proxy | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "WinHTTP localhost proxy reset"
+            } else {
+              Write-Host "WinHTTP proxy reset skipped: exit code $LASTEXITCODE"
+            }
+          }
+        } catch {
+          Write-Host "WinHTTP proxy cleanup skipped: $_"
+        }
+      }
       $json = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${encoded}'))
       $state = $json | ConvertFrom-Json
       $reg = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"
@@ -122,6 +169,7 @@ export class WindowsProxyAdapter {
 "@
       [InternetSettings]::InternetSetOption([IntPtr]::Zero, [InternetSettings]::INTERNET_OPTION_SETTINGS_CHANGED, [IntPtr]::Zero, 0) | Out-Null
       [InternetSettings]::InternetSetOption([IntPtr]::Zero, [InternetSettings]::INTERNET_OPTION_REFRESH, [IntPtr]::Zero, 0) | Out-Null
+      Disable-LocalhostWinHttpProxyFallback
     `);
   }
 

@@ -41,6 +41,7 @@ describe('windowsProxyRecovery', () => {
     const {
       installLogonRecovery,
       getRecoveryCmdPath,
+      getRecoveryScriptPath,
       getProgramDataRecoveryDir,
       WINDOWS_PROXY_RECOVERY_TASK_NAME,
       RUN_KEY_VALUE_NAME,
@@ -56,6 +57,9 @@ describe('windowsProxyRecovery', () => {
       fs.readFileSync(path.join(recoveryDir, 'recovery-target.txt'), 'utf8'),
     ).toBe(snapshotPath);
     expect(fs.existsSync(getRecoveryCmdPath())).toBe(true);
+    expect(fs.readFileSync(getRecoveryScriptPath(), 'utf8')).toContain(
+      'netsh winhttp reset proxy',
+    );
 
     const cmdPath = getRecoveryCmdPath();
     expect(spawnMock).toHaveBeenCalledWith(

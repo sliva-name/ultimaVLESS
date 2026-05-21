@@ -39,18 +39,45 @@ public class InternetSettings {
   [InternetSettings]::InternetSetOption([IntPtr]::Zero, [InternetSettings]::INTERNET_OPTION_REFRESH, [IntPtr]::Zero, 0) | Out-Null
 }
 
+function Disable-LocalhostWinHttpProxyFallback {
+  try {
+    $output = (& netsh winhttp dump 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) {
+      Write-RecoveryLog "WinHTTP proxy inspection skipped: $output"
+      return $false
+    }
+    $proxyServer = $null
+    if ($output -match 'proxy-server="([^"]*)"') {
+      $proxyServer = $Matches[1]
+    }
+    if ($proxyServer -match '(?i)(127\.0\.0\.1|localhost|\[::1\])') {
+      & netsh winhttp reset proxy | Out-Null
+      if ($LASTEXITCODE -eq 0) {
+        Write-RecoveryLog 'Reset orphaned localhost WinHTTP proxy'
+        return $true
+      }
+      Write-RecoveryLog "WinHTTP proxy reset skipped: exit code $LASTEXITCODE"
+    }
+  } catch {
+    Write-RecoveryLog "WinHTTP proxy cleanup skipped: $_"
+  }
+  return $false
+}
+
 function Disable-LocalhostProxyFallback {
   $reg = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
   $props = Get-ItemProperty -Path $reg
   $enabled = [int]($props.ProxyEnable | Select-Object -First 1)
   $server = [string]($props.ProxyServer | Select-Object -First 1)
+  $changed = $false
   if ($enabled -eq 1 -and $server -match '127\.0\.0\.1') {
     Set-ItemProperty -Path $reg -Name ProxyEnable -Value 0
     Refresh-InternetSettings
     Write-RecoveryLog 'Disabled orphaned localhost proxy (fallback)'
-    return $true
+    $changed = $true
   }
-  return $false
+  if (Disable-LocalhostWinHttpProxyFallback) { $changed = $true }
+  return $changed
 }
 
 $programDataDir = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'UltimaVLESS'
@@ -98,6 +125,7 @@ try {
   Remove-Item -LiteralPath $snapshotPath -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $targetFile -Force -ErrorAction SilentlyContinue
   Refresh-InternetSettings
+  Disable-LocalhostWinHttpProxyFallback | Out-Null
   Write-RecoveryLog "Restored proxy snapshot from $snapshotPath"
   exit 0
 } catch {
@@ -105,6 +133,7 @@ try {
   Set-ItemProperty -Path $reg -Name ProxyEnable -Value 0
   Remove-Item -LiteralPath $targetFile -Force -ErrorAction SilentlyContinue
   Refresh-InternetSettings
+  Disable-LocalhostWinHttpProxyFallback | Out-Null
   exit 1
 }
 `;
