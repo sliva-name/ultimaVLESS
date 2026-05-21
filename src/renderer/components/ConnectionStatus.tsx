@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { VlessConfig } from '@/shared/types';
 import type { TrafficSnapshot } from '@/shared/ipc';
 import {
@@ -8,10 +8,9 @@ import {
   Zap,
   CheckCircle2,
   Loader2,
-  ArrowDown,
-  ArrowUp,
-  Clock,
 } from 'lucide-react';
+import { ConnectionSessionStats } from './ConnectionSessionStats';
+import { useRenderPerf } from '@/renderer/hooks/useRenderPerf';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
 import { useTranslation } from 'react-i18next';
@@ -23,19 +22,6 @@ interface ConnectionStatusProps {
   connectionError?: string | null;
   trafficSnapshot?: TrafficSnapshot | null;
   onToggleConnection: () => void;
-}
-
-const padZero = (value: number) => value.toString().padStart(2, '0');
-
-function formatDuration(totalMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(totalMs / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${padZero(hours)}:${padZero(minutes)}:${padZero(seconds)}`;
-  }
-  return `${padZero(minutes)}:${padZero(seconds)}`;
 }
 
 function getProtocolLabel(server: VlessConfig): string {
@@ -51,24 +37,6 @@ function getProtocolLabel(server: VlessConfig): string {
     default:
       return String(server.protocol).toUpperCase();
   }
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  const fractionDigits =
-    unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
-}
-
-function formatRate(bytesPerSecond: number): string {
-  return `${formatBytes(bytesPerSecond)}/s`;
 }
 
 export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
@@ -87,23 +55,15 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
     ? t('status.disconnectingHint')
     : t('status.connectingHint');
 
-  // Tick every second so the session timer keeps running between traffic
-  // snapshots or short-lived stats API misses.
-  const [tick, setTick] = useState(() => Date.now());
-  const connectedAt = trafficSnapshot?.connectedAt ?? 0;
-  useEffect(() => {
-    if (!isConnected || connectedAt === 0) return;
-    const interval = window.setInterval(() => setTick(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, [isConnected, connectedAt]);
-
   const sessionActive = isConnected && !!trafficSnapshot;
-  const sessionDurationMs = sessionActive
-    ? Math.max(
-        trafficSnapshot.sessionDurationMs,
-        tick - trafficSnapshot.connectedAt,
-      )
-    : 0;
+
+  useRenderPerf('ConnectionStatus', [
+    isConnected,
+    isBusy,
+    selectedServer?.uuid,
+    connectionError,
+    sessionActive,
+  ]);
 
   return (
     <div className="flex-1 relative min-h-0 min-w-0 overflow-x-hidden overflow-y-auto">
@@ -293,28 +253,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           </div>
 
           {sessionActive && (
-            <div
-              className="mt-4 sm:mt-5 grid grid-cols-3 gap-2 sm:gap-3 w-full max-w-2xl animate-[fadeIn_0.4s_ease-out]"
-              aria-label={t('status.session.label')}
-            >
-              <StatTile
-                icon={<Clock className="w-4 h-4 text-green-400" />}
-                label={t('status.session.duration')}
-                primary={formatDuration(sessionDurationMs)}
-              />
-              <StatTile
-                icon={<ArrowDown className="w-4 h-4 text-sky-400" />}
-                label={t('status.session.download')}
-                primary={formatBytes(trafficSnapshot.downloadBytes)}
-                secondary={formatRate(trafficSnapshot.downloadBps)}
-              />
-              <StatTile
-                icon={<ArrowUp className="w-4 h-4 text-purple-400" />}
-                label={t('status.session.upload')}
-                primary={formatBytes(trafficSnapshot.uploadBytes)}
-                secondary={formatRate(trafficSnapshot.uploadBps)}
-              />
-            </div>
+            <ConnectionSessionStats trafficSnapshot={trafficSnapshot} />
           )}
 
           {connectionError && (
@@ -329,34 +268,3 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
     </div>
   );
 };
-
-interface StatTileProps {
-  icon: React.ReactNode;
-  label: string;
-  primary: string;
-  secondary?: string;
-}
-
-const StatTile: React.FC<StatTileProps> = ({
-  icon,
-  label,
-  primary,
-  secondary,
-}) => (
-  <div className="min-w-0 p-2.5 sm:p-3 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50">
-    <div className="flex items-center gap-1.5 sm:gap-2 mb-1 sm:mb-1.5 min-w-0">
-      <span className="shrink-0">{icon}</span>
-      <div className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-wider font-semibold truncate">
-        {label}
-      </div>
-    </div>
-    <div className="font-mono text-sm sm:text-base text-white font-semibold tabular-nums truncate">
-      {primary}
-    </div>
-    {secondary && (
-      <div className="mt-0.5 text-[11px] sm:text-xs text-gray-400 font-mono tabular-nums truncate">
-        {secondary}
-      </div>
-    )}
-  </div>
-);

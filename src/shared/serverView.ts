@@ -7,6 +7,24 @@ export function toSafeServer(server: VlessConfig): SafeVlessConfig {
   return rest;
 }
 
+let cachedSource: VlessConfig[] | null = null;
+let cachedSafeList: SafeVlessConfig[] | null = null;
+
+/**
+ * Strips `rawConfig` before IPC. Reuses the last projection when the same
+ * servers array reference is sent again (common on no-op refreshes).
+ */
 export function toSafeServerList(servers: VlessConfig[]): SafeVlessConfig[] {
-  return servers.map(toSafeServer);
+  if (cachedSource === servers && cachedSafeList) {
+    return cachedSafeList;
+  }
+  const safe = servers.map(toSafeServer);
+  cachedSource = servers;
+  cachedSafeList = safe;
+  return safe;
+}
+
+export function invalidateSafeServerListCache(): void {
+  cachedSource = null;
+  cachedSafeList = null;
 }

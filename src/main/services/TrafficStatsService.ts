@@ -1,22 +1,16 @@
 import { EventEmitter } from 'events';
 import { APP_CONSTANTS } from '@/shared/constants';
+import { PerfTimer } from '@/shared/perfMetrics';
 import { logger } from './LoggerService';
 import { XrayStatsClient } from './XrayStatsClient';
 
 export interface TrafficSnapshot {
-  /** Monotonically increasing total bytes uploaded for the session. */
   uploadBytes: number;
-  /** Monotonically increasing total bytes downloaded for the session. */
   downloadBytes: number;
-  /** Instant upload rate in bytes/sec calculated from previous sample. */
   uploadBps: number;
-  /** Instant download rate in bytes/sec calculated from previous sample. */
   downloadBps: number;
-  /** Milliseconds elapsed since the active connection started. */
   sessionDurationMs: number;
-  /** Epoch ms when the current active connection started. */
   connectedAt: number;
-  /** Epoch ms when the snapshot was produced. */
   sampledAt: number;
 }
 
@@ -27,6 +21,8 @@ interface RawCounters {
 
 const POLL_INTERVAL_MS = 1000;
 const QUERY_TIMEOUT_MS = 900;
+/** When traffic is idle, throttle IPC snapshots to the renderer. */
+const IDLE_EMIT_INTERVAL_MS = 2000;
 
 /**
  * Polls Xray's gRPC StatsService and emits `snapshot` events with cumulative
@@ -36,6 +32,7 @@ export class TrafficStatsService extends EventEmitter {
   private timer: NodeJS.Timeout | null = null;
   private connectedAt = 0;
   private lastSnapshot: TrafficSnapshot | null = null;
+  private lastEmittedSnapshot: TrafficSnapshot | null = null;
   private lastRaw: RawCounters | null = null;
   private lastRawAt = 0;
   private inFlight = false;
@@ -46,13 +43,12 @@ export class TrafficStatsService extends EventEmitter {
     this.stop();
     this.connectedAt = connectedAt;
     this.lastSnapshot = null;
+    this.lastEmittedSnapshot = null;
     this.lastRaw = null;
     this.lastRawAt = 0;
     this.timer = setInterval(() => {
       void this.tick();
     }, POLL_INTERVAL_MS);
-    // Fire one immediately so the UI gets a zeroed snapshot with the correct
-    // connectedAt timestamp without waiting a full tick.
     const initial: TrafficSnapshot = {
       uploadBytes: 0,
       downloadBytes: 0,
@@ -63,7 +59,7 @@ export class TrafficStatsService extends EventEmitter {
       sampledAt: Date.now(),
     };
     this.lastSnapshot = initial;
-    this.emit('snapshot', initial);
+    this.emitSnapshot(initial);
   }
 
   public stop(): void {
@@ -73,6 +69,7 @@ export class TrafficStatsService extends EventEmitter {
     }
     this.connectedAt = 0;
     this.lastSnapshot = null;
+    this.lastEmittedSnapshot = null;
     this.lastRaw = null;
     this.lastRawAt = 0;
     this.statsClient?.close();
@@ -84,9 +81,35 @@ export class TrafficStatsService extends EventEmitter {
     return this.lastSnapshot;
   }
 
+  private emitSnapshot(snapshot: TrafficSnapshot): void {
+    if (!this.shouldEmitToRenderer(snapshot)) {
+      return;
+    }
+    this.lastEmittedSnapshot = snapshot;
+    this.emit('snapshot', snapshot);
+  }
+
+  private shouldEmitToRenderer(snapshot: TrafficSnapshot): boolean {
+    const previous = this.lastEmittedSnapshot;
+    if (!previous) {
+      return true;
+    }
+    if (
+      snapshot.uploadBytes !== previous.uploadBytes ||
+      snapshot.downloadBytes !== previous.downloadBytes
+    ) {
+      return true;
+    }
+    if (snapshot.uploadBps > 0 || snapshot.downloadBps > 0) {
+      return true;
+    }
+    return snapshot.sampledAt - previous.sampledAt >= IDLE_EMIT_INTERVAL_MS;
+  }
+
   private async tick(): Promise<void> {
     if (this.inFlight || this.connectedAt === 0) return;
     this.inFlight = true;
+    const timer = new PerfTimer('TrafficStatsService', 'tick');
     try {
       const raw = await this.queryCounters();
       if (this.connectedAt === 0) return;
@@ -121,8 +144,9 @@ export class TrafficStatsService extends EventEmitter {
         sampledAt: now,
       };
       this.lastSnapshot = snapshot;
-      this.emit('snapshot', snapshot);
+      this.emitSnapshot(snapshot);
     } finally {
+      timer.end();
       this.inFlight = false;
     }
   }

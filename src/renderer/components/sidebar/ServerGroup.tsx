@@ -2,8 +2,11 @@ import React, { useState, useCallback } from 'react';
 import clsx from 'clsx';
 import { ChevronDown } from 'lucide-react';
 import { VlessConfig } from '@/shared/types';
-import { GroupColor } from '@/renderer/components/sidebarModel';
-import { ServerItem } from './ServerItem';
+import {
+  GroupColor,
+  SERVER_LIST_VIRTUALIZE_THRESHOLD,
+} from '@/renderer/components/sidebarModel';
+import { VirtualizedServerList } from './VirtualizedServerList';
 
 interface ServerGroupProps {
   title: string;
@@ -28,9 +31,12 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
   isConnected,
   onSelectServer,
   collapsible = true,
-  defaultExpanded = true,
+  defaultExpanded,
 }) => {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const initialExpanded =
+    defaultExpanded ??
+    servers.length <= SERVER_LIST_VIRTUALIZE_THRESHOLD;
+  const [expanded, setExpanded] = useState(initialExpanded);
   const toggle = useCallback(() => setExpanded((v) => !v), []);
 
   if (servers.length === 0) return null;
@@ -94,17 +100,13 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
       )}
 
       {isOpen && (
-        <div className="space-y-2">
-          {servers.map((server) => (
-            <ServerItem
-              key={server.uuid}
-              server={server}
-              isSelected={selectedServer?.uuid === server.uuid}
-              isConnected={isConnected}
-              onSelect={onSelectServer}
-            />
-          ))}
-        </div>
+        <VirtualizedServerList
+          key={`${title}-${servers.length}-${servers[0]?.uuid ?? 'none'}`}
+          servers={servers}
+          selectedServer={selectedServer}
+          isConnected={isConnected}
+          onSelectServer={onSelectServer}
+        />
       )}
     </div>
   );

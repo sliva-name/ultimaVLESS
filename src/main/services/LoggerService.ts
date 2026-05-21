@@ -9,9 +9,12 @@ import { app } from 'electron';
 export class LoggerService {
   private static readonly MAX_LOG_SIZE_BYTES = 5 * 1024 * 1024;
   private static readonly MAX_LOG_BACKUPS = 3;
+  /** Check log file size every N append operations instead of every write. */
+  private static readonly ROTATE_CHECK_EVERY_WRITES = 50;
   private logPath: string;
   private readonly debugEnabled: boolean;
   private writeQueue: Promise<void> = Promise.resolve();
+  private writesSinceRotateCheck = 0;
 
   /**
    * @param {string} filename - The log file name (default: 'app.log').
@@ -58,7 +61,7 @@ export class LoggerService {
     this.writeQueue = this.writeQueue.then(async () => {
       try {
         this.ensureLogDirExists();
-        this.rotateIfNeeded();
+        this.maybeRotate();
         if (typeof fs.appendFile === 'function') {
           await new Promise<void>((resolve, reject) => {
             fs.appendFile(this.logPath, logEntry, (error) => {
@@ -109,6 +112,17 @@ export class LoggerService {
     });
 
     return this.writeQueue;
+  }
+
+  private maybeRotate(): void {
+    this.writesSinceRotateCheck += 1;
+    if (
+      this.writesSinceRotateCheck < LoggerService.ROTATE_CHECK_EVERY_WRITES
+    ) {
+      return;
+    }
+    this.writesSinceRotateCheck = 0;
+    this.rotateIfNeeded();
   }
 
   private rotateIfNeeded(): void {

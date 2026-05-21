@@ -59,10 +59,13 @@ export const MANUAL_GROUP_COLOR: GroupColor = {
   bg: 'from-violet-500/8',
 };
 
+/** Servers per group above which we window the DOM list. */
+export const SERVER_LIST_VIRTUALIZE_THRESHOLD = 40;
+/** Server card ~64px + `space-y-2` gap between items. */
+export const SERVER_ITEM_ESTIMATED_HEIGHT_PX = 80;
+
 /**
  * Returns a stable colour slot for a subscription id.
- * Using a simple fast hash keeps the assignment deterministic across app
- * restarts and independent of the order in which subscriptions are loaded.
  */
 export function getSubscriptionColor(subscriptionId: string): GroupColor {
   let hash = 0;
@@ -86,33 +89,84 @@ export function sortByPingAvailability(items: VlessConfig[]): VlessConfig[] {
   });
 }
 
+export interface SidebarServerBuckets {
+  subscriptionGroups: SubscriptionServerGroup[];
+  orphanSubscriptionServers: VlessConfig[];
+  manualServers: VlessConfig[];
+}
+
+/**
+ * Single-pass partition of servers into subscription / orphan / manual buckets.
+ */
+export function partitionServers(servers: VlessConfig[]): {
+  bySubscriptionId: Map<string, VlessConfig[]>;
+  orphanSubscriptionServers: VlessConfig[];
+  manualServers: VlessConfig[];
+} {
+  const bySubscriptionId = new Map<string, VlessConfig[]>();
+  const orphanSubscriptionServers: VlessConfig[] = [];
+  const manualServers: VlessConfig[] = [];
+
+  for (const server of servers) {
+    if (server.source === 'manual') {
+      manualServers.push(server);
+      continue;
+    }
+    if (server.subscriptionId) {
+      const bucket = bySubscriptionId.get(server.subscriptionId);
+      if (bucket) {
+        bucket.push(server);
+      } else {
+        bySubscriptionId.set(server.subscriptionId, [server]);
+      }
+      continue;
+    }
+    orphanSubscriptionServers.push(server);
+  }
+
+  return { bySubscriptionId, orphanSubscriptionServers, manualServers };
+}
+
+export function buildSidebarServerBuckets(
+  subscriptions: Subscription[],
+  servers: VlessConfig[],
+): SidebarServerBuckets {
+  const { bySubscriptionId, orphanSubscriptionServers, manualServers } =
+    partitionServers(servers);
+
+  const subscriptionGroups: SubscriptionServerGroup[] = [];
+  for (const subscription of subscriptions) {
+    if (!subscription.enabled) continue;
+    const subServers = bySubscriptionId.get(subscription.id);
+    if (!subServers || subServers.length === 0) continue;
+    subscriptionGroups.push({
+      subscription,
+      servers: sortByPingAvailability(subServers),
+    });
+  }
+
+  return {
+    subscriptionGroups,
+    orphanSubscriptionServers: sortByPingAvailability(
+      orphanSubscriptionServers,
+    ),
+    manualServers: sortByPingAvailability(manualServers),
+  };
+}
+
 export function buildSubscriptionGroups(
   subscriptions: Subscription[],
   servers: VlessConfig[],
 ): SubscriptionServerGroup[] {
-  return subscriptions
-    .filter((subscription) => subscription.enabled)
-    .map((subscription) => ({
-      subscription,
-      servers: sortByPingAvailability(
-        servers.filter((server) => server.subscriptionId === subscription.id),
-      ),
-    }))
-    .filter((group) => group.servers.length > 0);
+  return buildSidebarServerBuckets(subscriptions, servers).subscriptionGroups;
 }
 
 export function buildOrphanSubscriptionServers(
   servers: VlessConfig[],
 ): VlessConfig[] {
-  return sortByPingAvailability(
-    servers.filter(
-      (server) => server.source !== 'manual' && !server.subscriptionId,
-    ),
-  );
+  return buildSidebarServerBuckets([], servers).orphanSubscriptionServers;
 }
 
 export function buildManualServers(servers: VlessConfig[]): VlessConfig[] {
-  return sortByPingAvailability(
-    servers.filter((server) => server.source === 'manual'),
-  );
+  return buildSidebarServerBuckets([], servers).manualServers;
 }

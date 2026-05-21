@@ -2,6 +2,10 @@ import { BrowserWindow } from 'electron';
 import { IPC_EVENT_CHANNELS } from '@/shared/ipc';
 import { toSafeServerList } from '@/shared/serverView';
 import { logger } from '@/main/services/LoggerService';
+import { PerfTimer } from '@/shared/perfMetrics';
+
+/** Defer subscription refresh slightly so first paint is not blocked. */
+const SUBSCRIPTION_REFRESH_DEFER_MS = 800;
 import { IpcDependencies } from './dependencies';
 
 interface InitialStateDeps {
@@ -84,7 +88,33 @@ export async function loadInitialState(
   };
 
   if (hasInput) {
-    const refreshJob = actions.queueRefreshAllSubscriptions(manualLinks);
+    const refreshDeferMs = pendingTunReconnectServerId
+      ? 0
+      : SUBSCRIPTION_REFRESH_DEFER_MS;
+    const refreshJob = new Promise<{
+      configCount: number;
+      reason?: string;
+      partialErrors?: string[];
+    }>((resolve, reject) => {
+      const runRefresh = () => {
+        const timer = new PerfTimer('IPC', 'initial subscription refresh');
+        actions
+          .queueRefreshAllSubscriptions(manualLinks)
+          .then((result) => {
+            timer.end({ configCount: result.configCount });
+            resolve(result);
+          })
+          .catch((error) => {
+            timer.end({ failed: true });
+            reject(error);
+          });
+      };
+      if (refreshDeferMs > 0) {
+        setTimeout(runRefresh, refreshDeferMs);
+      } else {
+        runRefresh();
+      }
+    });
     const refreshCompletion = refreshJob
       .then(handleRefreshResult)
       .catch((error) => {

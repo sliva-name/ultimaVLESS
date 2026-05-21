@@ -13,11 +13,10 @@ import logoUrl from '@/renderer/assets/logo.svg';
 import {
   ORPHAN_GROUP_COLOR,
   MANUAL_GROUP_COLOR,
-  buildManualServers,
-  buildOrphanSubscriptionServers,
-  buildSubscriptionGroups,
+  buildSidebarServerBuckets,
   getSubscriptionColor,
 } from './sidebarModel';
+import { useRenderPerf } from '@/renderer/hooks/useRenderPerf';
 import { ServerGroup } from './sidebar/ServerGroup';
 
 interface SidebarProps {
@@ -48,15 +47,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const didScrollToSelectedRef = useRef(false);
   const lastScrolledUuidRef = useRef<string | null>(null);
 
-  const subscriptionGroups = useMemo(
-    () => buildSubscriptionGroups(subscriptions, servers),
-    [subscriptions, servers],
-  );
-  const orphanSubscriptionServers = useMemo(
-    () => buildOrphanSubscriptionServers(servers),
-    [servers],
-  );
-  const manualServers = useMemo(() => buildManualServers(servers), [servers]);
+  const { subscriptionGroups, orphanSubscriptionServers, manualServers } =
+    useMemo(
+      () => buildSidebarServerBuckets(subscriptions, servers),
+      [subscriptions, servers],
+    );
+
+  useRenderPerf('Sidebar', [servers.length, subscriptions.length]);
   const pingInProgress = isPinging || isRefreshingPings;
 
   useEffect(() => {

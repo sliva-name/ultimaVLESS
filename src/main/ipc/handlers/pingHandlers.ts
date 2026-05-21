@@ -1,6 +1,11 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { VlessConfig } from '@/shared/types';
 import {
+  allServersHaveFreshPing,
+  filterServersNeedingPing,
+} from '@/shared/pingFilters';
+import { PerfTimer } from '@/shared/perfMetrics';
+import {
   IpcEventChannel,
   IPC_EVENT_CHANNELS,
   IPC_INVOKE_CHANNELS,
@@ -18,6 +23,34 @@ interface RegisterPingHandlersParams {
   isConnectionBusy: () => boolean;
 }
 
+const INITIAL_TIMEOUT_MS = 1800;
+const RETRY_TIMEOUT_MS = 3500;
+const RETRY_DELAY_MS = 250;
+const PARTIAL_UPDATE_BATCH_SIZE = 8;
+const MIN_PING_INTERVAL_MS = 30_000;
+
+function buildServersFingerprint(servers: VlessConfig[]): string {
+  return servers.map((s) => `${s.uuid}|${s.address}:${s.port}`).join('||');
+}
+
+function mergePingResults(
+  servers: VlessConfig[],
+  results: Map<string, number | null>,
+  pingTime: number,
+): VlessConfig[] {
+  return servers.map((server) => {
+    if (!results.has(server.uuid)) {
+      return server;
+    }
+    return {
+      ...server,
+      ping: results.get(server.uuid) ?? null,
+      pingTime,
+      pingStale: false,
+    };
+  });
+}
+
 export function registerPingHandlers({
   deps,
   sendToRenderer,
@@ -25,15 +58,9 @@ export function registerPingHandlers({
   assertTrustedSender,
   isConnectionBusy,
 }: RegisterPingHandlersParams): void {
-  const INITIAL_TIMEOUT_MS = 1800;
-  const RETRY_TIMEOUT_MS = 3500;
-  const RETRY_DELAY_MS = 250;
-  const buildServersFingerprint = (servers: VlessConfig[]): string =>
-    servers.map((s) => `${s.uuid}|${s.address}:${s.port}`).join('||');
   const sleep = (ms: number): Promise<void> =>
     new Promise((resolve) => setTimeout(resolve, ms));
 
-  /** Serialize ping-all-servers so overlapping invokes are not invalidated as "stale". */
   const pingAllQueue = createSerialQueue();
   const isUnsafePingState = (): boolean => {
     const monitorStatus = deps.connectionMonitorService.getStatus();
@@ -84,6 +111,7 @@ export function registerPingHandlers({
   async function runPingAllServers(
     force: boolean,
   ): Promise<Array<{ uuid: string; latency: number | null }>> {
+    const timer = new PerfTimer('IPC', 'ping-all-servers');
     const servers = deps.configService.getServers();
     if (isUnsafePingState()) {
       logger.debug(
@@ -92,45 +120,76 @@ export function registerPingHandlers({
       );
       return servers.map((s) => ({ uuid: s.uuid, latency: s.ping ?? null }));
     }
+
     const startFingerprint = buildServersFingerprint(servers);
 
-    if (!force && servers.length > 0) {
-      const now = Date.now();
-      const minPingInterval = 30000;
-      const serversWithPing = servers.filter(
-        (s) => s.pingTime && s.pingTime > 0,
-      );
-
-      if (serversWithPing.length < servers.length) {
-        logger.debug('IPC', 'Pinging - not all servers have ping data', {
-          total: servers.length,
-          withPing: serversWithPing.length,
-        });
-      } else {
-        const oldestPingTime = Math.min(
-          ...servers.map((s) => s.pingTime || 0).filter((t) => t > 0),
-        );
-        const timeSinceLastPing = now - oldestPingTime;
-        if (oldestPingTime > 0 && timeSinceLastPing < minPingInterval) {
-          logger.debug('IPC', 'Skipping ping - too soon since last ping', {
-            timeSinceLastPing,
-          });
-          return servers.map((s) => ({
-            uuid: s.uuid,
-            latency: s.ping ?? null,
-          }));
-        }
-      }
+    if (
+      !force &&
+      servers.length > 0 &&
+      allServersHaveFreshPing(servers, MIN_PING_INTERVAL_MS)
+    ) {
+      logger.debug('IPC', 'Skipping ping - all servers have fresh latency', {
+        total: servers.length,
+      });
+      return servers.map((s) => ({
+        uuid: s.uuid,
+        latency: s.ping ?? null,
+      }));
     }
 
-    const results = await deps.pingService.pingServers(
-      servers,
-      INITIAL_TIMEOUT_MS,
-    );
-    const failedServers = servers.filter((server) => {
-      const key = server.uuid;
-      return results.get(key) == null;
+    const targets = filterServersNeedingPing(servers, {
+      force,
+      minPingIntervalMs: MIN_PING_INTERVAL_MS,
     });
+
+    if (targets.length === 0) {
+      return servers.map((s) => ({
+        uuid: s.uuid,
+        latency: s.ping ?? null,
+      }));
+    }
+
+    const incrementalResults = new Map<string, number | null>();
+    let resultsSinceLastPush = 0;
+
+    const pushPartialUpdate = (): void => {
+      if (incrementalResults.size === 0) {
+        return;
+      }
+      const latest = deps.configService.getServers();
+      if (buildServersFingerprint(latest) !== startFingerprint) {
+        return;
+      }
+      if (isUnsafePingState()) {
+        return;
+      }
+      const pingTime = Date.now();
+      const merged = mergePingResults(latest, incrementalResults, pingTime);
+      deps.configService.setServers(merged);
+      sendToRenderer(
+        IPC_EVENT_CHANNELS.updateServers,
+        toSafeServerList(merged),
+      );
+    };
+
+    const results = await deps.pingService.pingServers(
+      targets,
+      INITIAL_TIMEOUT_MS,
+      {
+        onResult: (uuid, latency) => {
+          incrementalResults.set(uuid, latency);
+          resultsSinceLastPush += 1;
+          if (resultsSinceLastPush >= PARTIAL_UPDATE_BATCH_SIZE) {
+            resultsSinceLastPush = 0;
+            pushPartialUpdate();
+          }
+        },
+      },
+    );
+
+    const failedServers = targets.filter(
+      (server) => results.get(server.uuid) == null,
+    );
 
     const currentServers = deps.configService.getServers();
     const currentFingerprint = buildServersFingerprint(currentServers);
@@ -145,7 +204,6 @@ export function registerPingHandlers({
       }));
     }
 
-    // Drop results only if the server list changed while this ping was in flight.
     if (currentFingerprint !== startFingerprint) {
       logger.debug(
         'IPC',
@@ -162,11 +220,7 @@ export function registerPingHandlers({
     }
 
     const pingTime = Date.now();
-    const updatedServers = servers.map((server) => {
-      const key = server.uuid;
-      const ping = results.get(key) ?? null;
-      return { ...server, ping, pingTime, pingStale: false };
-    });
+    const updatedServers = mergePingResults(currentServers, results, pingTime);
 
     deps.configService.setServers(updatedServers);
     sendToRenderer(
@@ -174,10 +228,16 @@ export function registerPingHandlers({
       toSafeServerList(updatedServers),
     );
 
+    timer.end({
+      force,
+      total: servers.length,
+      probed: targets.length,
+    });
+
     if (failedServers.length > 0) {
       void (async () => {
         logger.debug('IPC', 'Retrying failed ping servers in background', {
-          total: servers.length,
+          total: targets.length,
           failed: failedServers.length,
           retryTimeoutMs: RETRY_TIMEOUT_MS,
         });
@@ -210,18 +270,11 @@ export function registerPingHandlers({
         }
 
         const retryPingTime = Date.now();
-        const mergedServers = latestServers.map((server) => {
-          const retryLatency = retryResults.get(server.uuid);
-          if (retryLatency == null) {
-            return server;
-          }
-          return {
-            ...server,
-            ping: retryLatency,
-            pingTime: retryPingTime,
-            pingStale: false,
-          };
-        });
+        const mergedServers = mergePingResults(
+          latestServers,
+          retryResults,
+          retryPingTime,
+        );
 
         deps.configService.setServers(mergedServers);
         sendToRenderer(
@@ -233,13 +286,10 @@ export function registerPingHandlers({
       });
     }
 
-    return servers.map((server) => {
-      const key = server.uuid;
-      return {
-        uuid: server.uuid,
-        latency: results.get(key) ?? null,
-      };
-    });
+    return updatedServers.map((server) => ({
+      uuid: server.uuid,
+      latency: server.ping ?? null,
+    }));
   }
 
   ipcMain.handle(

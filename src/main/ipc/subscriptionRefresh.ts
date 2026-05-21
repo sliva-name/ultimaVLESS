@@ -7,6 +7,7 @@ import {
   getServerEndpointKey,
 } from '@/shared/serverIdentity';
 import { logger } from '@/main/services/LoggerService';
+import { PerfTimer } from '@/shared/perfMetrics';
 import { preserveActiveServerIfNeeded } from './refreshUtils';
 import { redactUrl } from './validators';
 
@@ -74,6 +75,7 @@ export function createSubscriptionRefreshManager(
   const refreshAllSubscriptions = async (
     manualLinks: string,
   ): Promise<RefreshSubscriptionResult> => {
+    const refreshTimer = new PerfTimer('IPC', 'refreshAllSubscriptions');
     const subscriptions = deps.configService.getSubscriptions();
     const enabled = subscriptions.filter((s) => s.enabled);
 
@@ -275,9 +277,7 @@ export function createSubscriptionRefreshManager(
 
     const hasInput = enabled.length > 0 || !!manualLinks.trim();
     if (effectiveConfigs.length === 0 && hasInput) {
-      // Do NOT mutate the persisted server list when the remote subscription
-      // returned nothing usable — keep the previously known servers intact so
-      // the user doesn't lose their selection just because a refresh failed.
+      refreshTimer.end({ configCount: 0, enabledCount: enabled.length });
       return {
         configCount: 0,
         partialErrors,
@@ -320,6 +320,11 @@ export function createSubscriptionRefreshManager(
       IPC_EVENT_CHANNELS.updateServers,
       toSafeServerList(effectiveConfigs),
     );
+
+    refreshTimer.end({
+      configCount: effectiveConfigs.length,
+      enabledCount: enabled.length,
+    });
 
     return {
       configCount: effectiveConfigs.length,
