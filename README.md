@@ -4,56 +4,88 @@
 [![GitHub downloads](https://img.shields.io/github/downloads/sliva-name/ultimaVLESS/total?style=for-the-badge)](https://github.com/sliva-name/ultimaVLESS/releases)
 [![Visits](https://hits.sh/github.com/sliva-name/ultimaVLESS.svg?style=for-the-badge&label=visits)](https://hits.sh/github.com/sliva-name/ultimaVLESS/)
 
-Ultima VLESS Client is an open-source desktop VLESS/Xray VPN client with a simple interface, fast connection flow, and support for modern Xray-based configurations.
-Windows is the primary supported platform. macOS/Linux support is available and currently experimental.
+**Ultima VLESS Client** — бесплатный настольный VPN-клиент на базе Xray. Простой интерфейс, импорт подписок и два режима работы: через системный прокси или через TUN.
 
-## Why Ultima VLESS Client
+Основная платформа — **Windows**. Версии для macOS и Linux доступны, но часть функций там может работать иначе или быть ограничена.
 
-Ultima VLESS Client is designed for users who need a lightweight desktop VPN client for VLESS, Reality, Vision, and Xray configs without extra setup complexity. It works well as a Windows VLESS client, a simple Xray desktop app, and a subscription-friendly VPN client for daily use.
+## Скачать и установить
 
-## Download And Install
+1. Откройте [последний релиз](https://github.com/sliva-name/ultimaVLESS/releases/latest).
+2. Скачайте файл для своей системы:
+   - **Windows** — установщик (`UltimaVLESS-Setup-*.exe`) или портативная версия (`UltimaVLESS-Portable-*.exe`)
+   - **macOS** — `.dmg` или `.zip`
+   - **Linux** — `.AppImage` или `.deb`
+3. Установите или запустите программу.
+4. Откройте **UltimaVLESS**.
 
-1. Open the [latest release](https://github.com/sliva-name/ultimaVLESS/releases/latest).
-2. Download the package for your OS (`*.exe`, `*.dmg`, `*.AppImage`/`*.deb`).
-3. Install/run the package.
-4. Launch the app.
+## Поддерживаемые протоколы
 
-Portable build (`UltimaVLESS-Portable-*.exe`) is also available.
+| Протокол | Как добавить |
+| --- | --- |
+| **VLESS** (в том числе Reality и Vision) | Ссылка `vless://`, текстовая или JSON-подписка |
+| **Trojan** | Ссылка `trojan://`, текстовая или JSON-подписка |
+| **Shadowsocks** | Ссылка `ss://`, текстовая или JSON-подписка |
+| **VMess** | Только JSON-подписка (готовый конфиг Xray) |
 
-## What The App Can Do
+Reality и Vision — это не отдельные протоколы, а варианты настройки VLESS.
 
-- Connect to VLESS servers (including Reality / Vision presets).
-- Import and update server lists from subscription links.
-- Add manual links from clipboard/text (supports mixed text with `vless://` and `trojan://` links).
-- Split servers by source (Subscription / Manual) for easier navigation.
-- Work in system proxy mode and TUN mode.
-- Save selected server and connection mode between launches.
-- Auto-refresh server subscriptions on a timer.
-- Show server latency (ping) in the server list.
-- Refresh ping for all servers on demand.
-- Show connection progress, errors, and current active server.
-- Auto-switch to another server when the current one appears blocked.
-- Show blocked servers list and allow clearing it in settings.
-- Copy application logs and open log folder for troubleshooting.
+**Не поддерживаются:** Hysteria, WireGuard, TUIC, ссылки `vmess://` и другие протоколы вне Xray.
 
-## Keywords
+## Что умеет программа
 
-VLESS client, Xray client, desktop VPN client, Windows VPN client, Reality client, Vision client, V2Ray alternative, Electron VPN app, subscription VPN client, proxy and TUN mode client
+- Импорт списка серверов по **ссылке на подписку** (текст, Base64 или JSON)
+- Добавление серверов **вручную** — можно вставить текст с ссылками `vless://`, `trojan://` и `ss://`
+- Разделение серверов на **«Подписка»** и **«Вручную»**
+- Два режима подключения:
+  - **Прокси** — трафик идёт через локальный прокси, настройки системы восстанавливаются при отключении
+  - **TUN** — весь трафик через виртуальный адаптер (на Windows может потребоваться подтверждение UAC)
+- **Пинг** серверов в списке и обновление задержки для всех серверов
+- **Автообновление** списка серверов из подписок
+- **Автопереключение** на другой сервер, если текущий перестал отвечать
+- Показ **статуса подключения**, ошибок и **статистики трафика** за сессию
+- **Автообновление** самой программы через GitHub
+- **Иконка в трее** — свернуть в фон, быстро открыть окно
+- Интерфейс на **русском** и **английском**
 
-## Default Subscription Source
+## Быстрый старт
 
-Built-in default subscription URL:
+1. Нажмите **Настройки** (шестерёнка в боковой панели).
+2. На вкладке **«Источники»** добавьте ссылку на подписку или вставьте серверные ссылки вручную.
+3. Выберите сервер в списке слева.
+4. На вкладке **«Сеть»** выберите режим — **Прокси** или **TUN**.
+5. Нажмите **Подключиться**.
 
-`https://translate.yandex.ru/translate?url=https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt&lang=de-de`
+Чтобы сменить сервер: сначала **отключитесь**, затем выберите другой сервер и подключитесь снова.
 
-## Basic Usage
+## Настройки
 
-1. Open **Settings** and add your subscription link (or manual config links).
-2. Select a server from the list.
-3. Choose connection mode (`proxy` or `tun`).
-4. Click **Connect**.
-5. To switch server, disconnect first, then connect to another server.
+| Вкладка | Для чего |
+| --- | --- |
+| **Источники** | Подписки, ручные ссылки, импорт встроенного списка |
+| **Сеть** | Режим подключения (прокси / TUN), дополнительные параметры |
+| **Диагностика** | Автопереключение, заблокированные серверы, копирование логов |
 
-## License
+Язык интерфейса переключается кнопками **RU** / **EN** в шапке окна настроек.
 
-MIT
+## Режимы подключения
+
+**Прокси** — подходит большинству пользователей. Не требует прав администратора. Браузеры и многие программы автоматически используют системный прокси.
+
+**TUN** — перехватывает весь сетевой трафик. На **Windows** при первом подключении может появиться запрос UAC (запуск от имени администратора). На **macOS** режим TUN недоступен — используйте прокси.
+
+## Встроенная подписка по умолчанию
+
+В программе можно одним нажатием импортировать готовый список серверов (Mobile White List). Кнопка находится в **Настройки → Источники**.
+
+## Если что-то не работает
+
+| Проблема | Что попробовать |
+| --- | --- |
+| TUN просит права администратора | Это нормально для Windows; подтвердите UAC или переключитесь на режим **Прокси** |
+| Серверы не загрузились | Проверьте ссылку подписки в браузере; убедитесь, что есть интернет |
+| Пинг не отображается | Сервер может не отвечать на проверку, но подключение всё равно может работать |
+| Нужна помощь | **Настройки → Диагностика** — скопируйте логи или откройте папку с логами |
+
+## Лицензия
+
+MIT — программа распространяется бесплатно и с открытым исходным кодом.
