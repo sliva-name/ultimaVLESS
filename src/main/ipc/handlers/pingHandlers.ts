@@ -18,7 +18,6 @@ import { createSerialQueue } from '@/main/ipc/serialQueue';
 interface RegisterPingHandlersParams {
   deps: IpcDependencies;
   sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
-  toSafeServerList: (servers: VlessConfig[]) => VlessConfig[];
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
   isConnectionBusy: () => boolean;
 }
@@ -54,7 +53,6 @@ function mergePingResults(
 export function registerPingHandlers({
   deps,
   sendToRenderer,
-  toSafeServerList,
   assertTrustedSender,
   isConnectionBusy,
 }: RegisterPingHandlersParams): void {
@@ -167,8 +165,7 @@ export function registerPingHandlers({
       const merged = mergePingResults(latest, incrementalResults, pingTime);
       deps.configService.setServers(merged);
       sendToRenderer(
-        IPC_EVENT_CHANNELS.updateServers,
-        toSafeServerList(merged),
+        IPC_EVENT_CHANNELS.appSnapshotChanged,
       );
     };
 
@@ -224,8 +221,7 @@ export function registerPingHandlers({
 
     deps.configService.setServers(updatedServers);
     sendToRenderer(
-      IPC_EVENT_CHANNELS.updateServers,
-      toSafeServerList(updatedServers),
+      IPC_EVENT_CHANNELS.appSnapshotChanged,
     );
 
     timer.end({
@@ -278,8 +274,7 @@ export function registerPingHandlers({
 
         deps.configService.setServers(mergedServers);
         sendToRenderer(
-          IPC_EVENT_CHANNELS.updateServers,
-          toSafeServerList(mergedServers),
+          IPC_EVENT_CHANNELS.appSnapshotChanged,
         );
       })().catch((error) => {
         logger.error('IPC', 'Background retry ping failed', error);

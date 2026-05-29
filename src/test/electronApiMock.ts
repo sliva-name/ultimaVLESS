@@ -1,43 +1,32 @@
 import { vi } from 'vitest';
-import type { IElectronAPI } from '@/renderer/preload';
+import type { IElectronAPI } from '@/shared/contracts/preloadApi';
 import type {
   AddSubscriptionPayload,
   AddSubscriptionResult,
+  AppSnapshot,
   ConnectionMonitorEvent,
   ConnectionMonitorStatus,
   ConnectResult,
   DisconnectResult,
   SaveManualLinksResult,
-  TrafficSnapshot,
   UpdateStatus,
 } from '@/shared/ipc';
 import type {
   ConnectionMode,
   PerformanceSettings,
-  Subscription,
   VlessConfig,
 } from '@/shared/types';
 import { makeMonitorStatus } from './factories';
 
 type ListenerMap = {
-  updateServers: Set<(servers: VlessConfig[]) => void>;
-  updateSubscriptions: Set<(subscriptions: Subscription[]) => void>;
-  connectionStatus: Set<(status: boolean) => void>;
-  connectionBusy: Set<(busy: boolean) => void>;
-  connectionError: Set<(error: string) => void>;
+  appSnapshotChanged: Set<(snapshot: AppSnapshot) => void>;
   connectionMonitorEvent: Set<(event: ConnectionMonitorEvent) => void>;
-  trafficStats: Set<(snapshot: TrafficSnapshot | null) => void>;
   updateStatus: Set<(status: UpdateStatus) => void>;
 };
 
 export interface ElectronApiMock extends IElectronAPI {
-  emitUpdateServers: (servers: VlessConfig[]) => void;
-  emitUpdateSubscriptions: (subscriptions: Subscription[]) => void;
-  emitConnectionStatus: (status: boolean) => void;
-  emitConnectionBusy: (busy: boolean) => void;
-  emitConnectionError: (error: string) => void;
+  emitAppSnapshotChanged: (snapshot: AppSnapshot) => void;
   emitConnectionMonitorEvent: (event: ConnectionMonitorEvent) => void;
-  emitTrafficStats: (snapshot: TrafficSnapshot | null) => void;
   emitUpdateStatus: (status: UpdateStatus) => void;
 }
 
@@ -54,24 +43,18 @@ export function createElectronApiMock(
   overrides: Partial<IElectronAPI> = {},
 ): ElectronApiMock {
   const listeners: ListenerMap = {
-    updateServers: new Set(),
-    updateSubscriptions: new Set(),
-    connectionStatus: new Set(),
-    connectionBusy: new Set(),
-    connectionError: new Set(),
+    appSnapshotChanged: new Set(),
     connectionMonitorEvent: new Set(),
-    trafficStats: new Set(),
     updateStatus: new Set(),
   };
 
   const api: ElectronApiMock = {
-    connect: vi.fn(
-      async (_server: VlessConfig): Promise<ConnectResult> => ({ ok: true }),
-    ),
+    connect: vi.fn(async (_serverId: string): Promise<ConnectResult> => ({
+      ok: true,
+    })),
     disconnect: vi.fn(async (): Promise<DisconnectResult> => ({ ok: true })),
 
     // Subscriptions CRUD
-    getSubscriptions: vi.fn(async (): Promise<Subscription[]> => []),
     addSubscription: vi.fn(
       async (
         _payload: AddSubscriptionPayload,
@@ -95,17 +78,12 @@ export function createElectronApiMock(
     ),
 
     // Events
-    onUpdateServers: createListenerRegistration(listeners.updateServers),
-    onUpdateSubscriptions: createListenerRegistration(
-      listeners.updateSubscriptions,
+    onAppSnapshotChanged: createListenerRegistration(
+      listeners.appSnapshotChanged,
     ),
-    onConnectionStatus: createListenerRegistration(listeners.connectionStatus),
-    onConnectionBusy: createListenerRegistration(listeners.connectionBusy),
-    onConnectionError: createListenerRegistration(listeners.connectionError),
     onConnectionMonitorEvent: createListenerRegistration(
       listeners.connectionMonitorEvent,
     ),
-    onTrafficStats: createListenerRegistration(listeners.trafficStats),
     onUpdateStatus: createListenerRegistration(listeners.updateStatus),
 
     getConnectionMonitorStatus: vi.fn(
@@ -113,8 +91,23 @@ export function createElectronApiMock(
     ),
     setAutoSwitching: vi.fn(async (_enabled: boolean) => true),
     clearBlockedServers: vi.fn(async () => true),
-    getServers: vi.fn(async () => []),
-    getSelectedServerId: vi.fn(async () => null),
+    getAppSnapshot: vi.fn(async (): Promise<AppSnapshot> => {
+      const connectionMode = await api.getConnectionMode();
+      return {
+        servers: [],
+        subscriptions: [],
+        selectedServerId: null,
+        connectionMode,
+        session: {
+          status: 'idle',
+          busy: false,
+          activeServerId: null,
+          lastError: null,
+          blockedServerIds: [],
+        },
+        traffic: null,
+      };
+    }),
     setSelectedServerId: vi.fn(async (_serverId: string | null) => true),
     getConnectionMode: vi.fn(async (): Promise<ConnectionMode> => 'proxy'),
     setConnectionMode: vi.fn(async (_mode: ConnectionMode) => true),
@@ -127,8 +120,6 @@ export function createElectronApiMock(
       routeMode: 'windows-static-routes',
       degradedReason: null,
     })),
-    getConnectionStatus: vi.fn(async () => false),
-    getConnectionBusy: vi.fn(async () => false),
     getLogs: vi.fn(async () => ''),
     openLogFolder: vi.fn(async () => true),
     openExternalUrl: vi.fn(async (_url: string) => true),
@@ -163,7 +154,6 @@ export function createElectronApiMock(
 
     getUiLanguage: vi.fn(async (): Promise<'en' | 'ru'> => 'en'),
     setUiLanguage: vi.fn(async (_language: 'en' | 'ru') => true),
-    getTrafficStats: vi.fn(async (): Promise<TrafficSnapshot | null> => null),
     getUpdateStatus: vi.fn(
       async (): Promise<UpdateStatus> => ({
         stage: 'disabled',
@@ -188,26 +178,11 @@ export function createElectronApiMock(
     ),
     installUpdate: vi.fn(async () => true),
 
-    emitUpdateServers: (servers: VlessConfig[]) => {
-      listeners.updateServers.forEach((listener) => listener(servers));
-    },
-    emitUpdateSubscriptions: (subs: Subscription[]) => {
-      listeners.updateSubscriptions.forEach((listener) => listener(subs));
-    },
-    emitConnectionStatus: (status: boolean) => {
-      listeners.connectionStatus.forEach((listener) => listener(status));
-    },
-    emitConnectionBusy: (busy: boolean) => {
-      listeners.connectionBusy.forEach((listener) => listener(busy));
-    },
-    emitConnectionError: (error: string) => {
-      listeners.connectionError.forEach((listener) => listener(error));
+    emitAppSnapshotChanged: (snapshot: AppSnapshot) => {
+      listeners.appSnapshotChanged.forEach((listener) => listener(snapshot));
     },
     emitConnectionMonitorEvent: (event: ConnectionMonitorEvent) => {
       listeners.connectionMonitorEvent.forEach((listener) => listener(event));
-    },
-    emitTrafficStats: (snapshot: TrafficSnapshot | null) => {
-      listeners.trafficStats.forEach((listener) => listener(snapshot));
     },
     emitUpdateStatus: (status: UpdateStatus) => {
       listeners.updateStatus.forEach((listener) => listener(status));

@@ -1,7 +1,5 @@
 import { BrowserWindow } from 'electron';
 import { VlessConfig } from '@/shared/types';
-import { IpcEventChannel, IPC_EVENT_CHANNELS } from '@/shared/ipc';
-import { toSafeServerList } from '@/shared/serverView';
 import {
   getServerDedupKey,
   getServerEndpointKey,
@@ -46,6 +44,7 @@ interface SubscriptionRefreshManagerDeps {
   xrayService: {
     isRunning: () => boolean;
   };
+  notifyStateChanged?: () => void;
 }
 
 const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
@@ -59,17 +58,14 @@ export function createSubscriptionRefreshManager(
   });
   let autoRefreshTimer: NodeJS.Timeout | null = null;
 
-  const sendToRenderer = (channel: IpcEventChannel, ...args: unknown[]) => {
-    const win = deps.getWindow();
-    if (win) {
-      win.webContents.send(channel, ...args);
-    }
+  const notifyStateChanged = () => {
+    deps.notifyStateChanged?.();
   };
 
   const reportSubscriptionRefreshIssue = (reason: string): void => {
     const message = `Subscription update failed: ${reason}`;
     logger.warn('IPC', message);
-    sendToRenderer(IPC_EVENT_CHANNELS.connectionError, message);
+    notifyStateChanged();
   };
 
   const refreshAllSubscriptions = async (
@@ -316,10 +312,7 @@ export function createSubscriptionRefreshManager(
         }
       }
     }
-    sendToRenderer(
-      IPC_EVENT_CHANNELS.updateServers,
-      toSafeServerList(effectiveConfigs),
-    );
+    notifyStateChanged();
 
     refreshTimer.end({
       configCount: effectiveConfigs.length,

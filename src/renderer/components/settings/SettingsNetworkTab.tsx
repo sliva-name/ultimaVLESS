@@ -1,18 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback } from 'react';
 import clsx from 'clsx';
 import { Shield, Activity, AlertTriangle, Loader2, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   ConnectionMode,
-  DEFAULT_PERFORMANCE_SETTINGS,
   DomainStrategy,
   LogLevel,
-  PerformanceSettings,
   TlsFingerprint,
   XudpProxyUDP443,
 } from '@/shared/types';
-import { TunCapabilityStatus } from '@/shared/ipc';
 import { PrimaryButton, Toggle } from '@/renderer/components/ui';
+import { useNetworkSettings } from '@/renderer/hooks/useNetworkSettings';
 
 interface SettingsNetworkTabProps {
   isOpen: boolean;
@@ -30,43 +28,19 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
   monitorIsConnected,
 }) => {
   const { t } = useTranslation();
-
-  const [connectionMode, setConnectionMode] = useState<ConnectionMode>('proxy');
-  const [tunCapability, setTunCapability] =
-    useState<TunCapabilityStatus | null>(null);
-  const [modeError, setModeError] = useState<string | null>(null);
-
-  const [perfSettings, setPerfSettings] = useState<PerformanceSettings>(
-    DEFAULT_PERFORMANCE_SETTINGS,
-  );
-  const [perfDirty, setPerfDirty] = useState(false);
-  const [perfSaving, setPerfSaving] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    window.electronAPI
-      .getConnectionMode()
-      .then(setConnectionMode)
-      .catch((err) => console.error('Failed to load connection mode:', err));
-
-    window.electronAPI
-      .getPerformanceSettings()
-      .then((settings) => {
-        setPerfSettings(settings);
-        setPerfDirty(false);
-      })
-      .catch((err) =>
-        console.error('Failed to load performance settings:', err),
-      );
-
-    window.electronAPI
-      .getTunCapabilityStatus()
-      .then(setTunCapability)
-      .catch((err) =>
-        console.error('Failed to load TUN capability status:', err),
-      );
-  }, [isOpen]);
+  const {
+    connectionMode,
+    setConnectionMode,
+    tunCapability,
+    modeError,
+    setModeError,
+    perfSettings,
+    perfDirty,
+    perfSaving,
+    updatePerfField,
+    savePerfSettings,
+    resetPerfDefaults,
+  } = useNetworkSettings(isOpen);
 
   const handleConnectionModeChange = useCallback(
     async (mode: ConnectionMode) => {
@@ -84,9 +58,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
         return;
       }
       try {
-        await window.electronAPI.setConnectionMode(mode);
-        setConnectionMode(mode);
-        setModeError(null);
+        await setConnectionMode(mode);
       } catch (err) {
         console.error('Failed to set connection mode:', err);
         setModeError(
@@ -97,45 +69,21 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
     [hasLoadedMonitorStatus, monitorIsConnected, tunCapability, t],
   );
 
-  const updatePerfField = useCallback(
-    <K extends keyof PerformanceSettings>(
-      key: K,
-      value: PerformanceSettings[K],
-    ) => {
-      setPerfSettings((prev) => ({ ...prev, [key]: value }));
-      setPerfDirty(true);
-    },
-    [],
-  );
-
   const handleSavePerfSettings = useCallback(async () => {
-    setPerfSaving(true);
     try {
-      await window.electronAPI.setPerformanceSettings(perfSettings);
-      setPerfDirty(false);
+      await savePerfSettings();
     } catch (err) {
       console.error('Failed to save performance settings:', err);
-      setPerfDirty(true);
-    } finally {
-      setPerfSaving(false);
     }
-  }, [perfSettings]);
+  }, [savePerfSettings]);
 
   const handleResetPerfDefaults = useCallback(async () => {
-    setPerfSettings(DEFAULT_PERFORMANCE_SETTINGS);
-    setPerfSaving(true);
     try {
-      await window.electronAPI.setPerformanceSettings(
-        DEFAULT_PERFORMANCE_SETTINGS,
-      );
-      setPerfDirty(false);
+      await resetPerfDefaults();
     } catch (err) {
       console.error('Failed to reset performance settings:', err);
-      setPerfDirty(true);
-    } finally {
-      setPerfSaving(false);
     }
-  }, []);
+  }, [resetPerfDefaults]);
 
   const tunUnavailable = !!tunCapability && !tunCapability.supported;
   const tunNeedsPrivileges =

@@ -8,7 +8,7 @@ import {
   hasTunPrivileges,
   requestTunPrivilegesRelaunch,
 } from '@/main/services/PrivilegeService';
-import { connectionStackService } from '@/main/services/ConnectionStackService';
+import { connectionController } from '@/main/services/ConnectionController';
 import { systemProxyService } from '@/main/services/SystemProxyService';
 import { tunRouteService } from '@/main/services/TunRouteService';
 import { xrayService } from '@/main/services/XrayService';
@@ -35,7 +35,7 @@ export interface IpcDependencies {
     };
   };
   configService: typeof configService;
-  connectionStackService: typeof connectionStackService;
+  connectionController: typeof connectionController;
   connectionMonitorService: typeof connectionMonitorService;
   isElevatedOnWindows: typeof isElevatedOnWindows;
   relaunchAsAdminOnWindows: typeof relaunchAsAdminOnWindows;
@@ -63,7 +63,7 @@ export function createIpcDependencies(): IpcDependencies {
       },
     },
     configService,
-    connectionStackService,
+    connectionController,
     connectionMonitorService,
     isElevatedOnWindows,
     relaunchAsAdminOnWindows,

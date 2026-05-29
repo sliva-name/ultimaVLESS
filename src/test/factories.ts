@@ -1,5 +1,10 @@
-import type { ConnectionMonitorStatus } from '@/shared/ipc';
-import type { VlessConfig } from '@/shared/types';
+import type {
+  AppRecoveryStatus,
+  AppSnapshot,
+  ConnectionMonitorStatus,
+  XrayHealthStatus,
+} from '@/shared/ipc';
+import type { Subscription, VlessConfig } from '@/shared/types';
 
 export function makeServer(overrides: Partial<VlessConfig> = {}): VlessConfig {
   const uuid = overrides.uuid ?? 'server-1';
@@ -37,6 +42,72 @@ export function makeMonitorStatus(
     xrayLastFailureAt: null,
     xrayLastFailureReason: null,
     xrayLastReadinessError: null,
+    recoveryInProgress: false,
+    recoveryAttemptCount: 0,
+    recoveryBlocked: false,
+    lastRecoveryAt: null,
+    lastRecoveryTrigger: null,
+    lastRecoveryOutcome: null,
+    lastRecoveryReason: null,
+    lastFatalReason: null,
+    ...overrides,
+  };
+}
+
+export function makeSubscription(
+  overrides: Partial<Subscription> = {},
+): Subscription {
+  return {
+    id: 'sub-1',
+    name: 'Test Subscription',
+    url: 'https://example.com/sub',
+    enabled: true,
+    ...overrides,
+  };
+}
+
+export function makeAppSnapshot(
+  overrides: Partial<AppSnapshot> = {},
+): AppSnapshot {
+  return {
+    servers: [],
+    subscriptions: [],
+    selectedServerId: null,
+    connectionMode: 'proxy',
+    session: {
+      status: 'idle',
+      busy: false,
+      activeServerId: null,
+      lastError: null,
+      blockedServerIds: [],
+    },
+    traffic: null,
+    ...overrides,
+  };
+}
+
+export function makeXrayHealthStatus(
+  overrides: Partial<XrayHealthStatus> = {},
+): XrayHealthStatus {
+  return {
+    state: 'stopped',
+    ready: false,
+    xrayRunning: false,
+    lastStartAt: null,
+    lastReadyAt: null,
+    lastReadinessCheckAt: null,
+    localProxyReachable: null,
+    lastFailureAt: null,
+    lastFailureReason: null,
+    lastReadinessError: null,
+    ...overrides,
+  };
+}
+
+export function makeAppRecoveryStatus(
+  overrides: Partial<AppRecoveryStatus> = {},
+): AppRecoveryStatus {
+  return {
     recoveryInProgress: false,
     recoveryAttemptCount: 0,
     recoveryBlocked: false,

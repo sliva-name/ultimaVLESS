@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, RefreshCw, AlertTriangle, X } from 'lucide-react';
-import type { UpdateStatus } from '@/shared/ipc';
+import { useUpdateStatus } from '@/renderer/hooks/useUpdateStatus';
 
 /**
  * Lightweight non-blocking banner that surfaces the auto-updater state
@@ -10,35 +10,7 @@ import type { UpdateStatus } from '@/shared/ipc';
  */
 export const UpdateBanner: React.FC = () => {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<UpdateStatus | null>(null);
-  const [dismissed, setDismissed] = useState(false);
-
-  useEffect(() => {
-    if (!window.electronAPI?.getUpdateStatus) return;
-    let disposed = false;
-
-    void window.electronAPI
-      .getUpdateStatus()
-      .then((initial) => {
-        if (!disposed) setStatus(initial);
-      })
-      .catch(() => undefined);
-
-    const remove = window.electronAPI.onUpdateStatus?.((next) => {
-      setStatus(next);
-      // Reset the dismissed flag on meaningful transitions so the user sees
-      // follow-up events (e.g. download finished) even if they closed the
-      // previous banner.
-      if (next.stage === 'available' || next.stage === 'downloaded') {
-        setDismissed(false);
-      }
-    });
-
-    return () => {
-      disposed = true;
-      remove?.();
-    };
-  }, []);
+  const { status, dismissed, dismiss, installUpdate } = useUpdateStatus();
 
   if (!status || dismissed) return null;
   if (
@@ -51,7 +23,7 @@ export const UpdateBanner: React.FC = () => {
   }
 
   const handleInstall = () => {
-    void window.electronAPI.installUpdate?.();
+    void installUpdate();
   };
 
   let icon: React.ReactNode;
@@ -109,7 +81,7 @@ export const UpdateBanner: React.FC = () => {
       {action}
       <button
         type="button"
-        onClick={() => setDismissed(true)}
+        onClick={dismiss}
         aria-label={t('status.update.dismiss')}
         className="shrink-0 text-current/70 hover:text-current transition-colors"
       >

@@ -3,27 +3,33 @@ import { Sidebar } from './components/Sidebar';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { UpdateBanner } from './components/UpdateBanner';
-import { useServerState } from './hooks/useServerState';
+import {
+  AppSnapshotProvider,
+  useServers,
+  useSession,
+} from './hooks/useAppSnapshot';
 
 type DragRegionStyle = React.CSSProperties & {
   WebkitAppRegion: 'drag' | 'no-drag';
 };
 const dragRegionStyle: DragRegionStyle = { WebkitAppRegion: 'drag' };
 
-function App() {
+function AppShell() {
   const {
     servers,
     subscriptions,
     selectedServer,
+    isRefreshingPings,
+    selectServer,
+    pingAllServers,
+  } = useServers();
+  const {
     isConnected,
     isConnectionBusy,
-    isRefreshingPings,
     connectionError,
     trafficSnapshot,
-    setSelectedServer,
     toggleConnection,
-    pingAllServers,
-  } = useServerState();
+  } = useSession();
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
@@ -40,7 +46,7 @@ function App() {
         selectedServer={selectedServer}
         isConnected={isConnected}
         isRefreshingPings={isRefreshingPings}
-        onSelectServer={setSelectedServer}
+        onSelectServer={selectServer}
         onOpenSettings={handleOpenSettings}
         onPingAll={pingAllServers}
       />
@@ -73,6 +79,14 @@ function App() {
         />
       </div>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <AppSnapshotProvider>
+      <AppShell />
+    </AppSnapshotProvider>
   );
 }
 

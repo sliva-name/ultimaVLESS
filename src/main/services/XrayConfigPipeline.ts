@@ -34,18 +34,18 @@ type MutableOutbound = MutableConfigNode & {
 
 type StructuredOutboundProtocol = 'vless' | 'trojan' | 'shadowsocks';
 
-export interface ConfigGeneratorOptions {
+export interface XrayConfigPipelineOptions {
   sendThrough?: string;
   tunAutoRoute?: boolean;
   performanceSettings?: PerformanceSettings;
 }
 
-export class ConfigGenerator {
+export class XrayConfigPipeline {
   static generate(
     config: VlessConfig,
     logPath: string,
     connectionMode: ConnectionMode = 'proxy',
-    options: ConfigGeneratorOptions = {},
+    options: XrayConfigPipelineOptions = {},
   ): XrayConfig {
     if (config.rawConfig) {
       return this.applyRawConfig(
@@ -62,7 +62,7 @@ export class ConfigGenerator {
     rawConfig: XrayConfig,
     logPath: string,
     connectionMode: ConnectionMode,
-    options: ConfigGeneratorOptions,
+    options: XrayConfigPipelineOptions,
   ): XrayConfig {
     const cfg = JSON.parse(JSON.stringify(rawConfig)) as XrayConfig;
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
@@ -414,7 +414,7 @@ export class ConfigGenerator {
     config: VlessConfig,
     logPath: string,
     connectionMode: ConnectionMode,
-    options: ConfigGeneratorOptions,
+    options: XrayConfigPipelineOptions,
   ): XrayConfig {
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
     const protocol = this.getStructuredProtocol(config);
@@ -664,3 +664,4 @@ export class ConfigGenerator {
     preferred.sendThrough = sendThrough;
   }
 }
+

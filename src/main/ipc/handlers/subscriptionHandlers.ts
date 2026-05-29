@@ -7,7 +7,6 @@ import {
   SaveManualLinksResult,
 } from '@/shared/ipc';
 import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '@/shared/subscriptionUrls';
-import { toSafeServerList } from '@/shared/serverView';
 import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import {
@@ -35,14 +34,6 @@ export function registerSubscriptionHandlers({
   restartAutoRefreshTimer,
 }: RegisterSubscriptionHandlersParams): void {
   ipcMain.handle(
-    IPC_INVOKE_CHANNELS.getSubscriptions,
-    (event: IpcMainInvokeEvent) => {
-      assertTrustedSender(event);
-      return deps.configService.getSubscriptions();
-    },
-  );
-
-  ipcMain.handle(
     IPC_INVOKE_CHANNELS.addSubscription,
     async (event: IpcMainInvokeEvent, payload: unknown) => {
       assertTrustedSender(event);
@@ -58,8 +49,7 @@ export function registerSubscriptionHandlers({
         enabled: true,
       });
       sendToRenderer(
-        IPC_EVENT_CHANNELS.updateSubscriptions,
-        deps.configService.getSubscriptions(),
+        IPC_EVENT_CHANNELS.appSnapshotChanged,
       );
 
       const manualLinks = deps.configService.getManualLinksInput();
@@ -96,8 +86,7 @@ export function registerSubscriptionHandlers({
         throw new Error(`Subscription not found: ${id}`);
       }
       sendToRenderer(
-        IPC_EVENT_CHANNELS.updateSubscriptions,
-        deps.configService.getSubscriptions(),
+        IPC_EVENT_CHANNELS.appSnapshotChanged,
       );
 
       if (patch.url !== undefined || patch.enabled === true) {
@@ -109,8 +98,7 @@ export function registerSubscriptionHandlers({
         const without = existing.filter((s) => s.subscriptionId !== id);
         deps.configService.setServers(without);
         sendToRenderer(
-          IPC_EVENT_CHANNELS.updateServers,
-          toSafeServerList(without),
+          IPC_EVENT_CHANNELS.appSnapshotChanged,
         );
         restartAutoRefreshTimer();
       }
@@ -134,16 +122,14 @@ export function registerSubscriptionHandlers({
       logger.info('IPC', 'delete-subscription', { id });
       deps.configService.removeSubscription(id);
       sendToRenderer(
-        IPC_EVENT_CHANNELS.updateSubscriptions,
-        deps.configService.getSubscriptions(),
+        IPC_EVENT_CHANNELS.appSnapshotChanged,
       );
 
       const existing = deps.configService.getServers();
       const without = existing.filter((s) => s.subscriptionId !== id);
       deps.configService.setServers(without);
       sendToRenderer(
-        IPC_EVENT_CHANNELS.updateServers,
-        toSafeServerList(without),
+        IPC_EVENT_CHANNELS.appSnapshotChanged,
       );
 
       restartAutoRefreshTimer();
@@ -181,8 +167,7 @@ export function registerSubscriptionHandlers({
           enabled: true,
         });
         sendToRenderer(
-          IPC_EVENT_CHANNELS.updateSubscriptions,
-          deps.configService.getSubscriptions(),
+          IPC_EVENT_CHANNELS.appSnapshotChanged,
         );
       }
 

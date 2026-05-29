@@ -176,6 +176,7 @@ export class TunRouteService {
       logger.info('TunRouteService', 'TUN routing enabled', {
         proxyIps,
         defaultGateway: defaultRoute.gateway,
+        tunInterfaceIndex,
         setupDurationMs: Date.now() - startedAt,
       });
     } catch (error) {

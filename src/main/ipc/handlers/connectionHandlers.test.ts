@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { IPC_INVOKE_CHANNELS } from '@/shared/ipc';
 import { registerConnectionHandlers } from './connectionHandlers';
-import { IPC_INVOKE_CHANNELS } from '../../../shared/ipc';
 
 const ipcHandleMock = vi.hoisted(() => vi.fn());
 
@@ -17,112 +17,71 @@ vi.mock('@/main/services/LoggerService', () => ({
   },
 }));
 
-describe('registerConnectionHandlers', () => {
-  const handlers = new Map<
-    string,
-    (event: unknown, payload?: unknown) => Promise<unknown>
-  >();
+vi.mock('@/main/services/ConnectionController', () => ({
+  ConnectionControllerRelaunchError: class ConnectionControllerRelaunchError extends Error {
+    public readonly relaunched = true;
+  },
+}));
+
+describe('connection IPC handlers', () => {
+  const handlers = new Map<string, (event: unknown, payload?: unknown) => any>();
 
   beforeEach(() => {
     handlers.clear();
     ipcHandleMock.mockReset();
-    ipcHandleMock.mockImplementation(
-      (
-        channel: string,
-        handler: (event: unknown, payload?: unknown) => Promise<unknown>,
-      ) => {
-        handlers.set(channel, handler);
-      },
-    );
+    ipcHandleMock.mockImplementation((channel: string, handler) => {
+      handlers.set(channel, handler);
+    });
   });
 
   function registerWith(overrides: Partial<any> = {}) {
     const deps = {
-      configService: {
-        getServers: vi.fn(() => []),
-        getConnectionMode: vi.fn(() => 'proxy'),
-        clearPendingTunReconnect: vi.fn(),
-        setSelectedServerId: vi.fn(),
+      connectionController: {
+        connect: vi.fn(async () => undefined),
+        disconnect: vi.fn(async () => undefined),
+        cleanupAfterFailure: vi.fn(async () => undefined),
       },
       connectionMonitorService: {
-        getStatus: vi.fn(() => ({ isConnected: false, currentServer: null })),
-        stopMonitoring: vi.fn(),
-        startMonitoring: vi.fn(),
         recordError: vi.fn(),
-      },
-      connectionStackService: {
-        transitionTo: vi.fn(),
-        resetNetworkingStack: vi.fn(async () => undefined),
-        cleanupAfterFailure: vi.fn(),
-      },
-      xrayService: {
-        isRunning: vi.fn(() => false),
-      },
-      tunRouteService: {
-        isSupported: vi.fn(() => true),
-        getUnsupportedReason: vi.fn(() => null),
-      },
-      hasTunPrivileges: vi.fn(async () => true),
-      requestTunPrivilegesRelaunch: vi.fn(async () => false),
-      app: {
-        releaseSingleInstanceLock: vi.fn(),
-        quit: vi.fn(),
-      },
-      constants: {
-        ports: { http: 10809, socks: 10808 },
       },
       ...overrides,
     };
-
     registerConnectionHandlers({
-      deps,
+      deps: deps as any,
       assertTrustedSender: vi.fn(),
-      sendToRenderer: vi.fn(),
-      beginConnectionBusy: vi.fn(),
-      endConnectionBusy: vi.fn(),
     });
-
-    const disconnectHandler = handlers.get(IPC_INVOKE_CHANNELS.disconnect);
-    expect(disconnectHandler).toBeTypeOf('function');
-
-    return { deps, disconnectHandler: disconnectHandler! };
+    return deps;
   }
 
-  it('stops monitoring only after the networking stack resets successfully', async () => {
-    const { deps, disconnectHandler } = registerWith();
+  it('connects by server id only', async () => {
+    const deps = registerWith();
+    const handler = handlers.get(IPC_INVOKE_CHANNELS.connect)!;
 
-    const result = await disconnectHandler({} as never);
-
-    expect(result).toEqual({ ok: true });
-    expect(
-      deps.connectionStackService.resetNetworkingStack,
-    ).toHaveBeenCalledWith({ stopXray: true });
-    expect(deps.connectionMonitorService.stopMonitoring).toHaveBeenCalledWith({
-      message: 'Disconnected',
+    await expect(handler({} as never, 'server-1')).resolves.toEqual({
+      ok: true,
     });
-    expect(
-      deps.connectionStackService.resetNetworkingStack.mock
-        .invocationCallOrder[0],
-    ).toBeLessThan(
-      deps.connectionMonitorService.stopMonitoring.mock.invocationCallOrder[0],
-    );
+    expect(deps.connectionController.connect).toHaveBeenCalledWith('server-1');
   });
 
-  it('keeps monitoring active when stack reset fails during disconnect', async () => {
-    const resetError = new Error('disable failed');
-    const { deps, disconnectHandler } = registerWith({
-      connectionStackService: {
-        transitionTo: vi.fn(),
-        resetNetworkingStack: vi.fn(async () => {
-          throw resetError;
+  it('cleans up and returns a structured error when connect fails', async () => {
+    const deps = registerWith({
+      connectionController: {
+        connect: vi.fn(async () => {
+          throw new Error('boom');
         }),
-        cleanupAfterFailure: vi.fn(),
+        disconnect: vi.fn(),
+        cleanupAfterFailure: vi.fn(async () => undefined),
       },
     });
+    const handler = handlers.get(IPC_INVOKE_CHANNELS.connect)!;
 
-    const result = await disconnectHandler({} as never);
-
-    expect(result).toEqual({ ok: false });
-    expect(deps.connectionMonitorService.stopMonitoring).not.toHaveBeenCalled();
+    await expect(handler({} as never, 'server-1')).resolves.toEqual({
+      ok: false,
+      error: 'boom',
+    });
+    expect(deps.connectionMonitorService.recordError).toHaveBeenCalledWith(
+      'boom',
+    );
+    expect(deps.connectionController.cleanupAfterFailure).toHaveBeenCalled();
   });
 });

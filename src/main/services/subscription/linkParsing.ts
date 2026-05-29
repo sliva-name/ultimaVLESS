@@ -279,10 +279,9 @@ function parseTrojanLink(link: string): VlessConfig | null {
       (params.get('security') || 'tls') === 'none' ? 'none' : 'tls'
     ) as 'tls' | 'none';
 
-    // Structured fields only — rely on ConfigGenerator to produce a complete
-    // Xray configuration (inbounds, block/direct outbounds, routing rules)
-    // instead of a half-baked rawConfig that would crash Xray once routing
-    // references `outboundTag: "block"` / `"direct"`.
+    // Structured fields only; the runtime compiler adds inbounds, auxiliary
+    // outbounds, and routing rules so imported links cannot produce half-baked
+    // raw configs that crash Xray.
     return {
       uuid: createStableServerId(
         createHashedIdentityToken('tj', password || 'trojan', address, port),
