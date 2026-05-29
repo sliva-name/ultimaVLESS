@@ -181,60 +181,145 @@ export const getTunInterfaceIndexScript = (): string => `
       if ($adapter) { Write-Output $adapter.ifIndex }
     `;
 
-export const ensureTunAddressScript = (tunInterfaceIndex: number): string => {
-  validateInterfaceIndex(tunInterfaceIndex);
-  const dnsServers = TUN_DNS_SERVERS.map((server) => `"${server}"`).join(', ');
-  return `
-      $existing = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-      if (-not $existing) {
-        New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress ${TUN_ADDRESS} -PrefixLength ${TUN_PREFIX} -ErrorAction Stop
-      }
-      $existing6 = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv6 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -eq "${TUN_IPV6_ADDRESS}" } |
-        Select-Object -First 1
-      if (-not $existing6) {
-        New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress "${TUN_IPV6_ADDRESS}" -PrefixLength ${TUN_IPV6_PREFIX} -ErrorAction Stop
-      }
-      Set-DnsClientServerAddress -InterfaceIndex ${tunInterfaceIndex} -ServerAddresses @(${dnsServers}) -ErrorAction Stop
-    `;
-};
+export interface EnableTunRoutingParams {
+  tunInterfaceIndex: number;
+  defaultRouteInterfaceIndex: number;
+  gateway: string;
+  /** Host prefixes (e.g. `203.0.113.10/32`) for the proxy server IPs. */
+  proxyHostPrefixes: string[];
+  hostRouteMetric: number;
+  defaultRouteRetries: number;
+  defaultRouteRetryDelayMs: number;
+}
 
-export const addRouteScript = (
-  destPrefix: string,
-  gateway: string,
-  metric: number,
-  interfaceIndex?: number,
+function validateRetryCount(value: number): void {
+  if (!Number.isInteger(value) || value < 1 || value > 10) {
+    throw new Error(`Invalid default route retry count: ${value}`);
+  }
+}
+
+function validateRetryDelay(value: number): void {
+  if (!Number.isInteger(value) || value < 0 || value > 60000) {
+    throw new Error(`Invalid default route retry delay: ${value}`);
+  }
+}
+
+/**
+ * Single-shot script that performs the entire Windows TUN routing setup in one
+ * PowerShell process: stale proxy-host-route cleanup, TUN adapter address/DNS,
+ * per-proxy host routes via the physical gateway, and the TUN default route
+ * (with an in-script retry loop for the transient failures that used to require
+ * a fresh process per attempt). Collapsing ~5 spawns into one removes most of
+ * the per-process PowerShell startup latency that dominated connect time.
+ *
+ * The script reports what it created via stdout markers so the caller can keep
+ * exact teardown bookkeeping:
+ *   - `HOST_CREATED|<prefix>`   a proxy host route was added
+ *   - `DEFAULT4_CREATED`        the IPv4 default route via TUN was added
+ *   - `DEFAULT6_CREATED`        the IPv6 default route via TUN was added
+ *   - `TUN_ADDR_WARN|<msg>`     setting the TUN address failed (non-fatal)
+ *   - `HOST_FAIL|<prefix>|<msg>` a host route could not be added (non-fatal)
+ *   - `DEFAULT_FAIL|<msg>` + exit 1 when the default route never succeeded
+ */
+export const enableTunRoutingScript = (
+  params: EnableTunRoutingParams,
 ): string => {
-  validateIpOrPrefix(destPrefix);
+  const {
+    tunInterfaceIndex,
+    defaultRouteInterfaceIndex,
+    gateway,
+    proxyHostPrefixes,
+    hostRouteMetric,
+    defaultRouteRetries,
+    defaultRouteRetryDelayMs,
+  } = params;
+  validateInterfaceIndex(tunInterfaceIndex);
+  validateInterfaceIndex(defaultRouteInterfaceIndex);
   validateIpOrPrefix(gateway);
-  validateMetric(metric);
-  validateInterfaceIndex(interfaceIndex);
-  const ifPart =
-    interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
+  validateMetric(hostRouteMetric);
+  proxyHostPrefixes.forEach(validateIpOrPrefix);
+  validateRetryCount(defaultRouteRetries);
+  validateRetryDelay(defaultRouteRetryDelayMs);
+
+  const dnsServers = TUN_DNS_SERVERS.map((server) => `"${server}"`).join(', ');
+  const prefixesLiteral = proxyHostPrefixes
+    .map((prefix) => `'${prefix}'`)
+    .join(', ');
+
   return `
-      $existing = Get-NetRoute -DestinationPrefix "${destPrefix}"${ifPart} -ErrorAction SilentlyContinue | Select-Object -First 1
-      if (-not $existing) {
-        New-NetRoute -DestinationPrefix "${destPrefix}" -NextHop "${gateway}"${ifPart} -RouteMetric ${metric} -ErrorAction Stop
-        Write-Output "CREATED"
+      $proxyPrefixes = @(${prefixesLiteral})
+
+      # 1) Remove stale proxy host routes at the host metric so we can re-add cleanly.
+      foreach ($p in $proxyPrefixes) {
+        Get-NetRoute -DestinationPrefix $p -ErrorAction SilentlyContinue |
+          Where-Object { $_.RouteMetric -eq ${hostRouteMetric} } |
+          Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+      }
+
+      # 2) Ensure the TUN adapter address + DNS (best-effort; Xray may already have set it).
+      try {
+        $existing4 = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $existing4) {
+          New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress ${TUN_ADDRESS} -PrefixLength ${TUN_PREFIX} -ErrorAction Stop | Out-Null
+        }
+        $existing6 = Get-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+          Where-Object { $_.IPAddress -eq "${TUN_IPV6_ADDRESS}" } | Select-Object -First 1
+        if (-not $existing6) {
+          New-NetIPAddress -InterfaceIndex ${tunInterfaceIndex} -IPAddress "${TUN_IPV6_ADDRESS}" -PrefixLength ${TUN_IPV6_PREFIX} -ErrorAction Stop | Out-Null
+        }
+        Set-DnsClientServerAddress -InterfaceIndex ${tunInterfaceIndex} -ServerAddresses @(${dnsServers}) -ErrorAction Stop
+      } catch {
+        Write-Output ("TUN_ADDR_WARN|" + $_.Exception.Message)
+      }
+
+      # 3) Pin proxy server IPs to the physical gateway so tunnel traffic can escape.
+      foreach ($p in $proxyPrefixes) {
+        $existingHost = Get-NetRoute -DestinationPrefix $p -InterfaceIndex ${defaultRouteInterfaceIndex} -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $existingHost) {
+          try {
+            New-NetRoute -DestinationPrefix $p -NextHop "${gateway}" -InterfaceIndex ${defaultRouteInterfaceIndex} -RouteMetric ${hostRouteMetric} -ErrorAction Stop | Out-Null
+            Write-Output ("HOST_CREATED|" + $p)
+          } catch {
+            Write-Output ("HOST_FAIL|" + $p + "|" + $_.Exception.Message)
+          }
+        }
+      }
+
+      # 4) Point the default route at the TUN interface, retrying transient failures.
+      $tunIdx = ${tunInterfaceIndex}
+      $v4done = $false
+      $v6done = $false
+      $attempt = 0
+      $lastErr = ''
+      while ($attempt -lt ${defaultRouteRetries} -and -not ($v4done -and $v6done)) {
+        $attempt++
+        try {
+          if (-not $v4done) {
+            $e4 = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -InterfaceIndex $tunIdx -ErrorAction SilentlyContinue
+            if (-not $e4) {
+              New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "${TUN_NEXTHOP}" -InterfaceIndex $tunIdx -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop | Out-Null
+              Write-Output "DEFAULT4_CREATED"
+            }
+            $v4done = $true
+          }
+          if (-not $v6done) {
+            $e6 = Get-NetRoute -DestinationPrefix "::/0" -InterfaceIndex $tunIdx -ErrorAction SilentlyContinue
+            if (-not $e6) {
+              New-NetRoute -DestinationPrefix "::/0" -NextHop "${TUN_IPV6_NEXTHOP}" -InterfaceIndex $tunIdx -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop | Out-Null
+              Write-Output "DEFAULT6_CREATED"
+            }
+            $v6done = $true
+          }
+        } catch {
+          $lastErr = $_.Exception.Message
+          Start-Sleep -Milliseconds ${defaultRouteRetryDelayMs}
+        }
+      }
+      if (-not ($v4done -and $v6done)) {
+        Write-Output ("DEFAULT_FAIL|" + $lastErr)
+        exit 1
       }
     `;
-};
-
-export const addDefaultRouteViaTunScript = (tunIdx: number): string => {
-  validateInterfaceIndex(tunIdx);
-  return `
-          $existing = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
-          if (-not $existing) {
-            New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "${TUN_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
-            Write-Output "CREATED"
-          }
-          $existing6 = Get-NetRoute -DestinationPrefix "::/0" -InterfaceIndex ${tunIdx} -ErrorAction SilentlyContinue
-          if (-not $existing6) {
-            New-NetRoute -DestinationPrefix "::/0" -NextHop "${TUN_IPV6_NEXTHOP}" -InterfaceIndex ${tunIdx} -RouteMetric ${TUN_ROUTE_METRIC} -ErrorAction Stop
-            Write-Output "CREATED_IPV6"
-          }
-        `;
 };
 
 export const deleteRouteScript = (

@@ -392,6 +392,23 @@ export class ConnectionMonitorService extends EventEmitter {
   }
 
   /**
+   * Forces an immediate health probe outside the periodic schedule. Used after
+   * the OS resumes from sleep, where the tunnel/socket state is frequently
+   * broken but the next scheduled tick may be up to `checkIntervalMs` away.
+   * Reuses the normal probe path so a dead tunnel triggers the existing
+   * auto-switch / recovery machinery.
+   */
+  public triggerImmediateHealthCheck(reason: string): void {
+    if (!this.status.isConnected || !this.status.currentServer) {
+      return;
+    }
+    logger.info('ConnectionMonitorService', 'Forcing immediate health check', {
+      reason,
+    });
+    void this.checkConnectionHealth();
+  }
+
+  /**
    * Starts periodic connection health checks.
    */
   private startPeriodicCheck(): void {

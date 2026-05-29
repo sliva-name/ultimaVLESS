@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, powerMonitor } from 'electron';
 import fs from 'fs/promises';
 import { performance } from 'perf_hooks';
 import path from 'path';
@@ -33,6 +33,40 @@ async function stopNetworkStack(): Promise<void> {
     ]);
   connectionMonitorService.stopMonitoring();
   await connectionController.cleanupAfterFailure();
+}
+
+let powerMonitorRegistered = false;
+
+function registerPowerMonitor(): void {
+  if (powerMonitorRegistered) {
+    return;
+  }
+  powerMonitorRegistered = true;
+
+  powerMonitor.on('suspend', () => {
+    logger.info('Main', 'System is suspending');
+  });
+
+  // After waking from sleep the OS routinely tears down sockets and the tunnel,
+  // but the periodic monitor may not tick for several more seconds. Force an
+  // immediate health probe so a dead connection recovers (or auto-switches) fast.
+  const onWake = (trigger: string) => {
+    logger.info('Main', 'System resumed; forcing connection health check', {
+      trigger,
+    });
+    void import('./services/ConnectionMonitorService')
+      .then(({ connectionMonitorService }) => {
+        connectionMonitorService.triggerImmediateHealthCheck(trigger);
+      })
+      .catch((error) => {
+        logger.warn('Main', 'Failed to handle resume health check', error);
+      });
+  };
+
+  powerMonitor.on('resume', () => onWake('resume'));
+  // Unlocking the screen can also follow a sleep/lid-open without a separate
+  // 'resume' on some Windows configurations.
+  powerMonitor.on('unlock-screen', () => onWake('unlock-screen'));
 }
 
 async function recoverOrphanedNetworkState(): Promise<void> {
@@ -304,10 +338,12 @@ async function createWindow() {
     !!process.env.VITE_DEV_SERVER_URL ||
     process.env.ULTIMA_DEBUG_RENDERER === '1';
 
-  wc.on('console-message', (_event, level, message, line, sourceId) => {
+  // Electron 35+ moved the positional args into a single event object and
+  // changed `level` from a number to a string ('info' | 'warning' | 'error' | 'debug').
+  wc.on('console-message', ({ level, message, lineNumber, sourceId }) => {
     logger.info('RendererConsole', message, {
       level,
-      line,
+      line: lineNumber,
       sourceId,
     });
   });
@@ -491,6 +527,7 @@ async function createWindow() {
 void app.whenReady().then(async () => {
   initMainSentry();
   logStartupStep('App ready event');
+  registerPowerMonitor();
   await recoverOrphanedNetworkState();
   await createWindow();
   logStartupStep('createWindow finished');

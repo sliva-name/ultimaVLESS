@@ -10,7 +10,9 @@ const RUN_KEY_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
 
 const TASK_TIMEOUT_MS = 15000;
 const RECOVERY_SCRIPT_FILE = 'recover_system_proxy.ps1';
-const RECOVERY_CMD_FILE = 'recover_proxy.cmd';
+/** Legacy .cmd launcher — replaced by the windowless .vbs launcher; removed on upgrade. */
+const LEGACY_RECOVERY_CMD_FILE = 'recover_proxy.cmd';
+const RECOVERY_VBS_FILE = 'recover_proxy.vbs';
 const RECOVERY_TARGET_FILE = 'recovery-target.txt';
 
 const RECOVERY_SCRIPT = String.raw`param()
@@ -162,29 +164,54 @@ export function clearRecoveryTarget(): void {
   }
 }
 
-export function getRecoveryCmdPath(): string {
-  return path.join(getProgramDataRecoveryDir(), RECOVERY_CMD_FILE);
+export function getRecoveryVbsPath(): string {
+  return path.join(getProgramDataRecoveryDir(), RECOVERY_VBS_FILE);
 }
 
 export function getRecoveryScriptPath(): string {
   return path.join(getProgramDataRecoveryDir(), RECOVERY_SCRIPT_FILE);
 }
 
+/**
+ * Builds the launch command used by both the Run key and the logon scheduled
+ * task. `wscript.exe` is a GUI-subsystem host, so it shows no console window at
+ * all — this is what avoids the brief console flash on logon that a `.cmd`
+ * launcher produced (a `.cmd` always spawns a visible conhost window before the
+ * hidden PowerShell child even starts).
+ */
+function buildLogonLaunchCommand(vbsPath: string): string {
+  return `wscript.exe //B //Nologo "${vbsPath}"`;
+}
+
+function removeLegacyCmdLauncher(dir: string): void {
+  try {
+    fs.unlinkSync(path.join(dir, LEGACY_RECOVERY_CMD_FILE));
+  } catch {
+    // ignore: file may not exist on fresh installs
+  }
+}
+
 export function writeRecoveryLauncherFiles(): string {
   const dir = ensureRecoveryDir();
   const scriptPath = path.join(dir, RECOVERY_SCRIPT_FILE);
-  const cmdPath = path.join(dir, RECOVERY_CMD_FILE);
+  const vbsPath = path.join(dir, RECOVERY_VBS_FILE);
   fs.writeFileSync(scriptPath, RECOVERY_SCRIPT, 'utf8');
-  fs.writeFileSync(
-    cmdPath,
-    `@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%ProgramData%\\UltimaVLESS\\${RECOVERY_SCRIPT_FILE}"\r\n`,
-    'utf8',
-  );
-  return cmdPath;
+  // VBScript string literals escape an embedded double quote by doubling it.
+  const psCommand =
+    `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ` +
+    `-File ""${scriptPath}""`;
+  const vbs = [
+    "Set sh = CreateObject(\"WScript.Shell\")",
+    `sh.Run "${psCommand}", 0, False`,
+    '',
+  ].join('\r\n');
+  fs.writeFileSync(vbsPath, vbs, 'utf8');
+  removeLegacyCmdLauncher(dir);
+  return vbsPath;
 }
 
-async function installRegistryRunKey(cmdPath: string): Promise<void> {
-  const value = `"${cmdPath}"`;
+async function installRegistryRunKey(vbsPath: string): Promise<void> {
+  const value = buildLogonLaunchCommand(vbsPath);
   await runCommand(
     'reg',
     [
@@ -202,7 +229,7 @@ async function installRegistryRunKey(cmdPath: string): Promise<void> {
   );
   logger.info('SystemProxyService', 'Installed proxy recovery Run key', {
     valueName: RUN_KEY_VALUE_NAME,
-    cmdPath,
+    value,
   });
 }
 
@@ -240,8 +267,9 @@ async function removeLegacyScheduledTask(): Promise<void> {
   }
 }
 
-async function installLogonScheduledTask(cmdPath: string): Promise<void> {
+async function installLogonScheduledTask(vbsPath: string): Promise<void> {
   await removeLegacyScheduledTask();
+  const launchCommand = buildLogonLaunchCommand(vbsPath);
   await runCommand(
     'schtasks',
     [
@@ -251,7 +279,7 @@ async function installLogonScheduledTask(cmdPath: string): Promise<void> {
       '/SC',
       'ONLOGON',
       '/TR',
-      cmdPath,
+      launchCommand,
       '/RL',
       'LIMITED',
       '/F',
@@ -260,7 +288,7 @@ async function installLogonScheduledTask(cmdPath: string): Promise<void> {
   );
   logger.info('SystemProxyService', 'Installed logon recovery scheduled task', {
     taskName: WINDOWS_PROXY_RECOVERY_TASK_NAME,
-    cmdPath,
+    launchCommand,
   });
 }
 
@@ -292,10 +320,10 @@ export async function installLogonRecovery(
   snapshotPath: string,
 ): Promise<void> {
   writeRecoveryTarget(snapshotPath);
-  const cmdPath = writeRecoveryLauncherFiles();
-  await installRegistryRunKey(cmdPath);
+  const vbsPath = writeRecoveryLauncherFiles();
+  await installRegistryRunKey(vbsPath);
   try {
-    await installLogonScheduledTask(cmdPath);
+    await installLogonScheduledTask(vbsPath);
   } catch (error) {
     logger.warn(
       'SystemProxyService',
