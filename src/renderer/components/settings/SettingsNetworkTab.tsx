@@ -66,7 +66,14 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
         );
       }
     },
-    [hasLoadedMonitorStatus, monitorIsConnected, tunCapability, t],
+    [
+      hasLoadedMonitorStatus,
+      monitorIsConnected,
+      setConnectionMode,
+      setModeError,
+      tunCapability,
+      t,
+    ],
   );
 
   const handleSavePerfSettings = useCallback(async () => {

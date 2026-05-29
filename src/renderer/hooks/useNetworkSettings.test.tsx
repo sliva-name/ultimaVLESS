@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 import React from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { AppSnapshotProvider } from './useAppSnapshot';
 import { useNetworkSettings } from './useNetworkSettings';
 import {
