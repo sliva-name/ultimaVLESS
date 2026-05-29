@@ -7,7 +7,7 @@ import { app } from 'electron';
 import { ConnectionMode, VlessConfig } from '@/shared/types';
 import { XrayHealthStatus } from '@/shared/ipc';
 import { APP_CONSTANTS } from '@/shared/constants';
-import { ConfigGenerator, ConfigGeneratorOptions } from './ConfigGenerator';
+import { XrayConfigCompiler } from './XrayConfigCompiler';
 import { configService } from './ConfigService';
 import { logger } from './LoggerService';
 import { probeTcpPort } from './networkProbe';
@@ -18,6 +18,11 @@ export interface XrayUnexpectedExitEvent {
   code: number | null;
   signal: NodeJS.Signals | null;
   reason: string;
+}
+
+export interface XrayStartOptions {
+  sendThrough?: string;
+  tunAutoRoute?: boolean;
 }
 
 /**
@@ -63,14 +68,14 @@ export class XrayService extends EventEmitter {
    *
    * @param {VlessConfig} config - The VLESS server configuration.
    * @param {ConnectionMode} [connectionMode='proxy'] - Whether Xray runs in SOCKS/HTTP proxy mode or TUN mode.
-   * @param {ConfigGeneratorOptions} [options={}] - Extra options forwarded to the config generator (TUN, performance, etc.).
+   * @param {XrayStartOptions} [options={}] - Runtime options forwarded to the Xray compiler.
    * @throws {Error} If config generation fails or binary is missing.
    * @returns {Promise<void>} Resolves when process is successfully spawned.
    */
   public async start(
     config: VlessConfig,
     connectionMode: ConnectionMode = 'proxy',
-    options: ConfigGeneratorOptions = {},
+    options: XrayStartOptions = {},
   ): Promise<void> {
     this.stop();
     await this.awaitPendingStop();
@@ -101,7 +106,9 @@ export class XrayService extends EventEmitter {
 
     let xrayConfig;
     try {
-      xrayConfig = ConfigGenerator.generate(config, logPath, connectionMode, {
+      xrayConfig = XrayConfigCompiler.compile(config, {
+        logPath,
+        connectionMode,
         ...options,
         performanceSettings: configService.getPerformanceSettings(),
       });

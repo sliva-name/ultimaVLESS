@@ -12,14 +12,6 @@ export function registerUpdateHandlers({
   assertTrustedSender,
 }: RegisterUpdateHandlersParams): void {
   ipcMain.handle(
-    IPC_INVOKE_CHANNELS.getTrafficStats,
-    (event: IpcMainInvokeEvent) => {
-      assertTrustedSender(event);
-      return deps.trafficStatsService.getLastSnapshot();
-    },
-  );
-
-  ipcMain.handle(
     IPC_INVOKE_CHANNELS.getUpdateStatus,
     (event: IpcMainInvokeEvent) => {
       assertTrustedSender(event);

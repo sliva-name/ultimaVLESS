@@ -1,6 +1,5 @@
 import { BrowserWindow } from 'electron';
 import { IPC_EVENT_CHANNELS } from '@/shared/ipc';
-import { toSafeServerList } from '@/shared/serverView';
 import { logger } from '@/main/services/LoggerService';
 import { PerfTimer } from '@/shared/perfMetrics';
 
@@ -55,12 +54,7 @@ export async function loadInitialState(
     hasPendingTunReconnect: !!pendingTunReconnectServerId,
   });
 
-  const savedServers = deps.configService.getServers();
-  actions.sendToRenderer(
-    IPC_EVENT_CHANNELS.updateServers,
-    toSafeServerList(savedServers),
-  );
-  actions.sendToRenderer(IPC_EVENT_CHANNELS.updateSubscriptions, subscriptions);
+  actions.sendToRenderer(IPC_EVENT_CHANNELS.appSnapshotChanged);
 
   const hasInput = subscriptions.some((s) => s.enabled) || !!manualLinks.trim();
   const attemptPendingReconnectAfterRefresh = async (): Promise<void> => {

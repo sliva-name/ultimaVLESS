@@ -26,13 +26,13 @@ if (!process.versions.electron) {
 }
 
 async function stopNetworkStack(): Promise<void> {
-  const [{ connectionStackService }, { connectionMonitorService }] =
+  const [{ connectionController }, { connectionMonitorService }] =
     await Promise.all([
-      import('./services/ConnectionStackService'),
+      import('./services/ConnectionController'),
       import('./services/ConnectionMonitorService'),
     ]);
   connectionMonitorService.stopMonitoring();
-  await connectionStackService.resetNetworkingStack({ stopXray: true });
+  await connectionController.cleanupAfterFailure();
 }
 
 async function recoverOrphanedNetworkState(): Promise<void> {
@@ -286,7 +286,11 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true,
+      // The preload bundle exposes the typed Electron bridge via contextBridge.
+      // Keeping Node integration off and context isolation on preserves the
+      // renderer boundary; sandboxed preload breaks the bridge in dev/prod
+      // because the bundled CJS preload relies on Electron's preload require.
+      sandbox: false,
     },
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -296,6 +300,31 @@ async function createWindow() {
   });
   const windowInstance = mainWindow;
   const wc = windowInstance.webContents;
+  const rendererDebugEnabled =
+    !!process.env.VITE_DEV_SERVER_URL ||
+    process.env.ULTIMA_DEBUG_RENDERER === '1';
+
+  wc.on('console-message', (_event, level, message, line, sourceId) => {
+    logger.info('RendererConsole', message, {
+      level,
+      line,
+      sourceId,
+    });
+  });
+  wc.on('preload-error', (_event, preloadPath, error) => {
+    logger.error('Main', 'Preload script failed', {
+      preloadPath,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+  });
+  if (rendererDebugEnabled) {
+    wc.once('dom-ready', () => {
+      if (!wc.isDestroyed()) {
+        wc.openDevTools({ mode: 'detach' });
+      }
+    });
+  }
 
   wc.on('did-start-loading', () => {
     logStartupStep('webContents did-start-loading');
@@ -468,7 +497,7 @@ void app.whenReady().then(async () => {
   await ensureTray();
   logStartupStep('ensureTray finished');
   // loadInitialState runs from did-finish-load so the renderer has subscribed to
-  // update-servers; calling it here as well duplicated refresh/ping work and
+  // app snapshots; calling it here as well duplicated refresh/ping work and
   // caused overlapping ping-all-servers requests to be discarded as stale.
 });
 

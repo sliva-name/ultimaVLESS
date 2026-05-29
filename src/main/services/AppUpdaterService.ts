@@ -162,8 +162,8 @@ export class AppUpdaterService extends EventEmitter {
   /** Counts consecutive transient network failures; reset on any non-error
    *  outcome (available / not-available / downloaded). */
   private transientFailureCount = 0;
-  /** Plugged in by `IpcHandler` once the connection-busy flag exists, so the
-   *  updater knows when to defer checks during TUN setup / server switches. */
+  /** Supplied by the runtime composition layer so the updater can defer checks
+   *  during TUN setup / server switches. */
   private isConnectionBusy: () => boolean = () => false;
 
   public setConnectionBusyGetter(getter: () => boolean): void {
@@ -219,8 +219,8 @@ export class AppUpdaterService extends EventEmitter {
       this.scheduleChecks();
       // Fire a first check shortly after start so the UI picks up any pending
       // update without waiting a full polling interval. Routed through
-      // `scheduleDeferredCheck` so it inherits the same connection-busy
-      // backoff as periodic checks.
+      // `scheduleDeferredCheck` so it inherits the same runtime backoff as
+      // periodic checks.
       this.scheduleDeferredCheck(INITIAL_CHECK_DELAY_MS, 'initial');
     } catch (error) {
       logger.warn('AppUpdaterService', 'Failed to load electron-updater', {

@@ -7,7 +7,7 @@ interface UseConnectionActionsParams {
   isConnectionBusy: boolean;
   toggleInFlightRef: RefObject<boolean>;
   setConnectionError: Dispatch<SetStateAction<string | null>>;
-  setIsConnectionBusy: Dispatch<SetStateAction<boolean>>;
+  refreshSnapshot: () => Promise<void>;
 }
 
 export function useConnectionActions({
@@ -16,14 +16,13 @@ export function useConnectionActions({
   isConnectionBusy,
   toggleInFlightRef,
   setConnectionError,
-  setIsConnectionBusy,
+  refreshSnapshot,
 }: UseConnectionActionsParams) {
   return useCallback(async () => {
     if (!selectedServer || isConnectionBusy || toggleInFlightRef.current) {
       return;
     }
     toggleInFlightRef.current = true;
-    setIsConnectionBusy(true);
     try {
       if (isConnected) {
         const result = await window.electronAPI.disconnect();
@@ -34,7 +33,7 @@ export function useConnectionActions({
         setConnectionError(null);
       } else {
         setConnectionError(null);
-        const result = await window.electronAPI.connect(selectedServer);
+        const result = await window.electronAPI.connect(selectedServer.uuid);
         if (!result.ok && result.error) {
           setConnectionError(result.error);
         }
@@ -47,10 +46,9 @@ export function useConnectionActions({
     } finally {
       toggleInFlightRef.current = false;
       try {
-        const busy = await window.electronAPI.getConnectionBusy();
-        setIsConnectionBusy(busy);
+        await refreshSnapshot();
       } catch {
-        setIsConnectionBusy(false);
+        // Snapshot refresh failure is surfaced through the next explicit action.
       }
     }
   }, [
@@ -59,6 +57,6 @@ export function useConnectionActions({
     isConnectionBusy,
     toggleInFlightRef,
     setConnectionError,
-    setIsConnectionBusy,
+    refreshSnapshot,
   ]);
 }

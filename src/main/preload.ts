@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { ConnectionMode, Subscription, VlessConfig } from '@/shared/types';
+import { ConnectionMode, VlessConfig } from '@/shared/types';
 import {
   AddSubscriptionPayload,
   AddSubscriptionResult,
+  AppSnapshot,
   ConnectResult,
   ConnectionMonitorEvent,
   ConnectionMonitorStatus,
@@ -14,7 +15,6 @@ import {
   PingResult,
   RefreshSubscriptionsResult,
   SaveManualLinksResult,
-  TrafficSnapshot,
   TunCapabilityStatus,
   UpdateStatus,
   UpdateSubscriptionPayload,
@@ -31,10 +31,10 @@ function createListener<T>(channel: string) {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  connect: (server: VlessConfig) =>
+  connect: (serverId: string) =>
     ipcRenderer.invoke(
       IPC_INVOKE_CHANNELS.connect,
-      server,
+      serverId,
     ) as Promise<ConnectResult>,
   disconnect: () =>
     ipcRenderer.invoke(
@@ -42,10 +42,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ) as Promise<DisconnectResult>,
 
   // Subscriptions CRUD
-  getSubscriptions: () =>
-    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getSubscriptions) as Promise<
-      Subscription[]
-    >,
   addSubscription: (payload: AddSubscriptionPayload) =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.addSubscription, payload) as Promise<
       AddSubscriptionResult & { subscriptionId: string }
@@ -74,22 +70,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ) as Promise<SaveManualLinksResult>,
 
   // Events
-  onUpdateServers: createListener<VlessConfig[]>(
-    IPC_EVENT_CHANNELS.updateServers,
+  onAppSnapshotChanged: createListener<AppSnapshot>(
+    IPC_EVENT_CHANNELS.appSnapshotChanged,
   ),
-  onUpdateSubscriptions: createListener<Subscription[]>(
-    IPC_EVENT_CHANNELS.updateSubscriptions,
-  ),
-  onConnectionStatus: createListener<boolean>(
-    IPC_EVENT_CHANNELS.connectionStatus,
-  ),
-  onConnectionBusy: createListener<boolean>(IPC_EVENT_CHANNELS.connectionBusy),
-  onConnectionError: createListener<string>(IPC_EVENT_CHANNELS.connectionError),
   onConnectionMonitorEvent: createListener<ConnectionMonitorEvent>(
     IPC_EVENT_CHANNELS.connectionMonitorEvent,
-  ),
-  onTrafficStats: createListener<TrafficSnapshot | null>(
-    IPC_EVENT_CHANNELS.trafficStats,
   ),
   onUpdateStatus: createListener<UpdateStatus>(IPC_EVENT_CHANNELS.updateStatus),
 
@@ -107,14 +92,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       IPC_INVOKE_CHANNELS.clearBlockedServers,
     ) as Promise<boolean>,
 
-  getServers: () =>
-    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getServers) as Promise<
-      VlessConfig[]
-    >,
-  getSelectedServerId: () =>
-    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getSelectedServerId) as Promise<
-      string | null
-    >,
+  getAppSnapshot: () =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getAppSnapshot) as Promise<AppSnapshot>,
   setSelectedServerId: (serverId: string | null) =>
     ipcRenderer.invoke(
       IPC_INVOKE_CHANNELS.setSelectedServerId,
@@ -133,14 +112,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(
       IPC_INVOKE_CHANNELS.getTunCapabilityStatus,
     ) as Promise<TunCapabilityStatus>,
-  getConnectionStatus: () =>
-    ipcRenderer.invoke(
-      IPC_INVOKE_CHANNELS.getConnectionStatus,
-    ) as Promise<boolean>,
-  getConnectionBusy: () =>
-    ipcRenderer.invoke(
-      IPC_INVOKE_CHANNELS.getConnectionBusy,
-    ) as Promise<boolean>,
   getLogs: () =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getLogs) as Promise<string>,
   openLogFolder: () =>
@@ -186,11 +157,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       IPC_INVOKE_CHANNELS.setUiLanguage,
       language,
     ) as Promise<boolean>,
-
-  getTrafficStats: () =>
-    ipcRenderer.invoke(
-      IPC_INVOKE_CHANNELS.getTrafficStats,
-    ) as Promise<TrafficSnapshot | null>,
 
   getUpdateStatus: () =>
     ipcRenderer.invoke(

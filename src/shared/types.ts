@@ -22,13 +22,13 @@ export type ServerTransport =
   | 'httpupgrade'
   /**
    * Legacy transports accepted by older Xray builds. The bundled Xray 26.3.27
-   * rejects them; ConfigGenerator keeps them in the type only to surface a
-   * precise error for persisted/imported servers.
+   * rejects them; the compiler keeps them in the type only to surface a precise
+   * error for persisted/imported servers.
    */
   | 'http'
   | 'quic';
 
-export interface VlessConfig {
+export interface ServerConfig {
   uuid: string;
   userId?: string; // original VLESS user UUID used for auth
   address: string;
@@ -86,6 +86,8 @@ export interface VlessConfig {
   // Full Xray config from JSON subscription
   rawConfig?: XrayConfig;
 }
+
+export type VlessConfig = ServerConfig;
 
 export type ConnectionMode = 'proxy' | 'tun';
 

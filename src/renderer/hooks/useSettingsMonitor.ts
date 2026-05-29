@@ -1,24 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ConnectionMonitorEvent,
-  ConnectionStatus as MonitorStatus,
-} from '@/renderer/preload.d';
+  ConnectionMonitorStatus,
+} from '@/shared/ipc';
 
 interface UseSettingsMonitorOptions {
   isOpen: boolean;
 }
 
 export function useSettingsMonitor({ isOpen }: UseSettingsMonitorOptions) {
-  const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(
-    null,
-  );
+  const [monitorStatus, setMonitorStatus] =
+    useState<ConnectionMonitorStatus | null>(null);
   const [recentEvents, setRecentEvents] = useState<ConnectionMonitorEvent[]>(
     [],
   );
   const [autoSwitching, setAutoSwitching] = useState(true);
   const [hasLoadedMonitorStatus, setHasLoadedMonitorStatus] = useState(false);
 
-  const applyMonitorStatus = useCallback((status: MonitorStatus) => {
+  const applyMonitorStatus = useCallback((status: ConnectionMonitorStatus) => {
     setMonitorStatus(status);
     setAutoSwitching(status.autoSwitchingEnabled ?? true);
   }, []);

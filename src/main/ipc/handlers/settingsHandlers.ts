@@ -1,6 +1,5 @@
 import { IpcMainInvokeEvent, ipcMain } from 'electron';
 import { normalizePerformanceSettings } from '@/shared/performanceSettings';
-import { toSafeServerList } from '@/shared/serverView';
 import { IPC_INVOKE_CHANNELS, TunCapabilityStatus } from '@/shared/ipc';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { assertConnectionMode } from '@/main/ipc/validators';
@@ -8,13 +7,11 @@ import { assertConnectionMode } from '@/main/ipc/validators';
 interface RegisterSettingsHandlersParams {
   deps: IpcDependencies;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
-  isConnectionBusy: () => boolean;
 }
 
 export function registerSettingsHandlers({
   deps,
   assertTrustedSender,
-  isConnectionBusy,
 }: RegisterSettingsHandlersParams): void {
   ipcMain.handle(
     IPC_INVOKE_CHANNELS.openExternalUrl,
@@ -34,22 +31,6 @@ export function registerSettingsHandlers({
       }
       await deps.shell.openExternal(url);
       return true;
-    },
-  );
-
-  ipcMain.handle(
-    IPC_INVOKE_CHANNELS.getServers,
-    (event: IpcMainInvokeEvent) => {
-      assertTrustedSender(event);
-      return toSafeServerList(deps.configService.getServers());
-    },
-  );
-
-  ipcMain.handle(
-    IPC_INVOKE_CHANNELS.getSelectedServerId,
-    (event: IpcMainInvokeEvent) => {
-      assertTrustedSender(event);
-      return deps.configService.getSelectedServerId();
     },
   );
 
@@ -122,19 +103,6 @@ export function registerSettingsHandlers({
       return result;
     },
   );
-
-  ipcMain.handle(
-    IPC_INVOKE_CHANNELS.getConnectionStatus,
-    (event: IpcMainInvokeEvent) => {
-      assertTrustedSender(event);
-      return deps.connectionMonitorService.getStatus().isConnected;
-    },
-  );
-
-  ipcMain.handle(IPC_INVOKE_CHANNELS.getConnectionBusy, (event) => {
-    assertTrustedSender(event);
-    return isConnectionBusy();
-  });
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.getAppVersion, (event) => {
     assertTrustedSender(event);

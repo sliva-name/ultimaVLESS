@@ -8,7 +8,10 @@ import {
   TUN_IPV6_PREFIX,
   TUN_PREFIX,
 } from '../tunRoute/constants';
-import type { ConfigGeneratorOptions } from '../ConfigGenerator';
+
+interface TunInboundOptions {
+  tunAutoRoute?: boolean;
+}
 
 type MutableConfigNode = Record<string, unknown>;
 type MutableSniffing = MutableConfigNode & {
@@ -109,7 +112,7 @@ export function ensureLocalProxyInbounds(
   }
 }
 
-export function createTunInbound(options: ConfigGeneratorOptions): XrayInbound {
+export function createTunInbound(options: TunInboundOptions): XrayInbound {
   const tunInbound: XrayInbound = {
     tag: 'tun-in',
     port: 0,

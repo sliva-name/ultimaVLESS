@@ -2,7 +2,6 @@ import { ConnectionMode, VlessConfig } from '@/shared/types';
 import { isSameServerIdentity } from '@/shared/serverIdentity';
 import { logger } from './LoggerService';
 import { configService } from './ConfigService';
-import { connectionStackService } from './ConnectionStackService';
 import { APP_CONSTANTS } from '@/shared/constants';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
@@ -47,6 +46,8 @@ interface RecordErrorOptions {
 }
 
 type SwitchAttemptResult = 'switched' | 'failed' | 'stale';
+type SwitchExecutor = (server: VlessConfig) => Promise<void>;
+type CleanupExecutor = () => Promise<void>;
 
 export interface ConnectionEvent {
   type: 'connected' | 'disconnected' | 'error' | 'blocked' | 'switching';
@@ -85,6 +86,12 @@ export class ConnectionMonitorService extends EventEmitter {
   private static readonly AUTO_SWITCH_CANDIDATE_LIMIT = 30;
   private static readonly AUTO_SWITCH_VALIDATION_TIMEOUT_MS = 2000;
   private static readonly AUTO_SWITCH_VALIDATION_ATTEMPTS = 1;
+  private switchExecutor: SwitchExecutor = async () => {
+    throw new Error('Auto-switch executor is not configured');
+  };
+  private cleanupExecutor: CleanupExecutor = async () => {
+    throw new Error('Connection cleanup executor is not configured');
+  };
 
   constructor() {
     super();
@@ -105,6 +112,18 @@ export class ConnectionMonitorService extends EventEmitter {
     this.xrayLogCursor = new XrayLogCursor(path.join(userDataPath, 'xray.log'));
 
     logger.info('ConnectionMonitorService', 'Initialized');
+  }
+
+  public setSwitchExecutor(executor: SwitchExecutor): void {
+    this.switchExecutor = executor;
+  }
+
+  public setCleanupExecutor(executor: CleanupExecutor): void {
+    this.cleanupExecutor = executor;
+  }
+
+  private cleanupRuntimeAfterFailure(): Promise<void> {
+    return this.cleanupExecutor();
   }
 
   /**
@@ -715,7 +734,7 @@ export class ConnectionMonitorService extends EventEmitter {
         triedCandidates: candidates.length,
         blockedServers: this.status.blockedServers.size,
       });
-      await connectionStackService.cleanupAfterFailure();
+      await this.cleanupRuntimeAfterFailure();
       this.stopMonitoring({
         message: errorMessage,
         preserveLastError: true,
@@ -808,23 +827,12 @@ export class ConnectionMonitorService extends EventEmitter {
         return 'stale';
       const connectionMode = configService.getConnectionMode();
 
-      await connectionStackService.transitionTo(
-        server,
-        connectionMode,
-        {
-          http: APP_CONSTANTS.PORTS.HTTP,
-          socks: APP_CONSTANTS.PORTS.SOCKS,
-        },
-        {
-          stopXray: true,
-          delayBeforeApplyMs: 1000,
-        },
-      );
+      await this.switchExecutor(server);
       if (
         this.monitoringGeneration !== expectedGeneration ||
         !this.status.isConnected
       ) {
-        await connectionStackService.resetNetworkingStack({ stopXray: true });
+        await this.cleanupRuntimeAfterFailure();
         return 'stale';
       }
 
@@ -833,7 +841,7 @@ export class ConnectionMonitorService extends EventEmitter {
           server,
           'Post-switch traffic validation failed',
         );
-        await connectionStackService.resetNetworkingStack({ stopXray: true });
+        await this.cleanupRuntimeAfterFailure();
         return 'failed';
       }
 
@@ -857,7 +865,7 @@ export class ConnectionMonitorService extends EventEmitter {
       this.recordAutoSwitchCandidateFailure(server, errorMessage);
 
       try {
-        await connectionStackService.cleanupAfterFailure();
+        await this.cleanupRuntimeAfterFailure();
       } catch (cleanupError) {
         logger.error(
           'ConnectionMonitorService',

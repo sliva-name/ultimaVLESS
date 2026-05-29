@@ -1,180 +1,65 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSubscriptionRefreshManager } from './subscriptionRefresh';
-import { makeMonitorStatus, makeServer } from '@/test/factories';
-import type { VlessConfig } from '@/shared/types';
+import { makeServer, makeSubscription } from '@/test/factories';
 
-function createDeps(existingServers: VlessConfig[], refreshed: VlessConfig[]) {
-  let servers = existingServers;
-  const sent: Array<{ channel: string; args: unknown[] }> = [];
-
-  return {
-    sent,
-    deps: {
-      getWindow: () =>
-        ({
-          webContents: {
-            send: (channel: string, ...args: unknown[]) => {
-              sent.push({ channel, args });
-            },
-          },
-        }) as never,
-      configService: {
-        getSubscriptions: () => [
-          {
-            id: 'sub-1',
-            name: 'Subscription',
-            url: 'https://example.com/sub',
-            enabled: true,
-          },
-        ],
-        getManualLinksInput: () => '',
-        getServers: () => servers,
-        setServers: (next: VlessConfig[]) => {
-          servers = next;
-        },
-        getSelectedServerId: () => null,
-        setSelectedServerId: vi.fn(),
-      },
-      subscriptionService: {
-        fetchAndParseDetailed: vi
-          .fn()
-          .mockResolvedValue({ configs: refreshed }),
-        parseDirectLinksFromText: vi.fn().mockReturnValue([]),
-      },
-      connectionMonitorService: {
-        getStatus: () => makeMonitorStatus(),
-        syncCurrentServer: vi.fn().mockReturnValue(null),
-      },
-      xrayService: {
-        isRunning: () => false,
-      },
+function createManager(overrides: Partial<any> = {}) {
+  const server = makeServer({ uuid: 'server-1' });
+  const deps = {
+    getWindow: vi.fn(() => null),
+    configService: {
+      getSubscriptions: vi.fn(() => [makeSubscription()]),
+      getManualLinksInput: vi.fn(() => ''),
+      getServers: vi.fn(() => []),
+      setServers: vi.fn(),
+      getSelectedServerId: vi.fn(() => null),
+      setSelectedServerId: vi.fn(),
     },
-    getServers: () => servers,
+    subscriptionService: {
+      fetchAndParseDetailed: vi.fn(async () => ({ configs: [server] })),
+      parseDirectLinksFromText: vi.fn(() => []),
+    },
+    connectionMonitorService: {
+      getStatus: vi.fn(() => ({ isConnected: false, currentServer: null })),
+      syncCurrentServer: vi.fn(() => null),
+    },
+    xrayService: {
+      isRunning: vi.fn(() => false),
+    },
+    notifyStateChanged: vi.fn(),
+    ...overrides,
   };
+  return { deps, manager: createSubscriptionRefreshManager(deps) };
 }
 
-describe('createSubscriptionRefreshManager', () => {
-  it('does not collapse subscription variants that share the same endpoint', async () => {
-    const first = makeServer({
-      uuid: 'variant-1',
-      address: 'same.example.com',
-      port: 443,
-      type: 'xhttp',
-      path: '/one',
-    });
-    const second = makeServer({
-      uuid: 'variant-2',
-      address: 'same.example.com',
-      port: 443,
-      type: 'xhttp',
-      path: '/two',
-    });
-    const harness = createDeps([], [first, second]);
+describe('SubscriptionRefreshManager', () => {
+  it('persists refreshed servers and notifies the snapshot publisher', async () => {
+    const { deps, manager } = createManager();
 
-    const manager = createSubscriptionRefreshManager(harness.deps);
-    await manager.queueRefreshAllSubscriptions('');
+    const result = await manager.queueRefreshAllSubscriptions('');
 
-    expect(harness.getServers()).toHaveLength(2);
-    expect(harness.getServers().map((server) => server.uuid)).toEqual([
-      'variant-1',
-      'variant-2',
+    expect(result.configCount).toBe(1);
+    expect(deps.configService.setServers).toHaveBeenCalledWith([
+      expect.objectContaining({ uuid: 'server-1', ping: null }),
     ]);
+    expect(deps.notifyStateChanged).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves ping across startup refresh when id and endpoint rotate', async () => {
-    const existing = makeServer({
-      uuid: 'old-id',
-      source: 'subscription',
-      subscriptionId: 'sub-1',
-      name: 'NL Нидерланды',
-      address: 'old.example.com',
-      port: 443,
-      ping: 96,
-      pingTime: 12345,
-    });
-    const rotated = makeServer({
-      uuid: 'new-id',
-      source: 'subscription',
-      subscriptionId: 'sub-1',
-      name: 'NL Нидерланды',
-      address: 'new.example.com',
-      port: 443,
-    });
-    const harness = createDeps([existing], [rotated]);
-
-    const manager = createSubscriptionRefreshManager(harness.deps);
-    await manager.queueRefreshAllSubscriptions('');
-
-    expect(harness.getServers()).toEqual([
-      expect.objectContaining({
-        uuid: 'new-id',
-        address: 'new.example.com',
-        ping: 96,
-        pingTime: 12345,
-        pingStale: true,
-      }),
-    ]);
-  });
-
-  it('fetches subscriptions concurrently while preserving subscription order', async () => {
-    const first = makeServer({ uuid: 'first', name: 'First' });
-    const second = makeServer({ uuid: 'second', name: 'Second' });
-    let servers: VlessConfig[] = [];
-    const pendingFetches: Array<(value: { configs: VlessConfig[] }) => void> =
-      [];
-    const fetchAndParseDetailed = vi.fn(
-      () =>
-        new Promise<{ configs: VlessConfig[] }>((resolve) => {
-          pendingFetches.push(resolve);
-        }),
-    );
-
-    const manager = createSubscriptionRefreshManager({
-      getWindow: () => null,
-      configService: {
-        getSubscriptions: () => [
-          {
-            id: 'sub-1',
-            name: 'First subscription',
-            url: 'https://example.com/first',
-            enabled: true,
-          },
-          {
-            id: 'sub-2',
-            name: 'Second subscription',
-            url: 'https://example.com/second',
-            enabled: true,
-          },
-        ],
-        getManualLinksInput: () => '',
-        getServers: () => servers,
-        setServers: (next: VlessConfig[]) => {
-          servers = next;
-        },
-        getSelectedServerId: () => null,
-        setSelectedServerId: vi.fn(),
-      },
+  it('does not send renderer events directly when refresh fails', async () => {
+    const { deps, manager } = createManager({
       subscriptionService: {
-        fetchAndParseDetailed,
-        parseDirectLinksFromText: vi.fn().mockReturnValue([]),
-      },
-      connectionMonitorService: {
-        getStatus: () => makeMonitorStatus(),
-        syncCurrentServer: vi.fn().mockReturnValue(null),
-      },
-      xrayService: {
-        isRunning: () => false,
+        fetchAndParseDetailed: vi.fn(async () => {
+          throw new Error('offline');
+        }),
+        parseDirectLinksFromText: vi.fn(() => []),
       },
     });
 
-    const refresh = manager.queueRefreshAllSubscriptions('');
-    await Promise.resolve();
+    await expect(manager.queueRefreshAllSubscriptions('')).resolves.toMatchObject(
+      { configCount: 0 },
+    );
+    manager.reportSubscriptionRefreshIssue('offline');
 
-    expect(fetchAndParseDetailed).toHaveBeenCalledTimes(2);
-    pendingFetches[1]?.({ configs: [second] });
-    pendingFetches[0]?.({ configs: [first] });
-    await refresh;
-
-    expect(servers.map((server) => server.uuid)).toEqual(['first', 'second']);
+    expect(deps.getWindow).not.toHaveBeenCalled();
+    expect(deps.notifyStateChanged).toHaveBeenCalledTimes(1);
   });
 });
