@@ -9,9 +9,9 @@ import { useAppSnapshot } from './useAppSnapshot';
 
 export function useNetworkSettings(isOpen: boolean) {
   const snapshot = useAppSnapshot();
-  const [connectionMode, setConnectionModeState] = useState<ConnectionMode>(
-    snapshot.connectionMode,
-  );
+  const [connectionModeOverride, setConnectionModeOverride] =
+    useState<ConnectionMode | null>(null);
+  const connectionMode = connectionModeOverride ?? snapshot.connectionMode;
   const [tunCapability, setTunCapability] =
     useState<TunCapabilityStatus | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
@@ -20,10 +20,6 @@ export function useNetworkSettings(isOpen: boolean) {
   );
   const [perfDirty, setPerfDirty] = useState(false);
   const [perfSaving, setPerfSaving] = useState(false);
-
-  useEffect(() => {
-    setConnectionModeState(snapshot.connectionMode);
-  }, [snapshot.connectionMode]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -48,7 +44,7 @@ export function useNetworkSettings(isOpen: boolean) {
 
   const setConnectionMode = useCallback(async (mode: ConnectionMode) => {
     await window.electronAPI.setConnectionMode(mode);
-    setConnectionModeState(mode);
+    setConnectionModeOverride(mode);
     setModeError(null);
   }, []);
 
