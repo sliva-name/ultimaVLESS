@@ -80,7 +80,7 @@ describe('ConnectionController', () => {
     );
   });
 
-  it('records pending TUN reconnect before administrator relaunch', async () => {
+  it('uses the platform-specific privilege path for TUN connections', async () => {
     const { controller, deps, server } = createController({
       configService: {
         getServers: vi.fn(() => [makeServer({ uuid: 'server-1' })]),
@@ -93,12 +93,20 @@ describe('ConnectionController', () => {
       requestTunPrivilegesRelaunch: vi.fn(async () => true),
     });
 
-    await expect(controller.connect(server.uuid)).rejects.toMatchObject({
-      relaunched: true,
-    });
-    expect(deps.configService.setPendingTunReconnect).toHaveBeenCalledWith(
-      server.uuid,
-    );
-    expect(deps.app.quit).toHaveBeenCalledTimes(1);
+    if (process.platform === 'win32') {
+      await expect(controller.connect(server.uuid)).rejects.toMatchObject({
+        relaunched: true,
+      });
+      expect(deps.configService.setPendingTunReconnect).toHaveBeenCalledWith(
+        server.uuid,
+      );
+      expect(deps.app.quit).toHaveBeenCalledTimes(1);
+    } else {
+      await expect(controller.connect(server.uuid)).rejects.toThrow(
+        /root privileges/,
+      );
+      expect(deps.configService.setPendingTunReconnect).not.toHaveBeenCalled();
+      expect(deps.app.quit).not.toHaveBeenCalled();
+    }
   });
 });
