@@ -27,38 +27,61 @@ vi.mock('./tunRoute/powerShellRunner', () => ({
 }));
 
 describe('TunRouteService Windows routing', () => {
-  it('adds proxy host routes and default routes through the TUN interface', async () => {
+  const plan: TunRoutingPlan = {
+    defaultRoute: {
+      interfaceIndex: 12,
+      gateway: '192.168.1.1',
+      interfaceName: 'Ethernet',
+      localAddress: '192.168.1.10',
+    },
+    proxyIps: ['203.0.113.10'],
+  };
+
+  it('applies the full TUN routing setup in a single PowerShell call', async () => {
     const service = new TunRouteService('win32');
-    const calls: Array<{ destination: string; gateway: string }> = [];
     vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
-    vi.spyOn(service as any, 'ensureTunAddress').mockResolvedValue(undefined);
-    vi.spyOn(service as any, 'cleanupCurrentProxyHostRoutes').mockResolvedValue(
-      undefined,
-    );
-    vi.spyOn(service as any, 'addRoute').mockImplementation(
-      async (destination: string, _mask: string, gateway: string) => {
-        calls.push({ destination, gateway });
-        return true;
-      },
-    );
-    const addDefault = vi
-      .spyOn(service as any, 'addDefaultRouteViaTun')
-      .mockResolvedValue(undefined);
-    const plan: TunRoutingPlan = {
-      defaultRoute: {
-        interfaceIndex: 12,
-        gateway: '192.168.1.1',
-        interfaceName: 'Ethernet',
-        localAddress: '192.168.1.10',
-      },
-      proxyIps: ['203.0.113.10'],
-    };
+    const runPowerShell = vi
+      .spyOn(service as any, 'runPowerShell')
+      .mockResolvedValue(
+        ['HOST_CREATED|203.0.113.10/32', 'DEFAULT4_CREATED', 'DEFAULT6_CREATED'].join(
+          '\n',
+        ),
+      );
 
     await service.enable(makeServer(), plan);
 
-    expect(calls).toEqual([
-      { destination: '203.0.113.10', gateway: '192.168.1.1' },
+    expect(runPowerShell).toHaveBeenCalledTimes(1);
+    const script = runPowerShell.mock.calls[0][0] as string;
+    // Proxy server IP pinned to the physical gateway via the default-route interface.
+    expect(script).toContain("'203.0.113.10/32'");
+    expect(script).toContain('192.168.1.1');
+    expect(script).toContain('-InterfaceIndex 12');
+    // Default route via the TUN interface index.
+    expect(script).toContain('$tunIdx = 7');
+    expect(script).toContain('0.0.0.0/0');
+    expect(script).toContain('::/0');
+  });
+
+  it('records created routes from the script output for teardown', async () => {
+    const service = new TunRouteService('win32');
+    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
+    vi.spyOn(service as any, 'runPowerShell').mockResolvedValue(
+      ['HOST_CREATED|203.0.113.10/32', 'DEFAULT4_CREATED', 'DEFAULT6_CREATED'].join(
+        '\n',
+      ),
+    );
+
+    await service.enable(makeServer(), plan);
+
+    expect((service as any).addedRoutes).toEqual([
+      {
+        destination: '203.0.113.10',
+        mask: '255.255.255.255',
+        interfaceIndex: 12,
+        prefix: '203.0.113.10/32',
+      },
+      { destination: '0.0.0.0', mask: '0.0.0.0', interfaceIndex: 7 },
+      { destination: '::', mask: '::', interfaceIndex: 7, prefix: '::/0' },
     ]);
-    expect(addDefault).toHaveBeenCalledWith(7);
   });
 });

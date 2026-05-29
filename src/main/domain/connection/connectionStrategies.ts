@@ -25,8 +25,14 @@ export function createNetworkTeardown(deps: {
   return {
     async reset(options: { stopXray?: boolean } = {}): Promise<void> {
       const { stopXray = true } = options;
-      await deps.proxyService.disable();
-      await deps.routeService.disable();
+      // System-proxy (HKCU Internet Settings) and the routing table are
+      // independent subsystems, so tearing both down concurrently halves the
+      // PowerShell/reg/schtasks spawn latency that dominates connect time.
+      // Each service serializes its own operations internally.
+      await Promise.all([
+        deps.proxyService.disable(),
+        deps.routeService.disable(),
+      ]);
       if (stopXray) {
         deps.coreService.stop();
       }

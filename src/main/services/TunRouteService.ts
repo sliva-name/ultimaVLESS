@@ -19,13 +19,11 @@ import {
   TUN_WAIT_TIMEOUT,
 } from './tunRoute/constants';
 import {
-  addDefaultRouteViaTunScript,
-  addRouteScript,
   deleteHostRoutesByPrefixesAndMetricScript,
   deleteRouteByPrefixAndMetricScript,
   deleteRouteScript,
   deleteTunDefaultRoutesByNextHopScript,
-  ensureTunAddressScript,
+  enableTunRoutingScript,
   getDefaultRouteScript,
   getTunInterfaceIndexScript,
   waitForTunInterfaceScript,
@@ -154,24 +152,11 @@ export class TunRouteService {
         localAddress: defaultRoute.localAddress,
       });
 
-      await this.cleanupCurrentProxyHostRoutes(proxyIps);
-      this.ensureWithinDeadline(deadline, 'cleanup stale proxy host routes');
-
-      await this.ensureTunAddress(tunInterfaceIndex);
-      this.ensureWithinDeadline(deadline, 'set TUN interface address');
-
-      for (const proxyIp of proxyIps) {
-        this.ensureWithinDeadline(deadline, `add host route for ${proxyIp}`);
-        await this.addRoute(
-          proxyIp,
-          '255.255.255.255',
-          defaultRoute.gateway,
-          1,
-          defaultRoute.interfaceIndex,
-        );
-      }
-      this.ensureWithinDeadline(deadline, 'add default route via TUN');
-      await this.addDefaultRouteViaTun(tunInterfaceIndex);
+      this.ensureWithinDeadline(deadline, 'apply TUN routing');
+      // All Windows route mutations (stale cleanup, TUN address/DNS, proxy host
+      // routes, and the TUN default route) run in a single PowerShell process
+      // to avoid paying the per-spawn startup cost for each step.
+      await this.applyWindowsTunRouting(defaultRoute, proxyIps, tunInterfaceIndex);
 
       logger.info('TunRouteService', 'TUN routing enabled', {
         proxyIps,
@@ -323,20 +308,6 @@ export class TunRouteService {
     return Number.isNaN(n) ? null : n;
   }
 
-  private async ensureTunAddress(tunInterfaceIndex: number): Promise<void> {
-    try {
-      await this.runPowerShell(ensureTunAddressScript(tunInterfaceIndex));
-    } catch (e) {
-      logger.warn(
-        'TunRouteService',
-        'Could not set TUN address (Xray may have set it)',
-        {
-          error: e instanceof Error ? e.message : String(e),
-        },
-      );
-    }
-  }
-
   // ---- DNS / route arithmetic ----------------------------------------------
 
   private async resolveProxyAddresses(address: string): Promise<string[]> {
@@ -370,118 +341,82 @@ export class TunRouteService {
     return net.isIP(str) !== 0;
   }
 
-  private maskToPrefix(mask: string): number {
-    const parts = mask.split('.').map(Number);
-    let n = 0;
-    for (const p of parts) n = (n << 8) | p;
-    let bits = 0;
-    while (n) {
-      bits += n & 1;
-      n >>>= 1;
-    }
-    return bits;
-  }
-
   private hostPrefixForIp(ip: string): string {
     return `${ip}/${net.isIP(ip) === 6 ? 128 : 32}`;
   }
 
   // ---- Windows route mutation ----------------------------------------------
 
-  private async addRoute(
-    destination: string,
-    mask: string,
-    gateway: string,
-    metric: number,
-    interfaceIndex?: number,
-  ): Promise<boolean> {
-    if (net.isIP(destination) === 0) {
-      throw new Error(
-        `Refusing to add route for non-IP destination: ${destination}`,
-      );
-    }
-    if (net.isIP(gateway) === 0) {
-      throw new Error(`Refusing to add route with non-IP gateway: ${gateway}`);
-    }
-    if (!Number.isInteger(metric) || metric < 0 || metric > 65535) {
-      throw new Error(`Invalid route metric: ${metric}`);
-    }
-    if (interfaceIndex != null && !Number.isInteger(interfaceIndex)) {
-      throw new Error(`Invalid interface index: ${interfaceIndex}`);
-    }
-    const prefixLen = this.maskToPrefix(mask);
-    const destPrefix = `${destination}/${prefixLen}`;
-    const out = await this.runPowerShell(
-      addRouteScript(destPrefix, gateway, metric, interfaceIndex),
-    );
-    const created = out.includes('CREATED');
-    if (created) {
-      this.addedRoutes.push({ destination, mask, interfaceIndex });
-    }
-    return created;
-  }
-
-  private async addDefaultRouteViaTun(tunIdx: number): Promise<void> {
-    let lastError: unknown = null;
-    for (let attempt = 1; attempt <= DEFAULT_ROUTE_ADD_RETRIES; attempt += 1) {
-      try {
-        const out = await this.runPowerShell(
-          addDefaultRouteViaTunScript(tunIdx),
-        );
-        if (out.includes('CREATED')) {
-          this.addedRoutes.push({
-            destination: '0.0.0.0',
-            mask: '0.0.0.0',
-            interfaceIndex: tunIdx,
-          });
-        }
-        if (out.includes('CREATED_IPV6')) {
-          this.addedRoutes.push({
-            destination: '::',
-            mask: '::',
-            interfaceIndex: tunIdx,
-            prefix: '::/0',
-          });
-        }
-        return;
-      } catch (error) {
-        lastError = error;
-        if (attempt < DEFAULT_ROUTE_ADD_RETRIES) {
-          logger.warn('TunRouteService', 'Retrying add default route via TUN', {
-            interfaceIndex: tunIdx,
-            attempt,
-            maxAttempts: DEFAULT_ROUTE_ADD_RETRIES,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          await this.sleep(DEFAULT_ROUTE_ADD_RETRY_DELAY_MS);
-        }
-      }
-    }
-    throw lastError instanceof Error
-      ? lastError
-      : new Error('Failed to add default route via TUN');
-  }
-
-  private async cleanupCurrentProxyHostRoutes(
+  /**
+   * Runs the complete Windows TUN routing setup in a single PowerShell process
+   * and records the routes it created so {@link disable} can remove them later.
+   */
+  private async applyWindowsTunRouting(
+    defaultRoute: DefaultRouteInfo,
     proxyIps: string[],
+    tunInterfaceIndex: number,
   ): Promise<void> {
-    try {
-      const removedHostRoutes = await this.deleteHostRoutesByPrefixesAndMetric(
-        proxyIps.map((ip) => this.hostPrefixForIp(ip)),
-        1,
-        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
-      );
-      if (removedHostRoutes > 0) {
-        logger.info('TunRouteService', 'Removed stale proxy host routes', {
-          removedHostRoutes,
-          proxyIpCount: proxyIps.length,
+    const proxyHostPrefixes = proxyIps.map((ip) => this.hostPrefixForIp(ip));
+    const output = await this.runPowerShell(
+      enableTunRoutingScript({
+        tunInterfaceIndex,
+        defaultRouteInterfaceIndex: defaultRoute.interfaceIndex,
+        gateway: defaultRoute.gateway,
+        proxyHostPrefixes,
+        // Proxy host routes keep the original metric 1 so they outrank the TUN
+        // default route and let tunnel traffic reach the server via the gateway.
+        hostRouteMetric: 1,
+        defaultRouteRetries: DEFAULT_ROUTE_ADD_RETRIES,
+        defaultRouteRetryDelayMs: DEFAULT_ROUTE_ADD_RETRY_DELAY_MS,
+      }),
+    );
+    this.recordEnabledRoutes(output, defaultRoute.interfaceIndex, tunInterfaceIndex);
+  }
+
+  /** Parses the enable script's stdout markers into teardown bookkeeping. */
+  private recordEnabledRoutes(
+    output: string,
+    defaultRouteInterfaceIndex: number,
+    tunInterfaceIndex: number,
+  ): void {
+    const lines = output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (const line of lines) {
+      if (line.startsWith('HOST_CREATED|')) {
+        const prefix = line.slice('HOST_CREATED|'.length);
+        const destination = prefix.split('/')[0];
+        this.addedRoutes.push({
+          destination,
+          mask: '255.255.255.255',
+          interfaceIndex: defaultRouteInterfaceIndex,
+          prefix,
+        });
+      } else if (line === 'DEFAULT4_CREATED') {
+        this.addedRoutes.push({
+          destination: '0.0.0.0',
+          mask: '0.0.0.0',
+          interfaceIndex: tunInterfaceIndex,
+        });
+      } else if (line === 'DEFAULT6_CREATED') {
+        this.addedRoutes.push({
+          destination: '::',
+          mask: '::',
+          interfaceIndex: tunInterfaceIndex,
+          prefix: '::/0',
+        });
+      } else if (line.startsWith('TUN_ADDR_WARN|')) {
+        logger.warn(
+          'TunRouteService',
+          'Could not set TUN address (Xray may have set it)',
+          { error: line.slice('TUN_ADDR_WARN|'.length) },
+        );
+      } else if (line.startsWith('HOST_FAIL|')) {
+        logger.warn('TunRouteService', 'Failed to add proxy host route', {
+          detail: line.slice('HOST_FAIL|'.length),
         });
       }
-    } catch (error) {
-      logger.warn('TunRouteService', 'Failed to cleanup proxy host routes', {
-        proxyIpCount: proxyIps.length,
-        error: error instanceof Error ? error.message : String(error),
-      });
     }
   }
 
