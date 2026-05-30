@@ -1,3 +1,6 @@
+/** Bundled Xray-core release (see scripts/prepare-xray-assets.mjs). */
+export const BUNDLED_XRAY_VERSION = 'v26.5.9';
+
 export const APP_CONSTANTS = {
   PORTS: {
     SOCKS: 10808,

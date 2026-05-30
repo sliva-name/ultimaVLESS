@@ -1,3 +1,4 @@
+import { BUNDLED_XRAY_VERSION } from '@/shared/constants';
 import {
   ConnectionMode,
   DEFAULT_PERFORMANCE_SETTINGS,
@@ -32,7 +33,11 @@ type MutableOutbound = MutableConfigNode & {
   mux?: MutableConfigNode;
 };
 
-type StructuredOutboundProtocol = 'vless' | 'trojan' | 'shadowsocks';
+type StructuredOutboundProtocol =
+  | 'vless'
+  | 'vmess'
+  | 'trojan'
+  | 'shadowsocks';
 
 export interface XrayConfigPipelineOptions {
   sendThrough?: string;
@@ -145,6 +150,7 @@ export class XrayConfigPipeline {
   private static isTunableProxyProtocol(protocol: unknown): boolean {
     return (
       protocol === 'vless' ||
+      protocol === 'vmess' ||
       protocol === 'trojan' ||
       protocol === 'shadowsocks'
     );
@@ -353,6 +359,7 @@ export class XrayConfigPipeline {
   ): StructuredOutboundProtocol {
     if (config.protocol === 'trojan') return 'trojan';
     if (config.protocol === 'shadowsocks') return 'shadowsocks';
+    if (config.protocol === 'vmess') return 'vmess';
     return 'vless';
   }
 
@@ -379,11 +386,11 @@ export class XrayConfigPipeline {
         return 'httpupgrade';
       case 'http':
         throw new Error(
-          'HTTP transport is not supported by bundled Xray 26.3.27; use XHTTP instead.',
+          `HTTP transport is not supported by bundled Xray ${BUNDLED_XRAY_VERSION}; use XHTTP instead.`,
         );
       case 'quic':
         throw new Error(
-          'QUIC transport is not supported by bundled Xray 26.3.27; use XHTTP/H3 instead.',
+          `QUIC transport is not supported by bundled Xray ${BUNDLED_XRAY_VERSION}; use XHTTP/H3 instead.`,
         );
       default:
         return 'tcp';
@@ -592,6 +599,14 @@ export class XrayConfigPipeline {
         address: config.address,
         port: config.port,
         password: config.password || '',
+      };
+    }
+    if (protocol === 'vmess') {
+      return {
+        address: config.address,
+        port: config.port,
+        id: config.userId || config.uuid,
+        security: config.vmessSecurity || 'auto',
       };
     }
     if (protocol === 'shadowsocks') {

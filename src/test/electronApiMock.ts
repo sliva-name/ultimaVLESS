@@ -146,6 +146,7 @@ export function createElectronApiMock(
         blockAds: false,
         blockBittorrent: false,
         domainStrategy: 'AsIs',
+        windowsTunRouting: 'xray',
       }),
     ),
     setPerformanceSettings: vi.fn(

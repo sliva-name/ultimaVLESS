@@ -1,10 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
 import { TunRouteService, type TunRoutingPlan } from './TunRouteService';
+import { configService } from './ConfigService';
 import { makeServer } from '@/test/factories';
 
 vi.mock('./ConfigService', () => ({
   configService: {
     getServers: vi.fn(() => []),
+    getPerformanceSettings: vi.fn(() => ({
+      windowsTunRouting: 'powershell',
+    })),
   },
 }));
 
@@ -83,5 +88,19 @@ describe('TunRouteService Windows routing', () => {
       { destination: '0.0.0.0', mask: '0.0.0.0', interfaceIndex: 7 },
       { destination: '::', mask: '::', interfaceIndex: 7, prefix: '::/0' },
     ]);
+  });
+
+  it('skips PowerShell when Windows routing is delegated to Xray', async () => {
+    vi.mocked(configService.getPerformanceSettings).mockReturnValue({
+      ...DEFAULT_PERFORMANCE_SETTINGS,
+      windowsTunRouting: 'xray',
+    });
+
+    const service = new TunRouteService('win32');
+    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
+
+    await service.enable(makeServer(), plan);
+
+    expect(runPowerShell).not.toHaveBeenCalled();
   });
 });

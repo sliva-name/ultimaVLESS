@@ -7,6 +7,7 @@ import {
   DomainStrategy,
   LogLevel,
   TlsFingerprint,
+  WindowsTunRouting,
   XudpProxyUDP443,
 } from '@/shared/types';
 import { PrimaryButton, Toggle } from '@/renderer/components/ui';
@@ -180,6 +181,36 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
         <p className="text-sm text-gray-500 leading-relaxed">
           {t('settings.network.routingMode', { mode: tunCapability.routeMode })}
         </p>
+      )}
+      {tunCapability?.platform === 'win32' && tunCapability.supported && (
+        <div
+          className={clsx(
+            'rounded-xl border border-gray-700/50 bg-gray-800/30 p-3 space-y-2',
+            networkLocked && 'opacity-60 pointer-events-none select-none',
+          )}
+        >
+          <PerfSelectRow
+            label={t('settings.network.windowsTunRouting')}
+            hint={t('settings.network.windowsTunRoutingHint')}
+            value={perfSettings.windowsTunRouting}
+            onChange={(v) =>
+              updatePerfField('windowsTunRouting', v as WindowsTunRouting)
+            }
+            options={[
+              {
+                value: 'xray',
+                label: t('settings.network.windowsTunRoutingXray'),
+              },
+              {
+                value: 'powershell',
+                label: t('settings.network.windowsTunRoutingPowershell'),
+              },
+            ]}
+          />
+          <p className="text-xs text-gray-500 leading-relaxed">
+            {t('settings.network.windowsTunRoutingApplyHint')}
+          </p>
+        </div>
       )}
       {tunCapability?.degradedReason && (
         <p className="text-sm text-orange-400 leading-relaxed">

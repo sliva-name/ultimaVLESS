@@ -42,8 +42,8 @@ export function applyStatsApi(cfg: XrayConfig): void {
       tag: 'api',
       port: APP_CONSTANTS.PORTS.API,
       listen: '127.0.0.1',
-      protocol: 'dokodemo-door',
-      settings: { address: '127.0.0.1' },
+      protocol: 'tunnel',
+      settings: { rewriteAddress: '127.0.0.1' },
     });
   }
 

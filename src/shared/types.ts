@@ -7,7 +7,7 @@ export interface Subscription {
 
 import type { XrayConfig } from './xray-types';
 
-export type ServerProtocol = 'vless' | 'trojan' | 'shadowsocks';
+export type ServerProtocol = 'vless' | 'vmess' | 'trojan' | 'shadowsocks';
 
 export type ServerTransport =
   | 'tcp'
@@ -21,9 +21,8 @@ export type ServerTransport =
   | 'splithttp'
   | 'httpupgrade'
   /**
-   * Legacy transports accepted by older Xray builds. The bundled Xray 26.3.27
-   * rejects them; the compiler keeps them in the type only to surface a precise
-   * error for persisted/imported servers.
+   * Legacy transports. Bundled Xray rejects them; the compiler keeps them in the
+   * type only to surface a precise error for persisted/imported servers.
    */
   | 'http'
   | 'quic';
@@ -47,10 +46,12 @@ export interface ServerConfig {
   method?: string;
   /** Allow self-signed / mismatched TLS certificates (from link params). */
   allowInsecure?: boolean;
-  /** Xray 26.3.27 replacement for allowInsecure-style certificate pinning. */
+  /** Certificate pinning (replaces allowInsecure-style trust). */
   pinnedPeerCertSha256?: string;
-  /** Xray 26.3.27 certificate name override. */
+  /** TLS certificate name override. */
   verifyPeerCertByName?: string;
+  /** VMess security when protocol === 'vmess'. */
+  vmessSecurity?: 'aes-128-gcm' | 'chacha20-poly1305' | 'auto' | 'none' | 'zero';
   flow?: string; // xtls-rprx-vision
   encryption?: string;
   type?: ServerTransport;
@@ -102,6 +103,9 @@ export type TlsFingerprint =
   | 'random'
   | 'randomized';
 
+/** Windows-only: who installs TUN routes — Xray 26.5+ or legacy PowerShell. */
+export type WindowsTunRouting = 'xray' | 'powershell';
+
 export const VALID_XUDP_PROXY_UDP_443_VALUES: readonly XudpProxyUDP443[] = [
   'reject',
   'allow',
@@ -140,6 +144,8 @@ export interface PerformanceSettings {
   blockAds: boolean;
   blockBittorrent: boolean;
   domainStrategy: DomainStrategy;
+  /** Windows TUN only. Default `xray` for testing; use `powershell` to roll back. */
+  windowsTunRouting: WindowsTunRouting;
 }
 
 export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
@@ -154,4 +160,5 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   blockAds: false,
   blockBittorrent: false,
   domainStrategy: 'AsIs',
+  windowsTunRouting: 'xray',
 };

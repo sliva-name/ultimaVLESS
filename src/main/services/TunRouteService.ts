@@ -1,6 +1,11 @@
 import dns from 'dns';
 import net from 'net';
 import { VlessConfig } from '@/shared/types';
+import {
+  getWindowsTunRouteModeLabel,
+  resolveWindowsTunRouting,
+  usesWindowsPowerShellTunRouting,
+} from '@/shared/tunRouting';
 import { logger } from './LoggerService';
 import { configService } from './ConfigService';
 import {
@@ -79,7 +84,19 @@ export class TunRouteService {
   }
 
   public getRouteMode(): string | null {
+    if (this.platform === 'win32') {
+      return getWindowsTunRouteModeLabel(
+        resolveWindowsTunRouting(configService.getPerformanceSettings()),
+      );
+    }
     return this.platformAdapter.getRouteMode();
+  }
+
+  private usesWindowsPowerShellRouting(): boolean {
+    return usesWindowsPowerShellTunRouting(
+      this.platform,
+      configService.getPerformanceSettings(),
+    );
   }
 
   public getDegradedReason(): string | null {
@@ -117,13 +134,14 @@ export class TunRouteService {
     config: VlessConfig,
     plan?: TunRoutingPlan,
   ): Promise<void> {
-    if (this.platform !== 'win32') {
+    if (this.platform !== 'win32' || !this.usesWindowsPowerShellRouting()) {
       const routingPlan = plan ?? (await this.prepareRoutingPlan(config));
       logger.info(
         'TunRouteService',
-        'Using Xray auto-route for TUN mode on Unix platform',
+        'Using Xray auto-route for TUN mode',
         {
           platform: this.platform,
+          routeMode: this.getRouteMode(),
           proxyIpCount: routingPlan.proxyIps.length,
           defaultInterface: routingPlan.defaultRoute.interfaceName,
         },
@@ -171,10 +189,10 @@ export class TunRouteService {
   }
 
   public async disable(): Promise<void> {
-    if (this.platform !== 'win32') {
+    if (this.platform !== 'win32' || !this.usesWindowsPowerShellRouting()) {
       logger.info(
         'TunRouteService',
-        'Unix TUN cleanup delegated to Xray process lifecycle',
+        'TUN cleanup delegated to Xray process lifecycle',
         {
           platform: this.platform,
           routeMode: this.getRouteMode(),

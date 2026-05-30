@@ -107,6 +107,13 @@ const resources = {
           tunDegradedLinux:
             'Linux TUN routing currently relies on Xray auto-route behavior rather than explicit OS-level route teardown.',
           routingMode: 'Routing mode: {{mode}}',
+          windowsTunRouting: 'Windows TUN routing',
+          windowsTunRoutingHint:
+            'Xray 26.5+ can install routes via autoSystemRoutingTable. PowerShell is the previous UltimaVLESS behavior.',
+          windowsTunRoutingXray: 'Xray auto-route (test)',
+          windowsTunRoutingPowershell: 'PowerShell (rollback)',
+          windowsTunRoutingApplyHint:
+            'Save performance settings and reconnect in TUN mode for the change to take effect.',
           performance: 'Performance tuning',
           performanceHint: 'Changes take effect on the next connection.',
           performanceLocked:
@@ -288,6 +295,13 @@ const resources = {
           tunDegradedLinux:
             'Маршрутизация TUN в Linux сейчас полагается на поведение автомаршрутизации Xray, а не на явное удаление маршрутов на уровне ОС.',
           routingMode: 'Режим маршрутизации: {{mode}}',
+          windowsTunRouting: 'Маршрутизация TUN в Windows',
+          windowsTunRoutingHint:
+            'В Xray 26.5+ маршруты можно ставить через autoSystemRoutingTable. PowerShell — прежнее поведение UltimaVLESS.',
+          windowsTunRoutingXray: 'Автомаршруты Xray (тест)',
+          windowsTunRoutingPowershell: 'PowerShell (откат)',
+          windowsTunRoutingApplyHint:
+            'Сохраните настройки производительности и переподключитесь в режиме TUN.',
           performance: 'Настройки производительности',
           performanceHint: 'Изменения применяются при следующем подключении.',
           performanceLocked:

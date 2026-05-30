@@ -229,9 +229,12 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         String(noGRPCHeader),
       ]);
 
-      const outboundProtocol = ['vless', 'trojan', 'shadowsocks'].includes(
-        protocol,
-      )
+      const outboundProtocol = [
+        'vless',
+        'vmess',
+        'trojan',
+        'shadowsocks',
+      ].includes(protocol)
         ? (protocol as VlessConfig['protocol'])
         : undefined;
 

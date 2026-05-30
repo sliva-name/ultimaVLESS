@@ -291,49 +291,8 @@ jobs:
       - name: Verify Windows release config
         run: npm run verify:release:win
 
-      - name: Prepare resources/bin directory
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path "resources/bin" -Force | Out-Null
-
-      - name: Download Xray core assets
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $headers = @{
-            "Accept" = "application/vnd.github+json"
-            "User-Agent" = "ultima-vless-release"
-          }
-          if ($env:GITHUB_TOKEN) {
-            $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN"
-          }
-          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/XTLS/Xray-core/releases/latest" -Headers $headers
-          $zipAsset = $release.assets | Where-Object { $_.name -eq "Xray-windows-64.zip" } | Select-Object -First 1
-          if (-not $zipAsset) {
-            throw "Could not find Xray-windows-64.zip in latest Xray-core release"
-          }
-
-          $zipPath = Join-Path $env:RUNNER_TEMP "xray.zip"
-          $extractDir = Join-Path $env:RUNNER_TEMP "xray"
-          Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $zipPath -Headers $headers
-          Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
-
-          $required = @("xray.exe", "geoip.dat", "geosite.dat")
-          foreach ($file in $required) {
-            $source = Join-Path $extractDir $file
-            if (-not (Test-Path $source)) {
-              throw "Required Xray asset missing after extraction: $file"
-            }
-            Copy-Item -Path $source -Destination (Join-Path "resources/bin" $file) -Force
-          }
-
-          $optional = @("wintun.dll")
-          foreach ($file in $optional) {
-            $source = Join-Path $extractDir $file
-            if (Test-Path $source) {
-              Copy-Item -Path $source -Destination (Join-Path "resources/bin" $file) -Force
-            }
-          }
+      - name: Prepare Xray assets
+        run: npm run prepare:xray:win
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

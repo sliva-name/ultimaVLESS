@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
+import { resolveTunAutoRoute } from '@/shared/tunRouting';
 import { makeServer } from '@/test/factories';
 import {
   createConnectionStrategies,
@@ -16,6 +18,9 @@ describe('connection strategies', () => {
         enable: vi.fn(async () => calls.push('proxy-enable')),
       } as any,
       routeService: {} as any,
+      configService: {
+        getPerformanceSettings: vi.fn(() => DEFAULT_PERFORMANCE_SETTINGS),
+      },
     });
 
     await strategies.proxy.apply(makeServer(), { http: 10809, socks: 10808 });
@@ -27,6 +32,7 @@ describe('connection strategies', () => {
     const server = makeServer();
     const coreStart = vi.fn();
     const routeEnable = vi.fn();
+    const perf = { ...DEFAULT_PERFORMANCE_SETTINGS, windowsTunRouting: 'xray' as const };
     const strategies = createConnectionStrategies({
       coreService: { start: coreStart } as any,
       proxyService: {} as any,
@@ -37,6 +43,9 @@ describe('connection strategies', () => {
         })),
         enable: routeEnable,
       } as any,
+      configService: {
+        getPerformanceSettings: vi.fn(() => perf),
+      },
     });
 
     await strategies.tun.apply(server, { http: 10809, socks: 10808 });
@@ -46,7 +55,7 @@ describe('connection strategies', () => {
       'tun',
       expect.objectContaining({
         sendThrough: '192.168.1.10',
-        tunAutoRoute: process.platform !== 'win32',
+        tunAutoRoute: resolveTunAutoRoute(process.platform, perf),
       }),
     );
     expect(routeEnable).toHaveBeenCalled();

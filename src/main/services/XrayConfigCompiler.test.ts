@@ -37,9 +37,19 @@ describe('XrayConfigCompiler', () => {
       tunAutoRoute: true,
     });
 
-    expect(config.inbounds.some((inbound) => inbound.protocol === 'tun')).toBe(
-      true,
+    const tunInbound = config.inbounds?.find(
+      (inbound) => inbound.protocol === 'tun',
     );
+    expect(tunInbound).toMatchObject({
+      protocol: 'tun',
+      settings: expect.objectContaining({
+        mtu: 1500,
+        gateway: expect.any(Array),
+        dns: expect.any(Array),
+        autoSystemRoutingTable: ['0.0.0.0/0', '::/0'],
+        autoOutboundsInterface: 'auto',
+      }),
+    });
     expect(config.outbounds[0].sendThrough).toBe('192.168.1.10');
   });
 });

@@ -5,7 +5,9 @@ import {
   VALID_LOG_LEVELS,
   VALID_TLS_FINGERPRINTS,
   VALID_XUDP_PROXY_UDP_443_VALUES,
+  WindowsTunRouting,
 } from './types';
+import { VALID_WINDOWS_TUN_ROUTING } from './tunRouting';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -83,5 +85,10 @@ export function normalizePerformanceSettings(
     )
       ? (value.domainStrategy as PerformanceSettings['domainStrategy'])
       : DEFAULT_PERFORMANCE_SETTINGS.domainStrategy,
+    windowsTunRouting: VALID_WINDOWS_TUN_ROUTING.includes(
+      value.windowsTunRouting as WindowsTunRouting,
+    )
+      ? (value.windowsTunRouting as WindowsTunRouting)
+      : DEFAULT_PERFORMANCE_SETTINGS.windowsTunRouting,
   };
 }

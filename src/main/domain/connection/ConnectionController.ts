@@ -95,6 +95,7 @@ export class ConnectionController extends EventEmitter {
         proxyService: deps.proxyService,
         routeService: deps.routeService,
         coreService: deps.coreService,
+        configService: deps.configService,
       });
     this.teardown =
       deps.teardown ??

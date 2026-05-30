@@ -5,6 +5,7 @@ import {
   MOBILE_WHITE_LIST_RAW_URL,
   YANDEX_TRANSLATED_MOBILE_LIST_URL,
 } from '@/shared/subscriptionUrls';
+import { normalizePerformanceSettings } from '@/shared/performanceSettings';
 import {
   ConnectionMode,
   DEFAULT_PERFORMANCE_SETTINGS,
@@ -29,6 +30,7 @@ const LEGACY_PERFORMANCE_DEFAULTS: PerformanceSettings = {
   blockAds: true,
   blockBittorrent: true,
   domainStrategy: 'IPIfNonMatch',
+  windowsTunRouting: 'powershell',
 };
 
 export type UiLanguage = 'en' | 'ru';
@@ -337,8 +339,7 @@ export class ConfigService {
   // ---------------------------------------------------------------------------
 
   public getPerformanceSettings(): PerformanceSettings {
-    const stored = this.store.get('performanceSettings');
-    return { ...DEFAULT_PERFORMANCE_SETTINGS, ...stored };
+    return normalizePerformanceSettings(this.store.get('performanceSettings'));
   }
 
   public setPerformanceSettings(settings: PerformanceSettings): void {

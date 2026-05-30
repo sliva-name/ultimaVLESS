@@ -41,6 +41,7 @@ describe('useNetworkSettings', () => {
       blockAds: false,
       blockBittorrent: false,
       domainStrategy: 'AsIs',
+      windowsTunRouting: 'xray',
     });
     installElectronApiMock(electronApi);
 

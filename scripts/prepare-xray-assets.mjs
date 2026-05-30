@@ -2,12 +2,18 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+/** Match Project X docs (TUN gateway/auto-route, tunnel inbound, dokodemo rewriteAddress). */
+const DEFAULT_XRAY_VERSION = 'v26.5.9';
+
 const RELEASE_API_URL =
   'https://api.github.com/repos/XTLS/Xray-core/releases/latest';
-const RELEASE_LATEST_DOWNLOAD_BASE_URL =
-  'https://github.com/XTLS/Xray-core/releases/latest/download';
 const ROOT_DIR = process.cwd();
 const RESOURCES_DIR = path.join(ROOT_DIR, 'resources', 'bin');
+
+function releaseDownloadBaseUrl(version) {
+  const tag = String(version || DEFAULT_XRAY_VERSION).replace(/^v/i, 'v');
+  return `https://github.com/XTLS/Xray-core/releases/download/${tag}`;
+}
 
 function parseArgs(argv) {
   const result = {};
@@ -115,10 +121,15 @@ async function downloadFile(url, destinationPath) {
   fs.writeFileSync(destinationPath, Buffer.from(arrayBuffer));
 }
 
-async function downloadFromLatestRelease(candidates, destinationPath) {
+async function downloadFromVersionRelease(
+  version,
+  candidates,
+  destinationPath,
+) {
+  const baseUrl = releaseDownloadBaseUrl(version);
   const errors = [];
   for (const candidate of candidates) {
-    const directUrl = `${RELEASE_LATEST_DOWNLOAD_BASE_URL}/${candidate}`;
+    const directUrl = `${baseUrl}/${candidate}`;
     try {
       await downloadFile(directUrl, destinationPath);
       return candidate;
@@ -128,7 +139,7 @@ async function downloadFromLatestRelease(candidates, destinationPath) {
     }
   }
   throw new Error(
-    `Could not download Xray archive via latest download URLs. Attempts: ${errors.join(' | ')}`,
+    `Could not download Xray archive for ${version}. Attempts: ${errors.join(' | ')}`,
   );
 }
 
@@ -149,6 +160,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const platform = normalizePlatform(args.platform || process.platform);
   const arch = normalizeArch(args.arch || process.arch);
+  const version = String(args.version || process.env.XRAY_VERSION || DEFAULT_XRAY_VERSION);
 
   fs.mkdirSync(RESOURCES_DIR, { recursive: true });
 
@@ -167,19 +179,22 @@ async function main() {
   try {
     let archiveName = '';
     try {
-      archiveName = await downloadFromLatestRelease(candidateNames, zipPath);
-      console.log(`Downloaded ${archiveName} via latest release URL`);
+      archiveName = await downloadFromVersionRelease(
+        version,
+        candidateNames,
+        zipPath,
+      );
+      console.log(`Downloaded ${archiveName} (${version})`);
     } catch (directError) {
       const directMessage =
         directError instanceof Error
           ? directError.message
           : String(directError);
-      console.warn(`Direct latest-release download failed: ${directMessage}`);
+      console.warn(`Direct release download failed: ${directMessage}`);
       archiveName = await downloadFromApiAssets(candidateNames, zipPath);
       console.log(`Downloaded ${archiveName} via GitHub API asset URL`);
     }
 
-    // Node does not provide a cross-platform ZIP extraction API directly.
     const { spawnSync } = await import('child_process');
     const unzipResult =
       process.platform === 'win32'
@@ -225,7 +240,21 @@ async function main() {
       }
     }
 
-    console.log(`Prepared Xray assets for ${platform}/${arch}`);
+    const xrayBin = platform === 'win32' ? 'xray.exe' : 'xray';
+    const versionRun = spawnSync(
+      path.join(RESOURCES_DIR, xrayBin),
+      ['version'],
+      { encoding: 'utf8' },
+    );
+    const versionLine = String(versionRun.stdout || '').trim().split('\n')[0];
+    fs.writeFileSync(
+      path.join(RESOURCES_DIR, 'xray-version.txt'),
+      `${version}\n${versionLine}\n`,
+      'utf8',
+    );
+
+    console.log(`Prepared Xray assets for ${platform}/${arch} (${version})`);
+    if (versionLine) console.log(versionLine);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

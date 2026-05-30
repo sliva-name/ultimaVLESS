@@ -1,4 +1,6 @@
 import type { ConnectionMode, VlessConfig } from '@/shared/types';
+import { resolveTunAutoRoute } from '@/shared/tunRouting';
+import type { ConfigService } from '@/main/services/ConfigService';
 import type { SystemProxyService } from '@/main/services/SystemProxyService';
 import type { TunRouteService } from '@/main/services/TunRouteService';
 import type { XrayService } from '@/main/services/XrayService';
@@ -56,14 +58,16 @@ export function createProxyConnectionStrategy(deps: {
 export function createTunConnectionStrategy(deps: {
   routeService: TunRouteService;
   coreService: XrayService;
+  configService: Pick<ConfigService, 'getPerformanceSettings'>;
 }): ConnectionStrategy {
   return {
     mode: 'tun',
     async apply(server: VlessConfig): Promise<void> {
+      const perf = deps.configService.getPerformanceSettings();
       const routingPlan = await deps.routeService.prepareRoutingPlan(server);
       await deps.coreService.start(server, 'tun', {
         sendThrough: routingPlan.defaultRoute.localAddress || undefined,
-        tunAutoRoute: process.platform !== 'win32',
+        tunAutoRoute: resolveTunAutoRoute(process.platform, perf),
       });
       await deps.routeService.enable(server, routingPlan);
     },
@@ -74,6 +78,7 @@ export function createConnectionStrategies(deps: {
   proxyService: SystemProxyService;
   routeService: TunRouteService;
   coreService: XrayService;
+  configService: Pick<ConfigService, 'getPerformanceSettings'>;
 }): Record<ConnectionMode, ConnectionStrategy> {
   return {
     proxy: createProxyConnectionStrategy(deps),
