@@ -1,5 +1,8 @@
 import { app, BrowserWindow, Menu, Notification, Tray } from 'electron';
-import { getAppIconPath } from '@/main/utils/runtimePaths';
+import {
+  getAppIconPath,
+  getNotificationIconPath,
+} from '@/main/utils/runtimePaths';
 import { logger } from './LoggerService';
 import { mainLocaleService } from './MainLocaleService';
 
@@ -108,7 +111,7 @@ export class TrayService {
       const notification = new Notification({
         title,
         body,
-        icon: getAppIconPath(process.platform),
+        icon: getNotificationIconPath(),
         silent: false,
       });
       notification.show();

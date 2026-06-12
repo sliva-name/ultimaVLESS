@@ -117,8 +117,13 @@ async function clearShutdownLogs(): Promise<void> {
   await Promise.all([truncateFileIfExists(xrayLogPath), logger.clear()]);
 }
 
-/** Must match build.appId — Windows taskbar, jump lists, toasts. @see https://www.electron.build/nsis */
-if (process.platform === 'win32') {
+/**
+ * Must match build.appId — Windows taskbar, jump lists, toasts.
+ * Only for packaged builds: dev runs of electron.exe under the production
+ * AUMID poison the shell icon cache (taskbar / Action Center) with the
+ * default Electron icon. @see https://www.electron.build/nsis
+ */
+if (process.platform === 'win32' && app.isPackaged) {
   app.setAppUserModelId('com.ultima.vless');
 }
 
