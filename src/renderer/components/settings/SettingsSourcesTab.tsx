@@ -41,11 +41,18 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    let disposed = false;
 
     window.electronAPI
       .getManualLinks()
-      .then((links) => setManualLinks(links || ''))
+      .then((links) => {
+        if (!disposed) setManualLinks(links || '');
+      })
       .catch((err) => console.error('Failed to load manual links:', err));
+
+    return () => {
+      disposed = true;
+    };
   }, [isOpen]);
 
   const handleToggleSubscription = useCallback(async (sub: Subscription) => {

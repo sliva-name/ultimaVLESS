@@ -44,6 +44,38 @@ describe('SubscriptionRefreshManager', () => {
     expect(deps.notifyStateChanged).toHaveBeenCalledTimes(1);
   });
 
+  it('drops configs of subscriptions disabled while the refresh was in flight', async () => {
+    const subscription = makeSubscription();
+    let fetchStarted = false;
+    const { deps, manager } = createManager({
+      configService: {
+        // Enabled when the refresh starts, disabled by the time it finishes.
+        getSubscriptions: vi.fn(() =>
+          fetchStarted
+            ? [{ ...subscription, enabled: false }]
+            : [subscription],
+        ),
+        getManualLinksInput: vi.fn(() => ''),
+        getServers: vi.fn(() => []),
+        setServers: vi.fn(),
+        getSelectedServerId: vi.fn(() => null),
+        setSelectedServerId: vi.fn(),
+      },
+      subscriptionService: {
+        fetchAndParseDetailed: vi.fn(async () => {
+          fetchStarted = true;
+          return { configs: [makeServer({ uuid: 'server-1' })] };
+        }),
+        parseDirectLinksFromText: vi.fn(() => []),
+      },
+    });
+
+    const result = await manager.queueRefreshAllSubscriptions('');
+
+    expect(result.configCount).toBe(0);
+    expect(deps.configService.setServers).not.toHaveBeenCalled();
+  });
+
   it('does not send renderer events directly when refresh fails', async () => {
     const { deps, manager } = createManager({
       subscriptionService: {

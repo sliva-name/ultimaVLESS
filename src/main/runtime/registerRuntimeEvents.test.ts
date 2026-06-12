@@ -7,6 +7,7 @@ import { registerRuntimeEvents } from './registerRuntimeEvents';
 vi.mock('@/main/services/TrayService', () => ({
   trayService: {
     setConnected: vi.fn(),
+    setConnecting: vi.fn(),
     setDisconnected: vi.fn(),
     reportError: vi.fn(),
     reportSwitching: vi.fn(),
@@ -68,5 +69,20 @@ describe('registerRuntimeEvents', () => {
     );
     expect(snapshotPublisher.push).toHaveBeenCalledWith('monitor');
     expect(snapshotPublisher.push).toHaveBeenCalledWith('traffic');
+  });
+
+  it('reflects the connecting controller state in the tray', async () => {
+    const { trayService } = await import('@/main/services/TrayService');
+    const deps = createDeps();
+    registerRuntimeEvents({
+      deps: deps as any,
+      snapshotPublisher: { push: vi.fn() } as any,
+      recovery: { handleUnexpectedXrayExit: vi.fn() } as any,
+      sendToRenderer: vi.fn(),
+    });
+
+    deps.connectionController.emit('state-changed', 'connecting');
+
+    expect(trayService.setConnecting).toHaveBeenCalled();
   });
 });

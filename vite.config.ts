@@ -79,10 +79,13 @@ export default defineConfig({
           // so tsconfig path resolution must be enabled here too.
           resolve: { tsconfigPaths: true },
           build: {
-            codeSplitting: false,
             rollupOptions: {
               output: {
-                chunkFileNames: 'main-[name].js',
+                // Bundle the main process into a single file so dist-electron
+                // never depends on chunk files (avoids stale-chunk mismatches).
+                // NB: must live inside `output` — a top-level build.codeSplitting
+                // is silently ignored.
+                codeSplitting: false,
                 entryFileNames: 'main.js',
               },
             },
@@ -97,12 +100,11 @@ export default defineConfig({
         vite: {
           resolve: { tsconfigPaths: true },
           build: {
-            codeSplitting: false,
             rollupOptions: {
               output: {
                 format: 'cjs',
+                codeSplitting: false,
                 entryFileNames: '[name].js',
-                chunkFileNames: '[name].js',
                 assetFileNames: '[name].[ext]',
               },
             },

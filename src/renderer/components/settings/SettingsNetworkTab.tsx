@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import clsx from 'clsx';
 import { Shield, Activity, AlertTriangle, Loader2, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -77,21 +77,35 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
     ],
   );
 
+  const [perfError, setPerfError] = useState<string | null>(null);
+
   const handleSavePerfSettings = useCallback(async () => {
+    setPerfError(null);
     try {
       await savePerfSettings();
     } catch (err) {
       console.error('Failed to save performance settings:', err);
+      setPerfError(
+        err instanceof Error
+          ? err.message
+          : t('settings.network.savePerfFailed'),
+      );
     }
-  }, [savePerfSettings]);
+  }, [savePerfSettings, t]);
 
   const handleResetPerfDefaults = useCallback(async () => {
+    setPerfError(null);
     try {
       await resetPerfDefaults();
     } catch (err) {
       console.error('Failed to reset performance settings:', err);
+      setPerfError(
+        err instanceof Error
+          ? err.message
+          : t('settings.network.savePerfFailed'),
+      );
     }
-  }, [resetPerfDefaults]);
+  }, [resetPerfDefaults, t]);
 
   const tunUnavailable = !!tunCapability && !tunCapability.supported;
   const tunNeedsPrivileges =
@@ -381,7 +395,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
               perfSaving ? (
                 t('settings.sources.saving')
               ) : (
-                t('settings.sources.saveManual')
+                t('settings.network.savePerf')
               )
             ) : (
               <Check className="w-4 h-4" />
@@ -396,6 +410,11 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             {t('settings.network.resetDefaults')}
           </button>
         </div>
+        {perfError && (
+          <p className="text-sm text-orange-400 leading-relaxed">
+            {perfError}
+          </p>
+        )}
       </div>
     </div>
   );

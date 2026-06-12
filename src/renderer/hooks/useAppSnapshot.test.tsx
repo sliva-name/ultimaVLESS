@@ -60,6 +60,86 @@ describe('AppSnapshotProvider', () => {
     expect(electronApi.connect).toHaveBeenCalledWith(server.uuid);
   });
 
+  it('keeps the optimistic selection when stale snapshots arrive before persistence completes', async () => {
+    const serverA = makeServer({ uuid: 'server-a' });
+    const serverB = makeServer({ uuid: 'server-b' });
+    const snapshotWithA = makeAppSnapshot({
+      servers: [serverA, serverB],
+      selectedServerId: serverA.uuid,
+    });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(snapshotWithA);
+    let resolvePersist: (value: boolean) => void = () => undefined;
+    electronApi.setSelectedServerId.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolvePersist = resolve;
+        }),
+    );
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.selectedServer?.uuid).toBe(serverA.uuid),
+    );
+
+    act(() => {
+      result.current.selectServer(serverB);
+    });
+    expect(result.current.selectedServer?.uuid).toBe(serverB.uuid);
+
+    // A stale snapshot (e.g. ping/traffic push) still carrying the old
+    // selection must not clobber the pending optimistic selection.
+    act(() => {
+      electronApi.emitAppSnapshotChanged(snapshotWithA);
+    });
+    expect(result.current.selectedServer?.uuid).toBe(serverB.uuid);
+
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [serverA, serverB],
+        selectedServerId: serverB.uuid,
+      }),
+    );
+    await act(async () => {
+      resolvePersist(true);
+    });
+    await waitFor(() =>
+      expect(result.current.selectedServer?.uuid).toBe(serverB.uuid),
+    );
+  });
+
+  it('rolls back the optimistic selection when persistence fails', async () => {
+    const serverA = makeServer({ uuid: 'server-a' });
+    const serverB = makeServer({ uuid: 'server-b' });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [serverA, serverB],
+        selectedServerId: serverA.uuid,
+      }),
+    );
+    electronApi.setSelectedServerId.mockRejectedValue(new Error('boom'));
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.selectedServer?.uuid).toBe(serverA.uuid),
+    );
+
+    act(() => {
+      result.current.selectServer(serverB);
+    });
+    expect(result.current.selectedServer?.uuid).toBe(serverB.uuid);
+
+    await waitFor(() =>
+      expect(result.current.selectedServer?.uuid).toBe(serverA.uuid),
+    );
+    expect(result.current.connectionError).toBe(
+      'Failed to persist selected server',
+    );
+  });
+
   it('updates consumers from app-snapshot-changed events', async () => {
     const electronApi = createElectronApiMock();
     installElectronApiMock(electronApi);

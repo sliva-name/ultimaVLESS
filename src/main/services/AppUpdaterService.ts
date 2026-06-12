@@ -165,9 +165,15 @@ export class AppUpdaterService extends EventEmitter {
   /** Supplied by the runtime composition layer so the updater can defer checks
    *  during TUN setup / server switches. */
   private isConnectionBusy: () => boolean = () => false;
+  /** Graceful shutdown hook (network teardown etc.) run before quitAndInstall. */
+  private prepareForQuit: (() => Promise<void>) | null = null;
 
   public setConnectionBusyGetter(getter: () => boolean): void {
     this.isConnectionBusy = getter;
+  }
+
+  public setPrepareForQuit(prepare: () => Promise<void>): void {
+    this.prepareForQuit = prepare;
   }
 
   public async start(): Promise<void> {
@@ -246,19 +252,68 @@ export class AppUpdaterService extends EventEmitter {
         'AppUpdaterService',
         'Deferring update check while connection is busy',
       );
-      this.scheduleDeferredCheck(POST_BUSY_GRACE_MS, 'busy-deferred');
+      // An explicit (user-initiated) check supersedes any pending deferred
+      // check instead of being silently swallowed by it.
+      this.scheduleDeferredCheck(POST_BUSY_GRACE_MS, 'busy-deferred', {
+        replaceExisting: true,
+      });
       return;
     }
+    this.clearDeferTimer();
     await this.runCheckNow();
   }
 
-  public quitAndInstall(): void {
+  public hasDownloadedUpdate(): boolean {
+    return this.updater !== null && this.status.stage === 'downloaded';
+  }
+
+  /**
+   * Installs an already-downloaded update during a normal app quit
+   * (autoInstallOnAppQuit equivalent for our custom shutdown path).
+   * Returns false when nothing was installed so the caller can exit normally.
+   */
+  public installDownloadedUpdate(): boolean {
+    if (!this.updater) return false;
+    try {
+      this.updater.quitAndInstall(true, false);
+      return true;
+    } catch (error) {
+      logger.error('AppUpdaterService', 'installDownloadedUpdate failed', error);
+      return false;
+    }
+  }
+
+  public async quitAndInstall(): Promise<void> {
     if (!this.updater) return;
+    if (this.prepareForQuit) {
+      try {
+        await this.prepareForQuit();
+      } catch (error) {
+        logger.error(
+          'AppUpdaterService',
+          'Pre-quit shutdown failed before installing update',
+          error,
+        );
+      }
+    }
     try {
       this.updater.quitAndInstall(false, true);
     } catch (error) {
       logger.error('AppUpdaterService', 'quitAndInstall failed', error);
     }
+  }
+
+  /** Clears all pending timers; called during app shutdown. */
+  public dispose(): void {
+    if (this.checkTimer) {
+      clearInterval(this.checkTimer);
+      this.checkTimer = null;
+    }
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    this.clearDeferTimer();
   }
 
   // ---------------------------------------------------------------------------
@@ -289,8 +344,15 @@ export class AppUpdaterService extends EventEmitter {
    * the timer fires, we re-defer up to {@link MAX_DEFER_MS}. Multiple
    * `scheduleDeferredCheck` calls coalesce — only one timer runs at a time.
    */
-  private scheduleDeferredCheck(initialDelayMs: number, reason: string): void {
-    if (this.deferTimer) return;
+  private scheduleDeferredCheck(
+    initialDelayMs: number,
+    reason: string,
+    options?: { replaceExisting?: boolean },
+  ): void {
+    if (this.deferTimer) {
+      if (!options?.replaceExisting) return;
+      this.clearDeferTimer();
+    }
 
     const startedAt = Date.now();
     const tick = (delayMs: number): void => {
@@ -361,6 +423,13 @@ export class AppUpdaterService extends EventEmitter {
       });
     }
     this.setStatus({ stage: 'error', error: message });
+  }
+
+  private clearDeferTimer(): void {
+    if (this.deferTimer) {
+      clearTimeout(this.deferTimer);
+      this.deferTimer = null;
+    }
   }
 
   private scheduleTransientRetry(delayMs: number): void {

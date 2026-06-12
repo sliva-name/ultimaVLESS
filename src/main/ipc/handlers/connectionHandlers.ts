@@ -30,7 +30,12 @@ export function registerConnectionHandlers({
     }
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('IPC', 'Failed to connect', error);
-    deps.connectionMonitorService.recordError(errorMessage);
+    // Only feed the monitor when a monitoring session is actually active;
+    // a failure before startMonitoring (config compile, spawn) must surface
+    // through the IPC response alone.
+    if (deps.connectionMonitorService.getStatus().isConnected) {
+      deps.connectionMonitorService.recordError(errorMessage);
+    }
 
     try {
       await deps.connectionController.cleanupAfterFailure();

@@ -24,12 +24,14 @@ function AppShell() {
     pingAllServers,
   } = useServers();
   const {
+    session,
     isConnected,
     isConnectionBusy,
     connectionError,
     trafficSnapshot,
     toggleConnection,
   } = useSession();
+  const isSwitching = session.status === 'switching';
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
@@ -61,6 +63,7 @@ function AppShell() {
           <UpdateBanner />
           <ConnectionStatus
             isConnected={isConnected}
+            isSwitching={isSwitching}
             isBusy={isConnectionBusy}
             selectedServer={selectedServer}
             connectionError={connectionError}

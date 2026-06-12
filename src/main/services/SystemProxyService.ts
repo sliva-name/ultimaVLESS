@@ -42,23 +42,28 @@ export class SystemProxyService {
 
   public enable(httpPort: number, socksPort: number): Promise<void> {
     return this.runSerialized(async () => {
+      // The snapshot is committed (and, on Windows, logon recovery armed)
+      // BEFORE the system settings are mutated. The snapshot describes the
+      // untouched pre-enable state, so persisting it early is safe — and it
+      // closes the window where a kill mid-enable would leave the proxy on
+      // with neither a snapshot nor a recovery path.
       if (this.darwin) {
         const snapshot = await this.darwin.captureState();
-        await this.darwin.enable(httpPort, socksPort);
         this.commitSnapshot(snapshot);
+        await this.darwin.enable(httpPort, socksPort);
         return;
       }
       if (this.linux) {
         const snapshot = await this.linux.captureState();
-        await this.linux.enable(httpPort, socksPort);
         this.commitSnapshot(snapshot);
+        await this.linux.enable(httpPort, socksPort);
         return;
       }
       if (this.windows) {
         const snapshot = await this.windows.captureState();
-        await this.windows.enable(httpPort, socksPort);
         this.commitSnapshot(snapshot);
         await this.installWindowsLogonRecovery();
+        await this.windows.enable(httpPort, socksPort);
         return;
       }
       logger.info(
@@ -112,7 +117,12 @@ export class SystemProxyService {
     return next;
   }
 
-  /** Only persist the pre-change state *after* enable succeeds, so a failed enable cannot corrupt the restore path. */
+  /**
+   * Persists the pre-change state captured *before* any mutation. Committing
+   * early (before enable runs) is safe because the snapshot always describes
+   * the original settings; restoring it after a failed/interrupted enable
+   * simply returns the system to that original state.
+   */
   private commitSnapshot(snapshot: ProxySnapshot): void {
     // If a previous snapshot is still active (e.g. enable called twice without
     // a disable between), preserve the earliest known-good pre-enable state.

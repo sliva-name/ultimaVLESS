@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, RefreshCw, AlertTriangle, X } from 'lucide-react';
 import { useUpdateStatus } from '@/renderer/hooks/useUpdateStatus';
@@ -11,6 +11,7 @@ import { useUpdateStatus } from '@/renderer/hooks/useUpdateStatus';
 export const UpdateBanner: React.FC = () => {
   const { t } = useTranslation();
   const { status, dismissed, dismiss, installUpdate } = useUpdateStatus();
+  const [installError, setInstallError] = useState<string | null>(null);
 
   if (!status || dismissed) return null;
   if (
@@ -23,7 +24,11 @@ export const UpdateBanner: React.FC = () => {
   }
 
   const handleInstall = () => {
-    void installUpdate();
+    setInstallError(null);
+    installUpdate().catch((error: unknown) => {
+      console.error('Failed to install update', error);
+      setInstallError(error instanceof Error ? error.message : String(error));
+    });
   };
 
   let icon: React.ReactNode;
@@ -61,6 +66,12 @@ export const UpdateBanner: React.FC = () => {
     tone = 'info';
     icon = <Download className="w-4 h-4" />;
     text = t('status.update.available', { version: status.version ?? '' });
+  }
+
+  if (installError) {
+    tone = 'error';
+    icon = <AlertTriangle className="w-4 h-4" />;
+    text = `${t('status.update.installFailed')}: ${installError}`;
   }
 
   const toneClass =

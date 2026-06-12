@@ -30,9 +30,11 @@ export function registerUpdateHandlers({
 
   ipcMain.handle(
     IPC_INVOKE_CHANNELS.installUpdate,
-    (event: IpcMainInvokeEvent) => {
+    async (event: IpcMainInvokeEvent) => {
       assertTrustedSender(event);
-      deps.appUpdaterService.quitAndInstall();
+      // Performs a graceful network-stack shutdown first, then hands the quit
+      // over to electron-updater so the downloaded update gets installed.
+      await deps.appUpdaterService.quitAndInstall();
       return true;
     },
   );

@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
 
 export interface CommandOutput {
   code: number | null;
@@ -11,6 +11,32 @@ export interface RunProcessOptions {
   windowsHide?: boolean;
 }
 
+/**
+ * Kills a timed-out child. On Windows `child.kill('SIGTERM')` only terminates
+ * the direct child and is unreliable for console hosts — grandchildren (e.g.
+ * processes spawned by PowerShell) survive and can keep mutating system state
+ * after the caller has already started rolling back. `taskkill /T /F` kills
+ * the whole process tree; plain kill() remains as a fallback.
+ */
+function killProcessTree(child: ChildProcess): void {
+  if (process.platform === 'win32' && child.pid != null) {
+    try {
+      const killer = spawn(
+        'taskkill',
+        ['/pid', String(child.pid), '/T', '/F'],
+        { windowsHide: true },
+      );
+      killer.on('error', () => {
+        child.kill('SIGTERM');
+      });
+      return;
+    } catch {
+      // fall through to the generic kill below
+    }
+  }
+  child.kill('SIGTERM');
+}
+
 export function runProcessWithOutput(
   command: string,
   args: string[],
@@ -19,7 +45,7 @@ export function runProcessWithOutput(
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { windowsHide: options.windowsHide });
     const timeout = setTimeout(() => {
-      child.kill('SIGTERM');
+      killProcessTree(child);
       reject(
         new Error(
           `${command} timed out after ${Math.floor(options.timeoutMs / 1000)}s`,

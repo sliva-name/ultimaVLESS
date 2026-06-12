@@ -79,7 +79,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const el = container.querySelector(
       `[data-server-uuid="${selectedServer.uuid}"]`,
     );
-    if (el && typeof el.scrollIntoView === 'function') {
+    if (!el) {
+      // Offscreen rows of a virtualized group are not in the DOM; the
+      // virtualized list scrolls to the selected server on its own.
+      return;
+    }
+    if (el.closest('[data-testid="virtualized-server-list"]')) {
+      // Virtualized lists manage their own scroll position — don't fight it.
+      didScrollToSelectedRef.current = true;
+      lastScrolledUuidRef.current = selectedServer.uuid;
+      return;
+    }
+    if (typeof el.scrollIntoView === 'function') {
       el.scrollIntoView({ block: 'nearest' });
       didScrollToSelectedRef.current = true;
       lastScrolledUuidRef.current = selectedServer.uuid;

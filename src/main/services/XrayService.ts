@@ -262,6 +262,14 @@ export class XrayService extends EventEmitter {
       }
     } catch (error) {
       if (this.process === spawnedProcess) {
+        // Kill the child before dropping the reference, otherwise a startup
+        // failure leaks a live xray process holding the local proxy ports.
+        this.expectedExitProcesses.add(spawnedProcess);
+        try {
+          spawnedProcess.kill();
+        } catch {
+          // Process already exited or never spawned.
+        }
         this.process = null;
       }
       if (this.healthStatus.state === 'starting') {

@@ -33,9 +33,15 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
   collapsible = true,
   defaultExpanded,
 }) => {
+  // Always start expanded when the group holds the selected server, even if
+  // it is large enough to be collapsed by default.
+  const containsSelectedServer =
+    selectedServer != null &&
+    servers.some((server) => server.uuid === selectedServer.uuid);
   const initialExpanded =
     defaultExpanded ??
-    servers.length <= SERVER_LIST_VIRTUALIZE_THRESHOLD;
+    (containsSelectedServer ||
+      servers.length <= SERVER_LIST_VIRTUALIZE_THRESHOLD);
   const [expanded, setExpanded] = useState(initialExpanded);
   const toggle = useCallback(() => setExpanded((v) => !v), []);
 
@@ -101,7 +107,6 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
 
       {isOpen && (
         <VirtualizedServerList
-          key={`${title}-${servers.length}-${servers[0]?.uuid ?? 'none'}`}
           servers={servers}
           selectedServer={selectedServer}
           isConnected={isConnected}

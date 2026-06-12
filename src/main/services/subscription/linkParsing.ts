@@ -139,7 +139,8 @@ function parseVlessLink(
 
     const uuid = safeDecodeComponent(parsedUrl.username || '');
     const address = parsedUrl.hostname || '';
-    const port = Number(parsedUrl.port);
+    // `vless://uuid@host?...` without an explicit port defaults to 443.
+    const port = parsedUrl.port ? Number(parsedUrl.port) : 443;
     if (
       !uuid ||
       !address ||
@@ -168,6 +169,7 @@ function parseVlessLink(
         'grpc',
         'quic',
         'xhttp',
+        'splithttp',
         'httpupgrade',
       ].includes(typeValue)
         ? typeValue

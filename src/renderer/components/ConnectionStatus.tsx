@@ -8,6 +8,7 @@ import {
   Zap,
   CheckCircle2,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import { ConnectionSessionStats } from './ConnectionSessionStats';
 import { useRenderPerf } from '@/renderer/hooks/useRenderPerf';
@@ -17,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 
 interface ConnectionStatusProps {
   isConnected: boolean;
+  isSwitching?: boolean;
   isBusy?: boolean;
   selectedServer: VlessConfig | null;
   connectionError?: string | null;
@@ -41,6 +43,7 @@ function getProtocolLabel(server: VlessConfig): string {
 
 export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
   isConnected,
+  isSwitching = false,
   isBusy = false,
   selectedServer,
   connectionError,
@@ -59,6 +62,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
 
   useRenderPerf('ConnectionStatus', [
     isConnected,
+    isSwitching,
     isBusy,
     selectedServer?.uuid,
     connectionError,
@@ -88,7 +92,16 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           {/* Status Text */}
           <div className="mb-4 sm:mb-6 text-center animate-[fadeIn_0.5s_ease-out] w-full">
             <div className="flex flex-nowrap items-center justify-center gap-2 sm:gap-3 mb-3 sm:mb-4 min-h-[3.5rem] sm:min-h-[4.5rem] md:min-h-[5rem]">
-              {isConnected ? (
+              {isSwitching ? (
+                <>
+                  <div className="shrink-0 p-2 sm:p-3 rounded-xl bg-amber-500/20 border border-amber-500/30 shadow-lg shadow-amber-500/20">
+                    <RefreshCw className="w-6 h-6 sm:w-8 sm:h-8 text-amber-400 animate-spin" />
+                  </div>
+                  <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.1] pb-1 bg-linear-to-r from-amber-400 to-yellow-500 bg-clip-text text-transparent">
+                    {t('status.switching')}
+                  </div>
+                </>
+              ) : isConnected ? (
                 <>
                   <div className="shrink-0 p-2 sm:p-3 rounded-xl bg-green-500/20 border border-green-500/30 shadow-lg shadow-green-500/20">
                     <CheckCircle2 className="w-6 h-6 sm:w-8 sm:h-8 text-green-400" />
@@ -109,15 +122,19 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
               )}
             </div>
             <p className="text-gray-400 text-base sm:text-lg font-medium px-2 min-h-[1.75rem] sm:min-h-[2rem]">
-              {isBusy
-                ? busyLabel
-                : isConnected
-                  ? t('status.connectedTo', {
-                      name: selectedServer?.name || 'server',
-                    })
-                  : selectedServer
-                    ? t('status.readyToConnect', { name: selectedServer.name })
-                    : t('status.selectServer')}
+              {isSwitching
+                ? t('status.switchingServer')
+                : isBusy
+                  ? busyLabel
+                  : isConnected
+                    ? t('status.connectedTo', {
+                        name: selectedServer?.name || 'server',
+                      })
+                    : selectedServer
+                      ? t('status.readyToConnect', {
+                          name: selectedServer.name,
+                        })
+                      : t('status.selectServer')}
             </p>
           </div>
 
@@ -242,13 +259,22 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           {/* Connection Status Indicator — reserved slot keeps the layout
             from jumping when the pill appears on connect. */}
           <div className="mt-5 sm:mt-6 min-h-[2.25rem] flex items-center justify-center">
-            {isConnected && (
-              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 border border-green-500/30 animate-[fadeIn_0.5s_ease-out]">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-lg shadow-green-500/50" />
-                <span className="text-sm text-green-400 font-medium">
-                  {t('status.connectionActive')}
+            {isSwitching ? (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/30 animate-[fadeIn_0.5s_ease-out]">
+                <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                <span className="text-sm text-amber-300 font-medium">
+                  {t('status.switchingServer')}
                 </span>
               </div>
+            ) : (
+              isConnected && (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 border border-green-500/30 animate-[fadeIn_0.5s_ease-out]">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-lg shadow-green-500/50" />
+                  <span className="text-sm text-green-400 font-medium">
+                    {t('status.connectionActive')}
+                  </span>
+                </div>
+              )
             )}
           </div>
 

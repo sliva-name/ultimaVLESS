@@ -68,7 +68,12 @@ export function createConnectionRecovery(
           deps.connectionMonitorService.handleUnexpectedDisconnect(message);
         }
         snapshotPublisher.push('recovery');
-        await deps.connectionController.cleanupAfterFailure();
+        // When auto-switch is scheduled it owns the runtime lifecycle;
+        // tearing the stack down here would leave the monitor "connected"
+        // while proxy/TUN are already gone.
+        if (!autoSwitchScheduled) {
+          await deps.connectionController.cleanupAfterFailure();
+        }
       } catch (error) {
         logger.error(
           'IPC',

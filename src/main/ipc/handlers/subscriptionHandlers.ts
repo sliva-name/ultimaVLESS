@@ -54,9 +54,18 @@ export function registerSubscriptionHandlers({
 
       const manualLinks = deps.configService.getManualLinksInput();
       const result = await queueRefreshAllSubscriptions(manualLinks);
-      restartAutoRefreshTimer();
 
-      if (result.configCount === 0) {
+      // Roll back when the new subscription produced no configs at all —
+      // keeping a dead subscription would only spam auto-refresh with errors.
+      const newSubscriptionServers = deps.configService
+        .getServers()
+        .filter((s) => s.subscriptionId === sub.id);
+      if (newSubscriptionServers.length === 0) {
+        deps.configService.removeSubscription(sub.id);
+        sendToRenderer(
+          IPC_EVENT_CHANNELS.appSnapshotChanged,
+        );
+        restartAutoRefreshTimer();
         return {
           ok: false,
           configCount: 0,
@@ -66,6 +75,8 @@ export function registerSubscriptionHandlers({
           subscriptionId: sub.id,
         } as AddSubscriptionResult & { subscriptionId: string };
       }
+
+      restartAutoRefreshTimer();
       return {
         ok: true,
         configCount: result.configCount,

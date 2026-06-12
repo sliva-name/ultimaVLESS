@@ -17,6 +17,28 @@ describe('subscription parsing', () => {
     });
   });
 
+  it('defaults to port 443 when a VLESS link omits the port', () => {
+    const configs = parseDirectLinksFromText(
+      'vless://user-id@example.com?security=tls&sni=example.com#NoPort',
+    );
+
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({
+      address: 'example.com',
+      port: 443,
+      name: 'NoPort',
+    });
+  });
+
+  it('maps type=splithttp transport from VLESS links', () => {
+    const configs = parseDirectLinksFromText(
+      'vless://user-id@example.com:443?type=splithttp&security=tls#SplitHttp',
+    );
+
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({ type: 'splithttp' });
+  });
+
   it('keeps raw JSON configs available for the compiler path', () => {
     const [config] = parseJsonConfigs([
       {

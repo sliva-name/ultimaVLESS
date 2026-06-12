@@ -41,7 +41,21 @@ export async function runPowerShell(
   if (output.code === 0) {
     return output.stdout;
   }
-  if (options.allowNonZeroExit && output.stderr.trim().length === 0) {
+  if (options.allowNonZeroExit) {
+    // PowerShell frequently emits warnings/progress noise on stderr even when
+    // the command produced a usable result, so stderr must not gate stdout.
+    const stderrText = output.stderr.trim();
+    if (stderrText.length > 0) {
+      logger.warn(
+        'TunRouteService',
+        'PowerShell exited non-zero with stderr (tolerated)',
+        {
+          code: output.code,
+          stderr: stderrText.slice(0, 500),
+          scriptPreview: scriptPreview(script),
+        },
+      );
+    }
     return output.stdout;
   }
 

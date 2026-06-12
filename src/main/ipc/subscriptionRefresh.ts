@@ -50,6 +50,15 @@ interface SubscriptionRefreshManagerDeps {
 const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const MAX_CONCURRENT_SUBSCRIPTION_FETCHES = 4;
 
+const activeAutoRefreshStoppers = new Set<() => void>();
+
+/** Stops the auto-refresh timer of every created manager (app shutdown). */
+export function stopAllSubscriptionAutoRefreshTimers(): void {
+  for (const stop of activeAutoRefreshStoppers) {
+    stop();
+  }
+}
+
 export function createSubscriptionRefreshManager(
   deps: SubscriptionRefreshManagerDeps,
 ) {
@@ -252,17 +261,34 @@ export function createSubscriptionRefreshManager(
       return { ...config, ping: null, pingStale: false };
     });
 
+    // The enabled list was captured when the refresh started; the user may
+    // have disabled or deleted a subscription while fetches were in flight.
+    // Re-read the current subscriptions and drop configs that belong to
+    // subscriptions that are no longer enabled/present.
+    const enabledIdsNow = new Set(
+      deps.configService
+        .getSubscriptions()
+        .filter((s) => s.enabled)
+        .map((s) => s.id),
+    );
+    const currentConfigsWithPing = configsWithPing.filter(
+      (cfg) =>
+        cfg.source !== 'subscription' ||
+        !cfg.subscriptionId ||
+        enabledIdsNow.has(cfg.subscriptionId),
+    );
+
     const monitorStatus = deps.connectionMonitorService.getStatus();
     const selectedIdBeforeRefresh = deps.configService.getSelectedServerId();
     const effectiveConfigs = preserveActiveServerIfNeeded(
-      configsWithPing,
+      currentConfigsWithPing,
       existingServers,
       monitorStatus,
       deps.xrayService.isRunning(),
       selectedIdBeforeRefresh,
     );
     if (
-      effectiveConfigs.length !== configsWithPing.length &&
+      effectiveConfigs.length !== currentConfigsWithPing.length &&
       monitorStatus.currentServer
     ) {
       logger.warn('IPC', 'Preserving active server during background refresh', {
@@ -395,6 +421,8 @@ export function createSubscriptionRefreshManager(
       hasManualLinks: !!manualLinks.trim(),
     });
   };
+
+  activeAutoRefreshStoppers.add(stopAutoRefreshTimer);
 
   return {
     queueRefreshAllSubscriptions,

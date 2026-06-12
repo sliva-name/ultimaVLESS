@@ -42,6 +42,7 @@ export function registerHandlers({
   registerSettingsHandlers({
     deps,
     assertTrustedSender,
+    sendToRenderer,
   });
 
   registerAppSnapshotHandler({

@@ -72,7 +72,7 @@ function Disable-LocalhostProxyFallback {
   $enabled = [int]($props.ProxyEnable | Select-Object -First 1)
   $server = [string]($props.ProxyServer | Select-Object -First 1)
   $changed = $false
-  if ($enabled -eq 1 -and $server -match '127\.0\.0\.1') {
+  if ($enabled -eq 1 -and $server -match '(?i)(127\.0\.0\.1|localhost|\[::1\])') {
     Set-ItemProperty -Path $reg -Name ProxyEnable -Value 0
     Refresh-InternetSettings
     Write-RecoveryLog 'Disabled orphaned localhost proxy (fallback)'
@@ -191,21 +191,30 @@ function removeLegacyCmdLauncher(dir: string): void {
   }
 }
 
+/**
+ * Builds the windowless .vbs launcher source. VBScript string literals escape
+ * an embedded double quote by doubling it (`""`), so the quoted PowerShell
+ * script path stays a single argument inside the `sh.Run` string literal.
+ * Exported for unit tests that verify the generated VBScript is syntactically
+ * valid.
+ */
+export function buildRecoveryVbsContent(scriptPath: string): string {
+  const psCommand =
+    `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ` +
+    `-File ""${scriptPath}""`;
+  return [
+    'Set sh = CreateObject("WScript.Shell")',
+    `sh.Run "${psCommand}", 0, False`,
+    '',
+  ].join('\r\n');
+}
+
 export function writeRecoveryLauncherFiles(): string {
   const dir = ensureRecoveryDir();
   const scriptPath = path.join(dir, RECOVERY_SCRIPT_FILE);
   const vbsPath = path.join(dir, RECOVERY_VBS_FILE);
   fs.writeFileSync(scriptPath, RECOVERY_SCRIPT, 'utf8');
-  // VBScript string literals escape an embedded double quote by doubling it.
-  const psCommand =
-    `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ` +
-    `-File ""${scriptPath}""`;
-  const vbs = [
-    "Set sh = CreateObject(\"WScript.Shell\")",
-    `sh.Run "${psCommand}", 0, False`,
-    '',
-  ].join('\r\n');
-  fs.writeFileSync(vbsPath, vbs, 'utf8');
+  fs.writeFileSync(vbsPath, buildRecoveryVbsContent(scriptPath), 'utf8');
   removeLegacyCmdLauncher(dir);
   return vbsPath;
 }

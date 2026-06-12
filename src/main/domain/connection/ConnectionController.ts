@@ -209,10 +209,16 @@ export class ConnectionController extends EventEmitter {
     const mode = this.deps.configService.getConnectionMode();
     const monitorStatus = this.deps.connectionMonitorService.getStatus();
 
+    // Skip only when the stack is verifiably alive: a degraded/failed health
+    // state (or unreachable local proxy) means proxy/TUN may have been torn
+    // down by a failure cleanup, so a manual connect must do a full reconnect.
     if (
       this.deps.coreService.isRunning() &&
       monitorStatus.isConnected &&
-      monitorStatus.currentServer?.uuid === server.uuid
+      monitorStatus.currentServer?.uuid === server.uuid &&
+      (monitorStatus.lastHealthState === 'healthy' ||
+        monitorStatus.lastHealthState === 'idle') &&
+      monitorStatus.localProxyReachable !== false
     ) {
       logger.info('ConnectionController', 'connect skipped: already connected', {
         serverId: server.uuid.substring(0, 8),
@@ -239,10 +245,12 @@ export class ConnectionController extends EventEmitter {
   public disconnect(): Promise<void> {
     return this.enqueue('disconnecting', async () => {
       this.deps.configService.clearPendingTunReconnect();
-      await this.teardown.reset({ stopXray: true });
+      // Stop monitoring before teardown: if teardown throws, the monitor must
+      // not keep reporting "connected" for a stack that is being dismantled.
       this.deps.connectionMonitorService.stopMonitoring({
         message: 'Disconnected',
       });
+      await this.teardown.reset({ stopXray: true });
     });
   }
 
