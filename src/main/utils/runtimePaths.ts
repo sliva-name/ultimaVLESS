@@ -20,6 +20,14 @@ export function getAppIconPath(
   return path.join(resourcesPath, 'logo-256x256.png');
 }
 
+/**
+ * Windows toast notifications only render PNG/JPEG/GIF images — `.ico` is
+ * silently dropped by the Toast API, so notifications must use the PNG.
+ */
+export function getNotificationIconPath(): string {
+  return path.join(getBinResourcesPath(), 'logo-256x256.png');
+}
+
 export function getRendererEntryPath(): string {
   return path.join(__dirname, '../../dist/index.html');
 }
