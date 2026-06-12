@@ -77,10 +77,10 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       console.error('Failed to copy logs', error);
-      setCopyError('Failed to copy logs to clipboard.');
+      setCopyError(t('settings.diagnostics.copyLogsFailed'));
       setCopied(false);
     }
-  }, []);
+  }, [t]);
 
   const handleOpenFolder = useCallback(() => {
     void window.electronAPI.openLogFolder().catch((error) => {

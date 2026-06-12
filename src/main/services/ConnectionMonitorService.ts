@@ -577,10 +577,20 @@ export class ConnectionMonitorService extends EventEmitter {
       if (isStale()) {
         return;
       }
-      this.status.lastHealthState = 'failed';
-      this.status.lastHealthFailureReason =
+      const failureReason =
         error instanceof Error ? error.message : String(error);
+      this.status.lastHealthState = 'failed';
+      this.status.lastHealthFailureReason = failureReason;
       logger.error('ConnectionMonitorService', 'Health check failed', error);
+      // Repeated probe exceptions must feed the same degradation accounting
+      // as failed probes, otherwise the session stays "connected" forever.
+      this.tunnelProbeFailStreak += 1;
+      if (
+        this.tunnelProbeFailStreak ===
+        ConnectionMonitorService.TUNNEL_PROBE_STREAK_BEFORE_NOTIFY
+      ) {
+        this.recordError(failureReason, this.status.currentServer);
+      }
     } finally {
       this.healthCheckInFlight = false;
     }
@@ -681,6 +691,9 @@ export class ConnectionMonitorService extends EventEmitter {
         'ConnectionMonitorService',
         'No servers available for switching',
       );
+      await this.abortAutoSwitch(
+        'Auto-switch failed: no servers available for switching',
+      );
       return;
     }
 
@@ -688,6 +701,9 @@ export class ConnectionMonitorService extends EventEmitter {
       logger.warn(
         'ConnectionMonitorService',
         'All servers appear to be blocked',
+      );
+      await this.abortAutoSwitch(
+        'Auto-switch failed: all servers appear to be blocked',
       );
       return;
     }
@@ -699,6 +715,9 @@ export class ConnectionMonitorService extends EventEmitter {
         {
           server: selection.server.name,
         },
+      );
+      await this.abortAutoSwitch(
+        'Auto-switch failed: no alternative servers available',
       );
       return;
     }
@@ -744,22 +763,46 @@ export class ConnectionMonitorService extends EventEmitter {
       }
 
       const errorMessage = 'Auto-switch failed: no working servers found';
-      this.status.lastError = errorMessage;
-      this.status.lastHealthState = 'failed';
-      this.status.lastHealthFailureReason = errorMessage;
       logger.error('ConnectionMonitorService', errorMessage, {
         triedCandidates: candidates.length,
         blockedServers: this.status.blockedServers.size,
       });
-      await this.cleanupRuntimeAfterFailure();
-      this.stopMonitoring({
-        message: errorMessage,
-        preserveLastError: true,
-      });
+      await this.abortAutoSwitch(errorMessage);
     } finally {
       this.switchInProgress = false;
       this.emit('switch-operation-finished');
     }
+  }
+
+  /**
+   * Terminates the monitoring session when auto-switch reaches a dead end
+   * (no candidates, all blocked, or every candidate failed). Tears the
+   * network stack down and stops monitoring so the UI never stays
+   * "connected" without a working network.
+   */
+  private async abortAutoSwitch(errorMessage: string): Promise<void> {
+    this.status.lastError = errorMessage;
+    this.status.lastHealthState = 'failed';
+    this.status.lastHealthFailureReason = errorMessage;
+    this.emit('error', {
+      type: 'error',
+      server: this.status.currentServer,
+      error: errorMessage,
+      message: `Connection error: ${errorMessage}`,
+    } as ConnectionEvent);
+    try {
+      await this.cleanupRuntimeAfterFailure();
+    } catch (cleanupError) {
+      logger.error(
+        'ConnectionMonitorService',
+        'Cleanup after auto-switch dead end failed',
+        cleanupError,
+      );
+    }
+    this.stopMonitoring({
+      message: errorMessage,
+      preserveLastError: true,
+    });
   }
 
   private recordAutoSwitchCandidateFailure(

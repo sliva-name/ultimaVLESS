@@ -127,7 +127,12 @@ export const VirtualizedServerList: React.FC<VirtualizedServerListProps> = ({
     const rowHeight = SERVER_ITEM_ESTIMATED_HEIGHT_PX;
     const visibleRows =
       Math.ceil(effectiveViewportHeight / rowHeight) + OVERSCAN_ROWS * 2;
-    const firstVisible = Math.floor(scrollTop / rowHeight);
+    // Clamp against stale scrollTop after the list shrinks so the visible
+    // window never ends up entirely past the end of the list.
+    const firstVisible = Math.min(
+      Math.floor(scrollTop / rowHeight),
+      Math.max(0, servers.length - 1),
+    );
     const start = Math.max(0, firstVisible - OVERSCAN_ROWS);
     const end = Math.min(servers.length, start + Math.max(visibleRows, 1));
 
@@ -176,17 +181,22 @@ export const VirtualizedServerList: React.FC<VirtualizedServerListProps> = ({
     >
       <div style={{ height: totalHeight, position: 'relative' }}>
         <div style={{ height: topSpacer }} aria-hidden />
-        <div className="space-y-2">
-          {visibleServers.map((server) => (
+        {/* No `space-y-*` here: each row carries its own fixed height with a
+            padding-bottom gap so windowing math matches the rendered DOM. */}
+        {visibleServers.map((server) => (
+          <div
+            key={server.uuid}
+            style={{ height: SERVER_ITEM_ESTIMATED_HEIGHT_PX }}
+            className="pb-2"
+          >
             <ServerItem
-              key={server.uuid}
               server={server}
               isSelected={selectedServerUuid === server.uuid}
               isConnected={isConnected}
               onSelect={onSelectServer}
             />
-          ))}
-        </div>
+          </div>
+        ))}
         <div style={{ height: bottomSpacer }} aria-hidden />
       </div>
     </div>

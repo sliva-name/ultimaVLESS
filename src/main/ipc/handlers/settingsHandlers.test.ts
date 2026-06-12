@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { IPC_INVOKE_CHANNELS } from '@/shared/ipc';
+import { IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '@/shared/ipc';
 import { registerSettingsHandlers } from './settingsHandlers';
 
 const ipcHandleMock = vi.hoisted(() => vi.fn());
@@ -20,12 +20,14 @@ describe('settings IPC handlers', () => {
   });
 
   function registerWith(overrides: Partial<any> = {}) {
+    const sendToRenderer = vi.fn();
     const deps = {
       shell: { openExternal: vi.fn() },
       configService: {
         setConnectionMode: vi.fn(),
         getConnectionMode: vi.fn(() => 'proxy'),
         setSelectedServerId: vi.fn(),
+        getServers: vi.fn(() => [{ uuid: 'existing-server' }]),
         getPerformanceSettings: vi.fn(),
         setPerformanceSettings: vi.fn(),
       },
@@ -47,8 +49,9 @@ describe('settings IPC handlers', () => {
     registerSettingsHandlers({
       deps: deps as any,
       assertTrustedSender: vi.fn(),
+      sendToRenderer,
     });
-    return deps;
+    return { ...deps, sendToRenderer };
   }
 
   it('refuses connection mode changes while Xray is running', () => {
@@ -57,6 +60,32 @@ describe('settings IPC handlers', () => {
 
     expect(() => handler({} as never, 'tun')).toThrow(
       'Disconnect before changing connection mode.',
+    );
+  });
+
+  it('publishes a snapshot after a successful connection mode change', () => {
+    const deps = registerWith();
+    const handler = handlers.get(IPC_INVOKE_CHANNELS.setConnectionMode)!;
+
+    expect(handler({} as never, 'tun')).toBe(true);
+    expect(deps.configService.setConnectionMode).toHaveBeenCalledWith('tun');
+    expect(deps.sendToRenderer).toHaveBeenCalledWith(
+      IPC_EVENT_CHANNELS.appSnapshotChanged,
+    );
+  });
+
+  it('rejects selecting a server id that does not exist', () => {
+    const deps = registerWith();
+    const handler = handlers.get(IPC_INVOKE_CHANNELS.setSelectedServerId)!;
+
+    expect(() => handler({} as never, 'missing-server')).toThrow(
+      /not found/i,
+    );
+    expect(deps.configService.setSelectedServerId).not.toHaveBeenCalled();
+
+    expect(handler({} as never, 'existing-server')).toBe(true);
+    expect(deps.configService.setSelectedServerId).toHaveBeenCalledWith(
+      'existing-server',
     );
   });
 

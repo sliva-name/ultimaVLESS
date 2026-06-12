@@ -54,13 +54,24 @@ function registerPowerMonitor(): void {
     logger.info('Main', 'System resumed; forcing connection health check', {
       trigger,
     });
-    void import('./services/ConnectionMonitorService')
-      .then(({ connectionMonitorService }) => {
+    void (async () => {
+      // Re-pin TUN host routes first: after sleep the default gateway may have
+      // changed, and probing over stale routes would misreport a dead tunnel.
+      try {
+        const { tunRouteService } = await import('./services/TunRouteService');
+        await tunRouteService.reapplyRoutesAfterResume();
+      } catch (error) {
+        logger.warn('Main', 'Failed to reapply TUN routes after resume', error);
+      }
+      try {
+        const { connectionMonitorService } = await import(
+          './services/ConnectionMonitorService'
+        );
         connectionMonitorService.triggerImmediateHealthCheck(trigger);
-      })
-      .catch((error) => {
+      } catch (error) {
         logger.warn('Main', 'Failed to handle resume health check', error);
-      });
+      }
+    })();
   };
 
   powerMonitor.on('resume', () => onWake('resume'));
@@ -81,6 +92,16 @@ async function recoverOrphanedNetworkState(): Promise<void> {
     logger.error(
       'Main',
       'Failed to recover orphaned system proxy on startup',
+      error,
+    );
+  }
+  try {
+    const { tunRouteService } = await import('./services/TunRouteService');
+    await tunRouteService.recoverOrphanedRoutes();
+  } catch (error) {
+    logger.error(
+      'Main',
+      'Failed to recover orphaned TUN routes on startup',
       error,
     );
   } finally {
@@ -130,6 +151,10 @@ if (process.platform === 'win32' && app.isPackaged) {
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let isShuttingDown = false;
+/** Set when electron-updater is driving the quit; before-quit must not intercept it. */
+let isQuittingForUpdate = false;
+/** Full initial load (subscription refresh, timers) must run once per app session. */
+let initialStateLoadedOnce = false;
 const startupPerfOriginMs = performance.now();
 const SHUTDOWN_TIMEOUT_MS = 15000;
 /** Delay non-critical background work until after the first window paint. */
@@ -153,8 +178,12 @@ if (!gotSingleInstanceLock) {
   app.quit();
 } else {
   app.on('second-instance', async () => {
-    await ensureTray();
-    await showMainWindow('second-instance');
+    try {
+      await ensureTray();
+      await showMainWindow('second-instance');
+    } catch (error) {
+      logger.error('Main', 'Failed to handle second-instance', error);
+    }
   });
 }
 
@@ -309,6 +338,21 @@ async function ensureTray() {
     () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
   );
   logStartupStep('Tray initialized');
+}
+
+async function resendStateToRenderer(window: BrowserWindow): Promise<void> {
+  const [{ buildAppSnapshot }, { createIpcDependencies }, { IPC_EVENT_CHANNELS }] =
+    await Promise.all([
+      import('./ipc/appSnapshot'),
+      import('./ipc/dependencies'),
+      import('@/shared/ipc'),
+    ]);
+  if (!window.isDestroyed()) {
+    window.webContents.send(
+      IPC_EVENT_CHANNELS.appSnapshotChanged,
+      buildAppSnapshot(createIpcDependencies()),
+    );
+  }
 }
 
 async function createWindow() {
@@ -508,8 +552,19 @@ async function createWindow() {
     if (mainWindow === windowInstance && !windowInstance.isDestroyed()) {
       logStartupStep('Renderer did-finish-load');
       try {
-        await loadInitialState(windowInstance);
-        logStartupStep('Initial state loaded');
+        if (!initialStateLoadedOnce) {
+          initialStateLoadedOnce = true;
+          await loadInitialState(windowInstance);
+          logStartupStep('Initial state loaded');
+        } else {
+          // Window recovery / reload: only re-send current state to the
+          // renderer; the full initial load (subscription refresh, timers)
+          // already ran for this app session.
+          await resendStateToRenderer(windowInstance);
+          logStartupStep('State re-sent after reload');
+        }
+      } catch (error) {
+        logger.error('Main', 'Failed to load state after did-finish-load', error);
       } finally {
         appRecoveryService.completeRecovery();
       }
@@ -530,6 +585,11 @@ async function createWindow() {
 }
 
 void app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) {
+    // A second instance must not initialize window/tray/IPC; app.quit()
+    // has already been requested above.
+    return;
+  }
   initMainSentry();
   logStartupStep('App ready event');
   registerPowerMonitor();
@@ -588,13 +648,50 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', async () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    await createWindow();
+  try {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      await createWindow();
+    }
+    await ensureTray();
+  } catch (error) {
+    logger.error('Main', 'Failed to handle activate', error);
   }
-  await ensureTray();
 });
 
+async function performShutdown(): Promise<void> {
+  try {
+    await stopNetworkStack();
+  } catch (error) {
+    logger.error('Main', 'Failed to stop network stack on quit', error);
+  }
+  clearUnresponsiveRecoveryTimer();
+  if (deferredStartupWorkTimer) {
+    clearTimeout(deferredStartupWorkTimer);
+    deferredStartupWorkTimer = null;
+  }
+  try {
+    const { stopAllSubscriptionAutoRefreshTimers } = await import(
+      './ipc/subscriptionRefresh'
+    );
+    stopAllSubscriptionAutoRefreshTimers();
+  } catch (error) {
+    logger.warn('Main', 'Failed to stop subscription auto-refresh timers', error);
+  }
+  appUpdaterService.dispose();
+  trayService.dispose();
+  await logger.flush();
+  try {
+    await clearShutdownLogs();
+  } catch (error) {
+    console.error('Failed to clear shutdown logs', error);
+  }
+}
+
 app.on('before-quit', (event) => {
+  // When electron-updater drives the quit (quitAndInstall), our shutdown has
+  // already run via the prepare-for-quit hook; do not intercept the quit or
+  // the downloaded update would never be installed.
+  if (isQuittingForUpdate) return;
   if (isShuttingDown) return;
 
   event.preventDefault();
@@ -610,23 +707,30 @@ app.on('before-quit', (event) => {
 
   void (async () => {
     try {
-      await stopNetworkStack();
+      await performShutdown();
     } catch (error) {
-      logger.error('Main', 'Failed to stop network stack on quit', error);
-    } finally {
-      clearUnresponsiveRecoveryTimer();
-      if (deferredStartupWorkTimer) {
-        clearTimeout(deferredStartupWorkTimer);
-        deferredStartupWorkTimer = null;
-      }
-      await logger.flush();
-      try {
-        await clearShutdownLogs();
-      } catch (error) {
-        console.error('Failed to clear shutdown logs', error);
-      }
-      clearTimeout(forceExitTimeout);
-      app.exit(0);
+      logger.error('Main', 'Shutdown failed; exiting anyway', error);
     }
+    clearTimeout(forceExitTimeout);
+    if (appUpdaterService.hasDownloadedUpdate()) {
+      // Mirror autoInstallOnAppQuit: app.exit() would skip the updater's
+      // quit hook, so explicitly install the downloaded update. Its
+      // internal app.quit() passes straight through (flag above).
+      isQuittingForUpdate = true;
+      if (appUpdaterService.installDownloadedUpdate()) {
+        return;
+      }
+    }
+    app.exit(0);
   })();
+});
+
+// IPC install-update: gracefully tear down the network stack with the same
+// procedure as before-quit, then let electron-updater quit and install.
+appUpdaterService.setPrepareForQuit(async () => {
+  if (isShuttingDown) return;
+  isQuitting = true;
+  isShuttingDown = true;
+  isQuittingForUpdate = true;
+  await performShutdown();
 });

@@ -61,7 +61,10 @@ export const MANUAL_GROUP_COLOR: GroupColor = {
 
 /** Servers per group above which we window the DOM list. */
 export const SERVER_LIST_VIRTUALIZE_THRESHOLD = 40;
-/** Server card ~64px + `space-y-2` gap between items. */
+/**
+ * Fixed row pitch in the virtualized list: ~72px card + 8px gap rendered as
+ * `pb-2` on a fixed-height row wrapper, so spacer math matches the DOM.
+ */
 export const SERVER_ITEM_ESTIMATED_HEIGHT_PX = 80;
 
 /**

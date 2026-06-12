@@ -31,6 +31,7 @@ import {
   enableTunRoutingScript,
   getDefaultRouteScript,
   getTunInterfaceIndexScript,
+  reapplyHostRoutesScript,
   waitForTunInterfaceScript,
 } from './tunRoute/windowsScripts';
 import {
@@ -69,6 +70,8 @@ interface StaleRouteCleanupOptions {
  */
 export class TunRouteService {
   private addedRoutes: AddedRoute[] = [];
+  /** Default route used by the last successful enable; lets resume recovery detect gateway changes. */
+  private lastDefaultRoute: DefaultRouteInfo | null = null;
   private readonly platformAdapter: PlatformTunAdapter;
 
   constructor(private readonly platform: NodeJS.Platform = process.platform) {
@@ -183,12 +186,17 @@ export class TunRouteService {
         setupDurationMs: Date.now() - startedAt,
       });
     } catch (error) {
-      await this.disable();
+      // Full rollback: the enable script may have created host routes before
+      // failing (DEFAULT_FAIL / HOST_FAIL exits without bookkeeping), so the
+      // cleanup must also sweep known-server /32 host routes.
+      await this.disable({ includeKnownServerHostRoutes: true });
       throw error;
     }
   }
 
-  public async disable(): Promise<void> {
+  public async disable(
+    cleanupOptions: StaleRouteCleanupOptions = {},
+  ): Promise<void> {
     if (this.platform !== 'win32' || !this.usesWindowsPowerShellRouting()) {
       logger.info(
         'TunRouteService',
@@ -212,14 +220,98 @@ export class TunRouteService {
       }
     }
     this.addedRoutes = [];
+    this.lastDefaultRoute = null;
     try {
-      await this.cleanupStaleTunRoutes();
+      await this.cleanupStaleTunRoutes(cleanupOptions);
     } catch (error) {
       logger.warn('TunRouteService', 'Stale route cleanup failed', {
         error: error instanceof Error ? error.message : String(error),
       });
     }
     logger.info('TunRouteService', 'TUN routing disabled');
+  }
+
+  /**
+   * Removes orphaned TUN default/host routes left behind by a previous
+   * crashed or hard-killed session. Intended to be called once at app
+   * startup; safe no-op on platforms without PowerShell TUN routing.
+   */
+  public async recoverOrphanedRoutes(): Promise<void> {
+    if (this.platform !== 'win32' || !this.usesWindowsPowerShellRouting()) {
+      return;
+    }
+    try {
+      await this.cleanupStaleTunRoutes({ includeKnownServerHostRoutes: true });
+    } catch (error) {
+      logger.warn('TunRouteService', 'Orphaned route recovery failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Re-pins proxy host routes to the current default gateway after a system
+   * resume, when the gateway may have changed while TUN stayed active.
+   * No-op when TUN routing is inactive or the gateway is unchanged.
+   */
+  public async reapplyRoutesAfterResume(): Promise<void> {
+    if (this.platform !== 'win32' || !this.usesWindowsPowerShellRouting()) {
+      return;
+    }
+    const hostRoutes = this.addedRoutes.filter(
+      (route) => route.prefix != null && route.prefix !== '::/0',
+    );
+    if (hostRoutes.length === 0) return;
+    try {
+      const currentRoute = await this.waitForDefaultRoute();
+      if (!currentRoute) {
+        logger.warn(
+          'TunRouteService',
+          'No default route found after resume; keeping existing host routes',
+        );
+        return;
+      }
+      const previous = this.lastDefaultRoute;
+      if (
+        previous &&
+        previous.gateway === currentRoute.gateway &&
+        previous.interfaceIndex === currentRoute.interfaceIndex
+      ) {
+        return;
+      }
+      const prefixes = hostRoutes.map((route) => route.prefix as string);
+      const output = await this.runPowerShell(
+        reapplyHostRoutesScript({
+          defaultRouteInterfaceIndex: currentRoute.interfaceIndex,
+          gateway: currentRoute.gateway,
+          proxyHostPrefixes: prefixes,
+          hostRouteMetric: 1,
+        }),
+      );
+      for (const line of output.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('HOST_FAIL|')) {
+          logger.warn(
+            'TunRouteService',
+            'Failed to re-pin proxy host route after resume',
+            { detail: trimmed.slice('HOST_FAIL|'.length) },
+          );
+        }
+      }
+      for (const route of hostRoutes) {
+        route.interfaceIndex = currentRoute.interfaceIndex;
+      }
+      this.lastDefaultRoute = currentRoute;
+      logger.info('TunRouteService', 'Re-pinned host routes after resume', {
+        gateway: currentRoute.gateway,
+        interfaceIndex: currentRoute.interfaceIndex,
+        prefixes,
+      });
+    } catch (error) {
+      logger.warn('TunRouteService', 'Route reapply after resume failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   // ---- Unix helpers ---------------------------------------------------------
@@ -340,11 +432,19 @@ export class TunRouteService {
     try {
       const resolver = new dns.promises.Resolver();
       resolver.setServers(['8.8.8.8', '1.1.1.1']);
-      const result = await Promise.race<string[]>([
-        resolver.resolve4(address),
+      const ipv4 = await Promise.race<string[]>([
+        resolver.resolve4(address).catch(() => []),
         timeoutPromise,
       ]);
-      return [...new Set(result)];
+      if (ipv4.length > 0) {
+        return [...new Set(ipv4)];
+      }
+      // IPv6-only hosts have no A records; fall back to AAAA.
+      const ipv6 = await Promise.race<string[]>([
+        resolver.resolve6(address).catch(() => []),
+        timeoutPromise,
+      ]);
+      return [...new Set(ipv6)];
     } catch {
       return [];
     } finally {
@@ -389,6 +489,21 @@ export class TunRouteService {
       }),
     );
     this.recordEnabledRoutes(output, defaultRoute.interfaceIndex, tunInterfaceIndex);
+    this.lastDefaultRoute = defaultRoute;
+    // A missing host route means traffic to the VPN server itself would be
+    // swallowed by the TUN default route — the tunnel can never connect, so
+    // treat HOST_FAIL as fatal (the caller rolls back everything we created).
+    const hostFailures = output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('HOST_FAIL|'));
+    if (hostFailures.length > 0) {
+      throw new Error(
+        `Failed to pin proxy host route(s) to the physical gateway: ${hostFailures
+          .map((line) => line.slice('HOST_FAIL|'.length))
+          .join('; ')}`,
+      );
+    }
   }
 
   /** Parses the enable script's stdout markers into teardown bookkeeping. */

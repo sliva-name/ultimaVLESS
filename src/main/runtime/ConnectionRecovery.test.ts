@@ -35,6 +35,34 @@ describe('ConnectionRecovery', () => {
     expect(snapshotPublisher.push).toHaveBeenCalledWith('recovery');
   });
 
+  it('leaves the runtime alone when auto-switch is scheduled', async () => {
+    const server = makeServer({ uuid: 'active-server' });
+    const snapshotPublisher = { push: vi.fn() };
+    const deps = {
+      connectionMonitorService: {
+        getStatus: vi.fn(() => ({ isConnected: true, currentServer: server })),
+        handleCriticalConnectionFailure: vi.fn(() => true),
+        handleUnexpectedDisconnect: vi.fn(),
+      },
+      connectionController: {
+        cleanupAfterFailure: vi.fn(async () => undefined),
+      },
+    };
+
+    await createConnectionRecovery(
+      deps as any,
+      snapshotPublisher as any,
+    ).handleUnexpectedXrayExit('process exited');
+
+    expect(
+      deps.connectionMonitorService.handleUnexpectedDisconnect,
+    ).not.toHaveBeenCalled();
+    expect(
+      deps.connectionController.cleanupAfterFailure,
+    ).not.toHaveBeenCalled();
+    expect(snapshotPublisher.push).toHaveBeenCalledWith('recovery');
+  });
+
   it('records pending TUN reconnect failures when requested', async () => {
     const snapshotPublisher = { push: vi.fn() };
     const deps = {

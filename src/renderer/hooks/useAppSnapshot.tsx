@@ -48,6 +48,14 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
   const [isRefreshingPings, setIsRefreshingPings] = useState(false);
   const toggleInFlightRef = useRef(false);
   const pingRefreshInFlightRef = useRef(false);
+  // Optimistic server selection that hasn't been confirmed by main yet.
+  // Incoming snapshots (ping/traffic pushes, refreshes) may still carry the
+  // old selectedServerId, so the pending value is overlaid until confirmed.
+  const pendingSelectionRef = useRef<{ uuid: string; version: number } | null>(
+    null,
+  );
+  const selectVersionRef = useRef(0);
+  const refreshSeqRef = useRef(0);
 
   const selectedServer =
     snapshot.servers.find(
@@ -63,20 +71,35 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
   const isConnectionBusy = snapshot.session.busy;
   const connectionError = clientError ?? snapshot.session.lastError;
 
-  const refreshSnapshot = useCallback(async () => {
-    const nextSnapshot = await window.electronAPI.getAppSnapshot();
-    setSnapshot(nextSnapshot);
+  const applySnapshot = useCallback((nextSnapshot: AppSnapshot) => {
+    const pending = pendingSelectionRef.current;
+    setSnapshot(
+      pending
+        ? { ...nextSnapshot, selectedServerId: pending.uuid }
+        : nextSnapshot,
+    );
     if (!nextSnapshot.session.lastError) {
       setClientError(null);
     }
   }, []);
+
+  const refreshSnapshot = useCallback(async () => {
+    const seq = ++refreshSeqRef.current;
+    const nextSnapshot = await window.electronAPI.getAppSnapshot();
+    if (seq !== refreshSeqRef.current) {
+      // A newer refresh started while this one was in flight — drop the
+      // stale result so it can't overwrite fresher state.
+      return;
+    }
+    applySnapshot(nextSnapshot);
+  }, [applySnapshot]);
 
   useEffect(() => {
     let disposed = false;
     void window.electronAPI
       .getAppSnapshot()
       .then((nextSnapshot) => {
-        if (!disposed) setSnapshot(nextSnapshot);
+        if (!disposed) applySnapshot(nextSnapshot);
       })
       .catch((error) => {
         console.error('Failed to load app snapshot', error);
@@ -91,10 +114,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
 
     const removeSnapshotListener = window.electronAPI.onAppSnapshotChanged(
       (nextSnapshot) => {
-        setSnapshot(nextSnapshot);
-        if (!nextSnapshot.session.lastError) {
-          setClientError(null);
-        }
+        applySnapshot(nextSnapshot);
       },
     );
 
@@ -102,7 +122,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       disposed = true;
       removeSnapshotListener();
     };
-  }, []);
+  }, [applySnapshot]);
 
   const toggleConnection = useConnectionActions({
     selectedServer,
@@ -133,15 +153,32 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
 
   const selectServer = useCallback(
     (server: VlessConfig) => {
-      setSnapshot((current) => ({
-        ...current,
-        selectedServerId: server.uuid,
-      }));
+      const version = ++selectVersionRef.current;
+      pendingSelectionRef.current = { uuid: server.uuid, version };
+      let previousSelectedId: string | null = null;
+      setSnapshot((current) => {
+        previousSelectedId = current.selectedServerId;
+        return { ...current, selectedServerId: server.uuid };
+      });
       void window.electronAPI
         .setSelectedServerId(server.uuid)
-        .then(refreshSnapshot)
+        .then(() => {
+          if (pendingSelectionRef.current?.version === version) {
+            pendingSelectionRef.current = null;
+          }
+          return refreshSnapshot();
+        })
         .catch((error) => {
           console.error('Failed to persist selected server', error);
+          if (pendingSelectionRef.current?.version === version) {
+            // Roll back the optimistic selection unless a newer click
+            // already superseded it.
+            pendingSelectionRef.current = null;
+            setSnapshot((current) => ({
+              ...current,
+              selectedServerId: previousSelectedId,
+            }));
+          }
           setClientError('Failed to persist selected server');
         });
     },

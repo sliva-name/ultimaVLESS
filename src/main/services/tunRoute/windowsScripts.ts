@@ -275,6 +275,12 @@ export const enableTunRoutingScript = (
       # 3) Pin proxy server IPs to the physical gateway so tunnel traffic can escape.
       foreach ($p in $proxyPrefixes) {
         $existingHost = Get-NetRoute -DestinationPrefix $p -InterfaceIndex ${defaultRouteInterfaceIndex} -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($existingHost -and $existingHost.NextHop -ne "${gateway}") {
+          # Existing route points at a stale gateway (e.g. left over after
+          # sleep/crash): remove it so it gets recreated via the current one.
+          $existingHost | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+          $existingHost = $null
+        }
         if (-not $existingHost) {
           try {
             New-NetRoute -DestinationPrefix $p -NextHop "${gateway}" -InterfaceIndex ${defaultRouteInterfaceIndex} -RouteMetric ${hostRouteMetric} -ErrorAction Stop | Out-Null
@@ -318,6 +324,52 @@ export const enableTunRoutingScript = (
       if (-not ($v4done -and $v6done)) {
         Write-Output ("DEFAULT_FAIL|" + $lastErr)
         exit 1
+      }
+    `;
+};
+
+export interface ReapplyHostRoutesParams {
+  defaultRouteInterfaceIndex: number;
+  gateway: string;
+  /** Host prefixes (e.g. `203.0.113.10/32`) for the proxy server IPs. */
+  proxyHostPrefixes: string[];
+  hostRouteMetric: number;
+}
+
+/**
+ * Re-pins proxy host routes to the (possibly new) default gateway after a
+ * system resume. Removes our routes at the host metric for each prefix and
+ * recreates them via the supplied gateway/interface, reporting the same
+ * `HOST_CREATED|` / `HOST_FAIL|` stdout markers as the enable script.
+ */
+export const reapplyHostRoutesScript = (
+  params: ReapplyHostRoutesParams,
+): string => {
+  const {
+    defaultRouteInterfaceIndex,
+    gateway,
+    proxyHostPrefixes,
+    hostRouteMetric,
+  } = params;
+  validateInterfaceIndex(defaultRouteInterfaceIndex);
+  validateIpOrPrefix(gateway);
+  validateMetric(hostRouteMetric);
+  proxyHostPrefixes.forEach(validateIpOrPrefix);
+  const prefixesLiteral = proxyHostPrefixes
+    .map((prefix) => `'${prefix}'`)
+    .join(', ');
+  return `
+      $proxyPrefixes = @(${prefixesLiteral})
+      foreach ($p in $proxyPrefixes) {
+        Get-NetRoute -DestinationPrefix $p -ErrorAction SilentlyContinue |
+          Where-Object { $_.RouteMetric -eq ${hostRouteMetric} } |
+          Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+        try {
+          New-NetRoute -DestinationPrefix $p -NextHop "${gateway}" -InterfaceIndex ${defaultRouteInterfaceIndex} -RouteMetric ${hostRouteMetric} -ErrorAction Stop | Out-Null
+          Write-Output ("HOST_CREATED|" + $p)
+        } catch {
+          Write-Output ("HOST_FAIL|" + $p + "|" + $_.Exception.Message)
+        }
       }
     `;
 };

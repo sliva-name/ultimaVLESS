@@ -29,6 +29,7 @@ export class TrayService {
   private state: TrayState = { kind: 'disconnected' };
   private handlers: TrayHandlers | null = null;
   private mainWindowRef: (() => BrowserWindow | null) | null = null;
+  private languageChangedListener: (() => void) | null = null;
 
   public init(
     handlers: TrayHandlers,
@@ -49,14 +50,19 @@ export class TrayService {
     this.tray.on('double-click', () => handlers.onShow());
     this.applyState();
 
-    mainLocaleService.on('language-changed', () => {
+    this.languageChangedListener = () => {
       this.applyState();
-    });
+    };
+    mainLocaleService.on('language-changed', this.languageChangedListener);
 
     logger.info('TrayService', 'Tray initialized');
   }
 
   public dispose(): void {
+    if (this.languageChangedListener) {
+      mainLocaleService.off('language-changed', this.languageChangedListener);
+      this.languageChangedListener = null;
+    }
     if (this.tray) {
       this.tray.destroy();
       this.tray = null;

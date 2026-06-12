@@ -110,6 +110,18 @@ export class SubscriptionService {
     return extractSupportedLinks(input);
   }
 
+  /** True when the input is a single valid http(s) URL (a remote subscription). */
+  private isSingleHttpUrlInput(input: string): boolean {
+    const trimmed = input.trim();
+    if (!trimmed || /\s/.test(trimmed)) return false;
+    try {
+      const parsed = new URL(trimmed);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
   public parseDirectLinksFromText(input: string): VlessConfig[] {
     return parseDirectLinksFromText(input);
   }
@@ -139,14 +151,19 @@ export class SubscriptionService {
     // pre-validated IPs (out of scope here).
     const lookupResults = await lookupPublicHostAddresses(parsedUrl.hostname);
 
-    if (lookupResults) {
-      if (lookupResults.length === 0) {
-        throw new Error('Subscription URL did not resolve to any address');
-      }
-      for (const result of lookupResults) {
-        if (isPrivateOrLoopbackHost(result.address)) {
-          throw new Error('Subscription URL resolves to a private IP');
-        }
+    // Fail closed: when DNS resolution fails or times out we cannot prove the
+    // host is public, so refuse the fetch instead of skipping the SSRF check.
+    if (!lookupResults) {
+      throw new Error(
+        'Could not verify the subscription host address (DNS lookup failed or timed out)',
+      );
+    }
+    if (lookupResults.length === 0) {
+      throw new Error('Subscription URL did not resolve to any address');
+    }
+    for (const result of lookupResults) {
+      if (isPrivateOrLoopbackHost(result.address)) {
+        throw new Error('Subscription URL resolves to a private IP');
       }
     }
 
@@ -212,16 +229,22 @@ export class SubscriptionService {
   private async fetchAndParseDetailedUnchecked(
     url: string,
   ): Promise<{ configs: VlessConfig[]; extractedLinks: string[] }> {
-    const directLinksFromInput = this.extractSupportedLinksFromText(url);
-    if (directLinksFromInput.length > 0) {
-      const directConfigs = this.parseDirectLinksFromText(url);
-      logger.info('SubscriptionService', 'Detected direct link input', {
-        count: directConfigs.length,
-      });
-      return {
-        configs: directConfigs,
-        extractedLinks: directLinksFromInput,
-      };
+    // Treat the input as direct links only when it is NOT a single valid
+    // http(s) URL — a remote subscription URL may incidentally contain a
+    // substring matching the link regex (e.g. in a query parameter) and must
+    // still be fetched.
+    if (!this.isSingleHttpUrlInput(url)) {
+      const directLinksFromInput = this.extractSupportedLinksFromText(url);
+      if (directLinksFromInput.length > 0) {
+        const directConfigs = this.parseDirectLinksFromText(url);
+        logger.info('SubscriptionService', 'Detected direct link input', {
+          count: directConfigs.length,
+        });
+        return {
+          configs: directConfigs,
+          extractedLinks: directLinksFromInput,
+        };
+      }
     }
 
     const validatedUrl = await this.validateRemoteSubscriptionUrl(url);

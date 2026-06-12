@@ -47,8 +47,11 @@ export function registerRuntimeEvents({
     snapshotPublisher.push('connection');
   });
   deps.connectionController.removeAllListeners('state-changed');
-  deps.connectionController.on('state-changed', () => {
+  deps.connectionController.on('state-changed', (state) => {
     snapshotPublisher.push('connection');
+    if (state === 'connecting') {
+      trayService.setConnecting();
+    }
   });
 
   deps.trafficStatsService.removeAllListeners('snapshot');

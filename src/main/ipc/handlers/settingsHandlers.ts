@@ -1,17 +1,24 @@
 import { IpcMainInvokeEvent, ipcMain } from 'electron';
 import { normalizePerformanceSettings } from '@/shared/performanceSettings';
-import { IPC_INVOKE_CHANNELS, TunCapabilityStatus } from '@/shared/ipc';
+import {
+  IPC_EVENT_CHANNELS,
+  IPC_INVOKE_CHANNELS,
+  IpcEventChannel,
+  TunCapabilityStatus,
+} from '@/shared/ipc';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { assertConnectionMode } from '@/main/ipc/validators';
 
 interface RegisterSettingsHandlersParams {
   deps: IpcDependencies;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
+  sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
 }
 
 export function registerSettingsHandlers({
   deps,
   assertTrustedSender,
+  sendToRenderer,
 }: RegisterSettingsHandlersParams): void {
   ipcMain.handle(
     IPC_INVOKE_CHANNELS.openExternalUrl,
@@ -41,9 +48,18 @@ export function registerSettingsHandlers({
       if (typeof serverId !== 'string' && serverId !== null) {
         throw new Error('Invalid selected server id');
       }
-      if (typeof serverId === 'string' && serverId.trim().length === 0) {
+      if (
+        serverId === null ||
+        (typeof serverId === 'string' && serverId.trim().length === 0)
+      ) {
         deps.configService.setSelectedServerId(null);
         return true;
+      }
+      const exists = deps.configService
+        .getServers()
+        .some((server) => server.uuid === serverId);
+      if (!exists) {
+        throw new Error('Selected server was not found in local configuration');
       }
       deps.configService.setSelectedServerId(serverId);
       return true;
@@ -73,6 +89,8 @@ export function registerSettingsHandlers({
         throw new Error('Disconnect before changing connection mode.');
       }
       deps.configService.setConnectionMode(mode);
+      // Push an updated snapshot so the renderer stays in sync with the mode.
+      sendToRenderer(IPC_EVENT_CHANNELS.appSnapshotChanged);
       return true;
     },
   );
