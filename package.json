@@ -52,7 +52,7 @@
     "site:build": "npm --prefix website run build",
     "site:generate": "npm --prefix website run generate",
     "site:preview": "npm --prefix website run preview",
-    "generate": "npm --prefix website ci --no-audit --no-fund && npm --prefix website run generate",
+    "generate": "npm --prefix website install --no-audit --no-fund && npm --prefix website run generate",
     "electron:start": "electron .",
     "electron:trace-deprecation": "electron --trace-deprecation ."
   },
