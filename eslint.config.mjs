@@ -13,6 +13,7 @@ export default tseslint.config(
       'build/**',
       'release/**',
       'node_modules/**',
+      'website/**',
       'resources/**',
       'coverage/**',
       'scripts/**',

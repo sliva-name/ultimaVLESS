@@ -48,6 +48,10 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "verify:ci": "npm run typecheck && npm run lint && npm run test:run",
+    "site:dev": "npm --prefix website run dev",
+    "site:build": "npm --prefix website run build",
+    "site:generate": "npm --prefix website run generate",
+    "site:preview": "npm --prefix website run preview",
     "electron:start": "electron .",
     "electron:trace-deprecation": "electron --trace-deprecation ."
   },

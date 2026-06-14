@@ -1,0 +1,42 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#020617"/>
+  <circle cx="140" cy="70" r="280" fill="#22c55e" opacity="0.18"/>
+  <circle cx="1070" cy="120" r="260" fill="#06b6d4" opacity="0.16"/>
+  <rect x="70" y="70" width="1060" height="490" rx="48" fill="#0f172a" stroke="#1e293b" stroke-width="2"/>
+
+  <g transform="translate(110 122)">
+    <rect width="96" height="96" rx="26" fill="#020617"/>
+    <path d="M48 16 L76 28 L76 53 C76 68 61 80 48 86 C35 80 20 68 20 53 L20 28 Z"
+          fill="none"
+          stroke="url(#accent)"
+          stroke-width="5"
+          stroke-linejoin="round"/>
+    <path d="M33 39 L33 58 C33 66 41 70 48 70 C55 70 63 66 63 58 L63 39"
+          fill="none"
+          stroke="white"
+          stroke-width="5"
+          stroke-linecap="round"/>
+  </g>
+
+  <text x="110" y="270" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="70" font-weight="800">
+    UltimaVLESS
+  </text>
+  <text x="110" y="346" fill="#d1fae5" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="700">
+    VLESS VPN-:;85=B A 15A?;0B=K<8 :>=D830<8 2=CB@8
+  </text>
+  <text x="110" y="420" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="30">
+    Xray Core · Proxy/TUN · Windows, macOS, Linux · Open source
+  </text>
+
+  <rect x="110" y="474" width="290" height="58" rx="29" fill="#34d399"/>
+  <text x="149" y="512" fill="#020617" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">
+    !:0G0BL 15A?;0B=>
+  </text>
+
+  <defs>
+    <linearGradient id="accent" x1="20" y1="16" x2="76" y2="86" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+</svg>

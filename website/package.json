@@ -1,0 +1,18 @@
+{
+  "name": "ultima-vless-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "latest",
+    "nuxt": "latest",
+    "tailwindcss": "latest",
+    "vue": "latest"
+  }
+}
