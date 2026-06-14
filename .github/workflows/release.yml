@@ -7,6 +7,7 @@ on:
     paths-ignore:
       - 'website/**'
       - '.github/workflows/deploy-site.yml'
+      - '.github/workflows/nuxtjs.yml'
   workflow_dispatch:
 
 permissions:
