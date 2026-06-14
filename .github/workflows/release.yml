@@ -6,6 +6,7 @@ on:
       - main
     paths-ignore:
       - 'website/**'
+      - '.github/workflows/deploy-site.yml'
   workflow_dispatch:
 
 permissions:
