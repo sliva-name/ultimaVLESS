@@ -17,6 +17,7 @@ import {
   DEFAULT_ROUTE_WAIT_TIMEOUT,
   DNS_TIMEOUT,
   ENABLE_TIMEOUT,
+  SYSTEM_DNS_TIMEOUT,
   STALE_ROUTE_CLEANUP_TIMEOUT,
   TUN_IPV6_NEXTHOP,
   TUN_NEXTHOP,
@@ -50,6 +51,15 @@ import {
 export interface TunRoutingPlan {
   defaultRoute: DefaultRouteInfo;
   proxyIps: string[];
+}
+
+export interface PrepareRoutingPlanOptions {
+  /**
+   * When true (default), wait for a stable default route (needed when applying
+   * full PowerShell TUN tables). Host-pin before Xray start only needs one
+   * observation — skipping the second sample saves ~0.5–2s per connect.
+   */
+  awaitStableDefaultRoute?: boolean;
 }
 
 interface AddedRoute {
@@ -108,6 +118,7 @@ export class TunRouteService {
 
   public async prepareRoutingPlan(
     config: VlessConfig,
+    options: PrepareRoutingPlanOptions = {},
   ): Promise<TunRoutingPlan> {
     const unsupportedReason = this.getUnsupportedReason();
     if (unsupportedReason) {
@@ -116,8 +127,9 @@ export class TunRouteService {
     if (this.platform !== 'win32') {
       return this.prepareUnixRoutingPlan(config);
     }
+    const awaitStable = options.awaitStableDefaultRoute !== false;
     const [defaultRoute, proxyIps] = await Promise.all([
-      this.waitForDefaultRoute(),
+      awaitStable ? this.waitForDefaultRoute() : this.getDefaultRouteQuick(),
       this.resolveProxyAddresses(config.address),
     ]);
 
@@ -133,22 +145,66 @@ export class TunRouteService {
     return { defaultRoute, proxyIps };
   }
 
+  /**
+   * Pin /32 (/128) routes for the VPN server via the physical gateway so
+   * REALITY dials are not swallowed by TUN's 0.0.0.0/0 (classic ~12s stall
+   * for domain endpoints). Safe to call before Xray starts.
+   */
+  public async pinProxyHostRoutes(plan: TunRoutingPlan): Promise<void> {
+    if (this.platform !== 'win32') return;
+    const { defaultRoute, proxyIps } = plan;
+    if (proxyIps.length === 0) {
+      throw new Error('No proxy server IPs to pin for TUN host routes');
+    }
+    const prefixes = proxyIps.map((ip) => this.hostPrefixForIp(ip));
+    const output = await this.runPowerShell(
+      reapplyHostRoutesScript({
+        defaultRouteInterfaceIndex: defaultRoute.interfaceIndex,
+        gateway: defaultRoute.gateway,
+        proxyHostPrefixes: prefixes,
+        hostRouteMetric: 1,
+      }),
+    );
+    const hostFailures: string[] = [];
+    for (const line of output.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('HOST_CREATED|')) {
+        const prefix = trimmed.slice('HOST_CREATED|'.length);
+        this.addedRoutes.push({
+          destination: prefix,
+          mask: '',
+          prefix,
+          interfaceIndex: defaultRoute.interfaceIndex,
+        });
+      } else if (trimmed.startsWith('HOST_FAIL|')) {
+        hostFailures.push(trimmed.slice('HOST_FAIL|'.length));
+      }
+    }
+    this.lastDefaultRoute = defaultRoute;
+    if (hostFailures.length > 0) {
+      throw new Error(
+        `Failed to pin proxy host route(s) to the physical gateway: ${hostFailures.join('; ')}`,
+      );
+    }
+    logger.info('TunRouteService', 'Pinned proxy host routes for TUN', {
+      gateway: defaultRoute.gateway,
+      interfaceIndex: defaultRoute.interfaceIndex,
+      prefixes,
+    });
+  }
+
   public async enable(
     config: VlessConfig,
     plan?: TunRoutingPlan,
   ): Promise<void> {
     if (this.platform !== 'win32' || !this.usesWindowsPowerShellRouting()) {
-      const routingPlan = plan ?? (await this.prepareRoutingPlan(config));
-      logger.info(
-        'TunRouteService',
-        'Using Xray auto-route for TUN mode',
-        {
-          platform: this.platform,
-          routeMode: this.getRouteMode(),
-          proxyIpCount: routingPlan.proxyIps.length,
-          defaultInterface: routingPlan.defaultRoute.interfaceName,
-        },
-      );
+      logger.info('TunRouteService', 'Using Xray auto-route for TUN mode', {
+        platform: this.platform,
+        routeMode: this.getRouteMode(),
+        proxyIpCount: plan?.proxyIps.length ?? null,
+        defaultInterface: plan?.defaultRoute.interfaceName ?? null,
+        serverAddress: config.address,
+      });
       return;
     }
 
@@ -197,7 +253,7 @@ export class TunRouteService {
   public async disable(
     cleanupOptions: StaleRouteCleanupOptions = {},
   ): Promise<void> {
-    if (this.platform !== 'win32' || !this.usesWindowsPowerShellRouting()) {
+    if (this.platform !== 'win32') {
       logger.info(
         'TunRouteService',
         'TUN cleanup delegated to Xray process lifecycle',
@@ -209,18 +265,55 @@ export class TunRouteService {
       return;
     }
 
-    for (const route of [...this.addedRoutes].reverse()) {
+    // Host routes are pinned for both PowerShell and Xray auto-route modes.
+    // Prefer one PowerShell batch over N sequential deletes.
+    const hostPrefixes = this.addedRoutes
+      .map((route) => route.prefix)
+      .filter((prefix): prefix is string => Boolean(prefix));
+    if (hostPrefixes.length > 0) {
       try {
-        await this.deleteRoute(route);
+        await this.deleteHostRoutesByPrefixesAndMetric(hostPrefixes, 1);
       } catch (error) {
-        logger.warn('TunRouteService', 'Failed to remove route', {
-          destination: route.destination,
+        logger.warn('TunRouteService', 'Batch host-route removal failed', {
           error: error instanceof Error ? error.message : String(error),
         });
+        for (const route of [...this.addedRoutes].reverse()) {
+          try {
+            await this.deleteRoute(route);
+          } catch (deleteError) {
+            logger.warn('TunRouteService', 'Failed to remove route', {
+              destination: route.destination,
+              error:
+                deleteError instanceof Error
+                  ? deleteError.message
+                  : String(deleteError),
+            });
+          }
+        }
+      }
+    } else {
+      for (const route of [...this.addedRoutes].reverse()) {
+        try {
+          await this.deleteRoute(route);
+        } catch (error) {
+          logger.warn('TunRouteService', 'Failed to remove route', {
+            destination: route.destination,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
     this.addedRoutes = [];
     this.lastDefaultRoute = null;
+
+    if (!this.usesWindowsPowerShellRouting()) {
+      // Tracked host routes already removed above. Skip the full stale sweep —
+      // it costs another PowerShell process and is not needed for a clean
+      // disconnect (next connect re-pins the same /32s if anything lingered).
+      logger.info('TunRouteService', 'TUN host routes cleared (Xray auto-route)');
+      return;
+    }
+
     try {
       await this.cleanupStaleTunRoutes(cleanupOptions);
     } catch (error) {
@@ -386,6 +479,14 @@ export class TunRouteService {
     return lastObservedRoute;
   }
 
+  /** One PowerShell probe (+ one quick retry) for the host-pin connect path. */
+  private async getDefaultRouteQuick(): Promise<DefaultRouteInfo | null> {
+    const first = await this.getDefaultRoute();
+    if (first) return first;
+    await this.sleep(150);
+    return this.getDefaultRoute();
+  }
+
   private async waitForTunInterface(): Promise<number> {
     const out = await this.runPowerShell(waitForTunInterfaceScript()).catch(
       (error) => {
@@ -422,6 +523,24 @@ export class TunRouteService {
 
   private async resolveProxyAddresses(address: string): Promise<string[]> {
     if (this.isIp(address)) return [address];
+
+    // Prefer OS resolver (local cache / ISP DNS) — usually much faster than
+    // forcing a cold query to 8.8.8.8 from a fresh Resolver instance.
+    try {
+      const system = await this.withTimeout(
+        dns.promises.lookup(address, { all: true }),
+        SYSTEM_DNS_TIMEOUT,
+      );
+      const systemIps = [
+        ...new Set(system.map((entry) => entry.address).filter(Boolean)),
+      ];
+      if (systemIps.length > 0) {
+        return systemIps;
+      }
+    } catch {
+      // Fall through to public resolvers.
+    }
+
     let timeoutHandle: NodeJS.Timeout | null = null;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(
@@ -431,7 +550,7 @@ export class TunRouteService {
     });
     try {
       const resolver = new dns.promises.Resolver();
-      resolver.setServers(['8.8.8.8', '1.1.1.1']);
+      resolver.setServers(['1.1.1.1', '8.8.8.8']);
       const ipv4 = await Promise.race<string[]>([
         resolver.resolve4(address).catch(() => []),
         timeoutPromise,
@@ -447,6 +566,28 @@ export class TunRouteService {
       return [...new Set(ipv6)];
     } catch {
       return [];
+    } finally {
+      if (timeoutHandle !== null) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  }
+
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+  ): Promise<T> {
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error('operation timeout')),
+            timeoutMs,
+          );
+        }),
+      ]);
     } finally {
       if (timeoutHandle !== null) {
         clearTimeout(timeoutHandle);

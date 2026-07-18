@@ -245,4 +245,20 @@ describe('TunRouteService Windows routing', () => {
 
     expect(runPowerShell).not.toHaveBeenCalled();
   });
+
+  it('auto-route enable does not discover default route or DNS without a plan', async () => {
+    vi.mocked(configService.getPerformanceSettings).mockReturnValue({
+      ...DEFAULT_PERFORMANCE_SETTINGS,
+      windowsTunRouting: 'xray',
+    });
+
+    const service = new TunRouteService('win32');
+    const prepare = vi.spyOn(service, 'prepareRoutingPlan');
+    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
+
+    await service.enable(makeServer());
+
+    expect(prepare).not.toHaveBeenCalled();
+    expect(runPowerShell).not.toHaveBeenCalled();
+  });
 });

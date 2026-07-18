@@ -19,11 +19,13 @@ export function buildDefaultRoutingRules(
       outboundTag: 'block',
     });
   }
+  // No geosite:cn / geoip:cn bypass: the bundled geosite list falsely matches
+  // global hosts (e.g. connectivitycheck.gstatic.com), sending health checks
+  // to direct and breaking TUN/proxy probes for ~12s.
   rules.push(
-    { type: 'field', domain: ['geosite:cn'], outboundTag: 'direct' },
     {
       type: 'field',
-      ip: ['geoip:private', 'geoip:cn'],
+      ip: ['geoip:private'],
       outboundTag: 'direct',
     },
     { type: 'field', port: '0-65535', outboundTag: 'proxy' },

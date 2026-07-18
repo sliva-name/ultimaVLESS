@@ -61,9 +61,13 @@ export class SystemProxyService {
       }
       if (this.windows) {
         const snapshot = await this.windows.captureState();
+        // Snapshot must hit disk before settings mutate; recovery install and
+        // enable are independent after that and can overlap.
         this.commitSnapshot(snapshot);
-        await this.installWindowsLogonRecovery();
-        await this.windows.enable(httpPort, socksPort);
+        await Promise.all([
+          this.installWindowsLogonRecovery(),
+          this.windows.enable(httpPort, socksPort),
+        ]);
         return;
       }
       logger.info(

@@ -63,9 +63,119 @@ describe('XrayConfigCompiler', () => {
         dns: expect.any(Array),
         autoSystemRoutingTable: ['0.0.0.0/0', '::/0'],
         autoOutboundsInterface: 'auto',
+        dns: ['1.1.1.1', '8.8.8.8'],
       }),
     });
     expect(config.outbounds[0].sendThrough).toBeUndefined();
+  });
+
+  it('replaces slow raw DNS servers and forces UseIPv4 in TUN mode', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        security: 'reality',
+        sni: 'example.com',
+        pbk: 'public-key',
+        rawConfig: {
+          dns: {
+            servers: ['8.8.8.8', '8.8.4.4'],
+            queryStrategy: 'UseIP',
+          },
+          inbounds: [],
+          outbounds: [
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                address: 'example.com',
+                port: 443,
+                id: '00000000-0000-0000-0000-000000000001',
+                encryption: 'none',
+              },
+              streamSettings: {
+                network: 'tcp',
+                security: 'reality',
+                realitySettings: {
+                  serverName: 'example.com',
+                  publicKey: 'public-key',
+                },
+              },
+            },
+            { tag: 'direct', protocol: 'freedom' },
+            { tag: 'block', protocol: 'blackhole' },
+          ],
+          routing: { rules: [] },
+        } as XrayConfig,
+      }),
+      {
+        logPath: '/tmp/xray.log',
+        connectionMode: 'tun',
+        tunAutoRoute: true,
+      },
+    );
+
+    expect(config.dns).toMatchObject({
+      queryStrategy: 'UseIPv4',
+      servers: ['localhost', '1.1.1.1', '1.0.0.1'],
+    });
+  });
+
+  it('disables mux for Vision outbounds even when raw config enables XUDP mux', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        security: 'reality',
+        sni: 'example.com',
+        pbk: 'public-key',
+        flow: 'xtls-rprx-vision',
+        rawConfig: {
+          dns: { servers: ['8.8.8.8'], queryStrategy: 'UseIP' },
+          inbounds: [],
+          outbounds: [
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                vnext: [
+                  {
+                    address: 'example.com',
+                    port: 443,
+                    users: [
+                      {
+                        id: '00000000-0000-0000-0000-000000000001',
+                        encryption: 'none',
+                        flow: 'xtls-rprx-vision',
+                      },
+                    ],
+                  },
+                ],
+              },
+              streamSettings: {
+                network: 'tcp',
+                security: 'reality',
+                realitySettings: {
+                  serverName: 'example.com',
+                  publicKey: 'public-key',
+                },
+              },
+              mux: {
+                enabled: true,
+                concurrency: -1,
+                xudpConcurrency: 16,
+              },
+            },
+            { tag: 'direct', protocol: 'freedom' },
+            { tag: 'block', protocol: 'blackhole' },
+          ],
+          routing: { rules: [] },
+        } as XrayConfig,
+      }),
+      {
+        logPath: '/tmp/xray.log',
+        connectionMode: 'tun',
+        tunAutoRoute: true,
+      },
+    );
+
+    expect(config.outbounds[0].mux).toEqual({ enabled: false });
   });
 
   it('keeps sendThrough when tunAutoRoute is off (PowerShell fallback)', () => {

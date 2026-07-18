@@ -31,8 +31,7 @@ const resources = {
         connectedTo: 'Connected to {{name}}',
         readyToConnect: 'Ready to connect to {{name}}',
         selectServer: 'Select a server to connect',
-        connectingHint:
-          'Applying TUN/proxy settings and network routes. This can take a few seconds.',
+        connectingHint: 'Applying TUN/proxy settings and network routes…',
         disconnectingHint: 'Applying disconnect sequence and cleaning routes.',
         country: 'Country',
         ipAddress: 'IP Address',
@@ -221,8 +220,7 @@ const resources = {
         connectedTo: 'Подключено к {{name}}',
         readyToConnect: 'Готов к подключению к {{name}}',
         selectServer: 'Выберите сервер для подключения',
-        connectingHint:
-          'Применение настроек TUN/proxy и маршрутизации. Это может занять несколько секунд.',
+        connectingHint: 'Применение настроек TUN/proxy и маршрутизации…',
         disconnectingHint:
           'Применение последовательности отключения и очистка маршрутов.',
         country: 'Страна',

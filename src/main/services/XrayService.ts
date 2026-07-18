@@ -32,9 +32,11 @@ export interface XrayStartOptions {
 export class XrayService extends EventEmitter {
   private process: ChildProcess | null = null;
   private resourcesPath: string;
-  private static readonly STARTUP_GRACE_MS = 1200;
-  private static readonly READINESS_TIMEOUT_MS = 2000;
-  private static readonly READINESS_RETRY_MS = 250;
+  /** Max wait for SOCKS/HTTP listeners (also covers early-crash detection). */
+  private static readonly READINESS_TIMEOUT_MS = 3000;
+  private static readonly READINESS_RETRY_MS = 50;
+  /** Short connect timeout so failed polls do not burn the readiness budget. */
+  private static readonly READINESS_PROBE_TIMEOUT_MS = 200;
   private static readonly STOP_TIMEOUT_MS = 3000;
   private readonly expectedExitProcesses = new WeakSet<ChildProcess>();
   private readonly notifiedUnexpectedExitProcesses =
@@ -242,9 +244,10 @@ export class XrayService extends EventEmitter {
     });
 
     try {
-      await this.awaitStartupGracePeriod(spawnedProcess);
+      // Poll listeners immediately while watching for early process death —
+      // no fixed grace sleep (previously 1.2s even when ports were already up).
+      const readiness = await this.awaitLocalProxyReadiness(spawnedProcess);
       if (this.process === spawnedProcess) {
-        const readiness = await this.awaitLocalProxyReadiness(spawnedProcess);
         this.setHealthStatus({
           state: readiness.reachable ? 'running' : 'degraded',
           ready: readiness.reachable,
@@ -394,48 +397,106 @@ export class XrayService extends EventEmitter {
   private async awaitLocalProxyReadiness(
     processRef: ChildProcess,
   ): Promise<{ reachable: boolean; reason: string | null }> {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt <= XrayService.READINESS_TIMEOUT_MS) {
-      if (this.process !== processRef) {
-        return {
-          reachable: false,
-          reason:
-            'Xray process exited before local proxy listeners became ready',
-        };
+    type ProcessEventHandler = (...args: never[]) => void;
+    let exitReject: ((error: Error) => void) | null = null;
+    const exitPromise = new Promise<never>((_resolve, reject) => {
+      exitReject = reject;
+    });
+
+    const onCloseDuringStartup = (
+      code: number | null,
+      signal: NodeJS.Signals | null,
+    ) => {
+      exitReject?.(
+        new Error(
+          `Xray exited during startup (code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
+        ),
+      );
+    };
+    const onErrorDuringStartup = (error: Error) => {
+      exitReject?.(error);
+    };
+
+    const withOnce = processRef as ChildProcess & {
+      once?: (event: string, listener: ProcessEventHandler) => ChildProcess;
+      off?: (event: string, listener: ProcessEventHandler) => ChildProcess;
+      removeListener?: (
+        event: string,
+        listener: ProcessEventHandler,
+      ) => ChildProcess;
+    };
+    withOnce.once?.('close', onCloseDuringStartup);
+    withOnce.once?.('error', onErrorDuringStartup);
+
+    const detachExitWatchers = (): void => {
+      if (typeof withOnce.off === 'function') {
+        withOnce.off('close', onCloseDuringStartup);
+        withOnce.off('error', onErrorDuringStartup);
+        return;
       }
+      withOnce.removeListener?.('close', onCloseDuringStartup);
+      withOnce.removeListener?.('error', onErrorDuringStartup);
+    };
 
-      const [socksReady, httpReady] = await Promise.all([
-        probeTcpPort(APP_CONSTANTS.PORTS.SOCKS),
-        probeTcpPort(APP_CONSTANTS.PORTS.HTTP),
-      ]);
-      const reachable = socksReady && httpReady;
-      const checkedAt = Date.now();
+    const pollReady = async (): Promise<{
+      reachable: boolean;
+      reason: string | null;
+    }> => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt <= XrayService.READINESS_TIMEOUT_MS) {
+        if (this.process !== processRef) {
+          throw new Error(
+            'Xray process exited before local proxy listeners became ready',
+          );
+        }
 
-      if (reachable) {
+        const [socksReady, httpReady] = await Promise.all([
+          probeTcpPort(
+            APP_CONSTANTS.PORTS.SOCKS,
+            '127.0.0.1',
+            XrayService.READINESS_PROBE_TIMEOUT_MS,
+          ),
+          probeTcpPort(
+            APP_CONSTANTS.PORTS.HTTP,
+            '127.0.0.1',
+            XrayService.READINESS_PROBE_TIMEOUT_MS,
+          ),
+        ]);
+        const reachable = socksReady && httpReady;
+        const checkedAt = Date.now();
+
+        if (reachable) {
+          this.setHealthStatus({
+            lastReadinessCheckAt: checkedAt,
+            localProxyReachable: true,
+            lastReadinessError: null,
+            lastReadyAt: checkedAt,
+          });
+          return { reachable: true, reason: null };
+        }
+
         this.setHealthStatus({
           lastReadinessCheckAt: checkedAt,
-          localProxyReachable: true,
-          lastReadinessError: null,
-          lastReadyAt: checkedAt,
+          localProxyReachable: false,
+          lastReadinessError: 'Local proxy listeners are not reachable yet',
         });
-        return { reachable: true, reason: null };
+        await new Promise((resolve) =>
+          setTimeout(resolve, XrayService.READINESS_RETRY_MS),
+        );
       }
 
-      this.setHealthStatus({
-        lastReadinessCheckAt: checkedAt,
-        localProxyReachable: false,
-        lastReadinessError: 'Local proxy listeners are not reachable yet',
-      });
-      await new Promise((resolve) =>
-        setTimeout(resolve, XrayService.READINESS_RETRY_MS),
-      );
-    }
-
-    return {
-      reachable: false,
-      reason:
-        'Xray started but local proxy listeners did not become reachable in time',
+      return {
+        reachable: false,
+        reason:
+          'Xray started but local proxy listeners did not become reachable in time',
+      };
     };
+
+    try {
+      return await Promise.race([pollReady(), exitPromise]);
+    } finally {
+      detachExitWatchers();
+    }
   }
 
   private logXrayLine(
@@ -543,98 +604,6 @@ export class XrayService extends EventEmitter {
     });
   }
 
-  private awaitStartupGracePeriod(processRef: ChildProcess): Promise<void> {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      let timeoutId: NodeJS.Timeout | null = null;
-      // Child process emits heterogeneous events ('close' has code/signal, 'error' has Error),
-      // and we forward listeners opaquely. Contravariant `never[]` lets both signatures assign.
-      type ProcessEventHandler = (...args: never[]) => void;
-
-      const addListener = (
-        event: 'close' | 'error',
-        handler: ProcessEventHandler,
-      ): boolean => {
-        const withOnce = processRef as ChildProcess & {
-          once?: (event: string, listener: ProcessEventHandler) => ChildProcess;
-        };
-        if (typeof withOnce.once === 'function') {
-          withOnce.once(event, handler);
-          return true;
-        }
-        const withOn = processRef as ChildProcess & {
-          on?: (event: string, listener: ProcessEventHandler) => ChildProcess;
-        };
-        if (typeof withOn.on === 'function') {
-          withOn.on(event, handler);
-          return true;
-        }
-        return false;
-      };
-
-      const removeListener = (
-        event: 'close' | 'error',
-        handler: ProcessEventHandler,
-      ): void => {
-        const withOff = processRef as ChildProcess & {
-          off?: (event: string, listener: ProcessEventHandler) => ChildProcess;
-        };
-        if (typeof withOff.off === 'function') {
-          withOff.off(event, handler);
-          return;
-        }
-        const withRemove = processRef as ChildProcess & {
-          removeListener?: (
-            event: string,
-            listener: ProcessEventHandler,
-          ) => ChildProcess;
-        };
-        if (typeof withRemove.removeListener === 'function') {
-          withRemove.removeListener(event, handler);
-        }
-      };
-
-      const finish = (fn: () => void): void => {
-        if (settled) return;
-        settled = true;
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        removeListener('close', onCloseDuringStartup);
-        removeListener('error', onErrorDuringStartup);
-        fn();
-      };
-
-      const onCloseDuringStartup = (
-        code: number | null,
-        signal: NodeJS.Signals | null,
-      ) => {
-        finish(() => {
-          reject(
-            new Error(
-              `Xray exited during startup (code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
-            ),
-          );
-        });
-      };
-
-      const onErrorDuringStartup = (error: Error) => {
-        finish(() => reject(error));
-      };
-
-      const closeListenerAttached = addListener('close', onCloseDuringStartup);
-      const errorListenerAttached = addListener('error', onErrorDuringStartup);
-      if (!closeListenerAttached && !errorListenerAttached) {
-        resolve();
-        return;
-      }
-      timeoutId = setTimeout(
-        () => finish(resolve),
-        XrayService.STARTUP_GRACE_MS,
-      );
-    });
-  }
 }
 
 export const xrayService = new XrayService();

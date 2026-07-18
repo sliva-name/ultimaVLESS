@@ -5,18 +5,18 @@ export const TUN_NEXTHOP = '172.19.0.2';
 export const TUN_IPV6_ADDRESS = 'fd7a:115c:a1e0::1';
 export const TUN_IPV6_PREFIX = 126;
 export const TUN_IPV6_NEXTHOP = '::';
-export const TUN_DNS_SERVERS = [
-  '1.1.1.1',
-  '8.8.8.8',
-  '2606:4700:4700::1111',
-  '2001:4860:4860::8888',
-];
+/** IPv4-only: advertising IPv6 resolvers makes Windows prefer AAAA DNS first
+ * (~2s timeout each) before falling back to 1.1.1.1 — often ~10–12s until
+ * the first useful browser TCP after TUN connect. */
+export const TUN_DNS_SERVERS = ['1.1.1.1', '8.8.8.8'];
 export const TUN_ROUTE_METRIC = 1;
 export const TUN_WAIT_TIMEOUT = 20000;
 export const TUN_WAIT_INTERVAL = 300;
 export const POWERSHELL_TIMEOUT = 30000;
 export const STALE_ROUTE_CLEANUP_TIMEOUT = 5000;
-export const DNS_TIMEOUT = 8000;
+/** Public-resolver fallback after system DNS; keep short so connect UI stays snappy. */
+export const DNS_TIMEOUT = 3000;
+export const SYSTEM_DNS_TIMEOUT = 1500;
 export const ENABLE_TIMEOUT = 60000;
 export const DEFAULT_ROUTE_WAIT_TIMEOUT = 12000;
 export const DEFAULT_ROUTE_WAIT_INTERVAL = 500;

@@ -126,12 +126,14 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
       ],
       dns: TUN_DNS_SERVERS,
       // Always bind Xray-originated packets (proxy + freedom/direct) to a
-      // physical NIC. Without this, PowerShell TUN mode loops: geoip:private /
-      // geosite:cn → direct → default route back into TUN (NetBIOS storms).
+      // physical NIC. Without this, PowerShell TUN mode loops: geoip:private →
+      // direct → default route back into TUN (NetBIOS storms).
       autoOutboundsInterface: 'auto',
     },
   };
   if (options.tunAutoRoute) {
+    // Keep both defaults: browsers resolve AAAA and need ::/0 via TUN,
+    // otherwise IPv6 bypasses the tunnel (or hangs) while IPv4 works in logs.
     (tunInbound.settings as MutableConfigNode).autoSystemRoutingTable = [
       '0.0.0.0/0',
       '::/0',

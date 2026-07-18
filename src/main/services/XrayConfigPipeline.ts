@@ -116,11 +116,34 @@ export class XrayConfigPipeline {
     this.ensureAuxiliaryOutbounds(cfg);
     this.applyPerfToOutbounds(cfg, perf);
     this.applyPerfToRouting(cfg, perf);
+    if (connectionMode === 'tun') {
+      this.applyTunDnsDefaults(cfg);
+    }
     this.assertRawOutboundCompatibility(cfg);
     applyStatsApi(cfg);
     this.applyBundledVersionConstraint(cfg);
 
     return cfg;
+  }
+
+  /**
+   * TUN + raw subscriptions: Keep DNS fast and IPv4-first.
+   * Ultima raw configs ship 8.8.8.8/8.8.4.4 with serial fallback; through the
+   * tunnel the first server often times out (~4s) before 8.8.4.4 answers
+   * (~3–8s RTT) — ~12s until the first browser request. Use the same resolvers
+   * as structured profiles (which start traffic in <1s on the same path).
+   */
+  private static applyTunDnsDefaults(cfg: XrayConfig): void {
+    const dns =
+      cfg.dns && typeof cfg.dns === 'object'
+        ? (cfg.dns as Record<string, unknown>)
+        : {};
+    cfg.dns = {
+      ...dns,
+      // localhost first: answer from the OS without waiting for a cold tunnel.
+      servers: ['localhost', '1.1.1.1', '1.0.0.1'],
+      queryStrategy: 'UseIPv4',
+    };
   }
 
   private static applyBundledVersionConstraint(cfg: XrayConfig): void {
@@ -165,8 +188,10 @@ export class XrayConfigPipeline {
         outbound.streamSettings.sockopt.tcpFastOpen = perf.tcpFastOpen;
       }
 
-      if (!outbound.mux) {
-        const hasVisionFlow = this.outboundHasVisionFlow(outbound);
+      const hasVisionFlow = this.outboundHasVisionFlow(outbound);
+      // Always rewrite Vision mux: raw subs often leave XUDP mux on, and TUN
+      // DNS (udp/53) then waits on the mux client → ~12s cold-start stall.
+      if (!outbound.mux || hasVisionFlow) {
         const address = this.readOutboundAddress(outbound);
         const forceMux =
           outbound.protocol === 'trojan' &&
@@ -653,16 +678,7 @@ export class XrayConfigPipeline {
         error: logPath,
       },
       dns: {
-        servers: [
-          '1.1.1.1',
-          '1.0.0.1',
-          {
-            address: '223.5.5.5',
-            domains: ['geosite:cn'],
-            expectIPs: ['geoip:cn'],
-          },
-          'localhost',
-        ],
+        servers: ['1.1.1.1', '1.0.0.1', 'localhost'],
         queryStrategy: 'UseIPv4',
       },
       inbounds,
@@ -983,12 +999,9 @@ export class XrayConfigPipeline {
       return { enabled: false };
     }
     if (hasVisionFlow) {
-      return {
-        enabled: true,
-        concurrency: -1,
-        xudpConcurrency: perf.xudpConcurrency,
-        xudpProxyUDP443: perf.xudpProxyUDP443,
-      };
+      // Vision + XUDP mux makes TUN DNS (and the first REALITY dial) wait on
+      // the mux client. Disable mux entirely for Vision outbounds.
+      return { enabled: false };
     }
     return {
       enabled: options.forceMux === true ? true : perf.muxEnabled,
@@ -1010,7 +1023,7 @@ export class XrayConfigPipeline {
       return;
     }
     // Pin both proxy and freedom/direct. Direct without a physical bind loops
-    // into TUN whenever routing sends geoip:private / geosite:cn there.
+    // into TUN whenever routing sends geoip:private there.
     const outbounds = cfg.outbounds as MutableOutbound[];
     for (const outbound of outbounds) {
       if (!outbound || outbound.sendThrough) continue;

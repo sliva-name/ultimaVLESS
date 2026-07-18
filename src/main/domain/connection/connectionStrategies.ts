@@ -4,6 +4,7 @@ import type { ConfigService } from '@/main/services/ConfigService';
 import type { SystemProxyService } from '@/main/services/SystemProxyService';
 import type { TunRouteService } from '@/main/services/TunRouteService';
 import type { XrayService } from '@/main/services/XrayService';
+import { bindProxyEndpointToIp } from './bindProxyEndpoint';
 
 export interface ProxyPorts {
   http: number;
@@ -64,17 +65,36 @@ export function createTunConnectionStrategy(deps: {
     mode: 'tun',
     async apply(server: VlessConfig): Promise<void> {
       const perf = deps.configService.getPerformanceSettings();
-      const routingPlan = await deps.routeService.prepareRoutingPlan(server);
       const tunAutoRoute = resolveTunAutoRoute(process.platform, perf);
-      await deps.coreService.start(server, 'tun', {
+
+      // Always discover default route + server IPs on Windows. Domain endpoints
+      // (e.g. *.figmafound.org) need host /32 routes pinned *before* Xray
+      // installs 0.0.0.0/0 via TUN, otherwise REALITY dials loop for ~12s.
+      // Skip the stable-route double-sample here — one probe is enough for pin.
+      const needsHostPin = process.platform === 'win32';
+      const routingPlan = needsHostPin || !tunAutoRoute
+        ? await deps.routeService.prepareRoutingPlan(server, {
+            awaitStableDefaultRoute: false,
+          })
+        : undefined;
+
+      let serverToStart = server;
+      if (routingPlan?.proxyIps[0]) {
+        if (needsHostPin) {
+          await deps.routeService.pinProxyHostRoutes(routingPlan);
+        }
+        serverToStart = bindProxyEndpointToIp(server, routingPlan.proxyIps[0]);
+      }
+
+      await deps.coreService.start(serverToStart, 'tun', {
         // When Xray owns routes via autoOutboundsInterface, skip sendThrough
         // (docs prefer interface binding; sendThrough is IPv4/IPv6 single-stack).
         sendThrough: tunAutoRoute
           ? undefined
-          : routingPlan.defaultRoute.localAddress || undefined,
+          : routingPlan?.defaultRoute.localAddress || undefined,
         tunAutoRoute,
       });
-      await deps.routeService.enable(server, routingPlan);
+      await deps.routeService.enable(serverToStart, routingPlan);
     },
   };
 }

@@ -28,19 +28,30 @@ describe('connection strategies', () => {
     expect(calls).toEqual(['xray-start', 'proxy-enable']);
   });
 
-  it('tun strategy prepares routing before starting Xray with loop prevention', async () => {
-    const server = makeServer();
+  it('tun auto-route on Windows pins host routes and dials resolved IP', async () => {
+    const server = makeServer({ address: 'oauth.example.com' });
     const coreStart = vi.fn();
+    const prepareRoutingPlan = vi.fn(async () => ({
+      defaultRoute: {
+        localAddress: '192.168.1.10',
+        interfaceIndex: 12,
+        gateway: '192.168.1.1',
+        interfaceName: 'Ethernet',
+      },
+      proxyIps: ['203.0.113.1'],
+    }));
+    const pinProxyHostRoutes = vi.fn();
     const routeEnable = vi.fn();
-    const perf = { ...DEFAULT_PERFORMANCE_SETTINGS, windowsTunRouting: 'xray' as const };
+    const perf = {
+      ...DEFAULT_PERFORMANCE_SETTINGS,
+      windowsTunRouting: 'xray' as const,
+    };
     const strategies = createConnectionStrategies({
       coreService: { start: coreStart } as any,
       proxyService: {} as any,
       routeService: {
-        prepareRoutingPlan: vi.fn(async () => ({
-          defaultRoute: { localAddress: '192.168.1.10' },
-          proxyIps: ['203.0.113.1'],
-        })),
+        prepareRoutingPlan,
+        pinProxyHostRoutes,
         enable: routeEnable,
       } as any,
       configService: {
@@ -50,21 +61,45 @@ describe('connection strategies', () => {
 
     await strategies.tun.apply(server, { http: 10809, socks: 10808 });
 
-    const tunAutoRoute = resolveTunAutoRoute(process.platform, perf);
-    expect(coreStart).toHaveBeenCalledWith(
-      server,
-      'tun',
-      expect.objectContaining({
-        sendThrough: tunAutoRoute ? undefined : '192.168.1.10',
-        tunAutoRoute,
-      }),
-    );
+    expect(resolveTunAutoRoute(process.platform, perf)).toBe(true);
+    if (process.platform === 'win32') {
+      expect(prepareRoutingPlan).toHaveBeenCalledWith(server, {
+        awaitStableDefaultRoute: false,
+      });
+      expect(pinProxyHostRoutes).toHaveBeenCalled();
+      expect(coreStart).toHaveBeenCalledWith(
+        expect.objectContaining({ address: '203.0.113.1' }),
+        'tun',
+        expect.objectContaining({
+          sendThrough: undefined,
+          tunAutoRoute: true,
+        }),
+      );
+    } else {
+      expect(prepareRoutingPlan).not.toHaveBeenCalled();
+      expect(pinProxyHostRoutes).not.toHaveBeenCalled();
+      expect(coreStart).toHaveBeenCalledWith(
+        server,
+        'tun',
+        expect.objectContaining({ tunAutoRoute: true, sendThrough: undefined }),
+      );
+    }
     expect(routeEnable).toHaveBeenCalled();
   });
 
   it('tun powershell fallback still passes sendThrough for loop prevention', async () => {
     const server = makeServer();
     const coreStart = vi.fn();
+    const prepareRoutingPlan = vi.fn(async () => ({
+      defaultRoute: {
+        localAddress: '192.168.1.10',
+        interfaceIndex: 12,
+        gateway: '192.168.1.1',
+        interfaceName: 'Ethernet',
+      },
+      proxyIps: ['203.0.113.1'],
+    }));
+    const pinProxyHostRoutes = vi.fn();
     const perf = {
       ...DEFAULT_PERFORMANCE_SETTINGS,
       windowsTunRouting: 'powershell' as const,
@@ -73,10 +108,8 @@ describe('connection strategies', () => {
       coreService: { start: coreStart } as any,
       proxyService: {} as any,
       routeService: {
-        prepareRoutingPlan: vi.fn(async () => ({
-          defaultRoute: { localAddress: '192.168.1.10' },
-          proxyIps: ['203.0.113.1'],
-        })),
+        prepareRoutingPlan,
+        pinProxyHostRoutes,
         enable: vi.fn(),
       } as any,
       configService: {
@@ -86,13 +119,30 @@ describe('connection strategies', () => {
 
     await strategies.tun.apply(server, { http: 10809, socks: 10808 });
 
+    const tunAutoRoute = resolveTunAutoRoute(process.platform, perf);
+    if (tunAutoRoute) {
+      // Non-Windows always auto-routes; PowerShell plan is Windows-only.
+      expect(coreStart).toHaveBeenCalledWith(
+        expect.anything(),
+        'tun',
+        expect.objectContaining({
+          sendThrough: undefined,
+          tunAutoRoute: true,
+        }),
+      );
+      return;
+    }
+
+    expect(prepareRoutingPlan).toHaveBeenCalledWith(server, {
+      awaitStableDefaultRoute: false,
+    });
+    expect(pinProxyHostRoutes).toHaveBeenCalled();
     expect(coreStart).toHaveBeenCalledWith(
-      server,
+      expect.objectContaining({ address: '203.0.113.1' }),
       'tun',
       expect.objectContaining({
-        sendThrough:
-          process.platform === 'win32' ? '192.168.1.10' : undefined,
-        tunAutoRoute: resolveTunAutoRoute(process.platform, perf),
+        sendThrough: '192.168.1.10',
+        tunAutoRoute: false,
       }),
     );
   });
