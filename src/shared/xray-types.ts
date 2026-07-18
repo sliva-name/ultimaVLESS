@@ -68,21 +68,25 @@ export type XrayMuxSettings = {
   xudpProxyUDP443?: string;
 };
 
+export type XrayTransportNetwork =
+  | 'tcp'
+  | 'raw'
+  | 'kcp'
+  | 'mkcp'
+  | 'ws'
+  | 'websocket'
+  | 'http'
+  | 'domainsocket'
+  | 'quic'
+  | 'grpc'
+  | 'xhttp'
+  | 'splithttp'
+  | 'httpupgrade';
+
 export type XrayStreamSettings = {
-  network:
-    | 'tcp'
-    | 'raw'
-    | 'kcp'
-    | 'mkcp'
-    | 'ws'
-    | 'websocket'
-    | 'http'
-    | 'domainsocket'
-    | 'quic'
-    | 'grpc'
-    | 'xhttp'
-    | 'splithttp'
-    | 'httpupgrade';
+  network: XrayTransportNetwork;
+  /** Xray 26.7+ alias for `network` (both accepted). */
+  method?: XrayTransportNetwork;
   security: 'none' | 'tls' | 'reality';
   tlsSettings?: XrayTlsSettings;
   realitySettings?: XrayRealitySettings;

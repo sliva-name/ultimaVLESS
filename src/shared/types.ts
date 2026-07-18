@@ -50,7 +50,11 @@ export interface ServerConfig {
   pinnedPeerCertSha256?: string;
   /** TLS certificate name override. */
   verifyPeerCertByName?: string;
-  /** VMess security when protocol === 'vmess'. */
+  /**
+   * VMess security when protocol === 'vmess'.
+   * `none` / `zero` are accepted from older links and coerced to `auto`
+   * (removed in Xray 26.7+).
+   */
   vmessSecurity?: 'aes-128-gcm' | 'chacha20-poly1305' | 'auto' | 'none' | 'zero';
   flow?: string; // xtls-rprx-vision
   encryption?: string;

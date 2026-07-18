@@ -18,6 +18,12 @@ import {
   createTunInbound,
   ensureLocalProxyInbounds,
 } from './configGenerator/inbounds';
+import {
+  assertAllowInsecureNotUsed,
+  assertEncryptedPublicOutbound,
+  assertSupportedShadowsocksMethod,
+  normalizeVmessSecurity,
+} from './configGenerator/outboundCompat';
 import { buildDefaultRoutingRules } from './configGenerator/routing';
 import { applyStatsApi } from './configGenerator/statsApi';
 
@@ -99,6 +105,7 @@ export class XrayConfigPipeline {
     this.ensureAuxiliaryOutbounds(cfg);
     this.applyPerfToOutbounds(cfg, perf);
     this.applyPerfToRouting(cfg, perf);
+    this.assertRawOutboundCompatibility(cfg);
     applyStatsApi(cfg);
 
     return cfg;
@@ -139,10 +146,125 @@ export class XrayConfigPipeline {
       if (!outbound.mux) {
         const hasVisionFlow = this.outboundHasVisionFlow(outbound);
         outbound.mux = this.buildMuxSettings(
-          outbound.streamSettings.network,
+          outbound.streamSettings.network ?? outbound.streamSettings.method,
           hasVisionFlow,
           perf,
         );
+      }
+    }
+  }
+
+  private static assertRawOutboundCompatibility(cfg: XrayConfig): void {
+    if (!Array.isArray(cfg.outbounds)) return;
+    for (const outbound of cfg.outbounds as MutableOutbound[]) {
+      if (!outbound || !this.isTunableProxyProtocol(outbound.protocol)) continue;
+      const protocol = String(outbound.protocol);
+      const stream = outbound.streamSettings;
+      const streamSecurity =
+        typeof stream?.security === 'string' ? stream.security : undefined;
+      const tlsSettings = stream?.tlsSettings as
+        | Record<string, unknown>
+        | undefined;
+      if (tlsSettings) {
+        assertAllowInsecureNotUsed(tlsSettings.allowInsecure);
+        delete tlsSettings.allowInsecure;
+      }
+
+      if (protocol === 'shadowsocks') {
+        const method = this.readShadowsocksMethod(outbound);
+        if (method !== undefined) {
+          assertSupportedShadowsocksMethod(method);
+        }
+      }
+
+      if (protocol === 'vmess') {
+        this.coerceRawVmessSecurity(outbound);
+      }
+
+      if (protocol === 'vless' || protocol === 'trojan') {
+        const address = this.readOutboundAddress(outbound);
+        if (!address) continue;
+        assertEncryptedPublicOutbound({
+          protocol,
+          address,
+          streamSecurity,
+          vlessEncryption: this.readVlessEncryption(outbound),
+        });
+      }
+    }
+  }
+
+  private static readOutboundAddress(
+    outbound: MutableOutbound,
+  ): string | undefined {
+    const settings = outbound.settings;
+    if (!settings) return undefined;
+    if (typeof settings.address === 'string' && settings.address) {
+      return settings.address;
+    }
+    const vnext = settings.vnext;
+    if (Array.isArray(vnext) && vnext[0] && typeof vnext[0] === 'object') {
+      const address = (vnext[0] as Record<string, unknown>).address;
+      if (typeof address === 'string' && address) return address;
+    }
+    const servers = settings.servers;
+    if (Array.isArray(servers) && servers[0] && typeof servers[0] === 'object') {
+      const address = (servers[0] as Record<string, unknown>).address;
+      if (typeof address === 'string' && address) return address;
+    }
+    return undefined;
+  }
+
+  private static readVlessEncryption(
+    outbound: MutableOutbound,
+  ): string | undefined {
+    const settings = outbound.settings;
+    if (!settings) return undefined;
+    if (typeof settings.encryption === 'string') return settings.encryption;
+    const vnext = settings.vnext;
+    if (!Array.isArray(vnext) || !vnext[0] || typeof vnext[0] !== 'object') {
+      return undefined;
+    }
+    const users = (vnext[0] as Record<string, unknown>).users;
+    if (!Array.isArray(users) || !users[0] || typeof users[0] !== 'object') {
+      return undefined;
+    }
+    const encryption = (users[0] as Record<string, unknown>).encryption;
+    return typeof encryption === 'string' ? encryption : undefined;
+  }
+
+  private static readShadowsocksMethod(
+    outbound: MutableOutbound,
+  ): string | undefined {
+    const settings = outbound.settings;
+    if (!settings) return undefined;
+    if (typeof settings.method === 'string') return settings.method;
+    const servers = settings.servers;
+    if (Array.isArray(servers) && servers[0] && typeof servers[0] === 'object') {
+      const method = (servers[0] as Record<string, unknown>).method;
+      if (typeof method === 'string') return method;
+    }
+    return undefined;
+  }
+
+  private static coerceRawVmessSecurity(outbound: MutableOutbound): void {
+    const settings = outbound.settings;
+    if (!settings) return;
+    if (typeof settings.security === 'string') {
+      settings.security = normalizeVmessSecurity(settings.security);
+    }
+    const vnext = settings.vnext;
+    if (!Array.isArray(vnext)) return;
+    for (const server of vnext) {
+      if (!server || typeof server !== 'object') continue;
+      const users = (server as Record<string, unknown>).users;
+      if (!Array.isArray(users)) continue;
+      for (const user of users) {
+        if (!user || typeof user !== 'object') continue;
+        const account = user as Record<string, unknown>;
+        if (typeof account.security === 'string') {
+          account.security = normalizeVmessSecurity(account.security);
+        }
       }
     }
   }
@@ -159,6 +281,20 @@ export class XrayConfigPipeline {
   private static normalizeStreamSettings(
     streamSettings: MutableStreamSettings,
   ): void {
+    // Xray 26.7+ prefers `method`; keep `network` as the canonical key we emit.
+    if (
+      streamSettings.network === undefined &&
+      typeof streamSettings.method === 'string'
+    ) {
+      streamSettings.network = streamSettings.method;
+    }
+    if (
+      typeof streamSettings.network === 'string' &&
+      streamSettings.method === undefined
+    ) {
+      streamSettings.method = streamSettings.network;
+    }
+
     const realitySettings = streamSettings.realitySettings;
     if (
       realitySettings &&
@@ -437,6 +573,17 @@ export class XrayConfigPipeline {
       throw new Error('REALITY transport requires RAW/TCP, XHTTP, or gRPC.');
     }
 
+    if (protocol === 'shadowsocks') {
+      assertSupportedShadowsocksMethod(config.method || '');
+    }
+    assertEncryptedPublicOutbound({
+      protocol,
+      address: config.address,
+      streamSecurity: streamSettings.security,
+      vlessEncryption: config.encryption,
+    });
+    assertAllowInsecureNotUsed(config.allowInsecure);
+
     const defaultFp = perf.fingerprint;
 
     if (streamSettings.security === 'reality') {
@@ -450,7 +597,6 @@ export class XrayConfigPipeline {
     } else if (streamSettings.security === 'tls') {
       streamSettings.tlsSettings = {
         serverName: config.sni || '',
-        allowInsecure: !!config.allowInsecure,
         alpn: ['h2', 'http/1.1'],
         fingerprint: config.fp || defaultFp,
       };
@@ -606,14 +752,16 @@ export class XrayConfigPipeline {
         address: config.address,
         port: config.port,
         id: config.userId || config.uuid,
-        security: config.vmessSecurity || 'auto',
+        security: normalizeVmessSecurity(config.vmessSecurity),
       };
     }
     if (protocol === 'shadowsocks') {
+      const method = config.method || '';
+      assertSupportedShadowsocksMethod(method);
       return {
         address: config.address,
         port: config.port,
-        method: config.method || '',
+        method,
         password: config.password || '',
       };
     }
