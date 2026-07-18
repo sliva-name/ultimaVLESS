@@ -125,6 +125,10 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
         `${TUN_IPV6_ADDRESS}/${TUN_IPV6_PREFIX}`,
       ],
       dns: TUN_DNS_SERVERS,
+      // Always bind Xray-originated packets (proxy + freedom/direct) to a
+      // physical NIC. Without this, PowerShell TUN mode loops: geoip:private /
+      // geosite:cn → direct → default route back into TUN (NetBIOS storms).
+      autoOutboundsInterface: 'auto',
     },
   };
   if (options.tunAutoRoute) {
@@ -132,7 +136,6 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
       '0.0.0.0/0',
       '::/0',
     ];
-    (tunInbound.settings as MutableConfigNode).autoOutboundsInterface = 'auto';
   }
   return tunInbound;
 }

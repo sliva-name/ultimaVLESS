@@ -348,7 +348,11 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
               { value: 'chrome', label: 'Chrome' },
               { value: 'firefox', label: 'Firefox' },
               { value: 'safari', label: 'Safari' },
+              { value: 'ios', label: 'iOS' },
+              { value: 'android', label: 'Android' },
               { value: 'edge', label: 'Edge' },
+              { value: '360', label: '360' },
+              { value: 'qq', label: 'QQ' },
               { value: 'random', label: 'Random' },
               { value: 'randomized', label: 'Randomized' },
             ]}

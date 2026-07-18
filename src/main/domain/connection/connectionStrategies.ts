@@ -65,9 +65,14 @@ export function createTunConnectionStrategy(deps: {
     async apply(server: VlessConfig): Promise<void> {
       const perf = deps.configService.getPerformanceSettings();
       const routingPlan = await deps.routeService.prepareRoutingPlan(server);
+      const tunAutoRoute = resolveTunAutoRoute(process.platform, perf);
       await deps.coreService.start(server, 'tun', {
-        sendThrough: routingPlan.defaultRoute.localAddress || undefined,
-        tunAutoRoute: resolveTunAutoRoute(process.platform, perf),
+        // When Xray owns routes via autoOutboundsInterface, skip sendThrough
+        // (docs prefer interface binding; sendThrough is IPv4/IPv6 single-stack).
+        sendThrough: tunAutoRoute
+          ? undefined
+          : routingPlan.defaultRoute.localAddress || undefined,
+        tunAutoRoute,
       });
       await deps.routeService.enable(server, routingPlan);
     },

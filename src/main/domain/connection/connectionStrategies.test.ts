@@ -50,15 +50,51 @@ describe('connection strategies', () => {
 
     await strategies.tun.apply(server, { http: 10809, socks: 10808 });
 
+    const tunAutoRoute = resolveTunAutoRoute(process.platform, perf);
     expect(coreStart).toHaveBeenCalledWith(
       server,
       'tun',
       expect.objectContaining({
-        sendThrough: '192.168.1.10',
-        tunAutoRoute: resolveTunAutoRoute(process.platform, perf),
+        sendThrough: tunAutoRoute ? undefined : '192.168.1.10',
+        tunAutoRoute,
       }),
     );
     expect(routeEnable).toHaveBeenCalled();
+  });
+
+  it('tun powershell fallback still passes sendThrough for loop prevention', async () => {
+    const server = makeServer();
+    const coreStart = vi.fn();
+    const perf = {
+      ...DEFAULT_PERFORMANCE_SETTINGS,
+      windowsTunRouting: 'powershell' as const,
+    };
+    const strategies = createConnectionStrategies({
+      coreService: { start: coreStart } as any,
+      proxyService: {} as any,
+      routeService: {
+        prepareRoutingPlan: vi.fn(async () => ({
+          defaultRoute: { localAddress: '192.168.1.10' },
+          proxyIps: ['203.0.113.1'],
+        })),
+        enable: vi.fn(),
+      } as any,
+      configService: {
+        getPerformanceSettings: vi.fn(() => perf),
+      },
+    });
+
+    await strategies.tun.apply(server, { http: 10809, socks: 10808 });
+
+    expect(coreStart).toHaveBeenCalledWith(
+      server,
+      'tun',
+      expect.objectContaining({
+        sendThrough:
+          process.platform === 'win32' ? '192.168.1.10' : undefined,
+        tunAutoRoute: resolveTunAutoRoute(process.platform, perf),
+      }),
+    );
   });
 
   it('network teardown disables OS effects before stopping Xray', async () => {

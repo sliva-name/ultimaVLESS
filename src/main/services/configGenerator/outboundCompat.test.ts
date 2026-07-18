@@ -5,6 +5,7 @@ import {
   assertSupportedShadowsocksMethod,
   isPrivateOrLocalEndpoint,
   normalizeVmessSecurity,
+  requiresPublicTrojanMux,
 } from './outboundCompat';
 
 describe('outboundCompat', () => {
@@ -70,8 +71,31 @@ describe('outboundCompat', () => {
     ).not.toThrow();
   });
 
+  it('requires TLS for public Hysteria outbounds', () => {
+    expect(() =>
+      assertEncryptedPublicOutbound({
+        protocol: 'hysteria',
+        address: 'example.com',
+        streamSecurity: 'none',
+      }),
+    ).toThrow(/Hysteria requires/);
+
+    expect(() =>
+      assertEncryptedPublicOutbound({
+        protocol: 'hysteria',
+        address: 'example.com',
+        streamSecurity: 'tls',
+      }),
+    ).not.toThrow();
+  });
+
   it('rejects allowInsecure', () => {
     expect(() => assertAllowInsecureNotUsed(true)).toThrow(/allowInsecure/);
     expect(() => assertAllowInsecureNotUsed(false)).not.toThrow();
+  });
+
+  it('requires Mux for public Trojan addresses only', () => {
+    expect(requiresPublicTrojanMux('example.com')).toBe(true);
+    expect(requiresPublicTrojanMux('192.168.0.10')).toBe(false);
   });
 });

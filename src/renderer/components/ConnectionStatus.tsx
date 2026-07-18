@@ -33,6 +33,10 @@ function getProtocolLabel(server: VlessConfig): string {
       return 'TROJAN';
     case 'shadowsocks':
       return 'SHADOWSOCKS';
+    case 'hysteria':
+      return 'HYSTERIA';
+    case 'wireguard':
+      return 'WIREGUARD';
     case 'vless':
     case undefined:
       return 'VLESS';

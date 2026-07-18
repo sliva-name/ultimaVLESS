@@ -7,7 +7,13 @@ export interface Subscription {
 
 import type { XrayConfig } from './xray-types';
 
-export type ServerProtocol = 'vless' | 'vmess' | 'trojan' | 'shadowsocks';
+export type ServerProtocol =
+  | 'vless'
+  | 'vmess'
+  | 'trojan'
+  | 'shadowsocks'
+  | 'hysteria'
+  | 'wireguard';
 
 export type ServerTransport =
   | 'tcp'
@@ -20,12 +26,21 @@ export type ServerTransport =
   | 'xhttp'
   | 'splithttp'
   | 'httpupgrade'
+  | 'hysteria'
   /**
    * Legacy transports. Bundled Xray rejects them; the compiler keeps them in the
    * type only to surface a precise error for persisted/imported servers.
    */
   | 'http'
   | 'quic';
+
+export type WireGuardPeer = {
+  endpoint: string;
+  publicKey: string;
+  preSharedKey?: string;
+  keepAlive?: number;
+  allowedIPs?: string[];
+};
 
 export interface ServerConfig {
   uuid: string;
@@ -40,7 +55,7 @@ export interface ServerConfig {
    * backwards compatibility.
    */
   protocol?: ServerProtocol;
-  /** Trojan/Shadowsocks password. */
+  /** Trojan/Shadowsocks/Hysteria auth password. */
   password?: string;
   /** Shadowsocks cipher method (only used when protocol === 'shadowsocks'). */
   method?: string;
@@ -50,6 +65,8 @@ export interface ServerConfig {
   pinnedPeerCertSha256?: string;
   /** TLS certificate name override. */
   verifyPeerCertByName?: string;
+  /** TLS Encrypted Client Hello config list (client). */
+  echConfigList?: string;
   /**
    * VMess security when protocol === 'vmess'.
    * `none` / `zero` are accepted from older links and coerced to `auto`
@@ -65,6 +82,10 @@ export interface ServerConfig {
   pbk?: string; // reality public key
   sid?: string; // reality short id
   spx?: string; // reality spiderX
+  /** REALITY post-quantum certificate verify key (client). */
+  mldsa65Verify?: string;
+  /** Opaque streamSettings.finalmask passthrough / emit. */
+  finalmask?: Record<string, unknown>;
 
   // WS specific
   path?: string;
@@ -78,6 +99,19 @@ export interface ServerConfig {
 
   // gRPC specific
   serviceName?: string;
+
+  // Hysteria2
+  hysteriaAuth?: string;
+  hysteriaObfs?: { type?: string; password?: string };
+
+  // WireGuard
+  wgSecretKey?: string;
+  wgAddress?: string[];
+  wgPeers?: WireGuardPeer[];
+  wgMtu?: number;
+  wgReserved?: number[];
+  wgNoKernelTun?: boolean;
+  wgDomainStrategy?: string;
 
   // Ping information
   ping?: number | null;
@@ -103,7 +137,11 @@ export type TlsFingerprint =
   | 'chrome'
   | 'firefox'
   | 'safari'
+  | 'ios'
+  | 'android'
   | 'edge'
+  | '360'
+  | 'qq'
   | 'random'
   | 'randomized';
 
@@ -131,7 +169,11 @@ export const VALID_TLS_FINGERPRINTS: readonly TlsFingerprint[] = [
   'chrome',
   'firefox',
   'safari',
+  'ios',
+  'android',
   'edge',
+  '360',
+  'qq',
   'random',
   'randomized',
 ] as const;

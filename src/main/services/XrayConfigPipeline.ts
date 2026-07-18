@@ -23,6 +23,7 @@ import {
   assertEncryptedPublicOutbound,
   assertSupportedShadowsocksMethod,
   normalizeVmessSecurity,
+  requiresPublicTrojanMux,
 } from './configGenerator/outboundCompat';
 import { buildDefaultRoutingRules } from './configGenerator/routing';
 import { applyStatsApi } from './configGenerator/statsApi';
@@ -43,7 +44,13 @@ type StructuredOutboundProtocol =
   | 'vless'
   | 'vmess'
   | 'trojan'
-  | 'shadowsocks';
+  | 'shadowsocks'
+  | 'hysteria'
+  | 'wireguard';
+
+function bundledVersionMin(): string {
+  return BUNDLED_XRAY_VERSION.replace(/^v/i, '');
+}
 
 export interface XrayConfigPipelineOptions {
   sendThrough?: string;
@@ -95,7 +102,11 @@ export class XrayConfigPipeline {
 
     if (connectionMode === 'tun' && !hasTun) {
       cfg.inbounds.unshift(createTunInbound(options));
-      this.applySendThroughIfNeeded(cfg, options.sendThrough);
+      // Prefer autoOutboundsInterface for loop prevention; sendThrough is
+      // dual-stack-limited and only needed when Xray auto-route is off.
+      if (!options.tunAutoRoute) {
+        this.applySendThroughIfNeeded(cfg, options.sendThrough);
+      }
     }
 
     // Raw subscriptions often omit the `block` / `direct` outbounds that are
@@ -107,8 +118,17 @@ export class XrayConfigPipeline {
     this.applyPerfToRouting(cfg, perf);
     this.assertRawOutboundCompatibility(cfg);
     applyStatsApi(cfg);
+    this.applyBundledVersionConstraint(cfg);
 
     return cfg;
+  }
+
+  private static applyBundledVersionConstraint(cfg: XrayConfig): void {
+    const existing = cfg.version && typeof cfg.version === 'object' ? cfg.version : {};
+    cfg.version = {
+      ...existing,
+      min: bundledVersionMin(),
+    };
   }
 
   private static ensureAuxiliaryOutbounds(cfg: XrayConfig): void {
@@ -134,6 +154,8 @@ export class XrayConfigPipeline {
     for (const outbound of cfg.outbounds as MutableOutbound[]) {
       if (!outbound || (outbound.tag && outbound.tag !== 'proxy')) continue;
       if (!this.isTunableProxyProtocol(outbound.protocol)) continue;
+      // WireGuard docs forbid streamSettings on the outbound.
+      if (outbound.protocol === 'wireguard') continue;
 
       if (!outbound.streamSettings) outbound.streamSettings = {};
       this.normalizeStreamSettings(outbound.streamSettings);
@@ -145,10 +167,16 @@ export class XrayConfigPipeline {
 
       if (!outbound.mux) {
         const hasVisionFlow = this.outboundHasVisionFlow(outbound);
+        const address = this.readOutboundAddress(outbound);
+        const forceMux =
+          outbound.protocol === 'trojan' &&
+          !!address &&
+          requiresPublicTrojanMux(address);
         outbound.mux = this.buildMuxSettings(
-          outbound.streamSettings.network ?? outbound.streamSettings.method,
+          outbound.streamSettings.method ?? outbound.streamSettings.network,
           hasVisionFlow,
           perf,
+          { forceMux },
         );
       }
     }
@@ -181,7 +209,11 @@ export class XrayConfigPipeline {
         this.coerceRawVmessSecurity(outbound);
       }
 
-      if (protocol === 'vless' || protocol === 'trojan') {
+      if (
+        protocol === 'vless' ||
+        protocol === 'trojan' ||
+        protocol === 'hysteria'
+      ) {
         const address = this.readOutboundAddress(outbound);
         if (!address) continue;
         assertEncryptedPublicOutbound({
@@ -274,25 +306,32 @@ export class XrayConfigPipeline {
       protocol === 'vless' ||
       protocol === 'vmess' ||
       protocol === 'trojan' ||
-      protocol === 'shadowsocks'
+      protocol === 'shadowsocks' ||
+      protocol === 'hysteria' ||
+      protocol === 'wireguard'
     );
   }
 
   private static normalizeStreamSettings(
     streamSettings: MutableStreamSettings,
   ): void {
-    // Xray 26.7+ prefers `method`; keep `network` as the canonical key we emit.
-    if (
-      streamSettings.network === undefined &&
-      typeof streamSettings.method === 'string'
-    ) {
-      streamSettings.network = streamSettings.method;
+    // Docs canonicalize on `method` (default `raw`); `network` remains an alias.
+    // Keep both in sync and map tcp ↔ raw for maximum compatibility.
+    if (streamSettings.method === 'tcp') {
+      streamSettings.method = 'raw';
     }
     if (
-      typeof streamSettings.network === 'string' &&
-      streamSettings.method === undefined
+      streamSettings.method === undefined &&
+      typeof streamSettings.network === 'string'
     ) {
-      streamSettings.method = streamSettings.network;
+      streamSettings.method =
+        streamSettings.network === 'tcp' ? 'raw' : streamSettings.network;
+    }
+    if (typeof streamSettings.method === 'string') {
+      if (streamSettings.network === undefined || streamSettings.network === 'raw') {
+        streamSettings.network =
+          streamSettings.method === 'raw' ? 'tcp' : streamSettings.method;
+      }
     }
 
     const realitySettings = streamSettings.realitySettings;
@@ -390,17 +429,26 @@ export class XrayConfigPipeline {
 
   private static outboundHasVisionFlow(outbound: MutableOutbound): boolean {
     const settings = outbound.settings as MutableConfigNode | undefined;
-    const vnext = settings?.vnext;
+    if (!settings) return false;
+    // Simplified VLESS outbound (current Project X docs).
+    if (typeof settings.flow === 'string' && settings.flow.trim() !== '') {
+      return true;
+    }
+    // Legacy vnext form still appears in some subscription JSON.
+    const vnext = settings.vnext;
     if (!Array.isArray(vnext)) return false;
     for (const server of vnext) {
-      if (!Array.isArray(server.users)) continue;
-      for (const user of server.users as Array<Record<string, unknown>>) {
+      if (!server || typeof server !== 'object') continue;
+      const users = (server as Record<string, unknown>).users;
+      if (!Array.isArray(users)) continue;
+      for (const user of users as Array<Record<string, unknown>>) {
         if (
           user.flow &&
           typeof user.flow === 'string' &&
           user.flow.trim() !== ''
-        )
+        ) {
           return true;
+        }
       }
     }
     return false;
@@ -496,17 +544,20 @@ export class XrayConfigPipeline {
     if (config.protocol === 'trojan') return 'trojan';
     if (config.protocol === 'shadowsocks') return 'shadowsocks';
     if (config.protocol === 'vmess') return 'vmess';
+    if (config.protocol === 'hysteria') return 'hysteria';
+    if (config.protocol === 'wireguard') return 'wireguard';
     return 'vless';
   }
 
+  /** Canonical transport name for `streamSettings.method` (Project X docs). */
   private static normalizeTransport(
     config: VlessConfig,
-  ): XrayStreamSettings['network'] {
+  ): NonNullable<XrayStreamSettings['method']> {
     const transport = config.type || 'tcp';
     switch (transport) {
       case 'raw':
       case 'tcp':
-        return 'tcp';
+        return 'raw';
       case 'kcp':
       case 'mkcp':
         return 'mkcp';
@@ -520,6 +571,8 @@ export class XrayConfigPipeline {
         return 'xhttp';
       case 'httpupgrade':
         return 'httpupgrade';
+      case 'hysteria':
+        return 'hysteria';
       case 'http':
         throw new Error(
           `HTTP transport is not supported by bundled Xray ${BUNDLED_XRAY_VERSION}; use XHTTP instead.`,
@@ -529,8 +582,25 @@ export class XrayConfigPipeline {
           `QUIC transport is not supported by bundled Xray ${BUNDLED_XRAY_VERSION}; use XHTTP/H3 instead.`,
         );
       default:
-        return 'tcp';
+        return 'raw';
     }
+  }
+
+  /** Alias value for legacy `network` readers (`raw` ↔ `tcp`). */
+  private static transportNetworkAlias(
+    method: NonNullable<XrayStreamSettings['method']>,
+  ): XrayStreamSettings['network'] {
+    return method === 'raw' ? 'tcp' : method;
+  }
+
+  private static tlsAlpnForTransport(
+    method: NonNullable<XrayStreamSettings['method']>,
+  ): string[] {
+    // uTLS defaults WS/HTTPUpgrade to http/1.1; negotiating h2 first often breaks them.
+    if (method === 'websocket' || method === 'httpupgrade') {
+      return ['http/1.1'];
+    }
+    return ['h2', 'http/1.1'];
   }
 
   private static getDefaultSecurity(
@@ -538,7 +608,8 @@ export class XrayConfigPipeline {
     protocol: StructuredOutboundProtocol,
   ): XrayStreamSettings['security'] {
     if (config.security) return config.security;
-    return protocol === 'trojan' ? 'tls' : 'none';
+    if (protocol === 'trojan' || protocol === 'hysteria') return 'tls';
+    return 'none';
   }
 
   private static withWebSocketEarlyData(
@@ -561,137 +632,12 @@ export class XrayConfigPipeline {
   ): XrayConfig {
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
     const protocol = this.getStructuredProtocol(config);
-
-    const streamSettings: XrayStreamSettings = {
-      network: this.normalizeTransport(config),
-      security: this.getDefaultSecurity(config, protocol),
-    };
-    if (
-      streamSettings.security === 'reality' &&
-      !['tcp', 'xhttp', 'grpc'].includes(streamSettings.network)
-    ) {
-      throw new Error('REALITY transport requires RAW/TCP, XHTTP, or gRPC.');
-    }
-
-    if (protocol === 'shadowsocks') {
-      assertSupportedShadowsocksMethod(config.method || '');
-    }
-    assertEncryptedPublicOutbound({
-      protocol,
-      address: config.address,
-      streamSecurity: streamSettings.security,
-      vlessEncryption: config.encryption,
-    });
     assertAllowInsecureNotUsed(config.allowInsecure);
 
-    const defaultFp = perf.fingerprint;
-
-    if (streamSettings.security === 'reality') {
-      streamSettings.realitySettings = {
-        fingerprint: config.fp || defaultFp,
-        serverName: config.sni || '',
-        password: config.pbk || '',
-        shortId: config.sid || '',
-        spiderX: config.spx || '',
-      };
-    } else if (streamSettings.security === 'tls') {
-      streamSettings.tlsSettings = {
-        serverName: config.sni || '',
-        alpn: ['h2', 'http/1.1'],
-        fingerprint: config.fp || defaultFp,
-      };
-      if (config.pinnedPeerCertSha256) {
-        streamSettings.tlsSettings.pinnedPeerCertSha256 =
-          config.pinnedPeerCertSha256;
-      }
-      if (config.verifyPeerCertByName) {
-        streamSettings.tlsSettings.verifyPeerCertByName =
-          config.verifyPeerCertByName;
-      }
-    }
-
-    if (streamSettings.network === 'websocket') {
-      streamSettings.wsSettings = {
-        path: this.withWebSocketEarlyData(
-          config.path || '/',
-          config.wsMaxEarlyData,
-        ),
-        host: config.host || config.sni || '',
-      };
-    }
-
-    if (streamSettings.network === 'httpupgrade') {
-      streamSettings.httpupgradeSettings = {
-        path: this.withWebSocketEarlyData(
-          config.path || '/',
-          config.wsMaxEarlyData,
-        ),
-        host: config.host || config.sni || '',
-      } as Record<string, unknown>;
-    }
-
-    if (streamSettings.network === 'grpc') {
-      streamSettings.grpcSettings = {
-        serviceName: config.serviceName || '',
-      };
-    }
-
-    if (streamSettings.network === 'xhttp') {
-      const extra =
-        config.xhttpExtra || config.noGRPCHeader !== undefined
-          ? {
-              ...(config.xhttpExtra ?? {}),
-              ...(config.noGRPCHeader !== undefined
-                ? { noGRPCHeader: config.noGRPCHeader }
-                : {}),
-            }
-          : undefined;
-      streamSettings.xhttpSettings = {
-        path: config.path || '/',
-        host: config.host || config.sni || '',
-      };
-      if (config.mode) {
-        streamSettings.xhttpSettings.mode = config.mode;
-      }
-      if (extra) {
-        streamSettings.xhttpSettings.extra = extra;
-      }
-    }
-
-    if (streamSettings.network === 'mkcp') {
-      streamSettings.kcpSettings = {
-        mtu: 1350,
-        tti: 20,
-        uplinkCapacity: 50,
-        downlinkCapacity: 100,
-        congestion: true,
-        readBufferSize: 4,
-        writeBufferSize: 4,
-        header: { type: 'none' },
-      };
-    }
-
-    const hasVisionFlow =
-      protocol === 'vless' && !!(config.flow && config.flow.trim() !== '');
-    const mux = this.buildMuxSettings(
-      streamSettings.network,
-      hasVisionFlow,
-      perf,
-    );
-
-    const outbound: XrayOutbound = {
-      protocol,
-      settings: this.buildOutboundSettings(config, protocol, hasVisionFlow),
-      streamSettings: {
-        ...streamSettings,
-        sockopt: { tcpFastOpen: perf.tcpFastOpen },
-      },
-      mux,
-      tag: 'proxy',
-    };
-    if (connectionMode === 'tun' && options.sendThrough) {
-      outbound.sendThrough = options.sendThrough;
-    }
+    const outbound =
+      protocol === 'wireguard'
+        ? this.buildWireGuardOutbound(config)
+        : this.buildStreamOutbound(config, protocol, perf);
 
     const inbounds: XrayInbound[] = createLocalProxyInbounds(
       perf.sniffingRouteOnly,
@@ -731,15 +677,264 @@ export class XrayConfigPipeline {
       },
     };
 
+    if (
+      connectionMode === 'tun' &&
+      options.sendThrough &&
+      !options.tunAutoRoute
+    ) {
+      this.applySendThroughIfNeeded(cfg, options.sendThrough);
+    }
+
     applyStatsApi(cfg);
+    this.applyBundledVersionConstraint(cfg);
     return cfg;
+  }
+
+  private static buildWireGuardOutbound(config: VlessConfig): XrayOutbound {
+    if (!config.wgSecretKey) {
+      throw new Error('WireGuard outbound requires wgSecretKey.');
+    }
+    if (!config.wgAddress?.length) {
+      throw new Error('WireGuard outbound requires wgAddress.');
+    }
+    if (!config.wgPeers?.length) {
+      throw new Error('WireGuard outbound requires at least one peer.');
+    }
+
+    const settings: Record<string, unknown> = {
+      secretKey: config.wgSecretKey,
+      address: config.wgAddress,
+      peers: config.wgPeers.map((peer) => {
+        const entry: Record<string, unknown> = {
+          endpoint: peer.endpoint,
+          publicKey: peer.publicKey,
+        };
+        if (peer.preSharedKey) entry.preSharedKey = peer.preSharedKey;
+        if (peer.keepAlive !== undefined) entry.keepAlive = peer.keepAlive;
+        if (peer.allowedIPs?.length) entry.allowedIPs = peer.allowedIPs;
+        return entry;
+      }),
+    };
+    if (config.wgMtu !== undefined) settings.mtu = config.wgMtu;
+    if (config.wgReserved?.length) settings.reserved = config.wgReserved;
+    if (config.wgNoKernelTun !== undefined) {
+      settings.noKernelTun = config.wgNoKernelTun;
+    }
+    if (config.wgDomainStrategy) {
+      settings.domainStrategy = config.wgDomainStrategy;
+    }
+
+    const outbound: XrayOutbound = {
+      protocol: 'wireguard',
+      settings,
+      tag: 'proxy',
+    };
+    return outbound;
+  }
+
+  private static buildStreamOutbound(
+    config: VlessConfig,
+    protocol: Exclude<StructuredOutboundProtocol, 'wireguard'>,
+    perf: PerformanceSettings,
+  ): XrayOutbound {
+    const transport =
+      protocol === 'hysteria' ? 'hysteria' : this.normalizeTransport(config);
+    const streamSettings: XrayStreamSettings = {
+      method: transport,
+      network: this.transportNetworkAlias(transport),
+      security: this.getDefaultSecurity(config, protocol),
+    };
+    if (protocol === 'hysteria') {
+      streamSettings.method = 'hysteria';
+      streamSettings.network = 'hysteria';
+      streamSettings.security = 'tls';
+    }
+    if (
+      streamSettings.security === 'reality' &&
+      !['raw', 'tcp', 'xhttp', 'grpc'].includes(transport)
+    ) {
+      throw new Error('REALITY transport requires RAW/TCP, XHTTP, or gRPC.');
+    }
+
+    if (protocol === 'shadowsocks') {
+      assertSupportedShadowsocksMethod(config.method || '');
+    }
+    assertEncryptedPublicOutbound({
+      protocol,
+      address: config.address,
+      streamSecurity: streamSettings.security,
+      vlessEncryption: config.encryption,
+    });
+
+    const defaultFp = perf.fingerprint;
+
+    if (streamSettings.security === 'reality') {
+      streamSettings.realitySettings = {
+        fingerprint: config.fp || defaultFp,
+        serverName: config.sni || '',
+        password: config.pbk || '',
+        shortId: config.sid || '',
+        spiderX: config.spx || '',
+      };
+      if (config.mldsa65Verify) {
+        streamSettings.realitySettings.mldsa65Verify = config.mldsa65Verify;
+      }
+    } else if (streamSettings.security === 'tls') {
+      streamSettings.tlsSettings = {
+        serverName: config.sni || '',
+        alpn: this.tlsAlpnForTransport(transport),
+        fingerprint: config.fp || defaultFp,
+      };
+      if (config.pinnedPeerCertSha256) {
+        streamSettings.tlsSettings.pinnedPeerCertSha256 =
+          config.pinnedPeerCertSha256;
+      }
+      if (config.verifyPeerCertByName) {
+        streamSettings.tlsSettings.verifyPeerCertByName =
+          config.verifyPeerCertByName;
+      }
+      if (config.echConfigList) {
+        streamSettings.tlsSettings.echConfigList = config.echConfigList;
+      }
+    }
+
+    if (protocol === 'hysteria') {
+      const auth = config.hysteriaAuth || config.password || '';
+      if (!auth) {
+        throw new Error('Hysteria outbound requires hysteriaAuth (or password).');
+      }
+      streamSettings.hysteriaSettings = {
+        version: 2,
+        auth,
+      };
+    }
+
+    if (transport === 'websocket') {
+      streamSettings.wsSettings = {
+        path: this.withWebSocketEarlyData(
+          config.path || '/',
+          config.wsMaxEarlyData,
+        ),
+        host: config.host || config.sni || '',
+      };
+    }
+
+    if (transport === 'httpupgrade') {
+      streamSettings.httpupgradeSettings = {
+        path: this.withWebSocketEarlyData(
+          config.path || '/',
+          config.wsMaxEarlyData,
+        ),
+        host: config.host || config.sni || '',
+      } as Record<string, unknown>;
+    }
+
+    if (transport === 'grpc') {
+      streamSettings.grpcSettings = {
+        serviceName: config.serviceName || '',
+      };
+    }
+
+    if (transport === 'xhttp') {
+      const extra =
+        config.xhttpExtra || config.noGRPCHeader !== undefined
+          ? {
+              ...(config.xhttpExtra ?? {}),
+              ...(config.noGRPCHeader !== undefined
+                ? { noGRPCHeader: config.noGRPCHeader }
+                : {}),
+            }
+          : undefined;
+      streamSettings.xhttpSettings = {
+        path: config.path || '/',
+        host: config.host || config.sni || '',
+      };
+      if (config.mode) {
+        streamSettings.xhttpSettings.mode = config.mode;
+      }
+      if (extra) {
+        streamSettings.xhttpSettings.extra = extra;
+      }
+    }
+
+    if (transport === 'mkcp') {
+      streamSettings.kcpSettings = {
+        mtu: 1350,
+        tti: 20,
+        uplinkCapacity: 50,
+        downlinkCapacity: 100,
+        congestion: true,
+        readBufferSize: 4,
+        writeBufferSize: 4,
+        header: { type: 'none' },
+      };
+    }
+
+    const finalmask = this.buildFinalmask(config, protocol);
+    if (finalmask) {
+      streamSettings.finalmask = finalmask;
+    }
+
+    const hasVisionFlow =
+      protocol === 'vless' && !!(config.flow && config.flow.trim() !== '');
+    const forceMux =
+      protocol === 'trojan' && requiresPublicTrojanMux(config.address);
+    const mux = this.buildMuxSettings(transport, hasVisionFlow, perf, {
+      forceMux,
+    });
+
+    const outbound: XrayOutbound = {
+      protocol,
+      settings: this.buildOutboundSettings(config, protocol, hasVisionFlow),
+      streamSettings: {
+        ...streamSettings,
+        sockopt: { tcpFastOpen: perf.tcpFastOpen },
+      },
+      mux,
+      tag: 'proxy',
+    };
+    return outbound;
+  }
+
+  private static buildFinalmask(
+    config: VlessConfig,
+    protocol: StructuredOutboundProtocol,
+  ): Record<string, unknown> | undefined {
+    let finalmask: Record<string, unknown> | undefined = config.finalmask
+      ? { ...config.finalmask }
+      : undefined;
+
+    const obfsType = (config.hysteriaObfs?.type || '').toLowerCase();
+    const obfsPassword = config.hysteriaObfs?.password;
+    if (protocol === 'hysteria' && obfsType === 'salamander' && obfsPassword) {
+      const salamanderUdp = [
+        { type: 'salamander', settings: { password: obfsPassword } },
+      ];
+      if (!finalmask) {
+        finalmask = { udp: salamanderUdp };
+      } else {
+        const existingUdp = Array.isArray(finalmask.udp)
+          ? (finalmask.udp as unknown[])
+          : [];
+        finalmask = { ...finalmask, udp: [...salamanderUdp, ...existingUdp] };
+      }
+    }
+
+    return finalmask;
   }
 
   private static buildOutboundSettings(
     config: VlessConfig,
-    protocol: StructuredOutboundProtocol,
+    protocol: Exclude<StructuredOutboundProtocol, 'wireguard'>,
     hasVisionFlow: boolean,
   ): Record<string, unknown> {
+    if (protocol === 'hysteria') {
+      return {
+        version: 2,
+        address: config.address,
+        port: config.port,
+      };
+    }
     if (protocol === 'trojan') {
       return {
         address: config.address,
@@ -765,30 +960,26 @@ export class XrayConfigPipeline {
         password: config.password || '',
       };
     }
-    const vlessUser: { id: string; encryption: string; flow?: string } = {
+    // Simplified VLESS outbound (current Project X docs); vnext is legacy.
+    const settings: Record<string, unknown> = {
+      address: config.address,
+      port: config.port,
       id: config.userId || config.uuid,
       encryption: config.encryption || 'none',
     };
     if (hasVisionFlow && config.flow) {
-      vlessUser.flow = config.flow;
+      settings.flow = config.flow;
     }
-    return {
-      vnext: [
-        {
-          address: config.address,
-          port: config.port,
-          users: [vlessUser],
-        },
-      ],
-    };
+    return settings;
   }
 
   private static buildMuxSettings(
-    network: unknown,
+    transport: unknown,
     hasVisionFlow: boolean,
     perf: PerformanceSettings,
+    options: { forceMux?: boolean } = {},
   ): XrayMuxSettings {
-    if (network === 'grpc') {
+    if (transport === 'grpc' || transport === 'hysteria') {
       return { enabled: false };
     }
     if (hasVisionFlow) {
@@ -800,7 +991,7 @@ export class XrayConfigPipeline {
       };
     }
     return {
-      enabled: perf.muxEnabled,
+      enabled: options.forceMux === true ? true : perf.muxEnabled,
       concurrency: perf.muxConcurrency,
       xudpConcurrency: perf.xudpConcurrency,
       xudpProxyUDP443: perf.xudpProxyUDP443,
@@ -818,13 +1009,19 @@ export class XrayConfigPipeline {
     ) {
       return;
     }
+    // Pin both proxy and freedom/direct. Direct without a physical bind loops
+    // into TUN whenever routing sends geoip:private / geosite:cn there.
     const outbounds = cfg.outbounds as MutableOutbound[];
-    const preferred =
-      outbounds.find((outbound) => outbound?.tag === 'proxy') ?? outbounds[0];
-    if (!preferred || preferred.sendThrough) {
-      return;
+    for (const outbound of outbounds) {
+      if (!outbound || outbound.sendThrough) continue;
+      if (
+        outbound.tag === 'proxy' ||
+        outbound.tag === 'direct' ||
+        outbound.protocol === 'freedom'
+      ) {
+        outbound.sendThrough = sendThrough;
+      }
     }
-    preferred.sendThrough = sendThrough;
   }
 }
 

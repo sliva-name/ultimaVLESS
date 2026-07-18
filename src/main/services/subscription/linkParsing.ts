@@ -109,13 +109,17 @@ export function isSupportedLink(link: string): boolean {
   return (
     normalized.startsWith('vless://') ||
     normalized.startsWith('trojan://') ||
-    normalized.startsWith('ss://')
+    normalized.startsWith('ss://') ||
+    normalized.startsWith('hy2://') ||
+    normalized.startsWith('hysteria2://')
   );
 }
 
 export function extractSupportedLinks(input: string): string[] {
   // Stop before common HTML delimiters so links embedded in markup are still valid.
-  const matches = input.match(/(?:vless|trojan|ss):\/\/[^\s<>"'`]+/gi);
+  const matches = input.match(
+    /(?:vless|trojan|ss|hy2|hysteria2):\/\/[^\s<>"'`]+/gi,
+  );
   if (!matches) return [];
 
   return matches
@@ -240,8 +244,17 @@ function parseVlessLink(
       xhttpExtra,
       noGRPCHeader,
       allowInsecure,
-      pinnedPeerCertSha256: params.get('pinnedPeerCertSha256') ?? undefined,
-      verifyPeerCertByName: params.get('verifyPeerCertByName') ?? undefined,
+      pinnedPeerCertSha256:
+        params.get('pinnedPeerCertSha256') ??
+        params.get('pcs') ??
+        undefined,
+      verifyPeerCertByName:
+        params.get('verifyPeerCertByName') ??
+        params.get('vcn') ??
+        undefined,
+      mldsa65Verify:
+        params.get('mldsa65Verify') ?? params.get('pqv') ?? undefined,
+      echConfigList: params.get('ech') ?? undefined,
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing VLESS link', {
@@ -318,11 +331,109 @@ function parseTrojanLink(link: string): VlessConfig | null {
       allowInsecure:
         isTruthyQueryParam(params.get('insecure')) ||
         isTruthyQueryParam(params.get('allowInsecure')),
-      pinnedPeerCertSha256: params.get('pinnedPeerCertSha256') ?? undefined,
-      verifyPeerCertByName: params.get('verifyPeerCertByName') ?? undefined,
+      pinnedPeerCertSha256:
+        params.get('pinnedPeerCertSha256') ??
+        params.get('pcs') ??
+        undefined,
+      verifyPeerCertByName:
+        params.get('verifyPeerCertByName') ??
+        params.get('vcn') ??
+        undefined,
+      mldsa65Verify:
+        params.get('mldsa65Verify') ?? params.get('pqv') ?? undefined,
+      echConfigList: params.get('ech') ?? undefined,
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing Trojan link', {
+      link: link.substring(0, 50) + '...',
+    });
+    return null;
+  }
+}
+
+/**
+ * Official Hysteria 2 URI: hy2:// / hysteria2://
+ * https://hysteria.network/docs/developers/URI-Scheme/
+ */
+function parseHysteria2Link(link: string): VlessConfig | null {
+  try {
+    const normalizedLink = normalizeLinkForParsing(link);
+    // URL() does not recognize hy2: — normalize to hysteria2: for parsing.
+    const forUrl = normalizedLink.replace(/^hy2:/i, 'hysteria2:');
+    const parsedUrl = new URL(forUrl);
+    if (parsedUrl.protocol !== 'hysteria2:') return null;
+
+    const auth = safeDecodeComponent(parsedUrl.username || '');
+    const address = parsedUrl.hostname || '';
+    const port = parsedUrl.port ? Number(parsedUrl.port) : 443;
+    if (
+      !auth ||
+      !address ||
+      !Number.isInteger(port) ||
+      port < 1 ||
+      port > 65535
+    ) {
+      return null;
+    }
+
+    const name = parsedUrl.hash
+      ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Hysteria Server'
+      : 'Hysteria Server';
+    const params = parsedUrl.searchParams;
+    const allowInsecure =
+      isTruthyQueryParam(params.get('insecure')) ||
+      isTruthyQueryParam(params.get('allowInsecure'));
+    const obfs = params.get('obfs') ?? undefined;
+    const obfsPassword = params.get('obfs-password') ?? undefined;
+    const sni = params.get('sni') ?? undefined;
+    const fp = params.get('fp') ?? undefined;
+    const echConfigList = params.get('ech') ?? undefined;
+    const pinnedPeerCertSha256 =
+      params.get('pinSHA256') ??
+      params.get('pinnedPeerCertSha256') ??
+      params.get('pcs') ??
+      undefined;
+
+    return {
+      uuid: createStableServerId(
+        createHashedIdentityToken('hy2', auth, address, port),
+        address,
+        port,
+        [
+          'hysteria',
+          sni,
+          fp,
+          obfs,
+          obfsPassword,
+          echConfigList,
+          pinnedPeerCertSha256,
+          String(allowInsecure),
+        ],
+      ),
+      address,
+      port,
+      name,
+      protocol: 'hysteria',
+      password: auth,
+      hysteriaAuth: auth,
+      type: 'hysteria',
+      security: 'tls',
+      sni,
+      fp,
+      allowInsecure,
+      pinnedPeerCertSha256,
+      verifyPeerCertByName:
+        params.get('verifyPeerCertByName') ??
+        params.get('vcn') ??
+        undefined,
+      echConfigList,
+      hysteriaObfs:
+        obfs || obfsPassword
+          ? { type: obfs, password: obfsPassword }
+          : undefined,
+    };
+  } catch {
+    logger.error('SubscriptionService', 'Error parsing Hysteria2 link', {
       link: link.substring(0, 50) + '...',
     });
     return null;
@@ -474,6 +585,12 @@ function parseLink(link: string, identitySalt?: string): VlessConfig | null {
   }
   if (normalized.startsWith('ss://')) {
     return parseShadowsocksLink(link);
+  }
+  if (
+    normalized.startsWith('hy2://') ||
+    normalized.startsWith('hysteria2://')
+  ) {
+    return parseHysteria2Link(link);
   }
   return null;
 }

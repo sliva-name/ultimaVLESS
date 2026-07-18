@@ -106,6 +106,18 @@ export function assertEncryptedPublicOutbound(options: {
   vlessEncryption?: string;
 }): void {
   const protocol = options.protocol.toLowerCase();
+  if (protocol === 'wireguard' || protocol === 'shadowsocks' || protocol === 'vmess') {
+    return;
+  }
+  if (isPrivateOrLocalEndpoint(options.address)) return;
+
+  if (protocol === 'hysteria') {
+    if ((options.streamSecurity || '').toLowerCase() === 'tls') return;
+    throw new Error(
+      `Hysteria requires streamSettings.security=tls in Xray ${BUNDLED_XRAY_VERSION}.`,
+    );
+  }
+
   if (protocol !== 'vless' && protocol !== 'trojan') return;
   if (hasStreamTransportSecurity(options.streamSecurity)) return;
   if (
@@ -114,7 +126,6 @@ export function assertEncryptedPublicOutbound(options: {
   ) {
     return;
   }
-  if (isPrivateOrLocalEndpoint(options.address)) return;
 
   const transportHint =
     protocol === 'trojan'
@@ -131,4 +142,12 @@ export function assertAllowInsecureNotUsed(allowInsecure: unknown): void {
       `"allowInsecure" was removed in bundled Xray ${BUNDLED_XRAY_VERSION}; use pinnedPeerCertSha256 (pcs) and/or verifyPeerCertByName (vcn) instead.`,
     );
   }
+}
+
+/**
+ * Public Trojan without Mux forms detectable TLS-in-TLS (TiT).
+ * Project X docs require Mux for public Trojan outbounds.
+ */
+export function requiresPublicTrojanMux(address: string): boolean {
+  return !isPrivateOrLocalEndpoint(address);
 }

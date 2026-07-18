@@ -81,12 +81,26 @@ export type XrayTransportNetwork =
   | 'grpc'
   | 'xhttp'
   | 'splithttp'
-  | 'httpupgrade';
+  | 'httpupgrade'
+  | 'hysteria';
+
+export type XrayHysteriaSettings = {
+  version?: number;
+  auth?: string;
+  udpIdleTimeout?: number;
+  masquerade?: Record<string, unknown>;
+};
 
 export type XrayStreamSettings = {
-  network: XrayTransportNetwork;
-  /** Xray 26.7+ alias for `network` (both accepted). */
+  /**
+   * Canonical transport key in Project X docs (default `raw`).
+   * Prefer this over `network` when generating configs.
+   */
   method?: XrayTransportNetwork;
+  /**
+   * Legacy alias for `method` (`tcp` ↔ `raw`). Still accepted by Xray-core.
+   */
+  network?: XrayTransportNetwork;
   security: 'none' | 'tls' | 'reality';
   tlsSettings?: XrayTlsSettings;
   realitySettings?: XrayRealitySettings;
@@ -97,7 +111,10 @@ export type XrayStreamSettings = {
   httpSettings?: XrayHttpObfsSettings;
   quicSettings?: XrayQuicSettings;
   xhttpSettings?: XrayXhttpSettings;
+  hysteriaSettings?: XrayHysteriaSettings;
   tcpSettings?: XrayTcpSettings;
+  /** Final traffic camouflage / QUIC params (opaque object). */
+  finalmask?: Record<string, unknown>;
   sockopt?: {
     mark?: number;
     tcpFastOpen?: boolean;
@@ -114,6 +131,8 @@ export type XrayTlsSettings = {
   alpn?: string[];
   certificates?: Array<Record<string, unknown>>;
   fingerprint?: string;
+  /** Encrypted Client Hello config list (client). */
+  echConfigList?: string;
 };
 
 export type XrayRealitySettings = {
@@ -136,6 +155,8 @@ export type XrayRealitySettings = {
   publicKey?: string;
   shortId?: string; // used in client outbound
   spiderX?: string; // used in client outbound
+  /** Post-quantum certificate verify key (client). */
+  mldsa65Verify?: string;
 };
 
 export type XrayWsSettings = {
@@ -185,7 +206,14 @@ export type XrayRouting = {
   balancers?: Array<Record<string, unknown>>;
 };
 
+export type XrayVersionConstraint = {
+  min?: string;
+  max?: string;
+};
+
 export type XrayConfig = {
+  /** Process env map (raw passthrough only; UltimaVLESS does not inject). */
+  env?: Record<string, string>;
   log?: XrayLogConfig;
   api?: Record<string, unknown>;
   dns?: Record<string, unknown>;
@@ -196,4 +224,6 @@ export type XrayConfig = {
   stats?: Record<string, unknown>;
   reverse?: Record<string, unknown>;
   fakedns?: Record<string, unknown>;
+  /** Minimum/maximum client core version allowed to run this config. */
+  version?: XrayVersionConstraint;
 };
