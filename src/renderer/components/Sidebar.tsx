@@ -24,6 +24,8 @@ interface SidebarProps {
   subscriptions: Subscription[];
   selectedServer: VlessConfig | null;
   isConnected: boolean;
+  /** True unless session is fully idle — blocks server picks during connect/disconnect. */
+  selectionLocked?: boolean;
   isRefreshingPings?: boolean;
   onSelectServer: (server: VlessConfig) => void;
   onOpenSettings: () => void;
@@ -35,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   subscriptions,
   selectedServer,
   isConnected,
+  selectionLocked = false,
   isRefreshingPings = false,
   onSelectServer,
   onOpenSettings,
@@ -154,7 +157,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {onPingAll && (
                 <button
                   onClick={handlePingAll}
-                  disabled={pingInProgress || isConnected}
+                  disabled={pingInProgress || selectionLocked}
                   aria-busy={pingInProgress}
                   aria-label={t(
                     pingInProgress ? 'sidebar.pingRefreshing' : 'sidebar.pingAll',
@@ -162,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   className={clsx(
                     'p-1.5 rounded-lg transition-all duration-200',
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                    pingInProgress || isConnected
+                    pingInProgress || selectionLocked
                       ? 'text-gray-600 cursor-not-allowed'
                       : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50',
                   )}
@@ -189,7 +192,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             color={getSubscriptionColor(subscription.id)}
             servers={subServers}
             selectedServer={selectedServer}
-            isConnected={isConnected}
+            selectionLocked={selectionLocked}
             onSelectServer={onSelectServer}
           />
         ))}
@@ -200,7 +203,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             color={ORPHAN_GROUP_COLOR}
             servers={orphanSubscriptionServers}
             selectedServer={selectedServer}
-            isConnected={isConnected}
+            selectionLocked={selectionLocked}
             onSelectServer={onSelectServer}
             collapsible={false}
           />
@@ -212,7 +215,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             color={MANUAL_GROUP_COLOR}
             servers={manualServers}
             selectedServer={selectedServer}
-            isConnected={isConnected}
+            selectionLocked={selectionLocked}
             onSelectServer={onSelectServer}
           />
         )}

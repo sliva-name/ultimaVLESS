@@ -7,7 +7,8 @@ import { CountryFlag } from '@/renderer/components/CountryFlag';
 interface ServerItemProps {
   server: VlessConfig;
   isSelected: boolean;
-  isConnected: boolean;
+  /** When true, selection is disabled for every row (connect/disconnect/in use). */
+  selectionLocked?: boolean;
   onSelect: (server: VlessConfig) => void;
 }
 
@@ -21,9 +22,9 @@ const pingBadgeClass = (ping: number) =>
         : 'text-red-400 bg-red-500/10';
 
 export const ServerItem = React.memo<ServerItemProps>(
-  ({ server, isSelected, isConnected, onSelect }) => {
+  ({ server, isSelected, selectionLocked = false, onSelect }) => {
     const { t } = useTranslation();
-    const disabled = isConnected && !isSelected;
+    const disabled = selectionLocked;
 
     const handleSelect = useCallback(() => {
       if (!disabled) onSelect(server);

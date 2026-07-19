@@ -20,8 +20,8 @@ function createDeps(overrides: Partial<any> = {}) {
       })),
     },
     connectionController: {
+      getPhase: vi.fn(() => 'connected'),
       isBusy: vi.fn(() => false),
-      getState: vi.fn(() => 'idle'),
     },
     trafficStatsService: {
       getLastSnapshot: vi.fn(() => null),
@@ -35,22 +35,42 @@ describe('buildAppSnapshot', () => {
     const snapshot = buildAppSnapshot(createDeps() as any);
 
     expect(snapshot.selectedServerId).toBe('server-1');
-    expect(snapshot.session.status).toBe('connected');
+    expect(snapshot.session.phase).toBe('connected');
     expect(snapshot.servers).toHaveLength(1);
     expect('rawConfig' in snapshot.servers[0]).toBe(false);
   });
 
-  it('prefers controller state while a connection operation is active', () => {
+  it('uses controller phase directly without monitor reconciliation', () => {
     const snapshot = buildAppSnapshot(
       createDeps({
+        connectionMonitorService: {
+          getStatus: vi.fn(() => ({
+            isConnected: false,
+            currentServer: null,
+            lastError: null,
+            blockedServers: [],
+          })),
+        },
         connectionController: {
+          getPhase: vi.fn(() => 'disconnecting'),
           isBusy: vi.fn(() => true),
-          getState: vi.fn(() => 'switching'),
         },
       }) as any,
     );
 
-    expect(snapshot.session.busy).toBe(true);
-    expect(snapshot.session.status).toBe('switching');
+    expect(snapshot.session.phase).toBe('disconnecting');
+  });
+
+  it('does not let monitor connected override an in-flight phase', () => {
+    const snapshot = buildAppSnapshot(
+      createDeps({
+        connectionController: {
+          getPhase: vi.fn(() => 'connecting'),
+          isBusy: vi.fn(() => true),
+        },
+      }) as any,
+    );
+
+    expect(snapshot.session.phase).toBe('connecting');
   });
 });

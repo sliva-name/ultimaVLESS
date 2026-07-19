@@ -22,12 +22,17 @@ describe('registerRuntimeEvents', () => {
         setSwitchExecutor: vi.fn(),
         setCleanupExecutor: vi.fn(),
         handleXrayHealthStatusChanged: vi.fn(),
-        getStatus: vi.fn(() => ({ lastConnectionTime: 123 })),
+        getStatus: vi.fn(() => ({
+          isConnected: true,
+          currentServer: makeServer({ name: 'SE' }),
+          lastConnectionTime: 123,
+        })),
       }),
       connectionController: Object.assign(new EventEmitter(), {
         transitionForAutoSwitch: vi.fn(),
         cleanupAfterFailure: vi.fn(),
         isBusy: vi.fn(() => false),
+        getPhase: vi.fn(() => 'idle'),
       }),
       trafficStatsService: Object.assign(new EventEmitter(), {
         start: vi.fn(),
@@ -71,7 +76,7 @@ describe('registerRuntimeEvents', () => {
     expect(snapshotPublisher.push).toHaveBeenCalledWith('traffic');
   });
 
-  it('reflects the connecting controller state in the tray', async () => {
+  it('drives tray from phase-changed, not monitor connected', async () => {
     const { trayService } = await import('@/main/services/TrayService');
     const deps = createDeps();
     registerRuntimeEvents({
@@ -81,8 +86,21 @@ describe('registerRuntimeEvents', () => {
       sendToRenderer: vi.fn(),
     });
 
-    deps.connectionController.emit('state-changed', 'connecting');
+    deps.connectionMonitorService.emit('connected', {
+      type: 'connected',
+      server: makeServer({ name: 'SE' }),
+    });
+    expect(trayService.setConnected).not.toHaveBeenCalled();
 
+    deps.connectionController.emit('phase-changed', 'connecting');
     expect(trayService.setConnecting).toHaveBeenCalled();
+
+    deps.connectionController.emit('phase-changed', 'connected');
+    expect(trayService.setConnected).toHaveBeenCalledWith('SE', null);
+    expect(deps.trafficStatsService.start).toHaveBeenCalledWith(123);
+
+    deps.connectionController.emit('phase-changed', 'idle');
+    expect(trayService.setDisconnected).toHaveBeenCalled();
+    expect(deps.trafficStatsService.stop).toHaveBeenCalled();
   });
 });

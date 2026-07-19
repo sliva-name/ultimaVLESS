@@ -15,7 +15,7 @@ import { ServerItem } from './ServerItem';
 interface VirtualizedServerListProps {
   servers: VlessConfig[];
   selectedServer: VlessConfig | null;
-  isConnected: boolean;
+  selectionLocked?: boolean;
   onSelectServer: (server: VlessConfig) => void;
 }
 
@@ -26,7 +26,7 @@ const FALLBACK_VIEWPORT_HEIGHT_PX = 320;
 export const VirtualizedServerList: React.FC<VirtualizedServerListProps> = ({
   servers,
   selectedServer,
-  isConnected,
+  selectionLocked = false,
   onSelectServer,
 }) => {
   const shouldVirtualize =
@@ -162,7 +162,7 @@ export const VirtualizedServerList: React.FC<VirtualizedServerListProps> = ({
             key={server.uuid}
             server={server}
             isSelected={selectedServerUuid === server.uuid}
-            isConnected={isConnected}
+            selectionLocked={selectionLocked}
             onSelect={onSelectServer}
           />
         ))}
@@ -192,7 +192,7 @@ export const VirtualizedServerList: React.FC<VirtualizedServerListProps> = ({
             <ServerItem
               server={server}
               isSelected={selectedServerUuid === server.uuid}
-              isConnected={isConnected}
+              selectionLocked={selectionLocked}
               onSelect={onSelectServer}
             />
           </div>

@@ -8,7 +8,10 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import type { AppSnapshot } from '@/shared/ipc';
+import {
+  isSessionPhaseInFlight,
+  type AppSnapshot,
+} from '@/shared/ipc';
 import type { VlessConfig } from '@/shared/types';
 import { useConnectionActions } from './useConnectionActions';
 
@@ -18,8 +21,7 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   selectedServerId: null,
   connectionMode: 'proxy',
   session: {
-    status: 'idle',
-    busy: false,
+    phase: 'idle',
     activeServerId: null,
     lastError: null,
     blockedServerIds: [],
@@ -65,19 +67,19 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       (server) => server.uuid === snapshot.session.activeServerId,
     ) ??
     null;
-  const isConnected =
-    snapshot.session.status === 'connected' ||
-    snapshot.session.status === 'switching';
-  const isConnectionBusy = snapshot.session.busy;
+  const phase = snapshot.session.phase;
+  const isConnected = phase === 'connected' || phase === 'switching';
+  const isConnectionBusy = isSessionPhaseInFlight(phase);
   const connectionError = clientError ?? snapshot.session.lastError;
 
   const applySnapshot = useCallback((nextSnapshot: AppSnapshot) => {
-    const pending = pendingSelectionRef.current;
-    setSnapshot(
-      pending
-        ? { ...nextSnapshot, selectedServerId: pending.uuid }
-        : nextSnapshot,
-    );
+    const pendingSelection = pendingSelectionRef.current;
+    setSnapshot({
+      ...nextSnapshot,
+      selectedServerId: pendingSelection
+        ? pendingSelection.uuid
+        : nextSnapshot.selectedServerId,
+    });
     if (!nextSnapshot.session.lastError) {
       setClientError(null);
     }
@@ -153,6 +155,10 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
 
   const selectServer = useCallback(
     (server: VlessConfig) => {
+      // Server list is interactive only while fully disconnected.
+      if (snapshot.session.phase !== 'idle') {
+        return;
+      }
       const version = ++selectVersionRef.current;
       pendingSelectionRef.current = { uuid: server.uuid, version };
       let previousSelectedId: string | null = null;
@@ -182,7 +188,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
           setClientError('Failed to persist selected server');
         });
     },
-    [refreshSnapshot],
+    [refreshSnapshot, snapshot.session.phase],
   );
 
   const value = useMemo<AppSnapshotContextValue>(

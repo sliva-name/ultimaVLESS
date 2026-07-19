@@ -1,6 +1,10 @@
 import React from 'react';
 import { VlessConfig } from '@/shared/types';
-import type { TrafficSnapshot } from '@/shared/ipc';
+import {
+  isSessionPhaseInFlight,
+  type SessionPhase,
+  type TrafficSnapshot,
+} from '@/shared/ipc';
 import {
   Power,
   Shield,
@@ -17,9 +21,7 @@ import { CountryFlag } from './CountryFlag';
 import { useTranslation } from 'react-i18next';
 
 interface ConnectionStatusProps {
-  isConnected: boolean;
-  isSwitching?: boolean;
-  isBusy?: boolean;
+  phase: SessionPhase;
   selectedServer: VlessConfig | null;
   connectionError?: string | null;
   trafficSnapshot?: TrafficSnapshot | null;
@@ -46,28 +48,30 @@ function getProtocolLabel(server: VlessConfig): string {
 }
 
 export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
-  isConnected,
-  isSwitching = false,
-  isBusy = false,
+  phase,
   selectedServer,
   connectionError,
   trafficSnapshot = null,
   onToggleConnection,
 }) => {
   const { t } = useTranslation();
-  const busyLabel = isConnected
+  const isSwitching = phase === 'switching';
+  const isDisconnecting = phase === 'disconnecting' || phase === 'failed';
+  const isConnecting = phase === 'connecting';
+  const inFlight = isSessionPhaseInFlight(phase) || phase === 'failed';
+  const showSecure = phase === 'connected';
+  const busyLabel = isDisconnecting
     ? t('status.disconnecting')
-    : t('status.connecting');
-  const busyHint = isConnected
+    : isSwitching
+      ? t('status.switchingServer')
+      : t('status.connecting');
+  const busyHint = isDisconnecting
     ? t('status.disconnectingHint')
     : t('status.connectingHint');
-
-  const sessionActive = isConnected && !!trafficSnapshot;
+  const sessionActive = showSecure && !!trafficSnapshot;
 
   useRenderPerf('ConnectionStatus', [
-    isConnected,
-    isSwitching,
-    isBusy,
+    phase,
     selectedServer?.uuid,
     connectionError,
     sessionActive,
@@ -82,7 +86,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
         <div
           className={clsx(
             'absolute inset-0 opacity-0 transition-opacity duration-1000',
-            isConnected && 'opacity-100',
+            showSecure && 'opacity-100',
           )}
         >
           <div className="absolute inset-0 connection-ambient-glow" />
@@ -105,13 +109,24 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
                     {t('status.switching')}
                   </div>
                 </>
-              ) : isConnected ? (
+              ) : showSecure ? (
                 <>
                   <div className="shrink-0 p-2 sm:p-3 rounded-xl bg-green-500/20 border border-green-500/30 shadow-lg shadow-green-500/20">
                     <CheckCircle2 className="w-6 h-6 sm:w-8 sm:h-8 text-green-400" />
                   </div>
                   <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.1] pb-1 bg-linear-to-r from-green-400 to-green-500 bg-clip-text text-transparent">
                     {t('status.secure')}
+                  </div>
+                </>
+              ) : inFlight ? (
+                <>
+                  <div className="shrink-0 p-2 sm:p-3 rounded-xl bg-primary/15 border border-primary/30 shadow-lg shadow-primary/10">
+                    <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 text-primary animate-spin" />
+                  </div>
+                  <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.1] pb-1 bg-linear-to-r from-primary to-sky-400 bg-clip-text text-transparent">
+                    {isDisconnecting
+                      ? t('status.disconnecting')
+                      : t('status.connecting')}
                   </div>
                 </>
               ) : (
@@ -128,9 +143,9 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
             <p className="text-gray-400 text-base sm:text-lg font-medium px-2 min-h-[1.75rem] sm:min-h-[2rem]">
               {isSwitching
                 ? t('status.switchingServer')
-                : isBusy
+                : inFlight
                   ? busyLabel
-                  : isConnected
+                  : showSecure
                     ? t('status.connectedTo', {
                         name: selectedServer?.name || 'server',
                       })
@@ -146,7 +161,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           <div className="relative mb-6 sm:mb-8">
             {/* Pulsing rings when connected — softer scale so they don't
               visually overlap the status text above the button. */}
-            {isConnected && (
+            {showSecure && (
               <>
                 <div className="absolute inset-0 rounded-full border-4 border-green-500/30 animate-ping-soft pointer-events-none" />
                 <div className="absolute inset-0 rounded-full border-4 border-green-500/20 animate-ping-soft pointer-events-none [animation-delay:700ms]" />
@@ -155,25 +170,25 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
 
             <button
               onClick={onToggleConnection}
-              disabled={!selectedServer || isBusy}
+              disabled={!selectedServer || inFlight}
               className={clsx(
                 'relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 rounded-full border-[6px] sm:border-8 flex items-center justify-center transition-all duration-500 shadow-2xl transform',
-                !(!selectedServer || isBusy) &&
+                !(!selectedServer || inFlight) &&
                   'hover:scale-105 active:scale-95',
-                isConnected
+                showSecure
                   ? 'bg-linear-to-br from-green-500/20 to-green-600/10 border-green-500 shadow-green-500/30'
                   : 'bg-linear-to-br from-gray-800/50 to-gray-800/30 border-gray-700 shadow-black/30',
-                !(!selectedServer || isBusy) &&
-                  (isConnected
+                !(!selectedServer || inFlight) &&
+                  (showSecure
                     ? 'hover:shadow-green-500/40'
                     : 'hover:border-gray-600 hover:from-gray-700/60 hover:to-gray-700/40 hover:shadow-black/40'),
-                (!selectedServer || isBusy) && 'opacity-50 cursor-not-allowed',
+                (!selectedServer || inFlight) && 'opacity-50 cursor-not-allowed',
               )}
             >
               <div
                 className={clsx(
                   'absolute inset-0 rounded-full bg-linear-to-br opacity-0 transition-opacity duration-300',
-                  isConnected
+                  showSecure
                     ? 'from-green-500/10 to-transparent'
                     : 'from-primary/10 to-transparent',
                   'hover:opacity-100',
@@ -183,13 +198,13 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
               <Power
                 className={clsx(
                   'relative z-10 w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 transition-all duration-500',
-                  isConnected
+                  showSecure
                     ? 'text-green-400 drop-shadow-lg shadow-green-500/50'
                     : 'text-gray-400 group-hover:text-gray-300',
                 )}
               />
 
-              {isBusy && (
+              {inFlight && (
                 <div className="absolute inset-0 flex items-center justify-center z-20 rounded-full bg-black/35">
                   <Loader2 className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 text-white animate-spin" />
                 </div>
@@ -200,7 +215,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           {/* Reserved slot for busy hint so the layout stays stable when
             transitioning between connecting/connected/disconnected. */}
           <div className="mb-4 sm:mb-6 min-h-[2.25rem] sm:min-h-[2.5rem] flex items-center justify-center">
-            {isBusy && (
+            {inFlight && !isSwitching && (
               <div className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full bg-primary/10 border border-primary/30 animate-[fadeIn_0.3s_ease-out] max-w-md text-center justify-center">
                 <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
                 <span className="text-xs sm:text-sm text-primary font-medium leading-snug">
@@ -215,7 +230,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
             <div
               className={clsx(
                 'grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl transition-all duration-500 animate-[fadeIn_0.5s_ease-out]',
-                isConnected ? 'opacity-100' : 'opacity-60',
+                showSecure || isConnecting ? 'opacity-100' : 'opacity-60',
               )}
             >
               <div className="p-4 sm:p-5 rounded-xl bg-linear-to-br from-gray-800/50 to-gray-800/30 border border-gray-700/50 hover:border-gray-600/70 transition-all duration-200 hover:shadow-lg hover:shadow-black/20">
@@ -271,7 +286,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
                 </span>
               </div>
             ) : (
-              isConnected && (
+              showSecure && (
                 <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 border border-green-500/30 animate-[fadeIn_0.5s_ease-out]">
                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-lg shadow-green-500/50" />
                   <span className="text-sm text-green-400 font-medium">

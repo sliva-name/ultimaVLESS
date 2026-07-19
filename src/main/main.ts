@@ -26,13 +26,14 @@ if (!process.versions.electron) {
 }
 
 async function stopNetworkStack(): Promise<void> {
-  const [{ connectionController }, { connectionMonitorService }] =
-    await Promise.all([
-      import('./services/ConnectionController'),
-      import('./services/ConnectionMonitorService'),
-    ]);
-  connectionMonitorService.stopMonitoring();
-  await connectionController.cleanupAfterFailure();
+  const { connectionController } = await import(
+    './services/ConnectionController'
+  );
+  // Preserve pending TUN reconnect across quit — required when we relaunch
+  // elevated after UAC so the new process can resume the connection.
+  await connectionController.disconnect({
+    preservePendingTunReconnect: true,
+  });
 }
 
 let powerMonitorRegistered = false;

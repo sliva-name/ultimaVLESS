@@ -31,8 +31,6 @@ function AppShell() {
     trafficSnapshot,
     toggleConnection,
   } = useSession();
-  const isSwitching = session.status === 'switching';
-
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const handleOpenSettings = useCallback(() => setIsSettingsOpen(true), []);
@@ -47,6 +45,7 @@ function AppShell() {
         subscriptions={subscriptions}
         selectedServer={selectedServer}
         isConnected={isConnected}
+        selectionLocked={session.phase !== 'idle'}
         isRefreshingPings={isRefreshingPings}
         onSelectServer={selectServer}
         onOpenSettings={handleOpenSettings}
@@ -62,9 +61,7 @@ function AppShell() {
         <div className={isSettingsOpen ? 'hidden' : 'contents'}>
           <UpdateBanner />
           <ConnectionStatus
-            isConnected={isConnected}
-            isSwitching={isSwitching}
-            isBusy={isConnectionBusy}
+            phase={session.phase}
             selectedServer={selectedServer}
             connectionError={connectionError}
             trafficSnapshot={trafficSnapshot}

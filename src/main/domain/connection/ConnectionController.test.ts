@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { makeServer } from '@/test/factories';
 import { ConnectionController } from './ConnectionController';
 import type { ConnectionMode } from '@/shared/types';
+import type { SessionPhase } from '@/shared/ipc';
 
 vi.mock('@/main/services/ConfigService', () => ({ configService: {} }));
 vi.mock('@/main/services/ConnectionMonitorService', () => ({
@@ -78,6 +79,63 @@ describe('ConnectionController', () => {
     expect(deps.connectionMonitorService.startMonitoring).toHaveBeenCalledWith(
       server,
     );
+    expect(controller.isBusy()).toBe(false);
+    expect(controller.getPhase()).toBe('connected');
+  });
+
+  it('emits phase transitions without a separate busy channel', async () => {
+    const { controller, server } = createController();
+    const phases: SessionPhase[] = [];
+    controller.on('phase-changed', (phase: SessionPhase) => {
+      phases.push(phase);
+    });
+
+    await controller.connect(server.uuid);
+    await controller.disconnect();
+
+    expect(phases).toEqual([
+      'connecting',
+      'connected',
+      'disconnecting',
+      'idle',
+    ]);
+  });
+
+  it('is already in disconnecting when stopMonitoring runs synchronously', async () => {
+    const phasesAtStop: SessionPhase[] = [];
+    const { controller, deps, server } = createController({
+      connectionMonitorService: {
+        getStatus: vi.fn(() => ({ isConnected: true, currentServer: server })),
+        startMonitoring: vi.fn(),
+        stopMonitoring: vi.fn(() => {
+          phasesAtStop.push(controller.getPhase());
+          expect(controller.isBusy()).toBe(true);
+        }),
+      },
+    });
+
+    await controller.connect(server.uuid);
+    await controller.disconnect();
+
+    expect(deps.connectionMonitorService.stopMonitoring).toHaveBeenCalled();
+    expect(phasesAtStop).toEqual(['disconnecting']);
+    expect(controller.getPhase()).toBe('idle');
+  });
+
+  it('cleanupAfterFailure uses disconnecting then idle, not failed', async () => {
+    const { controller, reset } = createController();
+    const phases: SessionPhase[] = [];
+    controller.on('phase-changed', (phase: SessionPhase) => {
+      phases.push(phase);
+    });
+
+    await controller.connect(makeServer({ uuid: 'server-1' }).uuid);
+    phases.length = 0;
+    await controller.cleanupAfterFailure();
+
+    expect(reset).toHaveBeenCalled();
+    expect(phases).toEqual(['disconnecting', 'idle']);
+    expect(controller.getPhase()).toBe('idle');
   });
 
   it('uses the platform-specific privilege path for TUN connections', async () => {
@@ -101,6 +159,9 @@ describe('ConnectionController', () => {
         server.uuid,
       );
       expect(deps.app.quit).toHaveBeenCalledTimes(1);
+      // Must stay connecting (not failed) so shutdown can unwind cleanly
+      // without looking like a hard connect error.
+      expect(controller.getPhase()).toBe('connecting');
     } else {
       await expect(controller.connect(server.uuid)).rejects.toThrow(
         /root privileges/,
@@ -108,5 +169,44 @@ describe('ConnectionController', () => {
       expect(deps.configService.setPendingTunReconnect).not.toHaveBeenCalled();
       expect(deps.app.quit).not.toHaveBeenCalled();
     }
+  });
+
+  it('preserves pending TUN reconnect across shutdown disconnect', async () => {
+    const clearPendingTunReconnect = vi.fn();
+    const { controller, server } = createController({
+      configService: {
+        getServers: vi.fn(() => [server]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect,
+      },
+    });
+
+    await controller.connect(server.uuid);
+    clearPendingTunReconnect.mockClear();
+    await controller.disconnect({ preservePendingTunReconnect: true });
+
+    expect(clearPendingTunReconnect).not.toHaveBeenCalled();
+    expect(controller.getPhase()).toBe('idle');
+  });
+
+  it('clears pending TUN reconnect on user disconnect', async () => {
+    const clearPendingTunReconnect = vi.fn();
+    const { controller, server } = createController({
+      configService: {
+        getServers: vi.fn(() => [server]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect,
+      },
+    });
+
+    await controller.connect(server.uuid);
+    clearPendingTunReconnect.mockClear();
+    await controller.disconnect();
+
+    expect(clearPendingTunReconnect).toHaveBeenCalledTimes(1);
   });
 });

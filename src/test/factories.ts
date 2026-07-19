@@ -75,8 +75,7 @@ export function makeAppSnapshot(
     selectedServerId: null,
     connectionMode: 'proxy',
     session: {
-      status: 'idle',
-      busy: false,
+      phase: 'idle',
       activeServerId: null,
       lastError: null,
       blockedServerIds: [],

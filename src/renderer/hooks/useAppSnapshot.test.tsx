@@ -140,7 +140,7 @@ describe('AppSnapshotProvider', () => {
     );
   });
 
-  it('updates consumers from app-snapshot-changed events', async () => {
+  it('maps session.phase to connected/busy flags 1:1', async () => {
     const electronApi = createElectronApiMock();
     installElectronApiMock(electronApi);
     const { result } = renderHook(() => useSession(), { wrapper });
@@ -149,8 +149,7 @@ describe('AppSnapshotProvider', () => {
       electronApi.emitAppSnapshotChanged(
         makeAppSnapshot({
           session: {
-            status: 'connected',
-            busy: false,
+            phase: 'connected',
             activeServerId: 'server-1',
             lastError: null,
             blockedServerIds: [],
@@ -158,7 +157,27 @@ describe('AppSnapshotProvider', () => {
         }),
       );
     });
+    await waitFor(() => {
+      expect(result.current.isConnected).toBe(true);
+      expect(result.current.isConnectionBusy).toBe(false);
+    });
 
-    await waitFor(() => expect(result.current.isConnected).toBe(true));
+    act(() => {
+      electronApi.emitAppSnapshotChanged(
+        makeAppSnapshot({
+          session: {
+            phase: 'disconnecting',
+            activeServerId: null,
+            lastError: null,
+            blockedServerIds: [],
+          },
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(result.current.session.phase).toBe('disconnecting');
+      expect(result.current.isConnected).toBe(false);
+      expect(result.current.isConnectionBusy).toBe(true);
+    });
   });
 });

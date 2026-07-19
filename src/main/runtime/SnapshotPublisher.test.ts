@@ -22,7 +22,7 @@ function createDeps() {
     },
     connectionController: {
       isBusy: vi.fn(() => false),
-      getState: vi.fn(() => 'idle'),
+      getPhase: vi.fn(() => 'idle'),
     },
     trafficStatsService: {
       getLastSnapshot: vi.fn(() => null),
@@ -44,7 +44,7 @@ describe('SnapshotPublisher', () => {
       IPC_EVENT_CHANNELS.appSnapshotChanged,
       expect.objectContaining({
         servers: expect.any(Array),
-        session: expect.objectContaining({ status: 'idle' }),
+        session: expect.objectContaining({ phase: 'idle' }),
       }),
     );
   });

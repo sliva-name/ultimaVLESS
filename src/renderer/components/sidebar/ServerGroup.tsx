@@ -13,7 +13,7 @@ interface ServerGroupProps {
   color: GroupColor;
   servers: VlessConfig[];
   selectedServer: VlessConfig | null;
-  isConnected: boolean;
+  selectionLocked?: boolean;
   onSelectServer: (server: VlessConfig) => void;
   collapsible?: boolean;
   defaultExpanded?: boolean;
@@ -28,7 +28,7 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
   color,
   servers,
   selectedServer,
-  isConnected,
+  selectionLocked = false,
   onSelectServer,
   collapsible = true,
   defaultExpanded,
@@ -109,7 +109,7 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
         <VirtualizedServerList
           servers={servers}
           selectedServer={selectedServer}
-          isConnected={isConnected}
+          selectionLocked={selectionLocked}
           onSelectServer={onSelectServer}
         />
       )}

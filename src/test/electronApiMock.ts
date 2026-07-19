@@ -99,8 +99,7 @@ export function createElectronApiMock(
         selectedServerId: null,
         connectionMode,
         session: {
-          status: 'idle',
-          busy: false,
+          phase: 'idle',
           activeServerId: null,
           lastError: null,
           blockedServerIds: [],

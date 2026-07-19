@@ -1,4 +1,5 @@
 import type { VlessConfig } from '@/shared/types';
+import type { SessionPhase } from '@/shared/ipc';
 import { IPC_EVENT_CHANNELS, type IpcEventChannel } from '@/shared/ipc';
 import { trayService } from '@/main/services/TrayService';
 import type { IpcDependencies } from '@/main/ipc/dependencies';
@@ -10,6 +11,39 @@ interface RegisterRuntimeEventsParams {
   snapshotPublisher: SnapshotPublisher;
   recovery: ConnectionRecovery;
   sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
+}
+
+function syncTrayAndTrafficForPhase(
+  deps: IpcDependencies,
+  phase: SessionPhase,
+): void {
+  if (phase === 'connecting' || phase === 'switching') {
+    if (phase === 'connecting') {
+      trayService.setConnecting();
+    } else {
+      trayService.reportSwitching();
+    }
+    return;
+  }
+
+  if (phase === 'disconnecting') {
+    // Keep tray on a non-connected verb while routes unwind; avoid "connected".
+    return;
+  }
+
+  if (phase === 'connected') {
+    const status = deps.connectionMonitorService.getStatus();
+    const server = status.currentServer;
+    if (!server) return;
+    trayService.setConnected(server.name, server.ping ?? null);
+    const connectedAt = status.lastConnectionTime ?? Date.now();
+    deps.trafficStatsService.start(connectedAt);
+    return;
+  }
+
+  // idle | failed
+  trayService.setDisconnected();
+  deps.trafficStatsService.stop();
 }
 
 export function registerRuntimeEvents({
@@ -42,16 +76,12 @@ export function registerRuntimeEvents({
     snapshotPublisher.push('connection');
   });
 
+  deps.connectionController.removeAllListeners('phase-changed');
   deps.connectionController.removeAllListeners('busy-changed');
-  deps.connectionController.on('busy-changed', () => {
-    snapshotPublisher.push('connection');
-  });
   deps.connectionController.removeAllListeners('state-changed');
-  deps.connectionController.on('state-changed', (state) => {
+  deps.connectionController.on('phase-changed', (phase: SessionPhase) => {
     snapshotPublisher.push('connection');
-    if (state === 'connecting') {
-      trayService.setConnecting();
-    }
+    syncTrayAndTrafficForPhase(deps, phase);
   });
 
   deps.trafficStatsService.removeAllListeners('snapshot');
@@ -88,17 +118,8 @@ export function registerRuntimeEvents({
       sendToRenderer(IPC_EVENT_CHANNELS.connectionMonitorEvent, safeEvent);
       snapshotPublisher.push('monitor');
 
-      if (eventName === 'connected' && event.server) {
-        trayService.setConnected(event.server.name, event.server.ping ?? null);
-        const connectedAt =
-          deps.connectionMonitorService.getStatus().lastConnectionTime ??
-          Date.now();
-        deps.trafficStatsService.start(connectedAt);
-      }
-      if (eventName === 'disconnected') {
-        trayService.setDisconnected();
-        deps.trafficStatsService.stop();
-      }
+      // Tray/traffic follow controller phase only — monitor events must not
+      // flip the tray to connected while phase is still connecting.
       if (eventName === 'error') {
         const message =
           (event as { error?: string; message?: string }).error ??
@@ -107,9 +128,6 @@ export function registerRuntimeEvents({
         if (message) {
           trayService.reportError(message);
         }
-      }
-      if (eventName === 'switching') {
-        trayService.reportSwitching();
       }
     });
   }

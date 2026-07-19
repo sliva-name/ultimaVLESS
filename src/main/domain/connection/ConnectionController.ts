@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { app } from 'electron';
 import { APP_CONSTANTS } from '@/shared/constants';
+import type { SessionPhase } from '@/shared/ipc';
 import { ConnectionMode, VlessConfig } from '@/shared/types';
 import {
   configService,
@@ -55,17 +56,21 @@ export class ConnectionControllerRelaunchError extends Error {
   }
 }
 
-export type ConnectionControllerState =
-  | 'idle'
-  | 'connecting'
-  | 'connected'
-  | 'switching'
-  | 'disconnecting'
-  | 'failed';
+/** @deprecated Use SessionPhase from shared/ipc */
+export type ConnectionControllerState = SessionPhase;
+
+const ALLOWED_TRANSITIONS: Record<SessionPhase, readonly SessionPhase[]> = {
+  idle: ['connecting', 'disconnecting', 'failed'],
+  connecting: ['connected', 'failed', 'disconnecting'],
+  connected: ['disconnecting', 'switching', 'connecting', 'failed'],
+  switching: ['connected', 'failed', 'disconnecting'],
+  disconnecting: ['idle', 'failed'],
+  failed: ['idle', 'connecting', 'disconnecting', 'switching'],
+};
 
 export class ConnectionController extends EventEmitter {
   private operationQueue: Promise<void> = Promise.resolve();
-  private state: ConnectionControllerState = 'idle';
+  private phase: SessionPhase = 'idle';
   private activeOperation: Promise<unknown> | null = null;
   private readonly strategies: Record<ConnectionMode, ConnectionStrategy>;
   private readonly teardown: NetworkTeardown;
@@ -106,45 +111,67 @@ export class ConnectionController extends EventEmitter {
       });
   }
 
-  public getState(): ConnectionControllerState {
-    return this.state;
+  public getPhase(): SessionPhase {
+    return this.phase;
+  }
+
+  /** @deprecated Use getPhase() */
+  public getState(): SessionPhase {
+    return this.phase;
   }
 
   public isBusy(): boolean {
-    return this.activeOperation !== null;
+    return (
+      this.phase === 'connecting' ||
+      this.phase === 'disconnecting' ||
+      this.phase === 'switching' ||
+      this.activeOperation !== null
+    );
   }
 
-  private setState(state: ConnectionControllerState): void {
-    if (this.state === state) return;
-    this.state = state;
-    this.emit('state-changed', state);
+  private transitionTo(next: SessionPhase): void {
+    if (this.phase === next) return;
+    const allowed = ALLOWED_TRANSITIONS[this.phase];
+    if (!allowed.includes(next)) {
+      logger.warn('ConnectionController', 'Unexpected phase transition', {
+        from: this.phase,
+        to: next,
+      });
+    }
+    this.phase = next;
+    this.emit('phase-changed', next);
   }
 
   private enqueue<T>(
-    operationName: ConnectionControllerState,
+    operationPhase: Extract<
+      SessionPhase,
+      'connecting' | 'disconnecting' | 'switching'
+    >,
     task: () => Promise<T>,
   ): Promise<T> {
     const run = this.operationQueue.then(async () => {
-      this.setState(operationName);
-      const operation = task();
-      this.activeOperation = operation;
-      this.emit('busy-changed', true);
+      // Phase first — before any sync side effects inside the task — so the UI
+      // never sees monitor/teardown updates under the wrong verb.
+      this.activeOperation = Promise.resolve();
+      this.transitionTo(operationPhase);
       try {
-        const result = await operation;
-        if (operationName === 'connecting' || operationName === 'switching') {
-          this.setState('connected');
-        } else if (operationName === 'disconnecting') {
-          this.setState('idle');
+        const result = await task();
+        if (operationPhase === 'disconnecting') {
+          this.transitionTo('idle');
         } else {
-          this.setState('failed');
+          this.transitionTo('connected');
         }
         return result;
       } catch (error) {
-        this.setState('failed');
+        // Elevation relaunch intentionally aborts connect; the process is
+        // quitting. Do not mark failed — pendingTunReconnect must survive
+        // shutdown teardown for the elevated instance to resume.
+        if (!(error instanceof ConnectionControllerRelaunchError)) {
+          this.transitionTo('failed');
+        }
         throw error;
       } finally {
         this.activeOperation = null;
-        this.emit('busy-changed', false);
       }
     });
     this.operationQueue = run.then(
@@ -242,9 +269,15 @@ export class ConnectionController extends EventEmitter {
     return this.enqueue('connecting', () => this.connectUnsafe(serverId));
   }
 
-  public disconnect(): Promise<void> {
+  public disconnect(
+    options: { preservePendingTunReconnect?: boolean } = {},
+  ): Promise<void> {
     return this.enqueue('disconnecting', async () => {
-      this.deps.configService.clearPendingTunReconnect();
+      // App quit after UAC relaunch must keep pendingTunReconnect so the
+      // elevated process can resumePendingTun on startup.
+      if (!options.preservePendingTunReconnect) {
+        this.deps.configService.clearPendingTunReconnect();
+      }
       // Stop monitoring before teardown: if teardown throws, the monitor must
       // not keep reporting "connected" for a stack that is being dismantled.
       this.deps.connectionMonitorService.stopMonitoring({
@@ -287,8 +320,16 @@ export class ConnectionController extends EventEmitter {
     });
   }
 
+  /**
+   * Tear down the stack after a failure. Uses disconnecting (not failed) so the
+   * UI shows teardown, then lands on idle — or failed if teardown itself throws.
+   */
   public cleanupAfterFailure(): Promise<void> {
-    return this.enqueue('failed', async () => {
+    return this.enqueue('disconnecting', async () => {
+      this.deps.connectionMonitorService.stopMonitoring({
+        message: 'Connection cleanup',
+        preserveLastError: true,
+      });
       await this.teardown.reset({ stopXray: true });
     });
   }

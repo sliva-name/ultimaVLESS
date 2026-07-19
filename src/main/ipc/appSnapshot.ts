@@ -1,29 +1,10 @@
 import { IpcMainInvokeEvent, ipcMain } from 'electron';
-import {
-  AppSessionStatus,
-  AppSnapshot,
-  IPC_INVOKE_CHANNELS,
-} from '@/shared/ipc';
+import { AppSnapshot, IPC_INVOKE_CHANNELS } from '@/shared/ipc';
 import { toSafeServerList } from '@/shared/serverView';
 import { IpcDependencies } from './dependencies';
 
-function getSessionStatus(params: {
-  busy: boolean;
-  connected: boolean;
-  hasError: boolean;
-}): AppSessionStatus {
-  if (params.busy && params.connected) return 'switching';
-  if (params.busy) return 'connecting';
-  if (params.connected) return 'connected';
-  if (params.hasError) return 'failed';
-  return 'idle';
-}
-
-export function buildAppSnapshot(
-  deps: IpcDependencies,
-): AppSnapshot {
+export function buildAppSnapshot(deps: IpcDependencies): AppSnapshot {
   const monitorStatus = deps.connectionMonitorService.getStatus();
-  const busy = deps.connectionController.isBusy();
   const activeServerId = monitorStatus.currentServer?.uuid ?? null;
   const selectedServerId =
     deps.configService.getSelectedServerId() ?? activeServerId;
@@ -33,14 +14,8 @@ export function buildAppSnapshot(
     selectedServerId,
     connectionMode: deps.configService.getConnectionMode(),
     session: {
-      status: deps.connectionController.isBusy()
-        ? deps.connectionController.getState()
-        : getSessionStatus({
-            busy,
-            connected: monitorStatus.isConnected,
-            hasError: !!monitorStatus.lastError,
-          }),
-      busy,
+      // Controller is the single owner of the UI verb — no monitor reconciliation.
+      phase: deps.connectionController.getPhase(),
       activeServerId,
       lastError: monitorStatus.lastError,
       blockedServerIds: monitorStatus.blockedServers,
