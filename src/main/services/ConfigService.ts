@@ -24,6 +24,8 @@ const LEGACY_PERFORMANCE_DEFAULTS: PerformanceSettings = {
   xudpConcurrency: 16,
   xudpProxyUDP443: 'reject',
   xhttpMaxConnections: 3,
+  remoteDnsPreset: 'cloudflare',
+  remoteDnsServers: ['1.1.1.1', '1.0.0.1'],
   tcpFastOpen: true,
   sniffingRouteOnly: true,
   logLevel: 'warning',
@@ -344,7 +346,10 @@ export class ConfigService {
   }
 
   public setPerformanceSettings(settings: PerformanceSettings): void {
-    this.store.set('performanceSettings', settings);
+    this.store.set(
+      'performanceSettings',
+      normalizePerformanceSettings(settings),
+    );
     logger.info('ConfigService', 'setPerformanceSettings', settings);
   }
 

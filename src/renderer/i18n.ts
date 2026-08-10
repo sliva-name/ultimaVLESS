@@ -128,6 +128,15 @@ const resources = {
           xhttpMaxConnections: 'XHTTP max connections',
           xhttpMaxConnectionsHint:
             'Parallel TCP links for XHTTP (xmux.maxConnections, 1–16). Default 3 matches Xray 26.7.28+; raise if the server feels starved.',
+          remoteDns: 'Remote DNS',
+          remoteDnsHint:
+            'Resolvers used by Xray (no localhost). In TUN mode, OS DNS on port 53 is hijacked into these servers via the proxy. Full leak protection requires TUN mode.',
+          remoteDnsCloudflare: 'Cloudflare (1.1.1.1)',
+          remoteDnsGoogle: 'Google (8.8.8.8)',
+          remoteDnsQuad9: 'Quad9 (9.9.9.9)',
+          remoteDnsCustom: 'Custom',
+          remoteDnsPrimary: 'Primary DNS',
+          remoteDnsSecondary: 'Secondary DNS (optional)',
           xudpConcurrency: 'XUDP concurrency',
           xudpConcurrencyHint: 'Max concurrent UDP sub-connections (1–1024).',
           xudpProxyUDP443: 'UDP/443 (QUIC) policy',
@@ -325,6 +334,15 @@ const resources = {
           xhttpMaxConnections: 'Макс. соединений XHTTP',
           xhttpMaxConnectionsHint:
             'Параллельные TCP-соединения для XHTTP (xmux.maxConnections, 1–16). По умолчанию 3 — как в Xray 26.7.28+; увеличьте, если сервер «голодает» по соединениям.',
+          remoteDns: 'Удалённый DNS',
+          remoteDnsHint:
+            'Резолверы Xray (без localhost). В режиме TUN системный DNS на порту 53 перехватывается и идёт через прокси. Полная защита от утечек — только в TUN.',
+          remoteDnsCloudflare: 'Cloudflare (1.1.1.1)',
+          remoteDnsGoogle: 'Google (8.8.8.8)',
+          remoteDnsQuad9: 'Quad9 (9.9.9.9)',
+          remoteDnsCustom: 'Свой',
+          remoteDnsPrimary: 'Основной DNS',
+          remoteDnsSecondary: 'Дополнительный DNS (необязательно)',
           xudpConcurrency: 'Параллельность XUDP',
           xudpConcurrencyHint:
             'Максимум параллельных UDP-подключений (1–1024).',

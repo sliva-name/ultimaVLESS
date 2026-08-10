@@ -11,6 +11,8 @@ import {
 
 interface TunInboundOptions {
   tunAutoRoute?: boolean;
+  /** DNS servers advertised on the TUN interface (Windows). */
+  dnsServers?: string[];
 }
 
 type MutableConfigNode = Record<string, unknown>;
@@ -113,6 +115,10 @@ export function ensureLocalProxyInbounds(
 }
 
 export function createTunInbound(options: TunInboundOptions): XrayInbound {
+  const dnsServers =
+    options.dnsServers && options.dnsServers.length > 0
+      ? options.dnsServers
+      : TUN_DNS_SERVERS;
   const tunInbound: XrayInbound = {
     tag: 'tun-in',
     port: 0,
@@ -124,7 +130,7 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
         `${TUN_ADDRESS}/${TUN_PREFIX}`,
         `${TUN_IPV6_ADDRESS}/${TUN_IPV6_PREFIX}`,
       ],
-      dns: TUN_DNS_SERVERS,
+      dns: dnsServers,
       // Always bind Xray-originated packets (proxy + freedom/direct) to a
       // physical NIC. Without this, PowerShell TUN mode loops: geoip:private →
       // direct → default route back into TUN (NetBIOS storms).

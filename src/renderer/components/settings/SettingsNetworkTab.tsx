@@ -6,11 +6,14 @@ import {
   ConnectionMode,
   DomainStrategy,
   LogLevel,
+  RemoteDnsPreset,
+  REMOTE_DNS_PRESET_SERVERS,
   TlsFingerprint,
   WindowsTunRouting,
   XudpProxyUDP443,
 } from '@/shared/types';
-import { PrimaryButton, Toggle } from '@/renderer/components/ui';
+import { PrimaryButton, Select, Toggle } from '@/renderer/components/ui';
+import type { SelectOption } from '@/renderer/components/ui';
 import { useNetworkSettings } from '@/renderer/hooks/useNetworkSettings';
 
 interface SettingsNetworkTabProps {
@@ -214,10 +217,12 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
               {
                 value: 'xray',
                 label: t('settings.network.windowsTunRoutingXray'),
+                description: 'autoSystemRoutingTable',
               },
               {
                 value: 'powershell',
                 label: t('settings.network.windowsTunRoutingPowershell'),
+                description: 'Set-NetRoute / DNS',
               },
             ]}
           />
@@ -293,6 +298,81 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             onChange={(v) => updatePerfField('xhttpMaxConnections', v)}
           />
 
+          <PerfSelectRow
+            label={t('settings.network.remoteDns')}
+            hint={t('settings.network.remoteDnsHint')}
+            value={perfSettings.remoteDnsPreset}
+            onChange={(v) => {
+              const preset = v as RemoteDnsPreset;
+              updatePerfField('remoteDnsPreset', preset);
+              if (preset !== 'custom') {
+                updatePerfField('remoteDnsServers', [
+                  ...REMOTE_DNS_PRESET_SERVERS[preset],
+                ]);
+              }
+            }}
+            options={[
+              {
+                value: 'cloudflare',
+                label: t('settings.network.remoteDnsCloudflare'),
+                description: REMOTE_DNS_PRESET_SERVERS.cloudflare.join(' · '),
+              },
+              {
+                value: 'google',
+                label: t('settings.network.remoteDnsGoogle'),
+                description: REMOTE_DNS_PRESET_SERVERS.google.join(' · '),
+              },
+              {
+                value: 'quad9',
+                label: t('settings.network.remoteDnsQuad9'),
+                description: REMOTE_DNS_PRESET_SERVERS.quad9.join(' · '),
+              },
+              {
+                value: 'custom',
+                label: t('settings.network.remoteDnsCustom'),
+                description:
+                  perfSettings.remoteDnsServers.length > 0
+                    ? perfSettings.remoteDnsServers.join(' · ')
+                    : 'IPv4',
+              },
+            ]}
+          />
+
+          {perfSettings.remoteDnsPreset === 'custom' && (
+            <div className="space-y-2 rounded-xl border border-gray-700/40 bg-black/20 p-3">
+              <PerfTextRow
+                label={t('settings.network.remoteDnsPrimary')}
+                hint=""
+                value={perfSettings.remoteDnsServers[0] ?? ''}
+                placeholder="1.1.1.1"
+                onChange={(primary) => {
+                  const secondary = perfSettings.remoteDnsServers[1];
+                  updatePerfField(
+                    'remoteDnsServers',
+                    secondary ? [primary, secondary] : [primary],
+                  );
+                }}
+              />
+              <PerfTextRow
+                label={t('settings.network.remoteDnsSecondary')}
+                hint=""
+                value={perfSettings.remoteDnsServers[1] ?? ''}
+                placeholder="1.0.0.1"
+                onChange={(secondary) => {
+                  const primary = perfSettings.remoteDnsServers[0] ?? '';
+                  updatePerfField(
+                    'remoteDnsServers',
+                    secondary.trim()
+                      ? [primary, secondary]
+                      : primary
+                        ? [primary]
+                        : [],
+                  );
+                }}
+              />
+            </div>
+          )}
+
           <PerfNumberRow
             label={t('settings.network.xudpConcurrency')}
             hint={t('settings.network.xudpConcurrencyHint')}
@@ -310,9 +390,21 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
               updatePerfField('xudpProxyUDP443', v as XudpProxyUDP443)
             }
             options={[
-              { value: 'reject', label: t('settings.network.udp443Reject') },
-              { value: 'allow', label: t('settings.network.udp443Allow') },
-              { value: 'skip', label: t('settings.network.udp443Skip') },
+              {
+                value: 'reject',
+                label: t('settings.network.udp443Reject'),
+                description: 'QUIC → TCP',
+              },
+              {
+                value: 'allow',
+                label: t('settings.network.udp443Allow'),
+                description: 'XUDP mux',
+              },
+              {
+                value: 'skip',
+                label: t('settings.network.udp443Skip'),
+                description: 'Native UDP',
+              },
             ]}
           />
 
@@ -338,11 +430,11 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             value={perfSettings.logLevel}
             onChange={(v) => updatePerfField('logLevel', v as LogLevel)}
             options={[
-              { value: 'debug', label: 'debug' },
+              { value: 'debug', label: 'debug', description: 'Verbose' },
               { value: 'info', label: 'info' },
-              { value: 'warning', label: 'warning' },
+              { value: 'warning', label: 'warning', description: 'Default' },
               { value: 'error', label: 'error' },
-              { value: 'none', label: 'none' },
+              { value: 'none', label: 'none', description: 'Silent' },
             ]}
           />
 
@@ -354,7 +446,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
               updatePerfField('fingerprint', v as TlsFingerprint)
             }
             options={[
-              { value: 'chrome', label: 'Chrome' },
+              { value: 'chrome', label: 'Chrome', description: 'Default' },
               { value: 'firefox', label: 'Firefox' },
               { value: 'safari', label: 'Safari' },
               { value: 'ios', label: 'iOS' },
@@ -363,7 +455,11 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
               { value: '360', label: '360' },
               { value: 'qq', label: 'QQ' },
               { value: 'random', label: 'Random' },
-              { value: 'randomized', label: 'Randomized' },
+              {
+                value: 'randomized',
+                label: 'Randomized',
+                description: 'Per connection',
+              },
             ]}
           />
 
@@ -389,9 +485,21 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
               updatePerfField('domainStrategy', v as DomainStrategy)
             }
             options={[
-              { value: 'AsIs', label: 'AsIs' },
-              { value: 'IPIfNonMatch', label: 'IPIfNonMatch' },
-              { value: 'IPOnDemand', label: 'IPOnDemand' },
+              {
+                value: 'AsIs',
+                label: 'AsIs',
+                description: 'No resolve for routing',
+              },
+              {
+                value: 'IPIfNonMatch',
+                label: 'IPIfNonMatch',
+                description: 'Resolve if no domain rule',
+              },
+              {
+                value: 'IPOnDemand',
+                label: 'IPOnDemand',
+                description: 'Resolve for IP rules',
+              },
             ]}
           />
         </fieldset>
@@ -482,26 +590,40 @@ const PerfNumberRow: React.FC<
   </div>
 );
 
+const PerfTextRow: React.FC<
+  PerfRowProps & {
+    value: string;
+    placeholder?: string;
+    onChange: (v: string) => void;
+  }
+> = ({ label, hint, value, placeholder, onChange }) => (
+  <div className="flex items-center justify-between gap-3">
+    <PerfLabel label={label} hint={hint} />
+    <input
+      type="text"
+      value={value}
+      placeholder={placeholder}
+      aria-label={label}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-36 bg-black/40 border border-gray-600/50 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none font-mono"
+    />
+  </div>
+);
+
 const PerfSelectRow: React.FC<
   PerfRowProps & {
     value: string;
     onChange: (v: string) => void;
-    options: { value: string; label: string }[];
+    options: SelectOption[];
   }
 > = ({ label, hint, value, onChange, options }) => (
   <div className="flex items-center justify-between gap-3">
     <PerfLabel label={label} hint={hint} />
-    <select
+    <Select
       value={value}
-      aria-label={label}
-      onChange={(e) => onChange(e.target.value)}
-      className="bg-black/40 border border-gray-600/50 rounded-lg px-2 py-1.5 text-sm text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none"
-    >
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      options={options}
+      ariaLabel={label}
+    />
   </div>
 );

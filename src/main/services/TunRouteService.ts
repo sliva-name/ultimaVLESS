@@ -616,6 +616,8 @@ export class TunRouteService {
     tunInterfaceIndex: number,
   ): Promise<void> {
     const proxyHostPrefixes = proxyIps.map((ip) => this.hostPrefixForIp(ip));
+    const dnsServers =
+      configService.getPerformanceSettings().remoteDnsServers;
     const output = await this.runPowerShell(
       enableTunRoutingScript({
         tunInterfaceIndex,
@@ -627,6 +629,8 @@ export class TunRouteService {
         hostRouteMetric: 1,
         defaultRouteRetries: DEFAULT_ROUTE_ADD_RETRIES,
         defaultRouteRetryDelayMs: DEFAULT_ROUTE_ADD_RETRY_DELAY_MS,
+        dnsServers:
+          dnsServers.length > 0 ? dnsServers : undefined,
       }),
     );
     this.recordEnabledRoutes(output, defaultRoute.interfaceIndex, tunInterfaceIndex);

@@ -61,16 +61,57 @@ describe('XrayConfigCompiler', () => {
       settings: expect.objectContaining({
         mtu: 1500,
         gateway: expect.any(Array),
-        dns: expect.any(Array),
         autoSystemRoutingTable: ['0.0.0.0/0', '::/0'],
         autoOutboundsInterface: 'auto',
-        dns: ['1.1.1.1', '8.8.8.8'],
+        dns: ['1.1.1.1', '1.0.0.1'],
       }),
     });
     expect(config.outbounds[0].sendThrough).toBeUndefined();
+    expect(config.outbounds.some((o) => o.tag === 'dns-out')).toBe(true);
+    expect(config.routing?.rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          port: '53',
+          network: 'udp,tcp',
+          outboundTag: 'dns-out',
+        }),
+      ]),
+    );
   });
 
-  it('replaces slow raw DNS servers and forces UseIPv4 in TUN mode', () => {
+  it('applies remote DNS without localhost and hijacks port 53 in TUN mode', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({ security: 'tls', sni: 'example.com' }),
+      {
+        logPath: '/tmp/xray.log',
+        connectionMode: 'tun',
+        tunAutoRoute: true,
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          remoteDnsPreset: 'google',
+          remoteDnsServers: ['8.8.8.8', '8.8.4.4'],
+        },
+      },
+    );
+
+    expect(config.dns).toMatchObject({
+      queryStrategy: 'UseIPv4',
+      servers: ['8.8.8.8', '8.8.4.4'],
+    });
+    expect(config.dns?.servers).not.toContain('localhost');
+    const tunInbound = config.inbounds?.find((i) => i.protocol === 'tun');
+    expect(tunInbound?.settings).toMatchObject({
+      dns: ['8.8.8.8', '8.8.4.4'],
+    });
+    expect(
+      config.outbounds.find((o) => o.tag === 'dns-out')?.settings,
+    ).toMatchObject({
+      rewriteAddress: '8.8.8.8',
+      rewritePort: 53,
+    });
+  });
+
+  it('replaces subscription DNS with remote settings in TUN mode', () => {
     const config = XrayConfigCompiler.compile(
       makeServer({
         security: 'reality',
@@ -116,8 +157,31 @@ describe('XrayConfigCompiler', () => {
 
     expect(config.dns).toMatchObject({
       queryStrategy: 'UseIPv4',
-      servers: ['localhost', '1.1.1.1', '1.0.0.1'],
+      servers: ['1.1.1.1', '1.0.0.1'],
     });
+    expect(config.dns?.servers).not.toContain('localhost');
+    expect(config.outbounds.some((o) => o.tag === 'dns-out')).toBe(true);
+  });
+
+  it('applies remote DNS in proxy mode without dns-out hijack', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({ security: 'tls', sni: 'example.com' }),
+      {
+        logPath: '/tmp/xray.log',
+        connectionMode: 'proxy',
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          remoteDnsPreset: 'quad9',
+          remoteDnsServers: ['9.9.9.9', '149.112.112.112'],
+        },
+      },
+    );
+
+    expect(config.dns).toMatchObject({
+      servers: ['9.9.9.9', '149.112.112.112'],
+      queryStrategy: 'UseIPv4',
+    });
+    expect(config.outbounds.some((o) => o.tag === 'dns-out')).toBe(false);
   });
 
   it('disables mux for Vision outbounds even when raw config enables XUDP mux', () => {
@@ -258,6 +322,8 @@ describe('XrayConfigCompiler', () => {
           xudpConcurrency: 16,
           xudpProxyUDP443: 'reject',
           xhttpMaxConnections: 3,
+          remoteDnsPreset: 'cloudflare',
+          remoteDnsServers: ['1.1.1.1', '1.0.0.1'],
           tcpFastOpen: true,
           sniffingRouteOnly: true,
           logLevel: 'warning',

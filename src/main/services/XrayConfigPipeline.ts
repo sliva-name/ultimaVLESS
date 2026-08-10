@@ -27,6 +27,10 @@ import {
 } from './configGenerator/outboundCompat';
 import { buildDefaultRoutingRules } from './configGenerator/routing';
 import { applyStatsApi } from './configGenerator/statsApi';
+import {
+  applyRemoteDnsSettings,
+  buildDnsObject,
+} from './configGenerator/dns';
 
 type MutableConfigNode = Record<string, unknown>;
 
@@ -107,7 +111,12 @@ export class XrayConfigPipeline {
     );
 
     if (connectionMode === 'tun' && !hasTun) {
-      cfg.inbounds.unshift(createTunInbound(options));
+      cfg.inbounds.unshift(
+        createTunInbound({
+          ...options,
+          dnsServers: perf.remoteDnsServers,
+        }),
+      );
       // Prefer autoOutboundsInterface for loop prevention; sendThrough is
       // dual-stack-limited and only needed when Xray auto-route is off.
       if (!options.tunAutoRoute) {
@@ -122,34 +131,14 @@ export class XrayConfigPipeline {
     this.ensureAuxiliaryOutbounds(cfg);
     this.applyPerfToOutbounds(cfg, perf);
     this.applyPerfToRouting(cfg, perf);
-    if (connectionMode === 'tun') {
-      this.applyTunDnsDefaults(cfg);
-    }
     this.assertRawOutboundCompatibility(cfg);
     applyStatsApi(cfg);
+    applyRemoteDnsSettings(cfg, perf, {
+      tunMode: connectionMode === 'tun',
+    });
     this.applyBundledVersionConstraint(cfg);
 
     return cfg;
-  }
-
-  /**
-   * TUN + raw subscriptions: Keep DNS fast and IPv4-first.
-   * Ultima raw configs ship 8.8.8.8/8.8.4.4 with serial fallback; through the
-   * tunnel the first server often times out (~4s) before 8.8.4.4 answers
-   * (~3–8s RTT) — ~12s until the first browser request. Use the same resolvers
-   * as structured profiles (which start traffic in <1s on the same path).
-   */
-  private static applyTunDnsDefaults(cfg: XrayConfig): void {
-    const dns =
-      cfg.dns && typeof cfg.dns === 'object'
-        ? (cfg.dns as Record<string, unknown>)
-        : {};
-    cfg.dns = {
-      ...dns,
-      // localhost first: answer from the OS without waiting for a cold tunnel.
-      servers: ['localhost', '1.1.1.1', '1.0.0.1'],
-      queryStrategy: 'UseIPv4',
-    };
   }
 
   private static applyBundledVersionConstraint(cfg: XrayConfig): void {
@@ -678,7 +667,12 @@ export class XrayConfigPipeline {
       perf.sniffingRouteOnly,
     );
     if (connectionMode === 'tun') {
-      inbounds.unshift(createTunInbound(options) as XrayInbound);
+      inbounds.unshift(
+        createTunInbound({
+          ...options,
+          dnsServers: perf.remoteDnsServers,
+        }) as XrayInbound,
+      );
     }
 
     const cfg: XrayConfig = {
@@ -687,10 +681,7 @@ export class XrayConfigPipeline {
         access: logPath,
         error: logPath,
       },
-      dns: {
-        servers: ['1.1.1.1', '1.0.0.1', 'localhost'],
-        queryStrategy: 'UseIPv4',
-      },
+      dns: buildDnsObject(perf),
       inbounds,
       outbounds: [
         outbound,
@@ -712,6 +703,9 @@ export class XrayConfigPipeline {
     }
 
     applyStatsApi(cfg);
+    applyRemoteDnsSettings(cfg, perf, {
+      tunMode: connectionMode === 'tun',
+    });
     this.applyBundledVersionConstraint(cfg);
     return cfg;
   }

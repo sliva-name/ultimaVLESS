@@ -35,6 +35,8 @@ describe('useNetworkSettings', () => {
       xudpConcurrency: 16,
       xudpProxyUDP443: 'reject',
       xhttpMaxConnections: 3,
+      remoteDnsPreset: 'cloudflare',
+      remoteDnsServers: ['1.1.1.1', '1.0.0.1'],
       tcpFastOpen: true,
       sniffingRouteOnly: true,
       logLevel: 'warning',

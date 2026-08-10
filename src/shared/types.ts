@@ -178,6 +178,23 @@ export const VALID_TLS_FINGERPRINTS: readonly TlsFingerprint[] = [
   'randomized',
 ] as const;
 
+export type RemoteDnsPreset = 'cloudflare' | 'google' | 'quad9' | 'custom';
+export const VALID_REMOTE_DNS_PRESETS: readonly RemoteDnsPreset[] = [
+  'cloudflare',
+  'google',
+  'quad9',
+  'custom',
+] as const;
+
+export const REMOTE_DNS_PRESET_SERVERS: Record<
+  Exclude<RemoteDnsPreset, 'custom'>,
+  readonly [string, string]
+> = {
+  cloudflare: ['1.1.1.1', '1.0.0.1'],
+  google: ['8.8.8.8', '8.8.4.4'],
+  quad9: ['9.9.9.9', '149.112.112.112'],
+};
+
 export interface PerformanceSettings {
   muxEnabled: boolean;
   muxConcurrency: number;
@@ -188,6 +205,10 @@ export interface PerformanceSettings {
    * Raise toward 6 if a server feels connection-starved; keep low for anti-TSPU.
    */
   xhttpMaxConnections: number;
+  /** Remote DNS preset for Xray dns.servers / TUN OS DNS (no localhost). */
+  remoteDnsPreset: RemoteDnsPreset;
+  /** 1–2 IPv4 resolvers; filled from preset unless custom. */
+  remoteDnsServers: string[];
   tcpFastOpen: boolean;
   sniffingRouteOnly: boolean;
   logLevel: LogLevel;
@@ -205,6 +226,8 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   xudpConcurrency: 16,
   xudpProxyUDP443: 'reject',
   xhttpMaxConnections: 3,
+  remoteDnsPreset: 'cloudflare',
+  remoteDnsServers: [...REMOTE_DNS_PRESET_SERVERS.cloudflare],
   tcpFastOpen: true,
   sniffingRouteOnly: true,
   logLevel: 'warning',

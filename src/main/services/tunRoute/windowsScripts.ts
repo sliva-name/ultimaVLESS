@@ -190,6 +190,8 @@ export interface EnableTunRoutingParams {
   hostRouteMetric: number;
   defaultRouteRetries: number;
   defaultRouteRetryDelayMs: number;
+  /** IPv4 DNS servers for Set-DnsClientServerAddress on the TUN adapter. */
+  dnsServers?: string[];
 }
 
 function validateRetryCount(value: number): void {
@@ -232,6 +234,7 @@ export const enableTunRoutingScript = (
     hostRouteMetric,
     defaultRouteRetries,
     defaultRouteRetryDelayMs,
+    dnsServers: dnsServersParam,
   } = params;
   validateInterfaceIndex(tunInterfaceIndex);
   validateInterfaceIndex(defaultRouteInterfaceIndex);
@@ -241,7 +244,12 @@ export const enableTunRoutingScript = (
   validateRetryCount(defaultRouteRetries);
   validateRetryDelay(defaultRouteRetryDelayMs);
 
-  const dnsServers = TUN_DNS_SERVERS.map((server) => `"${server}"`).join(', ');
+  const resolvedDns =
+    dnsServersParam && dnsServersParam.length > 0
+      ? dnsServersParam
+      : TUN_DNS_SERVERS;
+  resolvedDns.forEach(validateIpOrPrefix);
+  const dnsServers = resolvedDns.map((server) => `"${server}"`).join(', ');
   const prefixesLiteral = proxyHostPrefixes
     .map((prefix) => `'${prefix}'`)
     .join(', ');

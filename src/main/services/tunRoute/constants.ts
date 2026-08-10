@@ -7,8 +7,9 @@ export const TUN_IPV6_PREFIX = 126;
 export const TUN_IPV6_NEXTHOP = '::';
 /** IPv4-only: advertising IPv6 resolvers makes Windows prefer AAAA DNS first
  * (~2s timeout each) before falling back to 1.1.1.1 — often ~10–12s until
- * the first useful browser TCP after TUN connect. */
-export const TUN_DNS_SERVERS = ['1.1.1.1', '8.8.8.8'];
+ * the first useful browser TCP after TUN connect. Fallback matches Cloudflare
+ * remote DNS default when performance settings are unavailable. */
+export const TUN_DNS_SERVERS = ['1.1.1.1', '1.0.0.1'];
 export const TUN_ROUTE_METRIC = 1;
 export const TUN_WAIT_TIMEOUT = 20000;
 export const TUN_WAIT_INTERVAL = 300;
