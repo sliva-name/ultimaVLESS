@@ -15,4 +15,17 @@ describe('normalizePerformanceSettings', () => {
       normalizePerformanceSettings({ fingerprint: 'not-a-browser' }).fingerprint,
     ).toBe('chrome');
   });
+
+  it('clamps xhttpMaxConnections to 1–16 with default 3', () => {
+    expect(normalizePerformanceSettings({}).xhttpMaxConnections).toBe(3);
+    expect(
+      normalizePerformanceSettings({ xhttpMaxConnections: 6 }).xhttpMaxConnections,
+    ).toBe(6);
+    expect(
+      normalizePerformanceSettings({ xhttpMaxConnections: 0 }).xhttpMaxConnections,
+    ).toBe(1);
+    expect(
+      normalizePerformanceSettings({ xhttpMaxConnections: 99 }).xhttpMaxConnections,
+    ).toBe(16);
+  });
 });

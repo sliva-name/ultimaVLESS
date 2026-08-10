@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeServer } from '@/test/factories';
+import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
 import type { XrayConfig } from '@/shared/xray-types';
 import { XrayConfigCompiler } from './XrayConfigCompiler';
 
@@ -211,6 +212,35 @@ describe('XrayConfigCompiler', () => {
     ).toThrow(/TLS\/REALITY/);
   });
 
+  it('applies xhttpMaxConnections into xmux and drops conflicting maxConcurrency', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        security: 'tls',
+        sni: 'example.com',
+        type: 'xhttp',
+        path: '/x',
+        xhttpExtra: {
+          xmux: { maxConcurrency: 8, hMaxRequestTimes: 100 },
+        },
+      }),
+      {
+        logPath: '/tmp/xray.log',
+        connectionMode: 'proxy',
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          xhttpMaxConnections: 6,
+        },
+      },
+    );
+
+    expect(config.outbounds[0].streamSettings?.xhttpSettings?.extra).toEqual({
+      xmux: {
+        hMaxRequestTimes: 100,
+        maxConnections: 6,
+      },
+    });
+  });
+
   it('forces Mux for public Trojan outbounds (anti-TiT)', () => {
     const config = XrayConfigCompiler.compile(
       makeServer({
@@ -227,6 +257,7 @@ describe('XrayConfigCompiler', () => {
           muxConcurrency: 8,
           xudpConcurrency: 16,
           xudpProxyUDP443: 'reject',
+          xhttpMaxConnections: 3,
           tcpFastOpen: true,
           sniffingRouteOnly: true,
           logLevel: 'warning',

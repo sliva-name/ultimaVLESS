@@ -34,6 +34,7 @@ describe('useNetworkSettings', () => {
       muxConcurrency: 4,
       xudpConcurrency: 16,
       xudpProxyUDP443: 'reject',
+      xhttpMaxConnections: 3,
       tcpFastOpen: true,
       sniffingRouteOnly: true,
       logLevel: 'warning',

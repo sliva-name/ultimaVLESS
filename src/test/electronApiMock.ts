@@ -138,6 +138,7 @@ export function createElectronApiMock(
         muxConcurrency: 8,
         xudpConcurrency: 16,
         xudpProxyUDP443: 'reject',
+        xhttpMaxConnections: 3,
         tcpFastOpen: true,
         sniffingRouteOnly: true,
         logLevel: 'warning',

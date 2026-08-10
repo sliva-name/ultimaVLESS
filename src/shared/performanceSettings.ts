@@ -54,6 +54,12 @@ export function normalizePerformanceSettings(
     )
       ? (value.xudpProxyUDP443 as PerformanceSettings['xudpProxyUDP443'])
       : DEFAULT_PERFORMANCE_SETTINGS.xudpProxyUDP443,
+    xhttpMaxConnections: clamp(
+      value.xhttpMaxConnections,
+      1,
+      16,
+      DEFAULT_PERFORMANCE_SETTINGS.xhttpMaxConnections,
+    ),
     tcpFastOpen:
       typeof value.tcpFastOpen === 'boolean'
         ? value.tcpFastOpen

@@ -125,6 +125,9 @@ const resources = {
             'Multiplex TCP connections. Reduces latency but may lower throughput for downloads.',
           muxConcurrency: 'Mux concurrency',
           muxConcurrencyHint: 'Max sub-connections per Mux link (1–128).',
+          xhttpMaxConnections: 'XHTTP max connections',
+          xhttpMaxConnectionsHint:
+            'Parallel TCP links for XHTTP (xmux.maxConnections, 1–16). Default 3 matches Xray 26.7.28+; raise if the server feels starved.',
           xudpConcurrency: 'XUDP concurrency',
           xudpConcurrencyHint: 'Max concurrent UDP sub-connections (1–1024).',
           xudpProxyUDP443: 'UDP/443 (QUIC) policy',
@@ -319,6 +322,9 @@ const resources = {
           muxConcurrency: 'Параллельность Mux',
           muxConcurrencyHint:
             'Максимум подключений на одно Mux-соединение (1–128).',
+          xhttpMaxConnections: 'Макс. соединений XHTTP',
+          xhttpMaxConnectionsHint:
+            'Параллельные TCP-соединения для XHTTP (xmux.maxConnections, 1–16). По умолчанию 3 — как в Xray 26.7.28+; увеличьте, если сервер «голодает» по соединениям.',
           xudpConcurrency: 'Параллельность XUDP',
           xudpConcurrencyHint:
             'Максимум параллельных UDP-подключений (1–1024).',

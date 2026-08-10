@@ -285,6 +285,15 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
           )}
 
           <PerfNumberRow
+            label={t('settings.network.xhttpMaxConnections')}
+            hint={t('settings.network.xhttpMaxConnectionsHint')}
+            value={perfSettings.xhttpMaxConnections}
+            min={1}
+            max={16}
+            onChange={(v) => updatePerfField('xhttpMaxConnections', v)}
+          />
+
+          <PerfNumberRow
             label={t('settings.network.xudpConcurrency')}
             hint={t('settings.network.xudpConcurrencyHint')}
             value={perfSettings.xudpConcurrency}

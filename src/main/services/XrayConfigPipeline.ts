@@ -31,7 +31,13 @@ import { applyStatsApi } from './configGenerator/statsApi';
 type MutableConfigNode = Record<string, unknown>;
 
 type MutableSockopt = MutableConfigNode & { tcpFastOpen?: boolean };
-type MutableStreamSettings = MutableConfigNode & { sockopt?: MutableSockopt };
+type MutableStreamSettings = MutableConfigNode & {
+  sockopt?: MutableSockopt;
+  method?: string;
+  network?: string;
+  xhttpSettings?: MutableConfigNode;
+  splithttpSettings?: MutableConfigNode;
+};
 type MutableOutbound = MutableConfigNode & {
   protocol?: string;
   tag?: string;
@@ -182,6 +188,10 @@ export class XrayConfigPipeline {
 
       if (!outbound.streamSettings) outbound.streamSettings = {};
       this.normalizeStreamSettings(outbound.streamSettings);
+      this.applyXhttpMaxConnections(
+        outbound.streamSettings,
+        perf.xhttpMaxConnections,
+      );
       if (!outbound.streamSettings.sockopt) {
         outbound.streamSettings.sockopt = { tcpFastOpen: perf.tcpFastOpen };
       } else if (outbound.streamSettings.sockopt.tcpFastOpen === undefined) {
@@ -871,6 +881,7 @@ export class XrayConfigPipeline {
       if (extra) {
         streamSettings.xhttpSettings.extra = extra;
       }
+      this.applyXhttpMaxConnections(streamSettings, perf.xhttpMaxConnections);
     }
 
     if (transport === 'mkcp') {
@@ -987,6 +998,46 @@ export class XrayConfigPipeline {
       settings.flow = config.flow;
     }
     return settings;
+  }
+
+  /**
+   * Apply the user-facing XHTTP xmux.maxConnections knob.
+   * Clears maxConcurrency when present — Xray rejects both together.
+   */
+  private static applyXhttpMaxConnections(
+    streamSettings: MutableStreamSettings | XrayStreamSettings,
+    maxConnections: number,
+  ): void {
+    const mutable = streamSettings as MutableStreamSettings;
+    const transport = mutable.method ?? mutable.network;
+    const xhttpKey = mutable.xhttpSettings
+      ? 'xhttpSettings'
+      : mutable.splithttpSettings
+        ? 'splithttpSettings'
+        : null;
+    if (!xhttpKey) {
+      if (transport !== 'xhttp' && transport !== 'splithttp') return;
+      return;
+    }
+    const xhttp = mutable[xhttpKey];
+    if (!xhttp || typeof xhttp !== 'object' || Array.isArray(xhttp)) return;
+
+    const existingExtra =
+      xhttp.extra &&
+      typeof xhttp.extra === 'object' &&
+      !Array.isArray(xhttp.extra)
+        ? (xhttp.extra as MutableConfigNode)
+        : {};
+    const existingXmux =
+      existingExtra.xmux &&
+      typeof existingExtra.xmux === 'object' &&
+      !Array.isArray(existingExtra.xmux)
+        ? { ...(existingExtra.xmux as MutableConfigNode) }
+        : {};
+
+    delete existingXmux.maxConcurrency;
+    existingXmux.maxConnections = maxConnections;
+    xhttp.extra = { ...existingExtra, xmux: existingXmux };
   }
 
   private static buildMuxSettings(

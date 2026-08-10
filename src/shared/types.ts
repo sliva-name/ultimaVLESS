@@ -183,6 +183,11 @@ export interface PerformanceSettings {
   muxConcurrency: number;
   xudpConcurrency: number;
   xudpProxyUDP443: XudpProxyUDP443;
+  /**
+   * XHTTP `extra.xmux.maxConnections`. Matches Xray 26.7.28+ default (3).
+   * Raise toward 6 if a server feels connection-starved; keep low for anti-TSPU.
+   */
+  xhttpMaxConnections: number;
   tcpFastOpen: boolean;
   sniffingRouteOnly: boolean;
   logLevel: LogLevel;
@@ -199,6 +204,7 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   muxConcurrency: 8,
   xudpConcurrency: 16,
   xudpProxyUDP443: 'reject',
+  xhttpMaxConnections: 3,
   tcpFastOpen: true,
   sniffingRouteOnly: true,
   logLevel: 'warning',
