@@ -2,7 +2,6 @@ import React, {
   useCallback,
   useEffect,
   useId,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -36,6 +35,26 @@ type MenuPlacement = {
   maxHeight: number;
 };
 
+function measurePlacement(trigger: HTMLElement): MenuPlacement {
+  const rect = trigger.getBoundingClientRect();
+  const viewportPad = 8;
+  const preferredMax = 280;
+  const spaceBelow = window.innerHeight - rect.bottom - viewportPad;
+  const spaceAbove = rect.top - viewportPad;
+  const openUp = spaceBelow < 160 && spaceAbove > spaceBelow;
+  const maxHeight = Math.min(
+    preferredMax,
+    Math.max(120, openUp ? spaceAbove : spaceBelow),
+  );
+  return {
+    top: openUp ? rect.top : rect.bottom + 6,
+    left: rect.left,
+    width: Math.max(rect.width, 180),
+    openUp,
+    maxHeight,
+  };
+}
+
 export const Select: React.FC<SelectProps> = ({
   value,
   options,
@@ -51,7 +70,7 @@ export const Select: React.FC<SelectProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [placement, setPlacement] = useState<MenuPlacement | null>(null);
-  const [activeIndex, setActiveIndex] = useState(-1);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   const selected = useMemo(
     () => options.find((opt) => opt.value === value) ?? options[0],
@@ -63,38 +82,35 @@ export const Select: React.FC<SelectProps> = ({
     [options, value],
   );
 
-  const updatePlacement = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    const viewportPad = 8;
-    const preferredMax = 280;
-    const spaceBelow = window.innerHeight - rect.bottom - viewportPad;
-    const spaceAbove = rect.top - viewportPad;
-    const openUp = spaceBelow < 160 && spaceAbove > spaceBelow;
-    const maxHeight = Math.min(
-      preferredMax,
-      Math.max(120, openUp ? spaceAbove : spaceBelow),
-    );
-    setPlacement({
-      top: openUp ? rect.top : rect.bottom + 6,
-      left: rect.left,
-      width: Math.max(rect.width, 180),
-      openUp,
-      maxHeight,
-    });
+  const closeMenu = useCallback(() => {
+    setOpen(false);
   }, []);
 
-  useLayoutEffect(() => {
-    if (!open) return;
-    updatePlacement();
+  const openMenu = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
-  }, [open, selectedIndex, updatePlacement]);
+    setPlacement(measurePlacement(trigger));
+    setOpen(true);
+  }, [selectedIndex]);
+
+  const toggleMenu = useCallback(() => {
+    if (disabled) return;
+    if (open) {
+      closeMenu();
+      return;
+    }
+    openMenu();
+  }, [closeMenu, disabled, open, openMenu]);
 
   useEffect(() => {
     if (!open) return;
 
-    const onScrollOrResize = () => updatePlacement();
+    const onScrollOrResize = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      setPlacement(measurePlacement(trigger));
+    };
     window.addEventListener('resize', onScrollOrResize);
     // Capture scroll from nested overflow containers (settings modal).
     window.addEventListener('scroll', onScrollOrResize, true);
@@ -103,19 +119,21 @@ export const Select: React.FC<SelectProps> = ({
       const target = event.target as Node;
       if (rootRef.current?.contains(target)) return;
       if (menuRef.current?.contains(target)) return;
-      setOpen(false);
+      closeMenu();
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        setOpen(false);
+        closeMenu();
         triggerRef.current?.focus();
         return;
       }
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        setActiveIndex((idx) => Math.min(options.length - 1, Math.max(0, idx) + 1));
+        setActiveIndex((idx) =>
+          Math.min(options.length - 1, Math.max(0, idx) + 1),
+        );
         return;
       }
       if (event.key === 'ArrowUp') {
@@ -127,7 +145,7 @@ export const Select: React.FC<SelectProps> = ({
         if (activeIndex < 0 || activeIndex >= options.length) return;
         event.preventDefault();
         onChange(options[activeIndex].value);
-        setOpen(false);
+        closeMenu();
         triggerRef.current?.focus();
       }
     };
@@ -140,15 +158,15 @@ export const Select: React.FC<SelectProps> = ({
       document.removeEventListener('mousedown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [open, options, activeIndex, onChange, updatePlacement]);
+  }, [open, options, activeIndex, onChange, closeMenu]);
 
   const handleSelect = useCallback(
     (next: string) => {
       onChange(next);
-      setOpen(false);
+      closeMenu();
       triggerRef.current?.focus();
     },
-    [onChange],
+    [closeMenu, onChange],
   );
 
   const menu =
@@ -236,10 +254,7 @@ export const Select: React.FC<SelectProps> = ({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
-        onClick={() => {
-          if (disabled) return;
-          setOpen((prev) => !prev);
-        }}
+        onClick={toggleMenu}
         className={clsx(
           'group flex min-w-[9.5rem] max-w-[16rem] items-center gap-2 rounded-xl border px-2.5 py-1.5',
           'bg-black/40 text-sm text-white transition-all duration-200',
