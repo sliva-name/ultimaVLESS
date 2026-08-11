@@ -13,6 +13,26 @@ interface TunInboundOptions {
   tunAutoRoute?: boolean;
   /** DNS servers advertised on the TUN interface (Windows). */
   dnsServers?: string[];
+  sniffingRouteOnly?: boolean;
+}
+
+/**
+ * Sniffing must be enabled on every inbound that feeds routing, including
+ * `tun-in`: without it routing only sees IP:port, so domain rules (ad blocking,
+ * any `geosite:` rule) can never match under `domainStrategy: AsIs`.
+ * `quic` is required because browsers emit QUIC over TUN.
+ * @see https://xtls.github.io/config/inbounds/tun.html
+ */
+export function createSniffing(routeOnly: boolean): {
+  enabled: boolean;
+  destOverride: string[];
+  routeOnly: boolean;
+} {
+  return {
+    enabled: true,
+    destOverride: ['http', 'tls', 'quic'],
+    routeOnly,
+  };
 }
 
 type MutableConfigNode = Record<string, unknown>;
@@ -33,11 +53,6 @@ export type MutableInbound = MutableConfigNode & {
 export function createLocalProxyInbounds(
   sniffingRouteOnly = true,
 ): XrayInbound[] {
-  const sniffing = {
-    enabled: true,
-    destOverride: ['http', 'tls', 'quic'],
-    routeOnly: sniffingRouteOnly,
-  };
   return [
     {
       tag: 'socks',
@@ -45,7 +60,7 @@ export function createLocalProxyInbounds(
       listen: '127.0.0.1',
       protocol: 'socks',
       settings: { udp: true },
-      sniffing,
+      sniffing: createSniffing(sniffingRouteOnly),
     },
     {
       tag: 'http',
@@ -53,7 +68,7 @@ export function createLocalProxyInbounds(
       listen: '127.0.0.1',
       protocol: 'http',
       settings: {},
-      sniffing,
+      sniffing: createSniffing(sniffingRouteOnly),
     },
   ];
 }
@@ -67,11 +82,7 @@ export function ensureLocalProxyInbounds(
 
   const ensureSniffing = (inbound: MutableInbound) => {
     if (!inbound.sniffing) {
-      inbound.sniffing = {
-        enabled: true,
-        destOverride: ['http', 'tls', 'quic'],
-        routeOnly: sniffingRouteOnly,
-      };
+      inbound.sniffing = createSniffing(sniffingRouteOnly);
     } else {
       inbound.sniffing.routeOnly = sniffingRouteOnly;
     }
@@ -123,6 +134,7 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
     tag: 'tun-in',
     port: 0,
     protocol: 'tun',
+    sniffing: createSniffing(options.sniffingRouteOnly ?? true),
     settings: {
       name: TUN_INTERFACE_NAME,
       mtu: 1500,

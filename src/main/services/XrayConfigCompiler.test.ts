@@ -18,7 +18,11 @@ describe('XrayConfigCompiler', () => {
       },
     );
 
-    expect(config.log.access).toBe('/tmp/xray.log');
+    // Access logs record every visited destination and are what `get-logs`
+    // exports, so they stay off outside debug verbosity.
+    expect(config.log.access).toBe('none');
+    expect(config.log.error).toBe('/tmp/xray.log');
+    expect(config.log.maskAddress).toBe('full');
     expect(config.inbounds).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ protocol: 'socks' }),
@@ -95,7 +99,7 @@ describe('XrayConfigCompiler', () => {
     );
 
     expect(config.dns).toMatchObject({
-      queryStrategy: 'UseIPv4',
+      queryStrategy: 'UseSystem',
       servers: ['8.8.8.8', '8.8.4.4'],
     });
     expect(config.dns?.servers).not.toContain('localhost');
@@ -156,11 +160,134 @@ describe('XrayConfigCompiler', () => {
     );
 
     expect(config.dns).toMatchObject({
-      queryStrategy: 'UseIPv4',
+      queryStrategy: 'UseSystem',
       servers: ['1.1.1.1', '1.0.0.1'],
     });
     expect(config.dns?.servers).not.toContain('localhost');
     expect(config.outbounds.some((o) => o.tag === 'dns-out')).toBe(true);
+  });
+
+  it('discards inbounds declared by a raw config', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        security: 'tls',
+        sni: 'example.com',
+        rawConfig: {
+          inbounds: [
+            {
+              tag: 'open-relay',
+              protocol: 'dokodemo-door',
+              listen: '0.0.0.0',
+              port: 1080,
+              settings: { network: 'tcp,udp' },
+            },
+            {
+              tag: 'hostile-tun',
+              protocol: 'tun',
+              port: 0,
+              settings: { name: 'evil0' },
+            },
+          ],
+          outbounds: [
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                address: 'example.com',
+                port: 443,
+                id: '00000000-0000-0000-0000-000000000001',
+                encryption: 'none',
+              },
+              streamSettings: { network: 'tcp', security: 'tls' },
+            },
+          ],
+        } as XrayConfig,
+      }),
+      { logPath: '/tmp/xray.log', connectionMode: 'tun', tunAutoRoute: true },
+    );
+
+    const listeners = (config.inbounds ?? []).map((i) => ({
+      protocol: i.protocol,
+      listen: i.listen,
+    }));
+    expect(listeners).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ protocol: 'dokodemo-door' }),
+      ]),
+    );
+    // No inbound may listen off-loopback; the TUN inbound binds no port at all.
+    for (const inbound of config.inbounds ?? []) {
+      if (inbound.protocol === 'tun') continue;
+      expect(inbound.listen).toBe('127.0.0.1');
+    }
+    // Exactly one TUN inbound, built by us rather than by the subscription.
+    const tunInbounds = (config.inbounds ?? []).filter(
+      (i) => i.protocol === 'tun',
+    );
+    expect(tunInbounds).toHaveLength(1);
+    expect(tunInbounds[0].settings).not.toMatchObject({ name: 'evil0' });
+    expect(tunInbounds[0].sniffing).toMatchObject({
+      enabled: true,
+      destOverride: ['http', 'tls', 'quic'],
+    });
+  });
+
+  it('drops raw routing rules that would bypass the tunnel', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        security: 'tls',
+        sni: 'example.com',
+        rawConfig: {
+          inbounds: [],
+          outbounds: [
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                address: 'example.com',
+                port: 443,
+                id: '00000000-0000-0000-0000-000000000001',
+                encryption: 'none',
+              },
+              streamSettings: { network: 'tcp', security: 'tls' },
+            },
+            { tag: 'direct', protocol: 'freedom' },
+            { tag: 'block', protocol: 'blackhole' },
+          ],
+          routing: {
+            domainStrategy: 'AsIs',
+            rules: [
+              // Catch-all bypass: the whole point of the attack.
+              { type: 'field', port: '0-65535', outboundTag: 'direct' },
+              { type: 'field', domain: ['geosite:cn'], outboundTag: 'direct' },
+              { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
+              { type: 'field', domain: ['example.org'], outboundTag: 'proxy' },
+            ],
+          },
+        } as XrayConfig,
+      }),
+      { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+    );
+
+    const rules = config.routing?.rules ?? [];
+    const directRules = rules.filter((r) => r.outboundTag === 'direct');
+    // Only the private/link-local bypass may reach `direct`.
+    expect(directRules).toHaveLength(1);
+    expect(directRules[0].ip).toEqual(['geoip:private']);
+    expect(
+      rules.some((r) => r.port === '0-65535' && r.outboundTag === 'direct'),
+    ).toBe(false);
+    expect(
+      rules.some(
+        (r) => r.domain?.includes('geosite:cn') && r.outboundTag === 'direct',
+      ),
+    ).toBe(false);
+    // Legitimate proxy rules survive.
+    expect(
+      rules.some(
+        (r) => r.domain?.includes('example.org') && r.outboundTag === 'proxy',
+      ),
+    ).toBe(true);
   });
 
   it('applies remote DNS in proxy mode without dns-out hijack', () => {

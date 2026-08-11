@@ -134,8 +134,11 @@ export class SubscriptionService {
       throw new Error('Invalid subscription URL');
     }
 
-    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
-      throw new Error('Only HTTP(S) subscription URLs are allowed');
+    // HTTPS only. A subscription response defines the outbound, the transport and
+    // (for JSON payloads) parts of the routing that the elevated core will run,
+    // so a cleartext fetch lets any on-path attacker choose that configuration.
+    if (parsedUrl.protocol !== 'https:') {
+      throw new Error('Only HTTPS subscription URLs are allowed');
     }
 
     if (isPrivateOrLoopbackHost(parsedUrl.hostname)) {

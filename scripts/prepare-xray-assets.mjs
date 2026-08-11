@@ -190,9 +190,11 @@ async function main() {
         directError instanceof Error
           ? directError.message
           : String(directError);
-      console.warn(`Direct release download failed: ${directMessage}`);
-      archiveName = await downloadFromApiAssets(candidateNames, zipPath);
-      console.log(`Downloaded ${archiveName} via GitHub API asset URL`);
+      // Do not fall back to `releases/latest`: a silent version swap can ship
+      // an untested Xray build that lacks TUN fields this client depends on.
+      throw new Error(
+        `Failed to download pinned Xray ${version}: ${directMessage}`,
+      );
     }
 
     const { spawnSync } = await import('child_process');

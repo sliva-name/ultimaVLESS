@@ -244,6 +244,18 @@ function scheduleFatalExit(trigger: AppRecoveryTrigger, error: unknown): void {
     fatalExitTimer = null;
     if (!isShuttingDown) {
       isQuitting = true;
+      // app.exit() skips before-quit, so tear the child down synchronously
+      // before the process vanishes — otherwise xray (and its TUN routes /
+      // bound ports) survive as an orphan.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const mod = require('./services/XrayService') as {
+          xrayService?: { killSyncBestEffort?: () => void };
+        };
+        mod.xrayService?.killSyncBestEffort?.();
+      } catch {
+        // Module may not be loaded yet.
+      }
       app.exit(1);
     }
   }, FATAL_EXIT_DELAY_MS);
@@ -610,6 +622,24 @@ process.on('uncaughtException', (error) => {
 
 process.on('unhandledRejection', (reason) => {
   scheduleFatalExit('unhandled-rejection', reason);
+});
+
+// Last-resort sync kill if the process is exiting without going through
+// before-quit (taskkill of the main process still won't hit this — Windows
+// terminates the tree only when a job object is used — but Node exit hooks
+// and app.exit paths that skip before-quit do).
+process.on('exit', () => {
+  try {
+    // Dynamic import is async and useless here; require the already-loaded
+    // singleton if the module graph has it.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('./services/XrayService') as {
+      xrayService?: { killSyncBestEffort?: () => void };
+    };
+    mod.xrayService?.killSyncBestEffort?.();
+  } catch {
+    // Module may not be loaded yet during early startup failures.
+  }
 });
 
 app.on('child-process-gone', (_event, details) => {

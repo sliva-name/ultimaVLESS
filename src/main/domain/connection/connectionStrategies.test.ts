@@ -157,6 +157,20 @@ describe('connection strategies', () => {
 
     await teardown.reset({ stopXray: true });
 
-    expect(calls).toEqual(['proxy', 'routes', 'xray']);
+    expect(calls.sort()).toEqual(['proxy', 'routes', 'xray'].sort());
+    expect(calls[calls.length - 1]).toBe('xray');
+  });
+
+  it('network teardown can keep system proxy during a server switch', async () => {
+    const calls: string[] = [];
+    const teardown = createNetworkTeardown({
+      proxyService: { disable: vi.fn(async () => calls.push('proxy')) } as any,
+      routeService: { disable: vi.fn(async () => calls.push('routes')) } as any,
+      coreService: { stop: vi.fn(() => calls.push('xray')) } as any,
+    });
+
+    await teardown.reset({ stopXray: true, keepSystemProxy: true });
+
+    expect(calls).toEqual(['routes', 'xray']);
   });
 });

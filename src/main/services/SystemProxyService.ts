@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
+import { APP_CONSTANTS } from '@/shared/constants';
 import { logger } from './LoggerService';
 import { WindowsProxyAdapter } from './systemProxy/windowsProxy';
 import { DarwinProxyAdapter } from './systemProxy/darwinProxy';
@@ -106,7 +107,12 @@ export class SystemProxyService {
         return;
       }
       if (this.windows) {
-        await this.restoreSnapshotOrFallback(() => this.windows!.disableRaw());
+        await this.restoreSnapshotOrFallback(() =>
+          this.windows!.disableRaw(
+            APP_CONSTANTS.PORTS.HTTP,
+            APP_CONSTANTS.PORTS.SOCKS,
+          ),
+        );
         return;
       }
     });

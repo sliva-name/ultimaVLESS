@@ -77,6 +77,8 @@ export class ConnectionMonitorService extends EventEmitter {
   /** Consecutive local listener probe failures; single misses can happen under Windows socket pressure. */
   private localProxyFailStreak: number = 0;
   private autoSwitchFailedAt: Map<string, number> = new Map();
+  /** How long a server stays blocked after a failure before auto-switch may retry it. */
+  private static readonly BLOCKED_SERVER_COOLDOWN_MS = 10 * 60 * 1000;
   private static readonly TUNNEL_PROBE_STREAK_BEFORE_NOTIFY =
     CONNECTION_MONITOR_TIMING.tunnelProbeStreakBeforeAction;
   private static readonly LOCAL_PROXY_STREAK_BEFORE_NOTIFY =
@@ -84,8 +86,8 @@ export class ConnectionMonitorService extends EventEmitter {
   private static readonly AUTO_SWITCH_DELAY_MS =
     CONNECTION_MONITOR_TIMING.autoSwitchDelayMs;
   private static readonly AUTO_SWITCH_CANDIDATE_LIMIT = 30;
-  private static readonly AUTO_SWITCH_VALIDATION_TIMEOUT_MS = 2000;
-  private static readonly AUTO_SWITCH_VALIDATION_ATTEMPTS = 1;
+  private static readonly AUTO_SWITCH_VALIDATION_TIMEOUT_MS = 6_000;
+  private static readonly AUTO_SWITCH_VALIDATION_ATTEMPTS = 2;
   private switchExecutor: SwitchExecutor = async () => {
     throw new Error('Auto-switch executor is not configured');
   };
@@ -173,6 +175,7 @@ export class ConnectionMonitorService extends EventEmitter {
       options;
     this.monitoringGeneration += 1;
     this.switchInProgress = false;
+    this.healthCheckInFlight = false;
     logger.info('ConnectionMonitorService', 'Stopping monitoring');
 
     if (this.checkInterval) {
@@ -348,6 +351,22 @@ export class ConnectionMonitorService extends EventEmitter {
         if (this.isAutoSwitchingEnabled && this.status.isConnected) {
           return this.scheduleAutoSwitch();
         }
+
+        // Auto-switch off: tear the dead stack down instead of sitting on
+        // "Connected" with no working tunnel until the user notices.
+        if (this.status.isConnected) {
+          void this.cleanupRuntimeAfterFailure().catch((cleanupError) => {
+            logger.error(
+              'ConnectionMonitorService',
+              'Cleanup after blocking failure failed',
+              cleanupError,
+            );
+          });
+          this.stopMonitoring({
+            message: `Connection lost: ${error}`,
+            preserveLastError: true,
+          });
+        }
       }
     }
 
@@ -370,7 +389,7 @@ export class ConnectionMonitorService extends EventEmitter {
   }
 
   /**
-   * Marks a server as blocked.
+   * Marks a server as blocked for {@link BLOCKED_SERVER_COOLDOWN_MS}.
    */
   private markServerAsBlocked(serverId: string): void {
     this.autoSwitchFailedAt.set(serverId, Date.now());
@@ -378,6 +397,7 @@ export class ConnectionMonitorService extends EventEmitter {
       this.status.blockedServers.add(serverId);
       logger.warn('ConnectionMonitorService', 'Server marked as blocked', {
         serverId,
+        cooldownMs: ConnectionMonitorService.BLOCKED_SERVER_COOLDOWN_MS,
       });
 
       const server = this.status.currentServer;
@@ -387,6 +407,18 @@ export class ConnectionMonitorService extends EventEmitter {
           server,
           message: `Server ${server.name} appears to be blocked`,
         } as ConnectionEvent);
+      }
+    }
+  }
+
+  /** Drop servers whose cooldown has elapsed so a transient outage is not permanent. */
+  private pruneExpiredBlockedServers(now: number = Date.now()): void {
+    const cooldown = ConnectionMonitorService.BLOCKED_SERVER_COOLDOWN_MS;
+    for (const serverId of [...this.status.blockedServers]) {
+      const failedAt = this.autoSwitchFailedAt.get(serverId);
+      if (failedAt == null || now - failedAt >= cooldown) {
+        this.status.blockedServers.delete(serverId);
+        this.autoSwitchFailedAt.delete(serverId);
       }
     }
   }
@@ -404,7 +436,26 @@ export class ConnectionMonitorService extends EventEmitter {
     }
     logger.info('ConnectionMonitorService', 'Forcing immediate health check', {
       reason,
+      deferred: this.healthCheckInFlight,
     });
+    if (this.healthCheckInFlight) {
+      // A long in-flight probe after sleep would otherwise swallow the wake
+      // check until the next 15s tick. Queue one follow-up.
+      const generation = this.monitoringGeneration;
+      void (async () => {
+        while (this.healthCheckInFlight) {
+          await new Promise((r) => setTimeout(r, 100));
+          if (
+            this.monitoringGeneration !== generation ||
+            !this.status.isConnected
+          ) {
+            return;
+          }
+        }
+        void this.checkConnectionHealth();
+      })();
+      return;
+    }
     void this.checkConnectionHealth();
   }
 
@@ -426,8 +477,23 @@ export class ConnectionMonitorService extends EventEmitter {
 
     // First tick after a short warmup; only then start the 15s interval so we
     // do not get two probes within a few seconds (interval at 15s + initial at 5s).
+    const generationAtArm = this.monitoringGeneration;
     this.initialHealthCheckTimer = setTimeout(() => {
+      this.initialHealthCheckTimer = null;
+      // Disconnect may have raced the timer callback after clearTimeout lost.
+      if (
+        this.monitoringGeneration !== generationAtArm ||
+        !this.status.isConnected
+      ) {
+        return;
+      }
       runCheck();
+      if (
+        this.monitoringGeneration !== generationAtArm ||
+        !this.status.isConnected
+      ) {
+        return;
+      }
       this.checkInterval = setInterval(runCheck, this.checkIntervalMs);
     }, CONNECTION_MONITOR_TIMING.healthCheckInitialDelayMs);
   }
@@ -480,7 +546,6 @@ export class ConnectionMonitorService extends EventEmitter {
         this.tunnelProbeFailStreak = 0;
         this.localProxyFailStreak += 1;
         const { failureReason, xrayState } = probeResult;
-        const forceBlocking = xrayState.state === 'failed';
 
         this.status.lastHealthState =
           xrayState.state === 'failed' ? 'failed' : 'degraded';
@@ -489,23 +554,21 @@ export class ConnectionMonitorService extends EventEmitter {
         logger.warn('ConnectionMonitorService', 'Local proxy probe failed', {
           streak: this.localProxyFailStreak,
           failureReason,
+          xrayState: xrayState.state,
         });
 
-        const shouldSurface =
+        const shouldForce =
           xrayState.state === 'failed' ||
           this.localProxyFailStreak >=
             ConnectionMonitorService.LOCAL_PROXY_STREAK_BEFORE_NOTIFY;
 
-        if (shouldSurface && this.status.lastError !== failureReason) {
-          this.recordError(failureReason, this.status.currentServer, {
-            forceBlocking,
+        if (shouldForce) {
+          // A sustained dead local listener (port conflict, degraded start that
+          // somehow slipped through, orphaned stack) never matches the Xray log
+          // blocking patterns — treat it as fatal so we tear down / switch.
+          this.handleCriticalConnectionFailure(failureReason, {
+            localProxyReachable: false,
           });
-        } else {
-          logger.debug(
-            'ConnectionMonitorService',
-            'Local proxy listeners still unreachable or below notify threshold',
-            { failureReason, streak: this.localProxyFailStreak },
-          );
         }
         return;
       }
@@ -676,6 +739,7 @@ export class ConnectionMonitorService extends EventEmitter {
 
     logger.info('ConnectionMonitorService', 'Attempting auto-switch');
 
+    this.pruneExpiredBlockedServers();
     const servers = configService.getServers();
     const selection = selectAutoSwitchCandidates(
       servers,
@@ -892,7 +956,6 @@ export class ConnectionMonitorService extends EventEmitter {
         this.monitoringGeneration !== expectedGeneration ||
         !this.status.isConnected
       ) {
-        await this.cleanupRuntimeAfterFailure();
         return 'stale';
       }
 
@@ -901,13 +964,29 @@ export class ConnectionMonitorService extends EventEmitter {
           server,
           'Post-switch traffic validation failed',
         );
-        await this.cleanupRuntimeAfterFailure();
+        // Do not call full cleanupAfterFailure here — that stops monitoring and
+        // aborts the multi-candidate loop. Leave the stack for the next
+        // candidate's switchExecutor to tear down and rebuild.
         return 'failed';
+      }
+
+      if (
+        this.monitoringGeneration !== expectedGeneration ||
+        !this.status.isConnected
+      ) {
+        return 'stale';
       }
 
       configService.setSelectedServerId(server.uuid);
 
-      // Обновляем статус мониторинга
+      // Re-check after validation: a user disconnect can interleave while the
+      // HTTP probe is in flight and must not re-arm monitoring on a dead stack.
+      if (
+        this.monitoringGeneration !== expectedGeneration ||
+        !this.status.isConnected
+      ) {
+        return 'stale';
+      }
       this.startMonitoring(server);
 
       logger.info('ConnectionMonitorService', 'Successfully switched server', {
@@ -923,16 +1002,6 @@ export class ConnectionMonitorService extends EventEmitter {
       );
       const errorMessage = `Failed to switch: ${error instanceof Error ? error.message : String(error)}`;
       this.recordAutoSwitchCandidateFailure(server, errorMessage);
-
-      try {
-        await this.cleanupRuntimeAfterFailure();
-      } catch (cleanupError) {
-        logger.error(
-          'ConnectionMonitorService',
-          'Cleanup after switch failure failed',
-          cleanupError,
-        );
-      }
       return 'failed';
     }
   }

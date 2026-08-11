@@ -1,4 +1,5 @@
 import { ChildProcess, spawn } from 'child_process';
+import { resolveSystemBinary } from './systemBinaries';
 
 export interface CommandOutput {
   code: number | null;
@@ -22,7 +23,7 @@ function killProcessTree(child: ChildProcess): void {
   if (process.platform === 'win32' && child.pid != null) {
     try {
       const killer = spawn(
-        'taskkill',
+        resolveSystemBinary('taskkill'),
         ['/pid', String(child.pid), '/T', '/F'],
         { windowsHide: true },
       );
@@ -43,7 +44,9 @@ export function runProcessWithOutput(
   options: RunProcessOptions,
 ): Promise<CommandOutput> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { windowsHide: options.windowsHide });
+    const child = spawn(resolveSystemBinary(command), args, {
+      windowsHide: options.windowsHide,
+    });
     const timeout = setTimeout(() => {
       killProcessTree(child);
       reject(

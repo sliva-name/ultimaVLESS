@@ -39,14 +39,19 @@ export async function relaunchAsAdminOnWindows(): Promise<boolean> {
 
   try {
     const escapedExePath = process.execPath.replace(/'/g, "''");
+    // A cancelled UAC prompt raises a non-terminating error, which PowerShell
+    // still reports as exit code 0. Without the explicit try/catch the caller
+    // would believe an elevated instance is starting and quit this one, leaving
+    // the user with no window and no connection.
     const output = await runProcessWithOutput(
       'powershell',
       [
         '-NoProfile',
+        '-NonInteractive',
         '-Command',
-        `Start-Process -FilePath '${escapedExePath}' -Verb RunAs`,
+        `$ErrorActionPreference='Stop'; try { Start-Process -FilePath '${escapedExePath}' -Verb RunAs | Out-Null; exit 0 } catch { exit 1 }`,
       ],
-      { timeoutMs: 10000, windowsHide: true },
+      { timeoutMs: 60000, windowsHide: true },
     );
     return output.code === 0;
   } catch {

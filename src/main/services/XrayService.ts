@@ -12,6 +12,7 @@ import { configService } from './ConfigService';
 import { logger } from './LoggerService';
 import { probeTcpPort } from './networkProbe';
 import { getBinResourcesPath } from '@/main/utils/runtimePaths';
+import { resolveSystemBinary } from './platform/systemBinaries';
 
 export interface XrayUnexpectedExitEvent {
   config: VlessConfig;
@@ -247,20 +248,36 @@ export class XrayService extends EventEmitter {
       // Poll listeners immediately while watching for early process death —
       // no fixed grace sleep (previously 1.2s even when ports were already up).
       const readiness = await this.awaitLocalProxyReadiness(spawnedProcess);
+      if (!readiness.reachable) {
+        const reason =
+          readiness.reason ||
+          'Xray started but local proxy listeners did not become reachable in time';
+        // Kill before dropping the reference so a readiness timeout cannot leave
+        // a live xray holding 10808/10809 while the UI later claims Connected.
+        if (this.process === spawnedProcess) {
+          this.expectedExitProcesses.add(spawnedProcess);
+          try {
+            spawnedProcess.kill();
+          } catch {
+            // Process already exited.
+          }
+          this.process = null;
+        }
+        this.markFailed(reason);
+        throw new Error(reason);
+      }
       if (this.process === spawnedProcess) {
         this.setHealthStatus({
-          state: readiness.reachable ? 'running' : 'degraded',
-          ready: readiness.reachable,
+          state: 'running',
+          ready: true,
           xrayRunning: true,
           lastStartAt: Date.now(),
-          lastReadyAt: readiness.reachable
-            ? Date.now()
-            : this.healthStatus.lastReadyAt,
+          lastReadyAt: Date.now(),
           lastReadinessCheckAt: Date.now(),
-          localProxyReachable: readiness.reachable,
+          localProxyReachable: true,
           lastFailureAt: null,
-          lastFailureReason: readiness.reachable ? null : readiness.reason,
-          lastReadinessError: readiness.reason,
+          lastFailureReason: null,
+          lastReadinessError: null,
         });
       }
     } catch (error) {
@@ -317,6 +334,38 @@ export class XrayService extends EventEmitter {
       // SIGKILL is sent by `waitForProcessExit` if the child does not exit
       // within `STOP_TIMEOUT_MS`.
     }
+  }
+
+  /**
+   * Synchronous best-effort kill for fatal / process-exit paths where we cannot
+   * await graceful shutdown. Prefer {@link stop} during normal teardown.
+   */
+  public killSyncBestEffort(): void {
+    const child = this.process;
+    if (!child?.pid) return;
+    this.expectedExitProcesses.add(child);
+    try {
+      if (process.platform === 'win32') {
+        spawn(
+          resolveSystemBinary('taskkill'),
+          ['/pid', String(child.pid), '/T', '/F'],
+          { windowsHide: true, detached: false, stdio: 'ignore' },
+        ).unref();
+      } else {
+        try {
+          process.kill(child.pid, 'SIGKILL');
+        } catch {
+          child.kill('SIGKILL');
+        }
+      }
+    } catch {
+      try {
+        child.kill();
+      } catch {
+        // Already gone.
+      }
+    }
+    this.process = null;
   }
 
   /**

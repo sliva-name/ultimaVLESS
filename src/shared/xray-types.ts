@@ -2,10 +2,13 @@
 // Based on Project X documentation
 
 export type XrayLogConfig = {
+  /** File path, or `'none'` to disable. Access logs record every destination. */
   access?: string;
   error?: string;
   loglevel: 'debug' | 'info' | 'warning' | 'error' | 'none';
   dnsLog?: boolean;
+  /** IP redaction level applied by Xray itself. */
+  maskAddress?: 'quarter' | 'half' | 'full';
 };
 
 export type XrayInbound = {

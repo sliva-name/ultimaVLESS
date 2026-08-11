@@ -31,6 +31,7 @@ import {
   applyRemoteDnsSettings,
   buildDnsObject,
 } from './configGenerator/dns';
+import { logger } from './LoggerService';
 
 type MutableConfigNode = Record<string, unknown>;
 
@@ -61,6 +62,21 @@ type StructuredOutboundProtocol =
 function bundledVersionMin(): string {
   return BUNDLED_XRAY_VERSION.replace(/^v/i, '');
 }
+
+/** Outbound tags a subscription-supplied routing rule may target. */
+const ALLOWED_RAW_OUTBOUND_TAGS = new Set(['proxy', 'block', 'dns-out']);
+
+const PRIVATE_IP_SELECTORS = new Set([
+  'geoip:private',
+  '127.0.0.0/8',
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '169.254.0.0/16',
+  '::1/128',
+  'fc00::/7',
+  'fe80::/10',
+]);
 
 export interface XrayConfigPipelineOptions {
   sendThrough?: string;
@@ -95,16 +111,13 @@ export class XrayConfigPipeline {
     const cfg = JSON.parse(JSON.stringify(rawConfig)) as XrayConfig;
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
 
-    cfg.log = {
-      loglevel: perf.logLevel,
-      access: logPath,
-      error: logPath,
-    };
+    cfg.log = this.buildLogObject(perf, logPath);
 
     if (!cfg.inbounds || !Array.isArray(cfg.inbounds)) {
       cfg.inbounds = [];
     }
 
+    this.stripUntrustedInbounds(cfg);
     ensureLocalProxyInbounds(cfg.inbounds, perf.sniffingRouteOnly);
     const hasTun = cfg.inbounds.some(
       (ib) => ib?.protocol === 'tun' || ib?.tag === 'tun-in',
@@ -115,6 +128,7 @@ export class XrayConfigPipeline {
         createTunInbound({
           ...options,
           dnsServers: perf.remoteDnsServers,
+          sniffingRouteOnly: perf.sniffingRouteOnly,
         }),
       );
       // Prefer autoOutboundsInterface for loop prevention; sendThrough is
@@ -130,6 +144,7 @@ export class XrayConfigPipeline {
     // to start with "outboundTag not found" otherwise.
     this.ensureAuxiliaryOutbounds(cfg);
     this.applyPerfToOutbounds(cfg, perf);
+    this.sanitizeRawRoutingRules(cfg);
     this.applyPerfToRouting(cfg, perf);
     this.assertRawOutboundCompatibility(cfg);
     applyStatsApi(cfg);
@@ -139,6 +154,114 @@ export class XrayConfigPipeline {
     this.applyBundledVersionConstraint(cfg);
 
     return cfg;
+  }
+
+  /**
+   * Xray's access log records every destination the user reaches, and the log
+   * file is what `get-logs` exports. Keep it off unless the user explicitly
+   * asked for debug verbosity, and let Xray mask addresses itself.
+   * @see https://xtls.github.io/config/log.html
+   */
+  private static buildLogObject(
+    perf: PerformanceSettings,
+    logPath: string,
+  ): XrayConfig['log'] {
+    return {
+      loglevel: perf.logLevel,
+      error: logPath,
+      access: perf.logLevel === 'debug' ? logPath : 'none',
+      maskAddress: 'full',
+    };
+  }
+
+  /**
+   * Inbounds are owned by the client, never by the subscription: a raw config
+   * could otherwise publish a listener on 0.0.0.0 (an open relay into the user's
+   * LAN, running elevated in TUN mode) or supply its own `tun` settings.
+   * Local SOCKS/HTTP are recreated by `ensureLocalProxyInbounds`.
+   */
+  private static stripUntrustedInbounds(cfg: XrayConfig): void {
+    if (!Array.isArray(cfg.inbounds) || cfg.inbounds.length === 0) return;
+    const dropped = cfg.inbounds.map((ib) => ({
+      tag: ib?.tag ?? null,
+      protocol: ib?.protocol ?? null,
+      listen: ib?.listen ?? null,
+      port: ib?.port ?? null,
+    }));
+    cfg.inbounds = [];
+    logger.warn(
+      'XrayConfigPipeline',
+      'Discarded inbounds supplied by raw config',
+      { dropped },
+    );
+  }
+
+  /**
+   * Routing decides whether traffic is tunnelled at all, so rules coming from a
+   * subscription may only reference the proxy, the blackhole, or the DNS
+   * outbound. `direct` survives solely as the private/link-local bypass, which
+   * is required to keep LAN and DHCP/DNS discovery working.
+   */
+  private static sanitizeRawRoutingRules(cfg: XrayConfig): void {
+    if (!cfg.routing || typeof cfg.routing !== 'object') return;
+    if (!Array.isArray(cfg.routing.rules)) return;
+
+    const rules = cfg.routing.rules as XrayRoutingRule[];
+    const kept: XrayRoutingRule[] = [];
+    const dropped: Array<Record<string, unknown>> = [];
+
+    for (const rule of rules) {
+      if (!rule || typeof rule !== 'object') continue;
+      const tag = typeof rule.outboundTag === 'string' ? rule.outboundTag : '';
+      const allowed =
+        (ALLOWED_RAW_OUTBOUND_TAGS.has(tag) && !rule.balancerTag) ||
+        this.isPrivateBypassRule(rule);
+      if (allowed) {
+        kept.push(rule);
+      } else {
+        dropped.push({
+          outboundTag: tag || null,
+          balancerTag: rule.balancerTag ?? null,
+          domain: rule.domain ?? null,
+          ip: rule.ip ?? null,
+          port: rule.port ?? null,
+        });
+      }
+    }
+
+    cfg.routing.rules = kept;
+    if (dropped.length > 0) {
+      logger.warn(
+        'XrayConfigPipeline',
+        'Discarded routing rules supplied by raw config',
+        { droppedCount: dropped.length, dropped: dropped.slice(0, 10) },
+      );
+    }
+  }
+
+  /** A `direct` rule that only matches private/link-local destinations. */
+  private static isPrivateBypassRule(rule: XrayRoutingRule): boolean {
+    if (rule.outboundTag !== 'direct') return false;
+    if (
+      rule.domain ||
+      rule.port ||
+      rule.protocol ||
+      rule.user ||
+      rule.attrs ||
+      rule.source ||
+      rule.balancerTag
+    ) {
+      return false;
+    }
+    const ips = Array.isArray(rule.ip) ? rule.ip : [];
+    return (
+      ips.length > 0 &&
+      ips.every(
+        (ip) =>
+          typeof ip === 'string' &&
+          PRIVATE_IP_SELECTORS.has(ip.trim().toLowerCase()),
+      )
+    );
   }
 
   private static applyBundledVersionConstraint(cfg: XrayConfig): void {
@@ -671,17 +794,14 @@ export class XrayConfigPipeline {
         createTunInbound({
           ...options,
           dnsServers: perf.remoteDnsServers,
+          sniffingRouteOnly: perf.sniffingRouteOnly,
         }) as XrayInbound,
       );
     }
 
     const cfg: XrayConfig = {
-      log: {
-        loglevel: perf.logLevel,
-        access: logPath,
-        error: logPath,
-      },
-      dns: buildDnsObject(perf),
+      log: this.buildLogObject(perf, logPath),
+      dns: buildDnsObject(perf, { tunMode: connectionMode === 'tun' }),
       inbounds,
       outbounds: [
         outbound,

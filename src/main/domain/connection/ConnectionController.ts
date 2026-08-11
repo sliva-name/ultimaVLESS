@@ -290,7 +290,10 @@ export class ConnectionController extends EventEmitter {
   public switchToServer(server: VlessConfig): Promise<void> {
     return this.enqueue('switching', async () => {
       const mode = this.deps.configService.getConnectionMode();
-      await this.teardown.reset({ stopXray: true });
+      await this.teardown.reset({
+        stopXray: true,
+        keepSystemProxy: mode === 'proxy',
+      });
       await this.applyConnectionMode(server, mode, this.deps.constants.ports);
       this.deps.configService.setSelectedServerId(server.uuid);
       this.deps.connectionMonitorService.startMonitoring(server);
@@ -300,7 +303,10 @@ export class ConnectionController extends EventEmitter {
   public transitionForAutoSwitch(server: VlessConfig): Promise<void> {
     return this.enqueue('switching', async () => {
       const mode = this.deps.configService.getConnectionMode();
-      await this.teardown.reset({ stopXray: true });
+      await this.teardown.reset({
+        stopXray: true,
+        keepSystemProxy: mode === 'proxy',
+      });
       await this.applyConnectionMode(server, mode, this.deps.constants.ports);
     });
   }

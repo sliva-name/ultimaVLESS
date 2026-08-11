@@ -25,6 +25,7 @@ export class LinuxProxyAdapter {
         httpsPort: 0,
         socksHost: '',
         socksPort: 0,
+        ignoreHosts: [],
       };
     }
 
@@ -36,6 +37,7 @@ export class LinuxProxyAdapter {
       httpsPort,
       socksHost,
       socksPort,
+      ignoreHostsRaw,
     ] = await Promise.all([
       this.runGsettings(['get', 'org.gnome.system.proxy', 'mode']),
       this.runGsettings(['get', 'org.gnome.system.proxy.http', 'host']),
@@ -44,6 +46,7 @@ export class LinuxProxyAdapter {
       this.runGsettings(['get', 'org.gnome.system.proxy.https', 'port']),
       this.runGsettings(['get', 'org.gnome.system.proxy.socks', 'host']),
       this.runGsettings(['get', 'org.gnome.system.proxy.socks', 'port']),
+      this.runGsettings(['get', 'org.gnome.system.proxy', 'ignore-hosts']),
     ]);
     return {
       platform: 'linux',
@@ -55,6 +58,7 @@ export class LinuxProxyAdapter {
       httpsPort: parseGsettingsNumber(httpsPort),
       socksHost: parseGsettingsString(socksHost),
       socksPort: parseGsettingsNumber(socksPort),
+      ignoreHosts: parseGsettingsStringList(ignoreHostsRaw),
     };
   }
 
@@ -102,6 +106,13 @@ export class LinuxProxyAdapter {
         'org.gnome.system.proxy.socks',
         'port',
         String(socksPort),
+      ]);
+      // Clear bypass list while VPN is on; restored from the snapshot on disable.
+      await this.runGsettings([
+        'set',
+        'org.gnome.system.proxy',
+        'ignore-hosts',
+        "['localhost', '127.0.0.0/8', '::1']",
       ]);
       logger.info('SystemProxyService', 'Linux proxy enabled via gsettings', {
         httpPort,
@@ -181,6 +192,12 @@ export class LinuxProxyAdapter {
     await this.runGsettings([
       'set',
       'org.gnome.system.proxy',
+      'ignore-hosts',
+      formatGsettingsStringList(snapshot.ignoreHosts ?? []),
+    ]);
+    await this.runGsettings([
+      'set',
+      'org.gnome.system.proxy',
       'mode',
       snapshot.mode,
     ]);
@@ -227,4 +244,21 @@ function parseGsettingsString(raw: string): string {
 function parseGsettingsNumber(raw: string): number {
   const parsed = Number(raw.trim());
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Parses gsettings list output like `['localhost', '127.0.0.0/8']`. */
+function parseGsettingsStringList(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return [];
+  const inner = trimmed.slice(1, -1).trim();
+  if (!inner) return [];
+  return inner
+    .split(',')
+    .map((part) => part.trim().replace(/^'/, '').replace(/'$/, ''))
+    .filter(Boolean);
+}
+
+function formatGsettingsStringList(values: string[]): string {
+  const escaped = values.map((v) => `'${v.replace(/'/g, `\\'`)}'`);
+  return `[${escaped.join(', ')}]`;
 }

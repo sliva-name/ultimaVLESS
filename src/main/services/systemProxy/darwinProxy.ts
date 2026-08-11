@@ -12,10 +12,11 @@ export class DarwinProxyAdapter {
     const services = await this.listNetworkServices();
     const snapshots = await Promise.all(
       services.map(async (service) => {
-        const [web, secure, socks] = await Promise.all([
+        const [web, secure, socks, bypassDomains] = await Promise.all([
           this.getProxyDetails(service, 'web'),
           this.getProxyDetails(service, 'secure'),
           this.getProxyDetails(service, 'socks'),
+          this.getBypassDomains(service),
         ]);
         return {
           service,
@@ -28,6 +29,7 @@ export class DarwinProxyAdapter {
           socksEnabled: socks.enabled,
           socksHost: socks.host,
           socksPort: socks.port,
+          bypassDomains,
         } satisfies MacosServiceProxySnapshot;
       }),
     );
@@ -71,6 +73,16 @@ export class DarwinProxyAdapter {
         '-setsocksfirewallproxystate',
         service,
         'on',
+      ]);
+      // Replace any corporate/user bypass list so matching hosts cannot skip
+      // the tunnel while the UI reports Connected. Restored from the snapshot.
+      await this.run([
+        NETWORKSETUP,
+        '-setproxybypassdomains',
+        service,
+        'localhost',
+        '127.0.0.1',
+        '*.local',
       ]);
     }
 
@@ -130,6 +142,16 @@ export class DarwinProxyAdapter {
         service.socksPort,
         service.socksEnabled,
       );
+      const domains =
+        service.bypassDomains && service.bypassDomains.length > 0
+          ? service.bypassDomains
+          : ['Empty'];
+      await this.run([
+        NETWORKSETUP,
+        '-setproxybypassdomains',
+        service.service,
+        ...domains,
+      ]);
     }
   }
 
@@ -159,6 +181,27 @@ export class DarwinProxyAdapter {
           : '-getsocksfirewallproxy';
     const output = await this.run([NETWORKSETUP, flag, service]);
     return parseProxyDetails(output);
+  }
+
+  private async getBypassDomains(service: string): Promise<string[]> {
+    try {
+      const output = await this.run([
+        NETWORKSETUP,
+        '-getproxybypassdomains',
+        service,
+      ]);
+      return output
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(
+          (line) =>
+            line.length > 0 &&
+            !line.toLowerCase().includes('there aren') &&
+            line.toLowerCase() !== 'empty',
+        );
+    } catch {
+      return [];
+    }
   }
 
   private async restoreKind(

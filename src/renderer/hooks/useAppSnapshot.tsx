@@ -68,7 +68,9 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
     ) ??
     null;
   const phase = snapshot.session.phase;
-  const isConnected = phase === 'connected' || phase === 'switching';
+  // `switching` means the tunnel is being torn down or rebuilt — traffic is
+  // not protected. Treat only a verified `connected` phase as connected.
+  const isConnected = phase === 'connected';
   const isConnectionBusy = isSessionPhaseInFlight(phase);
   const connectionError = clientError ?? snapshot.session.lastError;
 

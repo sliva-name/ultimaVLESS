@@ -327,10 +327,12 @@ export class TunRouteService {
   /**
    * Removes orphaned TUN default/host routes left behind by a previous
    * crashed or hard-killed session. Intended to be called once at app
-   * startup; safe no-op on platforms without PowerShell TUN routing.
+   * startup. Always runs on Windows: host /32 pins are created in both
+   * PowerShell and Xray auto-route modes, so gating recovery on the current
+   * routing preference would leave stale gateway pins after a crash.
    */
   public async recoverOrphanedRoutes(): Promise<void> {
-    if (this.platform !== 'win32' || !this.usesWindowsPowerShellRouting()) {
+    if (this.platform !== 'win32') {
       return;
     }
     try {
@@ -346,9 +348,11 @@ export class TunRouteService {
    * Re-pins proxy host routes to the current default gateway after a system
    * resume, when the gateway may have changed while TUN stayed active.
    * No-op when TUN routing is inactive or the gateway is unchanged.
+   * Host pins exist in both Windows routing modes, so this is not gated on
+   * `windowsTunRouting`.
    */
   public async reapplyRoutesAfterResume(): Promise<void> {
-    if (this.platform !== 'win32' || !this.usesWindowsPowerShellRouting()) {
+    if (this.platform !== 'win32') {
       return;
     }
     const hostRoutes = this.addedRoutes.filter(

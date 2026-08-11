@@ -18,6 +18,7 @@ export interface MacosServiceProxySnapshot {
   socksEnabled: boolean;
   socksHost: string | null;
   socksPort: number | null;
+  bypassDomains: string[];
 }
 
 export interface MacosProxySnapshot {
@@ -35,6 +36,8 @@ export interface LinuxProxySnapshot {
   httpsPort: number;
   socksHost: string;
   socksPort: number;
+  /** GNOME `ignore-hosts` list; empty while VPN is on. */
+  ignoreHosts: string[];
 }
 
 export type ProxySnapshot =

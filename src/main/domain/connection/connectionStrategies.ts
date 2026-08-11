@@ -12,7 +12,11 @@ export interface ProxyPorts {
 }
 
 export interface NetworkTeardown {
-  reset: (options?: { stopXray?: boolean }) => Promise<void>;
+  reset: (options?: {
+    stopXray?: boolean;
+    /** Keep WinINET/gsettings proxy pointing at loopback during a switch. */
+    keepSystemProxy?: boolean;
+  }) => Promise<void>;
 }
 
 export interface ConnectionStrategy {
@@ -26,16 +30,21 @@ export function createNetworkTeardown(deps: {
   coreService: XrayService;
 }): NetworkTeardown {
   return {
-    async reset(options: { stopXray?: boolean } = {}): Promise<void> {
-      const { stopXray = true } = options;
-      // System-proxy (HKCU Internet Settings) and the routing table are
-      // independent subsystems, so tearing both down concurrently halves the
-      // PowerShell/reg/schtasks spawn latency that dominates connect time.
-      // Each service serializes its own operations internally.
-      await Promise.all([
-        deps.proxyService.disable(),
+    async reset(
+      options: { stopXray?: boolean; keepSystemProxy?: boolean } = {},
+    ): Promise<void> {
+      const { stopXray = true, keepSystemProxy = false } = options;
+      // When switching servers, leave the system proxy aimed at 127.0.0.1 so
+      // proxy-aware apps fail closed (connection refused) instead of going
+      // clearnet while the new Xray instance is coming up. Full disconnects
+      // still restore the user's original proxy settings.
+      const teardownTasks: Array<Promise<void>> = [
         deps.routeService.disable(),
-      ]);
+      ];
+      if (!keepSystemProxy) {
+        teardownTasks.push(deps.proxyService.disable());
+      }
+      await Promise.all(teardownTasks);
       if (stopXray) {
         deps.coreService.stop();
       }

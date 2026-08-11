@@ -2,6 +2,14 @@ import type { PerformanceSettings } from '@/shared/types';
 import type { XrayConfig, XrayRoutingRule } from '@/shared/xray-types';
 
 export const DNS_OUTBOUND_TAG = 'dns-out';
+/**
+ * Tags traffic the built-in DNS module originates, so routing can pin it to the
+ * proxy outbound via `inboundTag`. Without this the module's upstream queries
+ * follow generic rules and can fall through to `direct`.
+ * @see https://xtls.github.io/config/dns.html
+ */
+export const DNS_MODULE_TAG = 'dns-module';
+export const PROXY_OUTBOUND_TAG = 'proxy';
 
 type MutableConfigNode = Record<string, unknown>;
 type MutableOutbound = MutableConfigNode & {
@@ -12,6 +20,7 @@ type MutableOutbound = MutableConfigNode & {
 
 export function buildDnsObject(
   perf: PerformanceSettings,
+  options: { tunMode?: boolean } = {},
 ): Record<string, unknown> {
   const servers =
     perf.remoteDnsServers.length > 0
@@ -19,7 +28,15 @@ export function buildDnsObject(
       : ['1.1.1.1', '1.0.0.1'];
   return {
     servers,
-    queryStrategy: 'UseIPv4',
+    // TUN routes ::/0 into the tunnel, so AAAA is safe and `UseSystem` adapts to
+    // whether the host actually has an IPv6 default gateway. A WinINET/gsettings
+    // proxy carries no IPv6, so there IPv4-only prevents an off-tunnel fallback.
+    queryStrategy: options.tunMode ? 'UseSystem' : 'UseIPv4',
+    tag: DNS_MODULE_TAG,
+    // Without this, a failed remote resolver falls through to later entries —
+    // including any `localhost` a subscription might have injected before we
+    // started replacing the dns object wholesale.
+    disableFallback: true,
   };
 }
 
@@ -34,14 +51,16 @@ export function ensureDnsOutbound(
 ): void {
   if (!Array.isArray(cfg.outbounds)) cfg.outbounds = [];
   const outbounds = cfg.outbounds as MutableOutbound[];
+  // `action: 'hijack'` without a qType filter routes *every* query type into the
+  // built-in resolver. A trailing `{ action: 'direct' }` would instead let all
+  // non-A/AAAA types (notably qType 65 HTTPS/SVCB, which browsers request for
+  // nearly every navigation) leave as plaintext DNS carrying the hostname.
+  // @see https://xtls.github.io/config/outbounds/dns.html
   const settings = {
     rewriteNetwork: 'udp',
     rewriteAddress: primaryDnsIp,
     rewritePort: 53,
-    rules: [
-      { action: 'hijack', qType: '1,28' },
-      { action: 'direct' },
-    ],
+    rules: [{ action: 'hijack' }],
   };
 
   const existing = outbounds.find((o) => o?.tag === DNS_OUTBOUND_TAG);
@@ -82,12 +101,45 @@ export function ensureDnsHijackRule(rules: XrayRoutingRule[]): void {
     outboundTag: DNS_OUTBOUND_TAG,
   };
 
-  // After API inbound rule if present; otherwise at the front.
+  rules.splice(dnsRuleInsertIndex(rules), 0, dnsRule);
+}
+
+/**
+ * Pins queries originating from the built-in DNS module to the proxy outbound.
+ * Must sit ahead of the port-53 hijack rule, otherwise the module's own upstream
+ * query would match `port: 53` and be fed back into itself.
+ */
+export function ensureDnsModulePinnedToProxy(
+  cfg: XrayConfig,
+  rules: XrayRoutingRule[],
+): void {
+  const hasProxyOutbound =
+    Array.isArray(cfg.outbounds) &&
+    cfg.outbounds.some((o) => o?.tag === PROXY_OUTBOUND_TAG);
+  if (!hasProxyOutbound) return;
+
+  const isPin = (rule: XrayRoutingRule | undefined): boolean =>
+    !!rule &&
+    Array.isArray(rule.inboundTag) &&
+    rule.inboundTag.includes(DNS_MODULE_TAG);
+
+  const withoutOld = rules.filter((rule) => !isPin(rule));
+  rules.length = 0;
+  rules.push(...withoutOld);
+
+  rules.splice(dnsRuleInsertIndex(rules), 0, {
+    type: 'field',
+    inboundTag: [DNS_MODULE_TAG],
+    outboundTag: PROXY_OUTBOUND_TAG,
+  });
+}
+
+/** After the API inbound rule if present; otherwise at the front. */
+function dnsRuleInsertIndex(rules: XrayRoutingRule[]): number {
   const apiIdx = rules.findIndex(
     (r) => Array.isArray(r.inboundTag) && r.inboundTag.includes('api'),
   );
-  const insertAt = apiIdx >= 0 ? apiIdx + 1 : 0;
-  rules.splice(insertAt, 0, dnsRule);
+  return apiIdx >= 0 ? apiIdx + 1 : 0;
 }
 
 export function applyRemoteDnsSettings(
@@ -95,29 +147,28 @@ export function applyRemoteDnsSettings(
   perf: PerformanceSettings,
   options: { tunMode: boolean },
 ): void {
-  const dnsObject = buildDnsObject(perf);
-  const existing =
-    cfg.dns && typeof cfg.dns === 'object'
-      ? (cfg.dns as Record<string, unknown>)
-      : {};
-  cfg.dns = {
-    ...existing,
-    ...dnsObject,
-  };
-
-  if (!options.tunMode) return;
-
-  const servers = dnsObject.servers as string[];
-  syncTunInboundDns(cfg, servers);
-  ensureDnsOutbound(cfg, servers[0] ?? '1.1.1.1');
+  // Replaced, not merged: a subscription-supplied `dns` object can pin arbitrary
+  // `hosts` (domain -> attacker-controlled IP) or append servers that resolve
+  // outside the tunnel.
+  const dnsObject = buildDnsObject(perf, { tunMode: options.tunMode });
+  cfg.dns = dnsObject;
 
   if (!cfg.routing || typeof cfg.routing !== 'object') {
-    cfg.routing = { domainStrategy: 'AsIs', rules: [] };
+    cfg.routing = { domainStrategy: perf.domainStrategy, rules: [] };
   }
   if (!Array.isArray(cfg.routing.rules)) {
     cfg.routing.rules = [];
   }
-  ensureDnsHijackRule(cfg.routing.rules as XrayRoutingRule[]);
+  const rules = cfg.routing.rules as XrayRoutingRule[];
+
+  if (options.tunMode) {
+    const servers = dnsObject.servers as string[];
+    syncTunInboundDns(cfg, servers);
+    ensureDnsOutbound(cfg, servers[0] ?? '1.1.1.1');
+    ensureDnsHijackRule(rules);
+  }
+
+  ensureDnsModulePinnedToProxy(cfg, rules);
 }
 
 function syncTunInboundDns(cfg: XrayConfig, servers: string[]): void {

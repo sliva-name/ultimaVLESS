@@ -5,7 +5,10 @@ import { logger } from './LoggerService';
 import { connectionMonitorService } from './ConnectionMonitorService';
 import { xrayService } from './XrayService';
 import { appRecoveryService } from './AppRecoveryService';
-import { sanitizeSensitiveText } from '@/shared/sanitizeDiagnostics';
+import {
+  sanitizeDiagnosticPayload,
+  sanitizeSensitiveText,
+} from '@/shared/sanitizeDiagnostics';
 
 export class LogExportService {
   /**
@@ -24,11 +27,11 @@ export class LogExportService {
     content += `Date: ${new Date().toISOString()}\n\n`;
     content += '=== HEALTH SUMMARY ===\n';
     content += `${JSON.stringify(
-      {
-        connection: connectionMonitorService.getStatus(),
+      sanitizeDiagnosticPayload({
+        connection: this.summarizeConnection(),
         xray: xrayService.getHealthStatus(),
         recovery: appRecoveryService.getStatus(),
-      },
+      }),
       null,
       2,
     )}\n\n`;
@@ -40,6 +43,37 @@ export class LogExportService {
     content += await this.safeReadFile(xrayLogPath);
 
     return this.sanitize(content);
+  }
+
+  /**
+   * `ConnectionStatus.currentServer` is the full profile, including the VLESS id,
+   * Trojan/Shadowsocks password, REALITY keys and the raw config. Only the fields
+   * that help diagnose a session are copied out.
+   */
+  private summarizeConnection(): Record<string, unknown> {
+    const status = connectionMonitorService.getStatus();
+    const server = status.currentServer;
+    return {
+      isConnected: status.isConnected,
+      lastError: status.lastError,
+      connectionAttempts: status.connectionAttempts,
+      lastConnectionTime: status.lastConnectionTime,
+      blockedServerCount: status.blockedServers.length,
+      lastHealthCheckAt: status.lastHealthCheckAt,
+      lastHealthState: status.lastHealthState,
+      lastHealthFailureReason: status.lastHealthFailureReason,
+      localProxyReachable: status.localProxyReachable,
+      currentServer: server
+        ? {
+            name: server.name,
+            protocol: server.protocol,
+            port: server.port,
+            security: server.security,
+            transport: server.type,
+            hasRawConfig: Boolean(server.rawConfig),
+          }
+        : null,
+    };
   }
 
   /**

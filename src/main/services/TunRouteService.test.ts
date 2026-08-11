@@ -154,17 +154,21 @@ describe('TunRouteService Windows routing', () => {
     });
   });
 
-  it('recoverOrphanedRoutes is a no-op when PowerShell routing is not used', async () => {
+  it('recoverOrphanedRoutes still cleans host routes in Xray auto-route mode', async () => {
     vi.mocked(configService.getPerformanceSettings).mockReturnValue({
       ...DEFAULT_PERFORMANCE_SETTINGS,
       windowsTunRouting: 'xray',
     });
     const service = new TunRouteService('win32');
-    const cleanupSpy = vi.spyOn(service as any, 'cleanupStaleTunRoutes');
+    const cleanupSpy = vi
+      .spyOn(service as any, 'cleanupStaleTunRoutes')
+      .mockResolvedValue(undefined);
 
     await service.recoverOrphanedRoutes();
 
-    expect(cleanupSpy).not.toHaveBeenCalled();
+    expect(cleanupSpy).toHaveBeenCalledWith({
+      includeKnownServerHostRoutes: true,
+    });
   });
 
   it('reapplyRoutesAfterResume is a no-op when TUN routing is inactive', async () => {
