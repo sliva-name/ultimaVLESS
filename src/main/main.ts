@@ -184,7 +184,26 @@ const userDataDir = app.getPath('userData');
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
-  app.quit();
+  // Desktop shortcut / Start Menu launches land here while the tray instance
+  // is already running. Electron is supposed to emit `second-instance` on the
+  // primary, but on Windows that IPC is unreliable (and UIPI blocks it entirely
+  // when the primary is elevated for TUN). Ask the primary over the filesystem
+  // handshake instead.
+  //
+  // Use app.exit — never app.quit. `before-quit` on THIS process would tear
+  // down the primary's system proxy / TUN routes.
+  void (async () => {
+    try {
+      await activateRunningInstance(userDataDir);
+    } catch (error) {
+      try {
+        logger.error('Main', 'Failed to activate the running instance', error);
+      } catch {
+        // Logger may not be writable during this short-lived launch.
+      }
+    }
+    app.exit(0);
+  })();
 } else {
   app.on('second-instance', async () => {
     try {
@@ -208,15 +227,20 @@ async function showMainWindow(reason: string = 'unspecified') {
   mainWindow.setSkipTaskbar(false);
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
+  // Raise above other windows even when Windows denies foreground focus.
+  mainWindow.moveTop();
   mainWindow.focus();
 
   // Windows refuses foreground activation to a process that does not own the
   // current foreground window, so a tray/shortcut click can leave the window
   // visible but buried. A brief always-on-top bump is the documented way out.
-  if (process.platform === 'win32' && !mainWindow.isFocused()) {
+  if (process.platform === 'win32') {
     mainWindow.setAlwaysOnTop(true);
     mainWindow.setAlwaysOnTop(false);
     mainWindow.focus();
+    if (!mainWindow.isFocused()) {
+      mainWindow.flashFrame(true);
+    }
   }
 }
 
@@ -756,6 +780,9 @@ async function performShutdown(): Promise<void> {
 }
 
 app.on('before-quit', (event) => {
+  // A duplicate launch that lost the single-instance race must not tear down
+  // the primary's VPN (system proxy / TUN routes are process-global).
+  if (!gotSingleInstanceLock) return;
   // When electron-updater drives the quit (quitAndInstall), our shutdown has
   // already run via the prepare-for-quit hook; do not intercept the quit or
   // the downloaded update would never be installed.

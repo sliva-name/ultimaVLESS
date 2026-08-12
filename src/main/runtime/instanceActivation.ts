@@ -22,7 +22,7 @@ const REQUEST_FILE = 'activate-request.json';
 const HEARTBEAT_INTERVAL_MS = 5_000;
 /** Heartbeats older than this belong to a crashed instance. */
 const OWNER_STALE_AFTER_MS = 20_000;
-const REQUEST_POLL_INTERVAL_MS = 750;
+const REQUEST_POLL_INTERVAL_MS = 250;
 /** Requests left behind by a process that gave up waiting are not replayed. */
 const REQUEST_MAX_AGE_MS = 30_000;
 const ACK_TIMEOUT_MS = 3_000;
