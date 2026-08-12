@@ -244,6 +244,8 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   blockBittorrent: false,
   domainStrategy: 'AsIs',
   windowsTunRouting: 'xray',
-  bypassDomains: [],
+  // VK blocks or throttles traffic from many VPN exit IPs, so it is excluded
+  // out of the box; users can drop it in the network settings.
+  bypassDomains: ['vk.com'],
   bypassIps: [],
 };

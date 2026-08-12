@@ -142,7 +142,14 @@ export function normalizePerformanceSettings(
     )
       ? (value.windowsTunRouting as WindowsTunRouting)
       : DEFAULT_PERFORMANCE_SETTINGS.windowsTunRouting,
-    bypassDomains: normalizeBypassDomains(value.bypassDomains),
-    bypassIps: normalizeBypassIps(value.bypassIps),
+    // Only an existing list is authoritative — an empty one means the user
+    // cleared the defaults. Settings saved before split tunneling existed carry
+    // no list at all and inherit the shipped exclusions.
+    bypassDomains: Array.isArray(value.bypassDomains)
+      ? normalizeBypassDomains(value.bypassDomains)
+      : [...DEFAULT_PERFORMANCE_SETTINGS.bypassDomains],
+    bypassIps: Array.isArray(value.bypassIps)
+      ? normalizeBypassIps(value.bypassIps)
+      : [...DEFAULT_PERFORMANCE_SETTINGS.bypassIps],
   };
 }

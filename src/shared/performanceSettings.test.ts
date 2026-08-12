@@ -70,8 +70,14 @@ describe('normalizePerformanceSettings', () => {
     expect(settings.bypassIps).toEqual(['10.0.0.0/8', 'geoip:private']);
   });
 
-  it('defaults split tunneling to empty lists', () => {
-    expect(normalizePerformanceSettings({}).bypassDomains).toEqual([]);
+  it('inherits the shipped exclusions when no list was ever saved', () => {
+    expect(normalizePerformanceSettings({}).bypassDomains).toEqual(['vk.com']);
     expect(normalizePerformanceSettings({}).bypassIps).toEqual([]);
+  });
+
+  it('keeps a cleared exclusion list cleared', () => {
+    expect(
+      normalizePerformanceSettings({ bypassDomains: [] }).bypassDomains,
+    ).toEqual([]);
   });
 });

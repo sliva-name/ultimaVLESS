@@ -4,7 +4,23 @@ import { buildBypassRules, buildDefaultRoutingRules } from './routing';
 
 describe('buildBypassRules', () => {
   it('emits nothing when no exclusions are configured', () => {
-    expect(buildBypassRules(DEFAULT_PERFORMANCE_SETTINGS)).toEqual([]);
+    expect(
+      buildBypassRules({
+        ...DEFAULT_PERFORMANCE_SETTINGS,
+        bypassDomains: [],
+        bypassIps: [],
+      }),
+    ).toEqual([]);
+  });
+
+  it('ships vk.com as a default exclusion', () => {
+    expect(buildBypassRules(DEFAULT_PERFORMANCE_SETTINGS)).toEqual([
+      {
+        type: 'field',
+        domain: ['domain:vk.com'],
+        outboundTag: 'direct',
+      },
+    ]);
   });
 
   it('maps bare hosts to domain matchers and keeps address entries verbatim', () => {

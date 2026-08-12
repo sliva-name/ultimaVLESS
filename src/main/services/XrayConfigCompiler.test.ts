@@ -266,7 +266,17 @@ describe('XrayConfigCompiler', () => {
           },
         } as XrayConfig,
       }),
-      { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+      {
+        logPath: '/tmp/xray.log',
+        connectionMode: 'proxy',
+        // No split tunneling here: the only `direct` rule left must be the
+        // client's own private bypass.
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          bypassDomains: [],
+          bypassIps: [],
+        },
+      },
     );
 
     const rules = config.routing?.rules ?? [];
