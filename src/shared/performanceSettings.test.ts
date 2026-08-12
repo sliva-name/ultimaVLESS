@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  isValidIpv4Address,
-  normalizePerformanceSettings,
-} from './performanceSettings';
+import { normalizePerformanceSettings } from './performanceSettings';
 
 describe('normalizePerformanceSettings', () => {
   it('accepts extended TLS fingerprints', () => {
@@ -53,16 +50,28 @@ describe('normalizePerformanceSettings', () => {
       }).remoteDnsServers,
     ).toEqual(['1.1.1.1', '1.0.0.1']);
   });
-});
 
-describe('isValidIpv4Address', () => {
-  it('accepts dotted quads and rejects junk', () => {
-    expect(isValidIpv4Address('1.1.1.1')).toBe(true);
-    expect(isValidIpv4Address('0.0.0.0')).toBe(true);
-    expect(isValidIpv4Address('255.255.255.255')).toBe(true);
-    expect(isValidIpv4Address('1.1.1')).toBe(false);
-    expect(isValidIpv4Address('1.1.1.256')).toBe(false);
-    expect(isValidIpv4Address('01.1.1.1')).toBe(false);
-    expect(isValidIpv4Address('localhost')).toBe(false);
+  it('keeps only usable split tunneling entries', () => {
+    const settings = normalizePerformanceSettings({
+      bypassDomains: [
+        'https://Example.COM/path?q=1',
+        '*.example.com',
+        'geosite:category-ru',
+        'regexp:.*',
+        '10.0.0.1',
+      ],
+      bypassIps: ['10.0.0.0/8', 'not-an-ip', '10.0.0.0/8', 'geoip:private'],
+    });
+
+    expect(settings.bypassDomains).toEqual([
+      'example.com',
+      'geosite:category-ru',
+    ]);
+    expect(settings.bypassIps).toEqual(['10.0.0.0/8', 'geoip:private']);
+  });
+
+  it('defaults split tunneling to empty lists', () => {
+    expect(normalizePerformanceSettings({}).bypassDomains).toEqual([]);
+    expect(normalizePerformanceSettings({}).bypassIps).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { runProcessWithOutput } from './platform/commandRunner';
+import { RELAUNCH_ARG } from '@/shared/constants';
 
 /**
  * Checks whether the current process has elevated rights on Windows.
@@ -49,7 +50,10 @@ export async function relaunchAsAdminOnWindows(): Promise<boolean> {
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        `$ErrorActionPreference='Stop'; try { Start-Process -FilePath '${escapedExePath}' -Verb RunAs | Out-Null; exit 0 } catch { exit 1 }`,
+        // RELAUNCH_ARG tells the elevated instance that the process it is
+        // replacing is still alive, so it must not hand its startup back over
+        // the cross-instance activation handshake.
+        `$ErrorActionPreference='Stop'; try { Start-Process -FilePath '${escapedExePath}' -ArgumentList '${RELAUNCH_ARG}' -Verb RunAs | Out-Null; exit 0 } catch { exit 1 }`,
       ],
       { timeoutMs: 60000, windowsHide: true },
     );

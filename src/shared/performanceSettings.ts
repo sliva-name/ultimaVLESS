@@ -11,6 +11,13 @@ import {
   WindowsTunRouting,
 } from './types';
 import { VALID_WINDOWS_TUN_ROUTING } from './tunRouting';
+import { isValidIpv4Address } from './networkAddresses';
+import {
+  normalizeBypassDomains,
+  normalizeBypassIps,
+} from './splitTunneling';
+
+export { isValidIpv4Address };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -26,19 +33,6 @@ function clamp(
     return fallback;
   }
   return Math.max(min, Math.min(max, value));
-}
-
-/** Strict IPv4 dotted-quad without leading zeros (except `0`). */
-export function isValidIpv4Address(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  const trimmed = value.trim();
-  const parts = trimmed.split('.');
-  if (parts.length !== 4) return false;
-  return parts.every((part) => {
-    if (!/^\d{1,3}$/.test(part)) return false;
-    const n = Number(part);
-    return n >= 0 && n <= 255 && String(n) === part;
-  });
 }
 
 function normalizeIpv4List(value: unknown): string[] {
@@ -148,5 +142,7 @@ export function normalizePerformanceSettings(
     )
       ? (value.windowsTunRouting as WindowsTunRouting)
       : DEFAULT_PERFORMANCE_SETTINGS.windowsTunRouting,
+    bypassDomains: normalizeBypassDomains(value.bypassDomains),
+    bypassIps: normalizeBypassIps(value.bypassIps),
   };
 }

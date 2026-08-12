@@ -17,6 +17,7 @@ export interface TrayHandlers {
   onHide: () => void;
   onQuit: () => void;
   isWindowVisible: () => boolean;
+  isWindowFocused: () => boolean;
 }
 
 /**
@@ -41,7 +42,9 @@ export class TrayService {
     this.mainWindowRef = getMainWindow;
     this.tray = new Tray(getAppIconPath(process.platform));
     this.tray.on('click', () => {
-      if (handlers.isWindowVisible()) {
+      // A window that is open but buried behind other apps must be raised, not
+      // hidden — otherwise the click looks like it did nothing.
+      if (handlers.isWindowVisible() && handlers.isWindowFocused()) {
         handlers.onHide();
       } else {
         handlers.onShow();

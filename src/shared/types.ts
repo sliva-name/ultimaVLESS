@@ -218,6 +218,14 @@ export interface PerformanceSettings {
   domainStrategy: DomainStrategy;
   /** Windows TUN only. Default `xray` for testing; use `powershell` to roll back. */
   windowsTunRouting: WindowsTunRouting;
+  /**
+   * Split tunneling: hosts that leave through the physical interface instead of
+   * the tunnel. Bare hosts cover subdomains; `full:`/`keyword:`/`geosite:`
+   * matchers are stored verbatim.
+   */
+  bypassDomains: string[];
+  /** Split tunneling by address: IPs, CIDR blocks, or `geoip:` tags. */
+  bypassIps: string[];
 }
 
 export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
@@ -236,4 +244,6 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   blockBittorrent: false,
   domainStrategy: 'AsIs',
   windowsTunRouting: 'xray',
+  bypassDomains: [],
+  bypassIps: [],
 };

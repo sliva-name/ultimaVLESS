@@ -25,7 +25,10 @@ import {
   normalizeVmessSecurity,
   requiresPublicTrojanMux,
 } from './configGenerator/outboundCompat';
-import { buildDefaultRoutingRules } from './configGenerator/routing';
+import {
+  buildBypassRules,
+  buildDefaultRoutingRules,
+} from './configGenerator/routing';
 import { applyStatsApi } from './configGenerator/statsApi';
 import {
   applyRemoteDnsSettings,
@@ -657,6 +660,14 @@ export class XrayConfigPipeline {
 
     const injectedBlockCount = rules.length - rulesLenBeforeInjections;
 
+    // Split tunneling has to outrank whatever the subscription routes to the
+    // proxy, but stay behind the block rules injected above.
+    const bypassRules = buildBypassRules(perf) as Array<
+      Record<string, unknown>
+    >;
+    rules.splice(injectedBlockCount, 0, ...bypassRules);
+    const injectedCount = injectedBlockCount + bypassRules.length;
+
     // Subscriptions often omit private / link-local bypass. Without it, Windows
     // may deliver IPv6 link-local DNS (fe80::/10) into the TUN and Xray sends
     // it through the remote proxy, which breaks resolution until users disable
@@ -665,7 +676,7 @@ export class XrayConfigPipeline {
     // private addresses (see RuleObject `ip` and `geoip:private`):
     // https://xtls.github.io/config/routing.html
     if (!this.routingHasPrivateIpDirectBypass(rules)) {
-      rules.splice(injectedBlockCount, 0, {
+      rules.splice(injectedCount, 0, {
         type: 'field',
         ip: ['geoip:private'],
         outboundTag: 'direct',

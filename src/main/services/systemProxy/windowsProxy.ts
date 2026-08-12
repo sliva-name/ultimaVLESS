@@ -1,7 +1,7 @@
-import fs from 'fs';
 import path from 'path';
 import { logger } from '@/main/services/LoggerService';
 import { powerShellPath } from '@/main/services/platform/systemBinaries';
+import { removeFileSync } from '@/main/utils/removeFile';
 import { runCommand } from './runCommand';
 import { WindowsProxySnapshot } from './types';
 
@@ -83,7 +83,7 @@ export class WindowsProxyAdapter {
   private removeLegacyScriptFile(userDataDir: string): void {
     const legacyPath = path.join(userDataDir, 'proxy_manager.ps1');
     try {
-      fs.rmSync(legacyPath, { force: true });
+      removeFileSync(legacyPath);
     } catch (e) {
       logger.warn(
         'SystemProxyService',

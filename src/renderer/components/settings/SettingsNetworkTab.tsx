@@ -15,6 +15,7 @@ import {
 import { PrimaryButton, Select, Toggle } from '@/renderer/components/ui';
 import type { SelectOption } from '@/renderer/components/ui';
 import { useNetworkSettings } from '@/renderer/hooks/useNetworkSettings';
+import { SplitTunnelEditor } from './SplitTunnelEditor';
 
 interface SettingsNetworkTabProps {
   isOpen: boolean;
@@ -502,6 +503,31 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
               },
             ]}
           />
+
+          <div className="border-t border-gray-700/40 my-1" />
+
+          <div className="space-y-2">
+            <div>
+              <div className="text-sm text-gray-200">
+                {t('settings.network.splitTunnel')}
+              </div>
+              <div className="text-xs text-gray-500 leading-relaxed mt-0.5">
+                {t('settings.network.splitTunnelHint')}
+              </div>
+            </div>
+            <SplitTunnelEditor
+              domains={perfSettings.bypassDomains}
+              ips={perfSettings.bypassIps}
+              disabled={networkLocked}
+              onChange={({ domains, ips }) => {
+                updatePerfField('bypassDomains', domains);
+                updatePerfField('bypassIps', ips);
+              }}
+            />
+            <p className="text-xs text-gray-500 leading-relaxed">
+              {t('settings.network.splitTunnelDnsNote')}
+            </p>
+          </div>
         </fieldset>
 
         <div className="flex items-center gap-3 pt-2">

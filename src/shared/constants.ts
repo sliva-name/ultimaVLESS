@@ -1,6 +1,13 @@
 /** Bundled Xray-core release (see scripts/prepare-xray-assets.mjs). */
 export const BUNDLED_XRAY_VERSION = 'v26.7.28';
 
+/**
+ * Passed to the instance that UltimaVLESS starts for itself when it needs
+ * Administrator rights. It marks a launch that must keep booting instead of
+ * handing activation back to the instance it is replacing.
+ */
+export const RELAUNCH_ARG = '--ultima-relaunch';
+
 export const APP_CONSTANTS = {
   PORTS: {
     SOCKS: 10808,

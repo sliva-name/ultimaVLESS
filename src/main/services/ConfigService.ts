@@ -34,6 +34,8 @@ const LEGACY_PERFORMANCE_DEFAULTS: PerformanceSettings = {
   blockBittorrent: true,
   domainStrategy: 'IPIfNonMatch',
   windowsTunRouting: 'powershell',
+  bypassDomains: [],
+  bypassIps: [],
 };
 
 export type UiLanguage = 'en' | 'ru';
@@ -346,11 +348,14 @@ export class ConfigService {
   }
 
   public setPerformanceSettings(settings: PerformanceSettings): void {
-    this.store.set(
-      'performanceSettings',
-      normalizePerformanceSettings(settings),
-    );
-    logger.info('ConfigService', 'setPerformanceSettings', settings);
+    const normalized = normalizePerformanceSettings(settings);
+    this.store.set('performanceSettings', normalized);
+    logger.info('ConfigService', 'setPerformanceSettings', {
+      ...normalized,
+      // Excluded hosts are browsing data; exported diagnostics must not carry them.
+      bypassDomains: normalized.bypassDomains.length,
+      bypassIps: normalized.bypassIps.length,
+    });
   }
 
   // ---------------------------------------------------------------------------

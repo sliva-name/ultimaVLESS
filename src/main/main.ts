@@ -10,6 +10,12 @@ import { initMainSentry } from './services/SentryService';
 import { trayService } from './services/TrayService';
 import { appUpdaterService } from './services/AppUpdaterService';
 import { getAppIconPath } from './utils/runtimePaths';
+import {
+  activateRunningInstance,
+  startInstanceActivationService,
+  stopInstanceActivationService,
+} from './runtime/instanceActivation';
+import { RELAUNCH_ARG } from '@/shared/constants';
 import type { AppRecoveryTrigger } from '@/shared/ipc';
 
 if (!process.versions.electron) {
@@ -174,6 +180,8 @@ function logStartupStep(step: string, data?: Record<string, unknown>) {
   });
 }
 
+const userDataDir = app.getPath('userData');
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -201,6 +209,15 @@ async function showMainWindow(reason: string = 'unspecified') {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+
+  // Windows refuses foreground activation to a process that does not own the
+  // current foreground window, so a tray/shortcut click can leave the window
+  // visible but buried. A brief always-on-top bump is the documented way out.
+  if (process.platform === 'win32' && !mainWindow.isFocused()) {
+    mainWindow.setAlwaysOnTop(true);
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.focus();
+  }
 }
 
 function formatUnknownError(error: unknown): string {
@@ -347,6 +364,8 @@ async function ensureTray() {
       },
       isWindowVisible: () =>
         !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible(),
+      isWindowFocused: () =>
+        !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused(),
     },
     () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
   );
@@ -603,6 +622,23 @@ void app.whenReady().then(async () => {
     // has already been requested above.
     return;
   }
+  // Holding the lock does not prove we are alone: UIPI hides an elevated
+  // instance (TUN mode runs elevated) from this process, so ask over the
+  // filesystem handshake before booting a duplicate app.
+  if (
+    !process.argv.includes(RELAUNCH_ARG) &&
+    (await activateRunningInstance(userDataDir))
+  ) {
+    logStartupStep('Handed activation to the running instance');
+    // Exit instead of quit: `before-quit` would tear down the *shared* network
+    // state (system proxy, TUN routes) that the other instance still owns.
+    await logger.flush().catch(() => undefined);
+    app.exit(0);
+    return;
+  }
+  startInstanceActivationService(userDataDir, () => {
+    void showMainWindow('activation-request');
+  });
   initMainSentry();
   logStartupStep('App ready event');
   registerPowerMonitor();
@@ -710,6 +746,7 @@ async function performShutdown(): Promise<void> {
   }
   appUpdaterService.dispose();
   trayService.dispose();
+  stopInstanceActivationService(userDataDir);
   await logger.flush();
   try {
     await clearShutdownLogs();
