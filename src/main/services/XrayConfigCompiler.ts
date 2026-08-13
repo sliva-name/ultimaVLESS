@@ -4,6 +4,7 @@ import {
   PerformanceSettings,
   VlessConfig,
 } from '@/shared/types';
+import type { RuntimePorts } from '@/shared/constants';
 import { XrayConfig } from '@/shared/xray-types';
 import { XrayConfigPipeline } from './XrayConfigPipeline';
 
@@ -13,6 +14,7 @@ export interface XrayRuntimeContext {
   sendThrough?: string;
   tunAutoRoute?: boolean;
   performanceSettings?: PerformanceSettings;
+  ports?: RuntimePorts;
 }
 
 export class XrayConfigCompiler {
@@ -45,6 +47,7 @@ export class XrayConfigCompiler {
         sendThrough: runtime.sendThrough,
         tunAutoRoute: runtime.tunAutoRoute,
         performanceSettings: runtime.performanceSettings,
+        ports: runtime.ports,
       },
     );
   }

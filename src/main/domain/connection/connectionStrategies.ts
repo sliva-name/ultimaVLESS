@@ -1,20 +1,27 @@
 import type { ConnectionMode, VlessConfig } from '@/shared/types';
-import { resolveTunAutoRoute } from '@/shared/tunRouting';
+import { APP_CONSTANTS } from '@/shared/constants';
 import type { ConfigService } from '@/main/services/ConfigService';
 import type { SystemProxyService } from '@/main/services/SystemProxyService';
 import type { TunRouteService } from '@/main/services/TunRouteService';
 import type { XrayService } from '@/main/services/XrayService';
-import { bindProxyEndpointToIp } from './bindProxyEndpoint';
+import {
+  createProxyNetworkRuntime,
+  createTunNetworkRuntime,
+} from './NetworkModeRuntime';
 
 export interface ProxyPorts {
   http: number;
   socks: number;
+  api?: number;
 }
 
 export interface NetworkTeardown {
   reset: (options?: {
     stopXray?: boolean;
-    /** Keep WinINET/gsettings proxy pointing at loopback during a switch. */
+    /**
+     * Runtime-internal: ConnectionRuntime.switch() keeps the proxy path itself.
+     * Control-plane code must not pass this flag.
+     */
     keepSystemProxy?: boolean;
   }) => Promise<void>;
 }
@@ -25,22 +32,16 @@ export interface ConnectionStrategy {
 }
 
 export function createNetworkTeardown(deps: {
-  proxyService: SystemProxyService;
-  routeService: TunRouteService;
-  coreService: XrayService;
+  proxyService: Pick<SystemProxyService, 'disable'>;
+  routeService: Pick<TunRouteService, 'disable'>;
+  coreService: Pick<XrayService, 'stop'>;
 }): NetworkTeardown {
   return {
     async reset(
       options: { stopXray?: boolean; keepSystemProxy?: boolean } = {},
     ): Promise<void> {
       const { stopXray = true, keepSystemProxy = false } = options;
-      // When switching servers, leave the system proxy aimed at 127.0.0.1 so
-      // proxy-aware apps fail closed (connection refused) instead of going
-      // clearnet while the new Xray instance is coming up. Full disconnects
-      // still restore the user's original proxy settings.
-      const teardownTasks: Array<Promise<void>> = [
-        deps.routeService.disable(),
-      ];
+      const teardownTasks: Array<Promise<void>> = [deps.routeService.disable()];
       if (!keepSystemProxy) {
         teardownTasks.push(deps.proxyService.disable());
       }
@@ -53,57 +54,59 @@ export function createNetworkTeardown(deps: {
 }
 
 export function createProxyConnectionStrategy(deps: {
-  proxyService: SystemProxyService;
-  coreService: XrayService;
+  proxyService: Pick<SystemProxyService, 'enable' | 'disable'>;
+  coreService: Pick<XrayService, 'start'>;
 }): ConnectionStrategy {
+  const network = createProxyNetworkRuntime(deps.proxyService);
   return {
     mode: 'proxy',
     async apply(server: VlessConfig, ports: ProxyPorts): Promise<void> {
-      await deps.coreService.start(server, 'proxy');
-      await deps.proxyService.enable(ports.http, ports.socks);
+      const specPorts = {
+        http: ports.http,
+        socks: ports.socks,
+        api: ports.api ?? APP_CONSTANTS.PORTS.API,
+      };
+      const prepared = await network.prepare({
+        server,
+        mode: 'proxy',
+        ports: specPorts,
+      });
+      await deps.coreService.start(prepared.server, 'proxy', {
+        ...prepared.xrayOptions,
+        ports: specPorts,
+      });
+      await network.activate(prepared);
     },
   };
 }
 
 export function createTunConnectionStrategy(deps: {
-  routeService: TunRouteService;
-  coreService: XrayService;
+  routeService: Pick<
+    TunRouteService,
+    'prepareRoutingPlan' | 'pinProxyHostRoutes' | 'enable' | 'disable'
+  >;
+  coreService: Pick<XrayService, 'start'>;
   configService: Pick<ConfigService, 'getPerformanceSettings'>;
 }): ConnectionStrategy {
+  const network = createTunNetworkRuntime(deps.routeService, deps.configService);
   return {
     mode: 'tun',
-    async apply(server: VlessConfig): Promise<void> {
-      const perf = deps.configService.getPerformanceSettings();
-      const tunAutoRoute = resolveTunAutoRoute(process.platform, perf);
-
-      // Always discover default route + server IPs on Windows. Domain endpoints
-      // (e.g. *.figmafound.org) need host /32 routes pinned *before* Xray
-      // installs 0.0.0.0/0 via TUN, otherwise REALITY dials loop for ~12s.
-      // Skip the stable-route double-sample here — one probe is enough for pin.
-      const needsHostPin = process.platform === 'win32';
-      const routingPlan = needsHostPin || !tunAutoRoute
-        ? await deps.routeService.prepareRoutingPlan(server, {
-            awaitStableDefaultRoute: false,
-          })
-        : undefined;
-
-      let serverToStart = server;
-      if (routingPlan?.proxyIps[0]) {
-        if (needsHostPin) {
-          await deps.routeService.pinProxyHostRoutes(routingPlan);
-        }
-        serverToStart = bindProxyEndpointToIp(server, routingPlan.proxyIps[0]);
-      }
-
-      await deps.coreService.start(serverToStart, 'tun', {
-        // When Xray owns routes via autoOutboundsInterface, skip sendThrough
-        // (docs prefer interface binding; sendThrough is IPv4/IPv6 single-stack).
-        sendThrough: tunAutoRoute
-          ? undefined
-          : routingPlan?.defaultRoute.localAddress || undefined,
-        tunAutoRoute,
+    async apply(server: VlessConfig, ports: ProxyPorts): Promise<void> {
+      const specPorts = {
+        http: ports.http,
+        socks: ports.socks,
+        api: ports.api ?? APP_CONSTANTS.PORTS.API,
+      };
+      const prepared = await network.prepare({
+        server,
+        mode: 'tun',
+        ports: specPorts,
       });
-      await deps.routeService.enable(serverToStart, routingPlan);
+      await deps.coreService.start(prepared.server, 'tun', {
+        ...prepared.xrayOptions,
+        ports: specPorts,
+      });
+      await network.activate(prepared);
     },
   };
 }

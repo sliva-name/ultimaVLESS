@@ -9,8 +9,8 @@ export function buildAppSnapshot(deps: IpcDependencies): AppSnapshot {
   const selectedServerId =
     deps.configService.getSelectedServerId() ?? activeServerId;
   return {
-    servers: toSafeServerList(deps.configService.getServers()),
-    subscriptions: deps.configService.getSubscriptions(),
+    servers: toSafeServerList(deps.serverRepository.list()),
+    subscriptions: deps.subscriptionRepository.list(),
     selectedServerId,
     connectionMode: deps.configService.getConnectionMode(),
     session: {

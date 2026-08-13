@@ -23,10 +23,11 @@ vi.mock('electron', () => ({
 
 // Mock electron-store
 vi.mock('electron-store', () => {
-  return {
-    default: vi.fn().mockImplementation(() => ({
-      get: vi.fn(),
-      set: vi.fn(),
-    })),
-  };
+  class MockStore {
+    get = vi.fn();
+    set = vi.fn();
+    delete = vi.fn();
+    path = '/tmp/app-config.json';
+  }
+  return { default: MockStore };
 });

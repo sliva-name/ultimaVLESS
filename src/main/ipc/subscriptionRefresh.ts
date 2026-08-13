@@ -6,6 +6,8 @@ import {
 } from '@/shared/serverIdentity';
 import { logger } from '@/main/services/LoggerService';
 import { PerfTimer } from '@/shared/perfMetrics';
+import type { ServerRepository } from '@/main/domain/server/ServerRepository';
+import type { SubscriptionRepository } from '@/main/domain/subscription/SubscriptionRepository';
 import { preserveActiveServerIfNeeded } from './refreshUtils';
 import { redactUrl } from './validators';
 
@@ -17,16 +19,12 @@ type RefreshSubscriptionResult = {
 
 interface SubscriptionRefreshManagerDeps {
   getWindow: () => BrowserWindow | null;
+  subscriptionRepository: Pick<
+    SubscriptionRepository,
+    'list' | 'getManualLinks'
+  >;
+  serverRepository: Pick<ServerRepository, 'list' | 'saveAll'>;
   configService: {
-    getSubscriptions: () => Array<{
-      id: string;
-      name: string;
-      url: string;
-      enabled: boolean;
-    }>;
-    getManualLinksInput: () => string;
-    getServers: () => VlessConfig[];
-    setServers: (servers: VlessConfig[]) => void;
     getSelectedServerId: () => string | null;
     setSelectedServerId: (serverId: string | null) => void;
   };
@@ -81,7 +79,7 @@ export function createSubscriptionRefreshManager(
     manualLinks: string,
   ): Promise<RefreshSubscriptionResult> => {
     const refreshTimer = new PerfTimer('IPC', 'refreshAllSubscriptions');
-    const subscriptions = deps.configService.getSubscriptions();
+    const subscriptions = deps.subscriptionRepository.list();
     const enabled = subscriptions.filter((s) => s.enabled);
 
     logger.info('IPC', 'refreshAllSubscriptions start', {
@@ -156,7 +154,7 @@ export function createSubscriptionRefreshManager(
       total: refreshedConfigs.length,
     });
 
-    const existingServers = deps.configService.getServers();
+    const existingServers = deps.serverRepository.list();
 
     let mergedConfigs = refreshedConfigs;
     if (failedSubscriptionIds.size > 0) {
@@ -266,8 +264,8 @@ export function createSubscriptionRefreshManager(
     // Re-read the current subscriptions and drop configs that belong to
     // subscriptions that are no longer enabled/present.
     const enabledIdsNow = new Set(
-      deps.configService
-        .getSubscriptions()
+      deps.subscriptionRepository
+        .list()
         .filter((s) => s.enabled)
         .map((s) => s.id),
     );
@@ -310,7 +308,7 @@ export function createSubscriptionRefreshManager(
       };
     }
 
-    deps.configService.setServers(effectiveConfigs);
+    deps.serverRepository.saveAll(effectiveConfigs);
     const syncedCurrentServer =
       deps.connectionMonitorService.syncCurrentServer(effectiveConfigs);
     if (syncedCurrentServer) {
@@ -368,8 +366,8 @@ export function createSubscriptionRefreshManager(
   };
 
   const restartAutoRefreshTimer = (): void => {
-    const subscriptions = deps.configService.getSubscriptions();
-    const manualLinks = deps.configService.getManualLinksInput();
+    const subscriptions = deps.subscriptionRepository.list();
+    const manualLinks = deps.subscriptionRepository.getManualLinks();
     const hasInput =
       subscriptions.some((s) => s.enabled) || !!manualLinks.trim();
 
@@ -383,8 +381,8 @@ export function createSubscriptionRefreshManager(
     }
 
     autoRefreshTimer = setInterval(() => {
-      const latestManualLinks = deps.configService.getManualLinksInput();
-      const latestSubs = deps.configService.getSubscriptions();
+      const latestManualLinks = deps.subscriptionRepository.getManualLinks();
+      const latestSubs = deps.subscriptionRepository.list();
       const hasLatestInput =
         latestSubs.some((s) => s.enabled) || !!latestManualLinks.trim();
 

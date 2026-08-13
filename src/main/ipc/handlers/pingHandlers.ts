@@ -75,8 +75,8 @@ export function registerPingHandlers({
       assertTrustedSender(_event);
       try {
         const requestedServer = assertValidServerPayload(serverPayload);
-        const storedServer = deps.configService
-          .getServers()
+        const storedServer = deps.serverRepository
+          .list()
           .find((server) => server.uuid === requestedServer.uuid);
         if (!storedServer) {
           logger.error(
@@ -110,7 +110,7 @@ export function registerPingHandlers({
     force: boolean,
   ): Promise<Array<{ uuid: string; latency: number | null }>> {
     const timer = new PerfTimer('IPC', 'ping-all-servers');
-    const servers = deps.configService.getServers();
+    const servers = deps.serverRepository.list();
     if (isUnsafePingState()) {
       logger.debug(
         'IPC',
@@ -154,7 +154,7 @@ export function registerPingHandlers({
       if (incrementalResults.size === 0) {
         return;
       }
-      const latest = deps.configService.getServers();
+      const latest = deps.serverRepository.list();
       if (buildServersFingerprint(latest) !== startFingerprint) {
         return;
       }
@@ -163,7 +163,7 @@ export function registerPingHandlers({
       }
       const pingTime = Date.now();
       const merged = mergePingResults(latest, incrementalResults, pingTime);
-      deps.configService.setServers(merged);
+      deps.serverRepository.saveAll(merged);
       sendToRenderer(
         IPC_EVENT_CHANNELS.appSnapshotChanged,
       );
@@ -188,7 +188,7 @@ export function registerPingHandlers({
       (server) => results.get(server.uuid) == null,
     );
 
-    const currentServers = deps.configService.getServers();
+    const currentServers = deps.serverRepository.list();
     const currentFingerprint = buildServersFingerprint(currentServers);
     if (isUnsafePingState()) {
       logger.debug(
@@ -219,7 +219,7 @@ export function registerPingHandlers({
     const pingTime = Date.now();
     const updatedServers = mergePingResults(currentServers, results, pingTime);
 
-    deps.configService.setServers(updatedServers);
+    deps.serverRepository.saveAll(updatedServers);
     sendToRenderer(
       IPC_EVENT_CHANNELS.appSnapshotChanged,
     );
@@ -248,7 +248,7 @@ export function registerPingHandlers({
         );
         if (!hasRecovered) return;
 
-        const latestServers = deps.configService.getServers();
+        const latestServers = deps.serverRepository.list();
         const latestFingerprint = buildServersFingerprint(latestServers);
         if (isUnsafePingState()) {
           logger.debug(
@@ -272,7 +272,7 @@ export function registerPingHandlers({
           retryPingTime,
         );
 
-        deps.configService.setServers(mergedServers);
+        deps.serverRepository.saveAll(mergedServers);
         sendToRenderer(
           IPC_EVENT_CHANNELS.appSnapshotChanged,
         );

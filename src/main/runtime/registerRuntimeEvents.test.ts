@@ -17,10 +17,10 @@ vi.mock('@/main/services/TrayService', () => ({
 describe('registerRuntimeEvents', () => {
   function createDeps() {
     return {
-      xrayService: new EventEmitter(),
+      xrayService: Object.assign(new EventEmitter(), {
+        getActivePorts: vi.fn(() => ({ socks: 10808, http: 10809, api: 10810 })),
+      }),
       connectionMonitorService: Object.assign(new EventEmitter(), {
-        setSwitchExecutor: vi.fn(),
-        setCleanupExecutor: vi.fn(),
         handleXrayHealthStatusChanged: vi.fn(),
         getStatus: vi.fn(() => ({
           isConnected: true,
@@ -29,6 +29,8 @@ describe('registerRuntimeEvents', () => {
         })),
       }),
       connectionController: Object.assign(new EventEmitter(), {
+        handleHealthFailure: vi.fn(),
+        handleRuntimeFailure: vi.fn(),
         transitionForAutoSwitch: vi.fn(),
         cleanupAfterFailure: vi.fn(),
         isBusy: vi.fn(() => false),
@@ -97,10 +99,30 @@ describe('registerRuntimeEvents', () => {
 
     deps.connectionController.emit('phase-changed', 'connected');
     expect(trayService.setConnected).toHaveBeenCalledWith('SE', null);
-    expect(deps.trafficStatsService.start).toHaveBeenCalledWith(123);
+    expect(deps.trafficStatsService.start).toHaveBeenCalledWith(123, 10810);
 
     deps.connectionController.emit('phase-changed', 'idle');
     expect(trayService.setDisconnected).toHaveBeenCalled();
     expect(deps.trafficStatsService.stop).toHaveBeenCalled();
+  });
+
+  it('forwards health-failure events to ConnectionManager', () => {
+    const deps = createDeps();
+    registerRuntimeEvents({
+      deps: deps as any,
+      snapshotPublisher: { push: vi.fn() } as any,
+      recovery: { handleUnexpectedXrayExit: vi.fn() } as any,
+      sendToRenderer: vi.fn(),
+    });
+
+    const event = {
+      server: makeServer(),
+      reason: 'blocked',
+      blocking: true,
+    };
+    deps.connectionMonitorService.emit('health-failure', event);
+    expect(deps.connectionController.handleHealthFailure).toHaveBeenCalledWith(
+      event,
+    );
   });
 });

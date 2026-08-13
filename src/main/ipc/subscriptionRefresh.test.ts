@@ -7,12 +7,16 @@ function createManager(overrides: Partial<any> = {}) {
   const deps = {
     getWindow: vi.fn(() => null),
     configService: {
-      getSubscriptions: vi.fn(() => [makeSubscription()]),
-      getManualLinksInput: vi.fn(() => ''),
-      getServers: vi.fn(() => []),
-      setServers: vi.fn(),
       getSelectedServerId: vi.fn(() => null),
       setSelectedServerId: vi.fn(),
+    },
+    subscriptionRepository: {
+      list: vi.fn(() => [makeSubscription()]),
+      getManualLinks: vi.fn(() => ''),
+    },
+    serverRepository: {
+      list: vi.fn(() => []),
+      saveAll: vi.fn(),
     },
     subscriptionService: {
       fetchAndParseDetailed: vi.fn(async () => ({ configs: [server] })),
@@ -38,7 +42,7 @@ describe('SubscriptionRefreshManager', () => {
     const result = await manager.queueRefreshAllSubscriptions('');
 
     expect(result.configCount).toBe(1);
-    expect(deps.configService.setServers).toHaveBeenCalledWith([
+    expect(deps.serverRepository.saveAll).toHaveBeenCalledWith([
       expect.objectContaining({ uuid: 'server-1', ping: null }),
     ]);
     expect(deps.notifyStateChanged).toHaveBeenCalledTimes(1);
@@ -48,18 +52,18 @@ describe('SubscriptionRefreshManager', () => {
     const subscription = makeSubscription();
     let fetchStarted = false;
     const { deps, manager } = createManager({
-      configService: {
+      subscriptionRepository: {
         // Enabled when the refresh starts, disabled by the time it finishes.
-        getSubscriptions: vi.fn(() =>
+        list: vi.fn(() =>
           fetchStarted
             ? [{ ...subscription, enabled: false }]
             : [subscription],
         ),
-        getManualLinksInput: vi.fn(() => ''),
-        getServers: vi.fn(() => []),
-        setServers: vi.fn(),
-        getSelectedServerId: vi.fn(() => null),
-        setSelectedServerId: vi.fn(),
+        getManualLinks: vi.fn(() => ''),
+      },
+      serverRepository: {
+        list: vi.fn(() => []),
+        saveAll: vi.fn(),
       },
       subscriptionService: {
         fetchAndParseDetailed: vi.fn(async () => {
@@ -73,7 +77,7 @@ describe('SubscriptionRefreshManager', () => {
     const result = await manager.queueRefreshAllSubscriptions('');
 
     expect(result.configCount).toBe(0);
-    expect(deps.configService.setServers).not.toHaveBeenCalled();
+    expect(deps.serverRepository.saveAll).not.toHaveBeenCalled();
   });
 
   it('does not send renderer events directly when refresh fails', async () => {

@@ -8,6 +8,7 @@ import {
 } from '@/shared/tunRouting';
 import { logger } from './LoggerService';
 import { configService } from './ConfigService';
+import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
 import {
   DefaultRouteInfo,
   DEFAULT_ROUTE_ADD_RETRIES,
@@ -813,7 +814,7 @@ export class TunRouteService {
   }
 
   private async getKnownServerIps(): Promise<string[]> {
-    const servers = configService.getServers();
+    const servers = getServerRepository().list();
     const resolved = await Promise.all(
       servers.map((server) => this.resolveProxyAddresses(server.address)),
     );

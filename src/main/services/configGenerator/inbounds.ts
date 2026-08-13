@@ -52,11 +52,15 @@ export type MutableInbound = MutableConfigNode & {
 
 export function createLocalProxyInbounds(
   sniffingRouteOnly = true,
+  ports: { socks: number; http: number } = {
+    socks: APP_CONSTANTS.PORTS.SOCKS,
+    http: APP_CONSTANTS.PORTS.HTTP,
+  },
 ): XrayInbound[] {
   return [
     {
       tag: 'socks',
-      port: APP_CONSTANTS.PORTS.SOCKS,
+      port: ports.socks,
       listen: '127.0.0.1',
       protocol: 'socks',
       settings: { udp: true },
@@ -64,7 +68,7 @@ export function createLocalProxyInbounds(
     },
     {
       tag: 'http',
-      port: APP_CONSTANTS.PORTS.HTTP,
+      port: ports.http,
       listen: '127.0.0.1',
       protocol: 'http',
       settings: {},
@@ -76,6 +80,10 @@ export function createLocalProxyInbounds(
 export function ensureLocalProxyInbounds(
   inbounds: MutableInbound[],
   sniffingRouteOnly = true,
+  ports: { socks: number; http: number } = {
+    socks: APP_CONSTANTS.PORTS.SOCKS,
+    http: APP_CONSTANTS.PORTS.HTTP,
+  },
 ): void {
   let hasSocks = false;
   let hasHttp = false;
@@ -91,7 +99,7 @@ export function ensureLocalProxyInbounds(
   for (const inbound of inbounds) {
     if (inbound.protocol === 'socks') {
       inbound.tag ??= 'socks';
-      inbound.port = APP_CONSTANTS.PORTS.SOCKS;
+      inbound.port = ports.socks;
       inbound.listen = '127.0.0.1';
       inbound.settings = {
         auth: 'noauth',
@@ -103,7 +111,7 @@ export function ensureLocalProxyInbounds(
     }
     if (inbound.protocol === 'http') {
       inbound.tag ??= 'http';
-      inbound.port = APP_CONSTANTS.PORTS.HTTP;
+      inbound.port = ports.http;
       inbound.listen = '127.0.0.1';
       inbound.settings = {
         allowTransparent: false,
@@ -115,7 +123,7 @@ export function ensureLocalProxyInbounds(
   }
 
   if (!hasSocks || !hasHttp) {
-    const defaults = createLocalProxyInbounds(sniffingRouteOnly);
+    const defaults = createLocalProxyInbounds(sniffingRouteOnly, ports);
     if (!hasSocks) {
       inbounds.push(defaults[0] as MutableInbound);
     }

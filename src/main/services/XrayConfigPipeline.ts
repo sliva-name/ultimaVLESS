@@ -1,4 +1,5 @@
 import { BUNDLED_XRAY_VERSION } from '@/shared/constants';
+import type { RuntimePorts } from '@/shared/constants';
 import {
   ConnectionMode,
   DEFAULT_PERFORMANCE_SETTINGS,
@@ -85,6 +86,7 @@ export interface XrayConfigPipelineOptions {
   sendThrough?: string;
   tunAutoRoute?: boolean;
   performanceSettings?: PerformanceSettings;
+  ports?: RuntimePorts;
 }
 
 export class XrayConfigPipeline {
@@ -121,7 +123,7 @@ export class XrayConfigPipeline {
     }
 
     this.stripUntrustedInbounds(cfg);
-    ensureLocalProxyInbounds(cfg.inbounds, perf.sniffingRouteOnly);
+    ensureLocalProxyInbounds(cfg.inbounds, perf.sniffingRouteOnly, options.ports);
     const hasTun = cfg.inbounds.some(
       (ib) => ib?.protocol === 'tun' || ib?.tag === 'tun-in',
     );
@@ -150,7 +152,7 @@ export class XrayConfigPipeline {
     this.sanitizeRawRoutingRules(cfg);
     this.applyPerfToRouting(cfg, perf);
     this.assertRawOutboundCompatibility(cfg);
-    applyStatsApi(cfg);
+    applyStatsApi(cfg, options.ports?.api);
     applyRemoteDnsSettings(cfg, perf, {
       tunMode: connectionMode === 'tun',
     });
@@ -799,6 +801,7 @@ export class XrayConfigPipeline {
 
     const inbounds: XrayInbound[] = createLocalProxyInbounds(
       perf.sniffingRouteOnly,
+      options.ports,
     );
     if (connectionMode === 'tun') {
       inbounds.unshift(
@@ -833,7 +836,7 @@ export class XrayConfigPipeline {
       this.applySendThroughIfNeeded(cfg, options.sendThrough);
     }
 
-    applyStatsApi(cfg);
+    applyStatsApi(cfg, options.ports?.api);
     applyRemoteDnsSettings(cfg, perf, {
       tunMode: connectionMode === 'tun',
     });
