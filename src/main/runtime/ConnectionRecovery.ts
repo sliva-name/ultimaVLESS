@@ -57,23 +57,10 @@ export function createConnectionRecovery(
         serverId: monitorStatus.currentServer?.uuid.substring(0, 8),
       });
       try {
-        const autoSwitchScheduled =
-          deps.connectionMonitorService.handleCriticalConnectionFailure(
-            message,
-            {
-              localProxyReachable: false,
-            },
-          );
-        if (!autoSwitchScheduled) {
-          deps.connectionMonitorService.handleUnexpectedDisconnect(message);
-        }
+        await deps.connectionController.handleRuntimeFailure(message, {
+          localProxyReachable: false,
+        });
         snapshotPublisher.push('recovery');
-        // When auto-switch is scheduled it owns the runtime lifecycle;
-        // tearing the stack down here would leave the monitor "connected"
-        // while proxy/TUN are already gone.
-        if (!autoSwitchScheduled) {
-          await deps.connectionController.cleanupAfterFailure();
-        }
       } catch (error) {
         logger.error(
           'IPC',

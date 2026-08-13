@@ -17,7 +17,7 @@ export const CONNECTION_MONITOR_TIMING = {
   tunnelProbeStreakBeforeAction: 2,
   /** Consecutive local proxy probe failures before surfacing to the user. */
   localProxyStreakBeforeNotify: 2,
-  /** Delay after a blocking error before {@link attemptAutoSwitch}. */
+  /** Delay after a blocking error before ConnectionManager auto-switch. */
   autoSwitchDelayMs: 2_000,
   /** Faster tunnel probe during background health checks (not post-switch validation). */
   healthTunnelProbeTimeoutMs: 6_000,

@@ -5,6 +5,7 @@ import { trayService } from '@/main/services/TrayService';
 import type { IpcDependencies } from '@/main/ipc/dependencies';
 import type { SnapshotPublisher } from './SnapshotPublisher';
 import type { ConnectionRecovery } from './ConnectionRecovery';
+import type { HealthFailureEvent } from '@/main/services/ConnectionMonitorService';
 
 interface RegisterRuntimeEventsParams {
   deps: IpcDependencies;
@@ -27,7 +28,6 @@ function syncTrayAndTrafficForPhase(
   }
 
   if (phase === 'disconnecting') {
-    // Keep tray on a non-connected verb while routes unwind; avoid "connected".
     return;
   }
 
@@ -41,7 +41,6 @@ function syncTrayAndTrafficForPhase(
     return;
   }
 
-  // idle | failed
   trayService.setDisconnected();
   deps.trafficStatsService.stop();
 }
@@ -61,20 +60,13 @@ export function registerRuntimeEvents({
     deps.connectionMonitorService.handleXrayHealthStatusChanged(healthStatus);
   });
 
-  deps.connectionMonitorService.removeAllListeners('switch-operation-started');
-  deps.connectionMonitorService.removeAllListeners('switch-operation-finished');
-  deps.connectionMonitorService.setSwitchExecutor((server) =>
-    deps.connectionController.transitionForAutoSwitch(server),
+  deps.connectionMonitorService.removeAllListeners('health-failure');
+  deps.connectionMonitorService.on(
+    'health-failure',
+    (event: HealthFailureEvent) => {
+      deps.connectionController.handleHealthFailure(event);
+    },
   );
-  deps.connectionMonitorService.setCleanupExecutor(() =>
-    deps.connectionController.cleanupAfterFailure(),
-  );
-  deps.connectionMonitorService.on('switch-operation-started', () => {
-    snapshotPublisher.push('connection');
-  });
-  deps.connectionMonitorService.on('switch-operation-finished', () => {
-    snapshotPublisher.push('connection');
-  });
 
   deps.connectionController.removeAllListeners('phase-changed');
   deps.connectionController.removeAllListeners('busy-changed');
@@ -118,8 +110,6 @@ export function registerRuntimeEvents({
       sendToRenderer(IPC_EVENT_CHANNELS.connectionMonitorEvent, safeEvent);
       snapshotPublisher.push('monitor');
 
-      // Tray/traffic follow controller phase only — monitor events must not
-      // flip the tray to connected while phase is still connecting.
       if (eventName === 'error') {
         const message =
           (event as { error?: string; message?: string }).error ??
