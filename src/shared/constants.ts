@@ -17,8 +17,36 @@ export const APP_CONSTANTS = {
      * Used by the TrafficStatsService to poll StatsService counters.
      */
     API: 10810,
+    /** Idle slot used to bring up a second Xray during transactional proxy switch. */
+    STAGING_SOCKS: 10818,
+    STAGING_HTTP: 10819,
+    STAGING_API: 10820,
   },
   TIMEOUTS: {
     SUBSCRIPTION_FETCH: 10000,
   },
 };
+
+export interface RuntimePorts {
+  socks: number;
+  http: number;
+  api: number;
+}
+
+export const PRIMARY_RUNTIME_PORTS: RuntimePorts = {
+  socks: APP_CONSTANTS.PORTS.SOCKS,
+  http: APP_CONSTANTS.PORTS.HTTP,
+  api: APP_CONSTANTS.PORTS.API,
+};
+
+export const STAGING_RUNTIME_PORTS: RuntimePorts = {
+  socks: APP_CONSTANTS.PORTS.STAGING_SOCKS,
+  http: APP_CONSTANTS.PORTS.STAGING_HTTP,
+  api: APP_CONSTANTS.PORTS.STAGING_API,
+};
+
+export function otherRuntimePorts(current: RuntimePorts): RuntimePorts {
+  return current.socks === PRIMARY_RUNTIME_PORTS.socks
+    ? { ...STAGING_RUNTIME_PORTS }
+    : { ...PRIMARY_RUNTIME_PORTS };
+}

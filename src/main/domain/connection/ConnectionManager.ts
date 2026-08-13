@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { app } from 'electron';
-import { APP_CONSTANTS } from '@/shared/constants';
+import { APP_CONSTANTS, PRIMARY_RUNTIME_PORTS } from '@/shared/constants';
 import type { SessionPhase } from '@/shared/ipc';
 import { VlessConfig } from '@/shared/types';
 import {
@@ -24,7 +24,6 @@ import { tunRouteService, TunRouteService } from '@/main/services/TunRouteServic
 import { xrayService, XrayService } from '@/main/services/XrayService';
 import { logger } from '@/main/services/LoggerService';
 import { CONNECTION_MONITOR_TIMING } from '@/main/services/connectionMonitor/timing';
-import type { ProxyPorts } from './connectionStrategies';
 import type { ConnectionSpec } from './ConnectionSpec';
 import {
   createConnectionRuntime,
@@ -43,10 +42,8 @@ import {
   createAutoSwitchPolicy,
   type ConnectionPolicy,
 } from './ConnectionPolicy';
-import {
-  createConfigServerRepository,
-  type ServerRepository,
-} from '@/main/domain/server/ServerRepository';
+import type { ServerRepository } from '@/main/domain/server/ServerRepository';
+import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
 import {
   activeServerIdFromState,
   connectionStateToSessionPhase,
@@ -59,7 +56,7 @@ interface ConnectionManagerDeps {
     releaseSingleInstanceLock: () => void;
     quit: () => void;
   };
-  constants: { ports: ProxyPorts };
+  constants: { ports: typeof PRIMARY_RUNTIME_PORTS };
   configService: ConfigService;
   connectionMonitorService: ConnectionMonitorService;
   hasTunPrivileges: typeof hasTunPrivileges;
@@ -120,6 +117,7 @@ export class ConnectionManager extends EventEmitter {
         ports: {
           http: APP_CONSTANTS.PORTS.HTTP,
           socks: APP_CONSTANTS.PORTS.SOCKS,
+          api: APP_CONSTANTS.PORTS.API,
         },
       },
       configService,
@@ -132,8 +130,11 @@ export class ConnectionManager extends EventEmitter {
     },
   ) {
     super();
-    this.servers =
-      deps.serverRepository ?? createConfigServerRepository(deps.configService);
+    this.servers = deps.serverRepository ?? {
+      get: (id) => getServerRepository().get(id),
+      list: () => getServerRepository().list(),
+      saveAll: (servers) => getServerRepository().saveAll(servers),
+    };
     this.policy = deps.policy ?? createAutoSwitchPolicy();
     this.runtime =
       deps.runtime ??

@@ -37,7 +37,10 @@ function syncTrayAndTrafficForPhase(
     if (!server) return;
     trayService.setConnected(server.name, server.ping ?? null);
     const connectedAt = status.lastConnectionTime ?? Date.now();
-    deps.trafficStatsService.start(connectedAt);
+    deps.trafficStatsService.start(
+      connectedAt,
+      deps.xrayService.getActivePorts?.()?.api,
+    );
     return;
   }
 

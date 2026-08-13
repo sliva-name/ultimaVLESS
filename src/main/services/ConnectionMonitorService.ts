@@ -417,6 +417,7 @@ export class ConnectionMonitorService extends EventEmitter {
       const probeResult = await runConnectionHealthProbe({
         getXrayHealthStatus: () => xrayService.getHealthStatus(),
         connectionMode: configService.getConnectionMode(),
+        ports: xrayService.getActivePorts(),
         tunnelProbe: {
           timeoutMs: CONNECTION_MONITOR_TIMING.healthTunnelProbeTimeoutMs,
           attempts: CONNECTION_MONITOR_TIMING.healthTunnelProbeAttempts,

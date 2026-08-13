@@ -6,7 +6,7 @@ import { EventEmitter } from 'events';
 import { app } from 'electron';
 import { ConnectionMode, VlessConfig } from '@/shared/types';
 import { XrayHealthStatus } from '@/shared/ipc';
-import { APP_CONSTANTS } from '@/shared/constants';
+import { APP_CONSTANTS, PRIMARY_RUNTIME_PORTS, type RuntimePorts } from '@/shared/constants';
 import { XrayConfigCompiler } from './XrayConfigCompiler';
 import { configService } from './ConfigService';
 import { logger } from './LoggerService';
@@ -24,6 +24,9 @@ export interface XrayUnexpectedExitEvent {
 export interface XrayStartOptions {
   sendThrough?: string;
   tunAutoRoute?: boolean;
+  ports?: RuntimePorts;
+  /** `staging` starts a second process without stopping the active one. */
+  slot?: 'active' | 'staging';
 }
 
 /**
@@ -32,6 +35,9 @@ export interface XrayStartOptions {
  */
 export class XrayService extends EventEmitter {
   private process: ChildProcess | null = null;
+  private stagingProcess: ChildProcess | null = null;
+  private stagingPorts: RuntimePorts | null = null;
+  private activePorts: RuntimePorts = { ...PRIMARY_RUNTIME_PORTS };
   private resourcesPath: string;
   /** Max wait for SOCKS/HTTP listeners (also covers early-crash detection). */
   private static readonly READINESS_TIMEOUT_MS = 3000;
@@ -43,6 +49,7 @@ export class XrayService extends EventEmitter {
   private readonly notifiedUnexpectedExitProcesses =
     new WeakSet<ChildProcess>();
   private stopWaitPromise: Promise<void> | null = null;
+  private readonly pendingExitWaits = new Set<Promise<void>>();
   private healthStatus: XrayHealthStatus = {
     state: 'stopped',
     ready: false,
@@ -80,19 +87,33 @@ export class XrayService extends EventEmitter {
     connectionMode: ConnectionMode = 'proxy',
     options: XrayStartOptions = {},
   ): Promise<void> {
-    this.stop();
-    await this.awaitPendingStop();
-    this.setHealthStatus({
-      state: 'starting',
-      ready: false,
-      xrayRunning: false,
-      localProxyReachable: null,
-      lastReadinessCheckAt: null,
-      lastReadinessError: null,
-    });
+    const slot = options.slot ?? 'active';
+    const ports = options.ports ?? { ...PRIMARY_RUNTIME_PORTS };
+
+    if (slot === 'active') {
+      this.abortStaging();
+      this.stop();
+      await this.awaitPendingStop();
+      this.activePorts = ports;
+      this.setHealthStatus({
+        state: 'starting',
+        ready: false,
+        xrayRunning: false,
+        localProxyReachable: null,
+        lastReadinessCheckAt: null,
+        lastReadinessError: null,
+      });
+    } else {
+      this.abortStaging();
+      await this.awaitPendingStop();
+      this.stagingPorts = ports;
+    }
 
     const userDataPath = app.getPath('userData');
-    const configPath = path.join(userDataPath, 'config.json');
+    const configPath = path.join(
+      userDataPath,
+      slot === 'staging' ? 'config-staging.json' : 'config.json',
+    );
     const logPath = path.join(userDataPath, 'xray.log');
 
     logger.info('XrayService', 'Starting Xray', {
@@ -112,12 +133,16 @@ export class XrayService extends EventEmitter {
       xrayConfig = XrayConfigCompiler.compile(config, {
         logPath,
         connectionMode,
-        ...options,
+        sendThrough: options.sendThrough,
+        tunAutoRoute: options.tunAutoRoute,
+        ports,
         performanceSettings: configService.getPerformanceSettings(),
       });
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
-      this.markFailed(`Config generation failed: ${error.message}`);
+      if (slot === 'active') {
+        this.markFailed(`Config generation failed: ${error.message}`);
+      }
       logger.error('XrayService', 'Failed to generate Xray config', error);
       throw error;
     }
@@ -130,7 +155,9 @@ export class XrayService extends EventEmitter {
       logger.info('XrayService', 'Config written to disk');
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
-      this.markFailed(error.message);
+      if (slot === 'active') {
+        this.markFailed(error.message);
+      }
       logger.error('XrayService', 'Failed to write config', error);
       throw error;
     }
@@ -142,7 +169,9 @@ export class XrayService extends EventEmitter {
       await fsPromises.access(binPath, fs.constants.F_OK);
     } catch {
       const error = new Error(`Xray binary not found at: ${binPath}`);
-      this.markFailed(error.message);
+      if (slot === 'active') {
+        this.markFailed(error.message);
+      }
       logger.error('XrayService', 'Binary not found', error);
       throw error;
     }
@@ -169,13 +198,15 @@ export class XrayService extends EventEmitter {
           XRAY_LOCATION_ASSET: this.resourcesPath,
         },
       });
-      this.process = spawnedProcess;
+      this.assignSlotProcess(slot, spawnedProcess);
       logger.info('XrayService', 'Process spawned', {
         pid: spawnedProcess.pid,
       });
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
-      this.markFailed(error.message);
+      if (slot === 'active') {
+        this.markFailed(error.message);
+      }
       logger.error('XrayService', 'Spawn failed', error);
       throw error;
     }
@@ -205,19 +236,27 @@ export class XrayService extends EventEmitter {
     spawnedProcess.on('close', (code) => {
       const signal = spawnedProcess.signalCode ?? null;
       const wasExpectedExit = this.expectedExitProcesses.has(spawnedProcess);
+      const wasActive = this.process === spawnedProcess;
+      const wasStaging = this.stagingProcess === spawnedProcess;
       logger.warn('XrayService', 'Process exited', {
         code,
         signal,
         server: config.name,
         serverAddress: `${config.address}:${config.port}`,
         exitCode: code,
+        slot: wasStaging ? 'staging' : 'active',
       });
+      if (wasStaging) {
+        this.stagingProcess = null;
+        this.stagingPorts = null;
+        return;
+      }
       this.maybeEmitUnexpectedExit(spawnedProcess, config, {
         code,
         signal,
         reason: `Xray exited unexpectedly (code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
       });
-      if (this.process === spawnedProcess) {
+      if (wasActive) {
         this.process = null;
       }
       if (wasExpectedExit && this.process === null) {
@@ -237,6 +276,9 @@ export class XrayService extends EventEmitter {
         server: config.name,
         serverAddress: `${config.address}:${config.port}`,
       });
+      if (this.stagingProcess === spawnedProcess) {
+        return;
+      }
       this.maybeEmitUnexpectedExit(spawnedProcess, config, {
         code: null,
         signal: null,
@@ -245,28 +287,18 @@ export class XrayService extends EventEmitter {
     });
 
     try {
-      // Poll listeners immediately while watching for early process death —
-      // no fixed grace sleep (previously 1.2s even when ports were already up).
-      const readiness = await this.awaitLocalProxyReadiness(spawnedProcess);
+      const readiness = await this.awaitLocalProxyReadiness(spawnedProcess, ports);
       if (!readiness.reachable) {
         const reason =
           readiness.reason ||
           'Xray started but local proxy listeners did not become reachable in time';
-        // Kill before dropping the reference so a readiness timeout cannot leave
-        // a live xray holding 10808/10809 while the UI later claims Connected.
-        if (this.process === spawnedProcess) {
-          this.expectedExitProcesses.add(spawnedProcess);
-          try {
-            spawnedProcess.kill();
-          } catch {
-            // Process already exited.
-          }
-          this.process = null;
+        this.dropSpawnedProcess(spawnedProcess, slot);
+        if (slot === 'active') {
+          this.markFailed(reason);
         }
-        this.markFailed(reason);
         throw new Error(reason);
       }
-      if (this.process === spawnedProcess) {
+      if (slot === 'active' && this.process === spawnedProcess) {
         this.setHealthStatus({
           state: 'running',
           ready: true,
@@ -281,18 +313,13 @@ export class XrayService extends EventEmitter {
         });
       }
     } catch (error) {
-      if (this.process === spawnedProcess) {
-        // Kill the child before dropping the reference, otherwise a startup
-        // failure leaks a live xray process holding the local proxy ports.
-        this.expectedExitProcesses.add(spawnedProcess);
-        try {
-          spawnedProcess.kill();
-        } catch {
-          // Process already exited or never spawned.
-        }
-        this.process = null;
+      if (
+        (slot === 'staging' && this.stagingProcess === spawnedProcess) ||
+        (slot === 'active' && this.process === spawnedProcess)
+      ) {
+        this.dropSpawnedProcess(spawnedProcess, slot);
       }
-      if (this.healthStatus.state === 'starting') {
+      if (slot === 'active' && this.healthStatus.state === 'starting') {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         this.markFailed(errorMessage);
@@ -305,6 +332,7 @@ export class XrayService extends EventEmitter {
    * Stops the running Xray process if one exists.
    */
   public stop(): void {
+    this.abortStaging();
     if (this.process) {
       const processToStop = this.process;
       logger.info('XrayService', 'Stopping process...');
@@ -313,8 +341,7 @@ export class XrayService extends EventEmitter {
         ready: false,
         xrayRunning: false,
       });
-      this.expectedExitProcesses.add(processToStop);
-      const waitForExit = this.waitForProcessExit(processToStop);
+      const waitForExit = this.trackDyingProcess(processToStop);
       this.stopWaitPromise = waitForExit;
       void waitForExit.finally(() => {
         if (this.stopWaitPromise === waitForExit) {
@@ -341,7 +368,120 @@ export class XrayService extends EventEmitter {
    * await graceful shutdown. Prefer {@link stop} during normal teardown.
    */
   public killSyncBestEffort(): void {
-    const child = this.process;
+    this.killProcessSync(this.stagingProcess);
+    this.stagingProcess = null;
+    this.stagingPorts = null;
+    this.killProcessSync(this.process);
+    this.process = null;
+  }
+
+  /**
+   * Checks if the Xray process is currently running.
+   * @returns {boolean} True if running, false otherwise.
+   */
+  public isRunning(): boolean {
+    return this.process !== null || this.stopWaitPromise !== null;
+  }
+
+  public getActivePorts(): RuntimePorts {
+    return { ...this.activePorts };
+  }
+
+  public startStaging(
+    config: VlessConfig,
+    connectionMode: ConnectionMode = 'proxy',
+    options: XrayStartOptions = {},
+  ): Promise<void> {
+    return this.start(config, connectionMode, {
+      ...options,
+      slot: 'staging',
+      ports: options.ports ?? {
+        socks: APP_CONSTANTS.PORTS.STAGING_SOCKS,
+        http: APP_CONSTANTS.PORTS.STAGING_HTTP,
+        api: APP_CONSTANTS.PORTS.STAGING_API,
+      },
+    });
+  }
+
+  public commitStaging(): void {
+    if (!this.stagingProcess || !this.stagingPorts) {
+      throw new Error('No staging Xray process to commit');
+    }
+    const outgoing = this.process;
+    this.process = this.stagingProcess;
+    this.activePorts = this.stagingPorts;
+    this.stagingProcess = null;
+    this.stagingPorts = null;
+    if (outgoing) {
+      this.trackDyingProcess(outgoing);
+      try {
+        outgoing.kill();
+      } catch {
+        // Already gone.
+      }
+    }
+    logger.info('XrayService', 'Committed staging Xray process', {
+      ports: this.activePorts,
+    });
+  }
+
+  public abortStaging(): void {
+    const staging = this.stagingProcess;
+    if (!staging) {
+      this.stagingPorts = null;
+      return;
+    }
+    this.trackDyingProcess(staging);
+    try {
+      staging.kill();
+    } catch {
+      // Already gone.
+    }
+    this.stagingProcess = null;
+    this.stagingPorts = null;
+  }
+
+  public getHealthStatus(): XrayHealthStatus {
+    return {
+      ...this.healthStatus,
+      xrayRunning:
+        this.process !== null &&
+        this.healthStatus.state !== 'stopped' &&
+        this.healthStatus.state !== 'failed',
+    };
+  }
+
+  private assignSlotProcess(
+    slot: 'active' | 'staging',
+    spawnedProcess: ChildProcess,
+  ): void {
+    if (slot === 'staging') {
+      this.stagingProcess = spawnedProcess;
+      return;
+    }
+    this.process = spawnedProcess;
+  }
+
+  private dropSpawnedProcess(
+    spawnedProcess: ChildProcess,
+    slot: 'active' | 'staging',
+  ): void {
+    this.trackDyingProcess(spawnedProcess);
+    try {
+      spawnedProcess.kill();
+    } catch {
+      // Already gone.
+    }
+    if (slot === 'staging' && this.stagingProcess === spawnedProcess) {
+      this.stagingProcess = null;
+      this.stagingPorts = null;
+    }
+    if (slot === 'active' && this.process === spawnedProcess) {
+      this.process = null;
+    }
+  }
+
+  private killProcessSync(child: ChildProcess | null): void {
     if (!child?.pid) return;
     this.expectedExitProcesses.add(child);
     try {
@@ -365,25 +505,6 @@ export class XrayService extends EventEmitter {
         // Already gone.
       }
     }
-    this.process = null;
-  }
-
-  /**
-   * Checks if the Xray process is currently running.
-   * @returns {boolean} True if running, false otherwise.
-   */
-  public isRunning(): boolean {
-    return this.process !== null || this.stopWaitPromise !== null;
-  }
-
-  public getHealthStatus(): XrayHealthStatus {
-    return {
-      ...this.healthStatus,
-      xrayRunning:
-        this.process !== null &&
-        this.healthStatus.state !== 'stopped' &&
-        this.healthStatus.state !== 'failed',
-    };
   }
 
   private maybeEmitUnexpectedExit(
@@ -445,6 +566,7 @@ export class XrayService extends EventEmitter {
 
   private async awaitLocalProxyReadiness(
     processRef: ChildProcess,
+    ports: RuntimePorts,
   ): Promise<{ reachable: boolean; reason: string | null }> {
     type ProcessEventHandler = (...args: never[]) => void;
     let exitReject: ((error: Error) => void) | null = null;
@@ -493,7 +615,7 @@ export class XrayService extends EventEmitter {
     }> => {
       const startedAt = Date.now();
       while (Date.now() - startedAt <= XrayService.READINESS_TIMEOUT_MS) {
-        if (this.process !== processRef) {
+        if (this.process !== processRef && this.stagingProcess !== processRef) {
           throw new Error(
             'Xray process exited before local proxy listeners became ready',
           );
@@ -501,12 +623,12 @@ export class XrayService extends EventEmitter {
 
         const [socksReady, httpReady] = await Promise.all([
           probeTcpPort(
-            APP_CONSTANTS.PORTS.SOCKS,
+            ports.socks,
             '127.0.0.1',
             XrayService.READINESS_PROBE_TIMEOUT_MS,
           ),
           probeTcpPort(
-            APP_CONSTANTS.PORTS.HTTP,
+            ports.http,
             '127.0.0.1',
             XrayService.READINESS_PROBE_TIMEOUT_MS,
           ),
@@ -577,12 +699,25 @@ export class XrayService extends EventEmitter {
     logger.debug('XrayService', 'Xray runtime output', metadata);
   }
 
+  private trackDyingProcess(processRef: ChildProcess): Promise<void> {
+    this.expectedExitProcesses.add(processRef);
+    const waitForExit = this.waitForProcessExit(processRef);
+    this.pendingExitWaits.add(waitForExit);
+    void waitForExit.finally(() => {
+      this.pendingExitWaits.delete(waitForExit);
+    });
+    return waitForExit;
+  }
+
   private async awaitPendingStop(): Promise<void> {
-    const waitForExit = this.stopWaitPromise;
-    if (!waitForExit) {
+    const waits = [
+      this.stopWaitPromise,
+      ...this.pendingExitWaits,
+    ].filter((wait): wait is Promise<void> => wait != null);
+    if (waits.length === 0) {
       return;
     }
-    await waitForExit;
+    await Promise.all(waits);
   }
 
   private waitForProcessExit(processRef: ChildProcess): Promise<void> {

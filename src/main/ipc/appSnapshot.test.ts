@@ -6,10 +6,14 @@ function createDeps(overrides: Partial<any> = {}) {
   const server = makeServer({ uuid: 'server-1', rawConfig: { outbounds: [] } });
   return {
     configService: {
-      getServers: vi.fn(() => [server]),
-      getSubscriptions: vi.fn(() => [makeSubscription()]),
       getSelectedServerId: vi.fn(() => server.uuid),
       getConnectionMode: vi.fn(() => 'proxy'),
+    },
+    serverRepository: {
+      list: vi.fn(() => [server]),
+    },
+    subscriptionRepository: {
+      list: vi.fn(() => [makeSubscription()]),
     },
     connectionMonitorService: {
       getStatus: vi.fn(() => ({

@@ -43,7 +43,7 @@ export function registerSubscriptionHandlers({
         redactedUrl: redactUrl(url),
       });
 
-      const sub = deps.configService.addSubscription({
+      const sub = deps.subscriptionRepository.add({
         name,
         url,
         enabled: true,
@@ -52,16 +52,16 @@ export function registerSubscriptionHandlers({
         IPC_EVENT_CHANNELS.appSnapshotChanged,
       );
 
-      const manualLinks = deps.configService.getManualLinksInput();
+      const manualLinks = deps.subscriptionRepository.getManualLinks();
       const result = await queueRefreshAllSubscriptions(manualLinks);
 
       // Roll back when the new subscription produced no configs at all —
       // keeping a dead subscription would only spam auto-refresh with errors.
-      const newSubscriptionServers = deps.configService
-        .getServers()
+      const newSubscriptionServers = deps.serverRepository
+        .list()
         .filter((s) => s.subscriptionId === sub.id);
       if (newSubscriptionServers.length === 0) {
-        deps.configService.removeSubscription(sub.id);
+        deps.subscriptionRepository.remove(sub.id);
         sendToRenderer(
           IPC_EVENT_CHANNELS.appSnapshotChanged,
         );
@@ -92,7 +92,7 @@ export function registerSubscriptionHandlers({
       const { id, patch } = normalizeUpdateSubscriptionPayload(payload);
       logger.info('IPC', 'update-subscription', { id });
 
-      const updated = deps.configService.updateSubscription(id, patch);
+      const updated = deps.subscriptionRepository.update(id, patch);
       if (!updated) {
         throw new Error(`Subscription not found: ${id}`);
       }
@@ -101,13 +101,13 @@ export function registerSubscriptionHandlers({
       );
 
       if (patch.url !== undefined || patch.enabled === true) {
-        const manualLinks = deps.configService.getManualLinksInput();
+        const manualLinks = deps.subscriptionRepository.getManualLinks();
         await queueRefreshAllSubscriptions(manualLinks);
         restartAutoRefreshTimer();
       } else if (patch.enabled === false) {
-        const existing = deps.configService.getServers();
+        const existing = deps.serverRepository.list();
         const without = existing.filter((s) => s.subscriptionId !== id);
-        deps.configService.setServers(without);
+        deps.serverRepository.saveAll(without);
         sendToRenderer(
           IPC_EVENT_CHANNELS.appSnapshotChanged,
         );
@@ -131,14 +131,14 @@ export function registerSubscriptionHandlers({
       }
 
       logger.info('IPC', 'delete-subscription', { id });
-      deps.configService.removeSubscription(id);
+      deps.subscriptionRepository.remove(id);
       sendToRenderer(
         IPC_EVENT_CHANNELS.appSnapshotChanged,
       );
 
-      const existing = deps.configService.getServers();
+      const existing = deps.serverRepository.list();
       const without = existing.filter((s) => s.subscriptionId !== id);
-      deps.configService.setServers(without);
+      deps.serverRepository.saveAll(without);
       sendToRenderer(
         IPC_EVENT_CHANNELS.appSnapshotChanged,
       );
@@ -153,7 +153,7 @@ export function registerSubscriptionHandlers({
     async (event: IpcMainInvokeEvent) => {
       assertTrustedSender(event);
       logger.info('IPC', 'refresh-subscriptions');
-      const manualLinks = deps.configService.getManualLinksInput();
+      const manualLinks = deps.subscriptionRepository.getManualLinks();
       const result = await queueRefreshAllSubscriptions(manualLinks);
       return {
         ok: result.configCount > 0,
@@ -167,12 +167,12 @@ export function registerSubscriptionHandlers({
     IPC_INVOKE_CHANNELS.importMobileWhiteListSubscription,
     async (event: IpcMainInvokeEvent) => {
       assertTrustedSender(event);
-      const existing = deps.configService.getSubscriptions();
+      const existing = deps.subscriptionRepository.list();
       const alreadyExists = existing.find(
         (s) => s.url === YANDEX_TRANSLATED_MOBILE_LIST_URL,
       );
       if (!alreadyExists) {
-        deps.configService.addSubscription({
+        deps.subscriptionRepository.add({
           name: 'Mobile Whitelist',
           url: YANDEX_TRANSLATED_MOBILE_LIST_URL,
           enabled: true,
@@ -182,7 +182,7 @@ export function registerSubscriptionHandlers({
         );
       }
 
-      const manualLinks = deps.configService.getManualLinksInput();
+      const manualLinks = deps.subscriptionRepository.getManualLinks();
       const result = await queueRefreshAllSubscriptions(manualLinks);
       restartAutoRefreshTimer();
 
@@ -206,7 +206,7 @@ export function registerSubscriptionHandlers({
         hasManualLinks: !!manualLinks.trim(),
       });
 
-      deps.configService.setManualLinksInput(manualLinks);
+      deps.subscriptionRepository.setManualLinks(manualLinks);
       const result = await queueRefreshAllSubscriptions(manualLinks);
       restartAutoRefreshTimer();
 
@@ -228,7 +228,7 @@ export function registerSubscriptionHandlers({
     IPC_INVOKE_CHANNELS.getManualLinks,
     (event: IpcMainInvokeEvent) => {
       assertTrustedSender(event);
-      return deps.configService.getManualLinksInput();
+      return deps.subscriptionRepository.getManualLinks();
     },
   );
 }

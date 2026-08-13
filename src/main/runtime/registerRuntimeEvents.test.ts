@@ -17,7 +17,9 @@ vi.mock('@/main/services/TrayService', () => ({
 describe('registerRuntimeEvents', () => {
   function createDeps() {
     return {
-      xrayService: new EventEmitter(),
+      xrayService: Object.assign(new EventEmitter(), {
+        getActivePorts: vi.fn(() => ({ socks: 10808, http: 10809, api: 10810 })),
+      }),
       connectionMonitorService: Object.assign(new EventEmitter(), {
         handleXrayHealthStatusChanged: vi.fn(),
         getStatus: vi.fn(() => ({
@@ -97,7 +99,7 @@ describe('registerRuntimeEvents', () => {
 
     deps.connectionController.emit('phase-changed', 'connected');
     expect(trayService.setConnected).toHaveBeenCalledWith('SE', null);
-    expect(deps.trafficStatsService.start).toHaveBeenCalledWith(123);
+    expect(deps.trafficStatsService.start).toHaveBeenCalledWith(123, 10810);
 
     deps.connectionController.emit('phase-changed', 'idle');
     expect(trayService.setDisconnected).toHaveBeenCalled();

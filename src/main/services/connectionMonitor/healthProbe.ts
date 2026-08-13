@@ -50,6 +50,7 @@ interface RunConnectionHealthProbeOptions {
   getXrayHealthStatus: () => XrayHealthStatus;
   connectionMode: ConnectionMode;
   tunnelProbe?: TunnelProbeOptions;
+  ports?: { socks: number; http: number };
 }
 
 /**
@@ -90,7 +91,10 @@ export async function runConnectionHealthProbe({
   getXrayHealthStatus,
   connectionMode,
   tunnelProbe,
+  ports,
 }: RunConnectionHealthProbeOptions): Promise<ConnectionHealthProbeResult> {
+  const socksPort = ports?.socks ?? APP_CONSTANTS.PORTS.SOCKS;
+  const httpPort = ports?.http ?? APP_CONSTANTS.PORTS.HTTP;
   const initialXrayState = getXrayHealthStatus();
   if (initialXrayState.state === 'failed') {
     return {
@@ -102,8 +106,8 @@ export async function runConnectionHealthProbe({
   }
 
   const [socksReady, httpReady] = await Promise.all([
-    probeTcpPort(APP_CONSTANTS.PORTS.SOCKS),
-    probeTcpPort(APP_CONSTANTS.PORTS.HTTP),
+    probeTcpPort(socksPort),
+    probeTcpPort(httpPort),
   ]);
 
   if (!socksReady || !httpReady) {
@@ -118,7 +122,7 @@ export async function runConnectionHealthProbe({
   }
 
   const tunnelOk = await probeHttpThroughProxy(
-    APP_CONSTANTS.PORTS.HTTP,
+    httpPort,
     '127.0.0.1',
     tunnelProbe?.timeoutMs ?? 10_000,
     tunnelProbe?.attempts ?? 3,

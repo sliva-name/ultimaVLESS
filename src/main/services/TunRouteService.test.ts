@@ -6,11 +6,16 @@ import { makeServer } from '@/test/factories';
 
 vi.mock('./ConfigService', () => ({
   configService: {
-    getServers: vi.fn(() => []),
     getPerformanceSettings: vi.fn(() => ({
       windowsTunRouting: 'powershell',
     })),
   },
+}));
+
+vi.mock('@/main/infrastructure/persistence/ElectronServerRepository', () => ({
+  getServerRepository: () => ({
+    list: vi.fn(() => []),
+  }),
 }));
 
 vi.mock('./tunRoute/platformAdapter', () => ({

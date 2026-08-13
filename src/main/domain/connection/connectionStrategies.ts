@@ -1,4 +1,5 @@
 import type { ConnectionMode, VlessConfig } from '@/shared/types';
+import { APP_CONSTANTS } from '@/shared/constants';
 import type { ConfigService } from '@/main/services/ConfigService';
 import type { SystemProxyService } from '@/main/services/SystemProxyService';
 import type { TunRouteService } from '@/main/services/TunRouteService';
@@ -11,6 +12,7 @@ import {
 export interface ProxyPorts {
   http: number;
   socks: number;
+  api?: number;
 }
 
 export interface NetworkTeardown {
@@ -59,12 +61,20 @@ export function createProxyConnectionStrategy(deps: {
   return {
     mode: 'proxy',
     async apply(server: VlessConfig, ports: ProxyPorts): Promise<void> {
+      const specPorts = {
+        http: ports.http,
+        socks: ports.socks,
+        api: ports.api ?? APP_CONSTANTS.PORTS.API,
+      };
       const prepared = await network.prepare({
         server,
         mode: 'proxy',
-        ports,
+        ports: specPorts,
       });
-      await deps.coreService.start(prepared.server, 'proxy', prepared.xrayOptions);
+      await deps.coreService.start(prepared.server, 'proxy', {
+        ...prepared.xrayOptions,
+        ports: specPorts,
+      });
       await network.activate(prepared);
     },
   };
@@ -82,12 +92,20 @@ export function createTunConnectionStrategy(deps: {
   return {
     mode: 'tun',
     async apply(server: VlessConfig, ports: ProxyPorts): Promise<void> {
+      const specPorts = {
+        http: ports.http,
+        socks: ports.socks,
+        api: ports.api ?? APP_CONSTANTS.PORTS.API,
+      };
       const prepared = await network.prepare({
         server,
         mode: 'tun',
-        ports,
+        ports: specPorts,
       });
-      await deps.coreService.start(prepared.server, 'tun', prepared.xrayOptions);
+      await deps.coreService.start(prepared.server, 'tun', {
+        ...prepared.xrayOptions,
+        ports: specPorts,
+      });
       await network.activate(prepared);
     },
   };

@@ -24,6 +24,7 @@ export class SystemProxyService {
   private readonly darwin: DarwinProxyAdapter | null;
   private readonly linux: LinuxProxyAdapter | null;
   private activeSnapshot: ProxySnapshot | null = null;
+  private lastEnabledPorts: { http: number; socks: number } | null = null;
   /** Serializes enable()/disable() so concurrent callers cannot interleave and corrupt snapshot. */
   private operationChain: Promise<unknown> = Promise.resolve();
 
@@ -43,6 +44,7 @@ export class SystemProxyService {
 
   public enable(httpPort: number, socksPort: number): Promise<void> {
     return this.runSerialized(async () => {
+      this.lastEnabledPorts = { http: httpPort, socks: socksPort };
       // The snapshot is committed (and, on Windows, logon recovery armed)
       // BEFORE the system settings are mutated. The snapshot describes the
       // untouched pre-enable state, so persisting it early is safe — and it
@@ -109,8 +111,8 @@ export class SystemProxyService {
       if (this.windows) {
         await this.restoreSnapshotOrFallback(() =>
           this.windows!.disableRaw(
-            APP_CONSTANTS.PORTS.HTTP,
-            APP_CONSTANTS.PORTS.SOCKS,
+            this.lastEnabledPorts?.http ?? APP_CONSTANTS.PORTS.HTTP,
+            this.lastEnabledPorts?.socks ?? APP_CONSTANTS.PORTS.SOCKS,
           ),
         );
         return;

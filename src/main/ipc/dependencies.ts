@@ -1,6 +1,12 @@
 import { app, shell } from 'electron';
 import { APP_CONSTANTS } from '@/shared/constants';
 import { configService } from '@/main/services/ConfigService';
+import type { ServerRepository } from '@/main/domain/server/ServerRepository';
+import type { SubscriptionRepository } from '@/main/domain/subscription/SubscriptionRepository';
+import {
+  getServerRepository,
+  getSubscriptionRepository,
+} from '@/main/infrastructure/persistence';
 import { connectionMonitorService } from '@/main/services/ConnectionMonitorService';
 import {
   isElevatedOnWindows,
@@ -32,9 +38,12 @@ export interface IpcDependencies {
     ports: {
       http: number;
       socks: number;
+      api: number;
     };
   };
   configService: typeof configService;
+  serverRepository: ServerRepository;
+  subscriptionRepository: SubscriptionRepository;
   connectionController: typeof connectionController;
   connectionMonitorService: typeof connectionMonitorService;
   isElevatedOnWindows: typeof isElevatedOnWindows;
@@ -60,9 +69,12 @@ export function createIpcDependencies(): IpcDependencies {
       ports: {
         http: APP_CONSTANTS.PORTS.HTTP,
         socks: APP_CONSTANTS.PORTS.SOCKS,
+        api: APP_CONSTANTS.PORTS.API,
       },
     },
     configService,
+    serverRepository: getServerRepository(),
+    subscriptionRepository: getSubscriptionRepository(),
     connectionController,
     connectionMonitorService,
     isElevatedOnWindows,

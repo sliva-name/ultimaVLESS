@@ -27,9 +27,11 @@ describe('settings IPC handlers', () => {
         setConnectionMode: vi.fn(),
         getConnectionMode: vi.fn(() => 'proxy'),
         setSelectedServerId: vi.fn(),
-        getServers: vi.fn(() => [{ uuid: 'existing-server' }]),
         getPerformanceSettings: vi.fn(),
         setPerformanceSettings: vi.fn(),
+      },
+      serverRepository: {
+        list: vi.fn(() => [{ uuid: 'existing-server' }]),
       },
       tunRouteService: {
         isSupported: vi.fn(() => true),

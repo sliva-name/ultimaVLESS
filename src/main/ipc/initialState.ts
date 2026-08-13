@@ -9,6 +9,7 @@ import { IpcDependencies } from './dependencies';
 
 interface InitialStateDeps {
   configService: IpcDependencies['configService'];
+  subscriptionRepository: IpcDependencies['subscriptionRepository'];
   connectionMonitorService: IpcDependencies['connectionMonitorService'];
   xrayService: IpcDependencies['xrayService'];
   createRuntimeDependencies: () => IpcDependencies;
@@ -42,8 +43,8 @@ export async function loadInitialState(
   logger.info('IPC', 'loadInitialState called');
   const runtimeDeps = deps.createRuntimeDependencies();
 
-  const subscriptions = deps.configService.getSubscriptions();
-  const manualLinks = deps.configService.getManualLinksInput();
+  const subscriptions = deps.subscriptionRepository.list();
+  const manualLinks = deps.subscriptionRepository.getManualLinks();
   const pendingTunReconnectServerId =
     deps.configService.consumePendingTunReconnect();
 

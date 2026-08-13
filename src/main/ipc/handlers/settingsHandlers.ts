@@ -55,8 +55,8 @@ export function registerSettingsHandlers({
         deps.configService.setSelectedServerId(null);
         return true;
       }
-      const exists = deps.configService
-        .getServers()
+      const exists = deps.serverRepository
+        .list()
         .some((server) => server.uuid === serverId);
       if (!exists) {
         throw new Error('Selected server was not found in local configuration');

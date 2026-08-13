@@ -1,12 +1,12 @@
 import type { ConnectionMode, VlessConfig } from '@/shared/types';
-import type { ProxyPorts } from './connectionStrategies';
+import type { RuntimePorts } from '@/shared/constants';
 
 /**
- * Input to a connection operation. Stage 1 carries server + mode + ports;
- * Xray config, network plan, and validation plan stay compiled downstream.
+ * Input to a connection operation. Ports identify which Xray slot the
+ * data plane should bind (primary vs staging).
  */
 export interface ConnectionSpec {
   server: VlessConfig;
   mode: ConnectionMode;
-  ports: ProxyPorts;
+  ports: RuntimePorts;
 }

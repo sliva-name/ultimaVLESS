@@ -9,7 +9,10 @@ type MutableOutbound = MutableConfigNode & {
   settings?: MutableConfigNode;
 };
 
-export function applyStatsApi(cfg: XrayConfig): void {
+export function applyStatsApi(
+  cfg: XrayConfig,
+  apiPort: number = APP_CONSTANTS.PORTS.API,
+): void {
   cfg.stats = cfg.stats ?? {};
   cfg.api = cfg.api ?? { tag: 'api', services: ['StatsService'] };
 
@@ -40,7 +43,7 @@ export function applyStatsApi(cfg: XrayConfig): void {
   if (!inbounds.some((ib) => ib?.tag === 'api')) {
     inbounds.push({
       tag: 'api',
-      port: APP_CONSTANTS.PORTS.API,
+      port: apiPort,
       listen: '127.0.0.1',
       protocol: 'tunnel',
       settings: { rewriteAddress: '127.0.0.1' },

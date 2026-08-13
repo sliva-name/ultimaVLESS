@@ -1,6 +1,8 @@
 import { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import { IPC_EVENT_CHANNELS, IpcEventChannel } from '@/shared/ipc';
 import { configService } from '@/main/services/ConfigService';
+import { getSubscriptionRepository } from '@/main/infrastructure/persistence/ElectronSubscriptionRepository';
+import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
 import { connectionMonitorService } from '@/main/services/ConnectionMonitorService';
 import { subscriptionService } from '@/main/services/SubscriptionService';
 import { xrayService } from '@/main/services/XrayService';
@@ -39,6 +41,8 @@ function assertTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent): void {
 const subscriptionRefreshManager = createSubscriptionRefreshManager({
   getWindow,
   configService,
+  subscriptionRepository: getSubscriptionRepository(),
+  serverRepository: getServerRepository(),
   subscriptionService,
   connectionMonitorService,
   xrayService,
@@ -100,6 +104,7 @@ export async function loadInitialState(window: BrowserWindow): Promise<void> {
     },
     {
       configService,
+      subscriptionRepository: getSubscriptionRepository(),
       connectionMonitorService,
       xrayService,
       createRuntimeDependencies: createIpcDependencies,

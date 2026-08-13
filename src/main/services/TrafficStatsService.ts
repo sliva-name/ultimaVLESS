@@ -39,8 +39,11 @@ export class TrafficStatsService extends EventEmitter {
   private lastLoggedFailure = 0;
   private statsClient: XrayStatsClient | null = null;
 
-  public start(connectedAt = Date.now()): void {
+  private apiPort = APP_CONSTANTS.PORTS.API;
+
+  public start(connectedAt = Date.now(), apiPort = APP_CONSTANTS.PORTS.API): void {
     this.stop();
+    this.apiPort = apiPort;
     this.connectedAt = connectedAt;
     this.lastSnapshot = null;
     this.lastEmittedSnapshot = null;
@@ -152,7 +155,7 @@ export class TrafficStatsService extends EventEmitter {
   }
 
   private async queryCounters(): Promise<RawCounters | null> {
-    const server = `127.0.0.1:${APP_CONSTANTS.PORTS.API}`;
+    const server = `127.0.0.1:${this.apiPort}`;
 
     try {
       const statList = await this.getStatsClient(server).queryStats(

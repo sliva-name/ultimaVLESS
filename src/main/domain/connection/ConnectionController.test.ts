@@ -27,9 +27,8 @@ function createController(overrides: Partial<any> = {}) {
       releaseSingleInstanceLock: vi.fn(),
       quit: vi.fn(),
     },
-    constants: { ports: { http: 10809, socks: 10808 } },
+    constants: { ports: { http: 10809, socks: 10808, api: 10810 } },
     configService: {
-      getServers: vi.fn(() => [server]),
       getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
       setSelectedServerId: vi.fn(),
       setPendingTunReconnect: vi.fn(),
@@ -65,6 +64,19 @@ function createController(overrides: Partial<any> = {}) {
     ...overrides,
   };
 
+  if (!overrides.serverRepository) {
+    const listServers = () => {
+      const fromConfig = (deps.configService as { getServers?: () => typeof server[] })
+        .getServers;
+      return typeof fromConfig === 'function' ? fromConfig() : [server];
+    };
+    (deps as { serverRepository: unknown }).serverRepository = {
+      get: (id: string) => listServers().find((item) => item.uuid === id),
+      list: () => listServers(),
+      saveAll: vi.fn(),
+    };
+  }
+
   return {
     controller: new ConnectionController(deps as any),
     deps,
@@ -85,7 +97,7 @@ describe('ConnectionController', () => {
       {
         server,
         mode: 'proxy',
-        ports: { http: 10809, socks: 10808 },
+        ports: { http: 10809, socks: 10808, api: 10810 },
       },
       expect.any(AbortSignal),
     );
@@ -254,7 +266,7 @@ describe('ConnectionController', () => {
       {
         server: next,
         mode: 'proxy',
-        ports: { http: 10809, socks: 10808 },
+        ports: { http: 10809, socks: 10808, api: 10810 },
       },
       expect.any(AbortSignal),
     );

@@ -7,10 +7,14 @@ function createDeps() {
   const server = makeServer();
   return {
     configService: {
-      getServers: vi.fn(() => [server]),
-      getSubscriptions: vi.fn(() => []),
       getSelectedServerId: vi.fn(() => server.uuid),
       getConnectionMode: vi.fn(() => 'proxy'),
+    },
+    serverRepository: {
+      list: vi.fn(() => [server]),
+    },
+    subscriptionRepository: {
+      list: vi.fn(() => []),
     },
     connectionMonitorService: {
       getStatus: vi.fn(() => ({
