@@ -48,7 +48,6 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(EMPTY_SNAPSHOT);
   const [clientError, setClientError] = useState<string | null>(null);
   const [isRefreshingPings, setIsRefreshingPings] = useState(false);
-  const toggleInFlightRef = useRef(false);
   const pingRefreshInFlightRef = useRef(false);
   // Optimistic server selection that hasn't been confirmed by main yet.
   // Incoming snapshots (ping/traffic pushes, refreshes) may still carry the
@@ -132,9 +131,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
     selectedServer,
     isConnected,
     isConnectionBusy,
-    toggleInFlightRef,
     setConnectionError: setClientError,
-    refreshSnapshot,
   });
 
   const pingAllServers = useCallback(async () => {

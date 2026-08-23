@@ -125,7 +125,10 @@ export class SystemProxyService {
       () => operation(),
       () => operation(),
     );
-    this.operationChain = next.catch(() => undefined);
+    this.operationChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
     return next;
   }
 

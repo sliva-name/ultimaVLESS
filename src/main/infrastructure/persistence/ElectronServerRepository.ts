@@ -3,13 +3,26 @@ import { logger } from '@/main/services/LoggerService';
 import { getAppStore } from '@/main/infrastructure/persistence/appStore';
 import type { ServerRepository } from '@/main/domain/server/ServerRepository';
 
-function buildServersStoreFingerprint(servers: VlessConfig[]): string {
+function catalogIdentityFingerprint(servers: VlessConfig[]): string {
   return servers
     .map(
       (server) =>
-        `${server.uuid}|${server.address}:${server.port}|${server.ping ?? ''}|${server.pingTime ?? ''}|${server.pingStale ? 1 : 0}`,
+        `${server.uuid}|${server.name}|${server.address}:${server.port}|${server.protocol ?? ''}`,
     )
     .join('||');
+}
+
+function pingOverlayFingerprint(servers: VlessConfig[]): string {
+  return servers
+    .map(
+      (server) =>
+        `${server.uuid}|${server.ping ?? ''}|${server.pingTime ?? ''}|${server.pingStale ? 1 : 0}`,
+    )
+    .join('||');
+}
+
+function buildServersStoreFingerprint(servers: VlessConfig[]): string {
+  return `${catalogIdentityFingerprint(servers)}##${pingOverlayFingerprint(servers)}`;
 }
 
 export function createServerRepository(): ServerRepository {

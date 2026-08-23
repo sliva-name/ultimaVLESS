@@ -42,7 +42,10 @@ describe('registerHandlers', () => {
           list: vi.fn(() => []),
           saveAll: vi.fn(),
         },
-        connectionController: { isBusy: vi.fn(() => false) },
+        connectionController: {
+          isBusy: vi.fn(() => false),
+          getPhase: vi.fn(() => 'idle'),
+        },
         connectionMonitorService: {
           getStatus: vi.fn(() => ({ blockedServers: [] })),
           getAutoSwitchingEnabled: vi.fn(() => true),

@@ -39,7 +39,10 @@ describe('settings IPC handlers', () => {
         getRouteMode: vi.fn(() => 'windows-auto-route'),
         getDegradedReason: vi.fn(() => null),
       },
-      xrayService: { isRunning: vi.fn(() => false) },
+      connectionController: {
+        getPhase: vi.fn(() => 'idle'),
+        isBusy: vi.fn(() => false),
+      },
       hasTunPrivileges: vi.fn(async () => true),
       app: { getVersion: vi.fn(() => 'test') },
       mainLocaleService: {
@@ -56,8 +59,27 @@ describe('settings IPC handlers', () => {
     return { ...deps, notifySnapshot };
   }
 
-  it('refuses connection mode changes while Xray is running', () => {
-    registerWith({ xrayService: { isRunning: vi.fn(() => true) } });
+  it('refuses connection mode changes while the session is live', () => {
+    registerWith({
+      connectionController: {
+        getPhase: vi.fn(() => 'connected'),
+        isBusy: vi.fn(() => false),
+      },
+    });
+    const handler = handlers.get(IPC_INVOKE_CHANNELS.setConnectionMode)!;
+
+    expect(() => handler({} as never, 'tun')).toThrow(
+      'Disconnect before changing connection mode.',
+    );
+  });
+
+  it('refuses connection mode changes while the session is in-flight', () => {
+    registerWith({
+      connectionController: {
+        getPhase: vi.fn(() => 'idle'),
+        isBusy: vi.fn(() => true),
+      },
+    });
     const handler = handlers.get(IPC_INVOKE_CHANNELS.setConnectionMode)!;
 
     expect(() => handler({} as never, 'tun')).toThrow(

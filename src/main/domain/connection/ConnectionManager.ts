@@ -45,6 +45,7 @@ import {
 } from './ConnectionPolicy';
 import type { ServerRepository } from '@/main/domain/server/ServerRepository';
 import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
+import { isSameServerIdentity } from '@/shared/serverIdentity';
 import {
   activeServerIdFromState,
   connectionStateToSessionPhase,
@@ -107,7 +108,6 @@ export class ConnectionManager extends EventEmitter {
   private operationQueue: Promise<void> = Promise.resolve();
   private state: ConnectionState = { type: 'disconnected' };
   private generation = 0;
-  private activeOperation: Promise<unknown> | null = null;
   private operationAbort: AbortController | null = null;
   private autoSwitchTimer: NodeJS.Timeout | null = null;
   private healthPolicyArmed = false;
@@ -166,9 +166,36 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public isBusy(): boolean {
-    return (
-      isConnectionStateInFlight(this.state) || this.activeOperation !== null
+    return isConnectionStateInFlight(this.state);
+  }
+
+  /**
+   * Catalog refresh can rotate the stored uuid while the endpoint stays the
+   * same. Session owns the live id — remap it here, do not infer from monitor.
+   */
+  public reconcileActiveServer(
+    nextServers: VlessConfig[],
+    previousServers: VlessConfig[],
+  ): string | null {
+    const liveId = activeServerIdFromState(this.state);
+    if (!liveId) {
+      return null;
+    }
+    if (nextServers.some((server) => server.uuid === liveId)) {
+      return liveId;
+    }
+    const previous = previousServers.find((server) => server.uuid === liveId);
+    if (!previous) {
+      return liveId;
+    }
+    const remapped = nextServers.find((server) =>
+      isSameServerIdentity(server, previous),
     );
+    if (!remapped) {
+      return liveId;
+    }
+    this.replaceActiveServerId(liveId, remapped.uuid);
+    return remapped.uuid;
   }
 
   private nextGeneration(): number {
@@ -191,6 +218,23 @@ export class ConnectionManager extends EventEmitter {
       mode: this.deps.configService.getConnectionMode(),
       ports: this.deps.constants.ports,
     };
+  }
+
+  private replaceActiveServerId(fromId: string, toId: string): void {
+    if (fromId === toId) {
+      return;
+    }
+    if (this.state.type === 'connected' || this.state.type === 'starting') {
+      this.transitionTo({ ...this.state, serverId: toId });
+      return;
+    }
+    if (this.state.type === 'switching') {
+      this.transitionTo({
+        ...this.state,
+        from: this.state.from === fromId ? toId : this.state.from,
+        to: this.state.to === fromId ? toId : this.state.to,
+      });
+    }
   }
 
   private transitionTo(next: ConnectionState): void {
@@ -216,7 +260,6 @@ export class ConnectionManager extends EventEmitter {
     task: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     const run = this.operationQueue.then(async () => {
-      this.activeOperation = Promise.resolve();
       const abort = new AbortController();
       this.operationAbort = abort;
       const inFlight = createInFlight();
@@ -264,8 +307,6 @@ export class ConnectionManager extends EventEmitter {
           },
         });
         throw error;
-      } finally {
-        this.activeOperation = null;
       }
     });
     this.operationQueue = run.then(
@@ -528,13 +569,6 @@ export class ConnectionManager extends EventEmitter {
         async (signal) => {
           for (const candidate of candidates) {
             throwIfAborted(signal);
-            this.transitionTo({
-              type: 'switching',
-              from: from.uuid,
-              to: candidate.uuid,
-              mode: this.deps.configService.getConnectionMode(),
-              generation: this.generation,
-            });
             monitor.notifySwitching(candidate, from.name);
             try {
               await this.runtime.switch(this.buildSpec(candidate), signal);

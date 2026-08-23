@@ -83,7 +83,13 @@ export function registerSettingsHandlers({
             'TUN mode is not supported on this operating system.',
         );
       }
-      if (deps.xrayService.isRunning()) {
+      const phase = deps.connectionController.getPhase();
+      if (
+        phase === 'connected' ||
+        phase === 'connecting' ||
+        phase === 'switching' ||
+        deps.connectionController.isBusy()
+      ) {
         throw new Error('Disconnect before changing connection mode.');
       }
       deps.configService.setConnectionMode(mode);

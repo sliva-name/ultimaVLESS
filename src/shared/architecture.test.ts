@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createStableServerId,
+  findMatchingServer,
   getServerEndpointKey,
   isSameServerIdentity,
 } from './serverIdentity';
@@ -28,6 +29,7 @@ describe('shared architecture contracts', () => {
 
     expect(getServerEndpointKey(current)).toBe('vless|1.2.3.4:443');
     expect(isSameServerIdentity(current, refreshed)).toBe(true);
+    expect(findMatchingServer([refreshed], current)?.uuid).toBe('new-id');
   });
 
   it('strips raw Xray config from renderer-facing server views', () => {

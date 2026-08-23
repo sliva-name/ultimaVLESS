@@ -25,7 +25,6 @@ describe('registerRuntimeEvents', () => {
         })),
       }),
       connectionMonitorService: Object.assign(new EventEmitter(), {
-        handleXrayHealthStatusChanged: vi.fn(),
         getStatus: vi.fn(() => ({
           isConnected: true,
           currentServer: makeServer({ name: 'SE' }),
@@ -85,8 +84,47 @@ describe('registerRuntimeEvents', () => {
       IPC_EVENT_CHANNELS.updateStatus,
       { stage: 'available' },
     );
-    expect(snapshotPublisher.push).toHaveBeenCalledWith('monitor');
+    expect(snapshotPublisher.push).not.toHaveBeenCalledWith('monitor');
     expect(snapshotPublisher.push).toHaveBeenCalledWith('traffic');
+  });
+
+  it('publishes a snapshot only when the block ledger changes', () => {
+    const deps = createDeps();
+    const snapshotPublisher = { push: vi.fn() };
+    registerRuntimeEvents({
+      deps: deps as any,
+      snapshotPublisher: snapshotPublisher as any,
+      recovery: { handleUnexpectedXrayExit: vi.fn() } as any,
+      sendToRenderer: vi.fn(),
+    });
+
+    deps.connectionMonitorService.emit('blocked', {
+      type: 'blocked',
+      server: makeServer(),
+    });
+    expect(snapshotPublisher.push).toHaveBeenCalledWith('monitor');
+  });
+
+  it('routes Xray process failure to the session owner', () => {
+    const deps = createDeps();
+    registerRuntimeEvents({
+      deps: deps as any,
+      snapshotPublisher: { push: vi.fn() } as any,
+      recovery: { handleUnexpectedXrayExit: vi.fn() } as any,
+      sendToRenderer: vi.fn(),
+    });
+
+    deps.xrayService.emit('health-changed', {
+      state: 'failed',
+      lastFailureReason: 'core crashed',
+      lastReadinessError: null,
+      localProxyReachable: false,
+    });
+
+    expect(deps.connectionController.handleRuntimeFailure).toHaveBeenCalledWith(
+      'core crashed',
+      { localProxyReachable: false },
+    );
   });
 
   it('drives tray from phase-changed, not monitor connected', async () => {

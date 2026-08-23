@@ -504,4 +504,35 @@ describe('ConnectionController', () => {
     expect(controller.getPhase()).toBe('failed');
     expect(controller.getLastError()).toBe('xray died');
   });
+
+  it('remaps the live session id when catalog identity rotates', async () => {
+    const previous = makeServer({ uuid: 'old-id', address: '1.2.3.4' });
+    const rotated = makeServer({ uuid: 'new-id', address: '1.2.3.4' });
+    const { controller } = createController({
+      serverRepository: {
+        get: (id: string) =>
+          [previous, rotated].find((server) => server.uuid === id),
+        list: () => [previous],
+        saveAll: vi.fn(),
+      },
+    });
+
+    await controller.connect(previous.uuid);
+    const remapped = controller.reconcileActiveServer([rotated], [previous]);
+
+    expect(remapped).toBe('new-id');
+    expect(controller.getConnectionState()).toEqual({
+      type: 'connected',
+      serverId: 'new-id',
+      mode: 'proxy',
+    });
+  });
+
+  it('treats busy as in-flight session state only', async () => {
+    const { controller, server } = createController();
+    expect(controller.isBusy()).toBe(false);
+    await controller.connect(server.uuid);
+    expect(controller.isBusy()).toBe(false);
+    expect(controller.getPhase()).toBe('connected');
+  });
 });

@@ -80,9 +80,16 @@ export function isSameServerIdentity(
   );
 }
 
+export function findMatchingServer(
+  servers: VlessConfig[],
+  target: VlessConfig,
+): VlessConfig | undefined {
+  return servers.find((server) => isSameServerIdentity(server, target));
+}
+
 export function isServerRepresented(
   servers: VlessConfig[],
   target: VlessConfig,
 ): boolean {
-  return servers.some((server) => isSameServerIdentity(server, target));
+  return findMatchingServer(servers, target) !== undefined;
 }

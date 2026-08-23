@@ -2,12 +2,17 @@ import { BrowserWindow } from 'electron';
 import { VlessConfig } from '@/shared/types';
 import {
   getServerDedupKey,
-  getServerEndpointKey,
+  isSameServerIdentity,
 } from '@/shared/serverIdentity';
+import { applyPingOverlay, collectPingOverlay } from '@/shared/pingOverlay';
 import { logger } from '@/main/services/LoggerService';
 import { PerfTimer } from '@/shared/perfMetrics';
 import type { ServerRepository } from '@/main/domain/server/ServerRepository';
 import type { SubscriptionRepository } from '@/main/domain/subscription/SubscriptionRepository';
+import {
+  activeServerIdFromState,
+  type ConnectionState,
+} from '@/main/domain/connection/ConnectionState';
 import { preserveActiveServerIfNeeded } from './refreshUtils';
 import { redactUrl } from './validators';
 
@@ -32,15 +37,15 @@ interface SubscriptionRefreshManagerDeps {
     fetchAndParseDetailed: (url: string) => Promise<{ configs: VlessConfig[] }>;
     parseDirectLinksFromText: (text: string) => VlessConfig[];
   };
-  connectionMonitorService: {
-    getStatus: () => {
-      isConnected: boolean;
-      currentServer: VlessConfig | null;
-    };
-    syncCurrentServer: (servers: VlessConfig[]) => VlessConfig | null;
+  connectionController: {
+    getConnectionState: () => ConnectionState;
+    reconcileActiveServer: (
+      nextServers: VlessConfig[],
+      previousServers: VlessConfig[],
+    ) => string | null;
   };
-  xrayService: {
-    isRunning: () => boolean;
+  connectionMonitorService: {
+    syncCurrentServer: (servers: VlessConfig[]) => VlessConfig | null;
   };
   notifyStateChanged?: () => void;
 }
@@ -178,86 +183,10 @@ export function createSubscriptionRefreshManager(
       }
     }
 
-    // Preserve previously measured ping data across refreshes. The primary
-    // index is by `uuid`, but some subscription providers rotate VLESS UUIDs /
-    // Trojan passwords / Reality `sid` between fetches — that produces a new
-    // deterministic stable-id hash for the *same* endpoint and would wipe the
-    // ping value on every refresh. Fall back to a fuzzy index keyed by
-    // `protocol|address:port` (mirrors `syncCurrentServer`'s tolerance) so the
-    // UI keeps a usable latency right after subscription refreshes — including
-    // the one that fires automatically after the UAC auto-relaunch into TUN
-    // mode.
-    type StoredPing = { ping: number | null; pingTime: number | undefined };
-    const pingByUuid = new Map<string, StoredPing>();
-    const pingByEndpoint = new Map<string, StoredPing>();
-    const pingBySourceName = new Map<string, StoredPing>();
-    const sourceNameKey = (cfg: VlessConfig): string | null => {
-      if (!cfg.name.trim()) return null;
-      const sourceKey =
-        cfg.source === 'subscription' && cfg.subscriptionId
-          ? `subscription:${cfg.subscriptionId}`
-          : cfg.source === 'manual'
-            ? 'manual'
-            : null;
-      if (!sourceKey) return null;
-      return `${sourceKey}|${cfg.name.trim().toLocaleLowerCase()}`;
-    };
-    const setFreshestPing = (
-      index: Map<string, StoredPing>,
-      key: string | null,
-      stored: StoredPing,
-    ): void => {
-      if (!key) return;
-      const previous = index.get(key);
-      if (!previous || (stored.pingTime ?? 0) > (previous.pingTime ?? 0)) {
-        index.set(key, stored);
-      }
-    };
-    const applyStoredPing = (
-      config: VlessConfig,
-      stored: StoredPing,
-    ): VlessConfig => ({
-      ...config,
-      ping: stored.ping,
-      pingTime: stored.pingTime,
-      pingStale: stored.ping != null,
-    });
-
-    existingServers.forEach((server) => {
-      if (server.ping === undefined && server.pingTime === undefined) return;
-      const stored: StoredPing = {
-        ping: server.ping ?? null,
-        pingTime: server.pingTime,
-      };
-      pingByUuid.set(server.uuid, stored);
-      // Prefer the freshest sample if multiple stored entries share an endpoint
-      // (e.g. a rotated server still co-existing with its previous incarnation
-      // from `preserveActiveServerIfNeeded`).
-      setFreshestPing(pingByEndpoint, getServerEndpointKey(server), stored);
-      // Some providers rotate both internal ids and hostnames during the startup
-      // refresh after the UAC relaunch. While connected we cannot re-ping, so
-      // keep the last known value for the same named entry in the same source.
-      setFreshestPing(pingBySourceName, sourceNameKey(server), stored);
-    });
-
-    const configsWithPing = mergedConfigs.map((config) => {
-      const direct = pingByUuid.get(config.uuid);
-      if (direct) {
-        return applyStoredPing(config, direct);
-      }
-      const fuzzy = pingByEndpoint.get(getServerEndpointKey(config));
-      if (fuzzy) {
-        return applyStoredPing(config, fuzzy);
-      }
-      const configSourceNameKey = sourceNameKey(config);
-      const bySourceName = configSourceNameKey
-        ? pingBySourceName.get(configSourceNameKey)
-        : undefined;
-      if (bySourceName) {
-        return applyStoredPing(config, bySourceName);
-      }
-      return { ...config, ping: null, pingStale: false };
-    });
+    const configsWithPing = applyPingOverlay(
+      mergedConfigs,
+      collectPingOverlay(existingServers),
+    );
 
     // The enabled list was captured when the refresh started; the user may
     // have disabled or deleted a subscription while fetches were in flight.
@@ -276,22 +205,19 @@ export function createSubscriptionRefreshManager(
         enabledIdsNow.has(cfg.subscriptionId),
     );
 
-    const monitorStatus = deps.connectionMonitorService.getStatus();
     const selectedIdBeforeRefresh = deps.configService.getSelectedServerId();
+    const liveServerId = activeServerIdFromState(
+      deps.connectionController.getConnectionState(),
+    );
     const effectiveConfigs = preserveActiveServerIfNeeded(
       currentConfigsWithPing,
       existingServers,
-      monitorStatus,
-      deps.xrayService.isRunning(),
+      liveServerId,
       selectedIdBeforeRefresh,
     );
-    if (
-      effectiveConfigs.length !== currentConfigsWithPing.length &&
-      monitorStatus.currentServer
-    ) {
-      logger.warn('IPC', 'Preserving active server during background refresh', {
-        serverId: monitorStatus.currentServer.uuid.substring(0, 8),
-        serverName: monitorStatus.currentServer.name,
+    if (effectiveConfigs.length !== currentConfigsWithPing.length && liveServerId) {
+      logger.warn('IPC', 'Preserving live session server during refresh', {
+        serverId: liveServerId.substring(0, 8),
       });
     }
 
@@ -309,31 +235,27 @@ export function createSubscriptionRefreshManager(
     }
 
     deps.serverRepository.saveAll(effectiveConfigs);
-    const syncedCurrentServer =
-      deps.connectionMonitorService.syncCurrentServer(effectiveConfigs);
-    if (syncedCurrentServer) {
-      deps.configService.setSelectedServerId(syncedCurrentServer.uuid);
+    deps.connectionMonitorService.syncCurrentServer(effectiveConfigs);
+    const remappedLiveId = deps.connectionController.reconcileActiveServer(
+      effectiveConfigs,
+      existingServers,
+    );
+    if (remappedLiveId) {
+      deps.configService.setSelectedServerId(remappedLiveId);
     } else if (
       selectedIdBeforeRefresh &&
-      !effectiveConfigs.some((s) => s.uuid === selectedIdBeforeRefresh)
+      !effectiveConfigs.some((server) => server.uuid === selectedIdBeforeRefresh)
     ) {
       const oldServer = existingServers.find(
-        (s) => s.uuid === selectedIdBeforeRefresh,
+        (server) => server.uuid === selectedIdBeforeRefresh,
       );
-      if (oldServer) {
-        const fuzzy =
-          effectiveConfigs.find(
-            (s) =>
-              s.address === oldServer.address &&
-              s.port === oldServer.port &&
-              s.name === oldServer.name,
-          ) ??
-          effectiveConfigs.find(
-            (s) => s.address === oldServer.address && s.port === oldServer.port,
-          );
-        if (fuzzy) {
-          deps.configService.setSelectedServerId(fuzzy.uuid);
-        }
+      const remapped = oldServer
+        ? effectiveConfigs.find((server) =>
+            isSameServerIdentity(server, oldServer),
+          )
+        : undefined;
+      if (remapped) {
+        deps.configService.setSelectedServerId(remapped.uuid);
       }
     }
     notifyStateChanged();

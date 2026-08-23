@@ -4,8 +4,8 @@ import { configService } from '@/main/services/ConfigService';
 import { getSubscriptionRepository } from '@/main/infrastructure/persistence/ElectronSubscriptionRepository';
 import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
 import { connectionMonitorService } from '@/main/services/ConnectionMonitorService';
+import { connectionController } from '@/main/services/ConnectionController';
 import { subscriptionService } from '@/main/services/SubscriptionService';
-import { xrayService } from '@/main/services/XrayService';
 import { SnapshotPublisher } from '@/main/runtime/SnapshotPublisher';
 import { createConnectionRecovery } from '@/main/runtime/ConnectionRecovery';
 import { registerRuntimeEvents } from '@/main/runtime/registerRuntimeEvents';
@@ -47,8 +47,8 @@ const subscriptionRefreshManager = createSubscriptionRefreshManager({
   subscriptionRepository: getSubscriptionRepository(),
   serverRepository: getServerRepository(),
   subscriptionService,
+  connectionController,
   connectionMonitorService,
-  xrayService,
   notifyStateChanged: () => snapshotPublisher?.push('subscriptions'),
 });
 

@@ -64,7 +64,20 @@ export function registerRuntimeEvents({
   });
   deps.xrayService.removeAllListeners('health-changed');
   deps.xrayService.on('health-changed', (healthStatus) => {
-    deps.connectionMonitorService.handleXrayHealthStatusChanged(healthStatus);
+    if (healthStatus.state !== 'failed') {
+      return;
+    }
+    const reason =
+      healthStatus.lastFailureReason ||
+      healthStatus.lastReadinessError ||
+      'Xray reported failed health status';
+    void Promise.resolve(
+      deps.connectionController.handleRuntimeFailure(reason, {
+        localProxyReachable: healthStatus.localProxyReachable,
+      }),
+    ).catch((error) => {
+      logger.error('Runtime', 'Failed to handle Xray health failure', error);
+    });
   });
 
   deps.connectionMonitorService.removeAllListeners('health-failure');
@@ -117,7 +130,9 @@ export function registerRuntimeEvents({
         safeEvent.server = toSafeServer(safeEvent.server) as VlessConfig;
       }
       sendToRenderer(IPC_EVENT_CHANNELS.connectionMonitorEvent, safeEvent);
-      snapshotPublisher.push('monitor');
+      if (eventName === 'blocked') {
+        snapshotPublisher.push('monitor');
+      }
 
       if (eventName === 'error') {
         const message =

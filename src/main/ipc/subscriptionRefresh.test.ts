@@ -22,12 +22,12 @@ function createManager(overrides: Partial<any> = {}) {
       fetchAndParseDetailed: vi.fn(async () => ({ configs: [server] })),
       parseDirectLinksFromText: vi.fn(() => []),
     },
-    connectionMonitorService: {
-      getStatus: vi.fn(() => ({ isConnected: false, currentServer: null })),
-      syncCurrentServer: vi.fn(() => null),
+    connectionController: {
+      getConnectionState: vi.fn(() => ({ type: 'disconnected' })),
+      reconcileActiveServer: vi.fn(() => null),
     },
-    xrayService: {
-      isRunning: vi.fn(() => false),
+    connectionMonitorService: {
+      syncCurrentServer: vi.fn(() => null),
     },
     notifyStateChanged: vi.fn(),
     ...overrides,
@@ -97,5 +97,74 @@ describe('SubscriptionRefreshManager', () => {
 
     expect(deps.getWindow).not.toHaveBeenCalled();
     expect(deps.notifyStateChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves a live session server omitted by refresh', async () => {
+    const live = makeServer({ uuid: 'live', address: '9.9.9.9', name: 'Live' });
+    const next = makeServer({ uuid: 'new', address: '1.2.3.4', name: 'New' });
+    const { deps, manager } = createManager({
+      serverRepository: {
+        list: vi.fn(() => [live]),
+        saveAll: vi.fn(),
+      },
+      subscriptionService: {
+        fetchAndParseDetailed: vi.fn(async () => ({ configs: [next] })),
+        parseDirectLinksFromText: vi.fn(() => []),
+      },
+      connectionController: {
+        getConnectionState: vi.fn(() => ({
+          type: 'connected',
+          serverId: 'live',
+          mode: 'proxy',
+        })),
+        reconcileActiveServer: vi.fn(() => 'live'),
+      },
+    });
+
+    await manager.queueRefreshAllSubscriptions('');
+
+    expect(deps.serverRepository.saveAll).toHaveBeenCalledWith([
+      expect.objectContaining({ uuid: 'live' }),
+      expect.objectContaining({ uuid: 'new' }),
+    ]);
+    expect(deps.configService.setSelectedServerId).toHaveBeenCalledWith('live');
+  });
+
+  it('reapplies ping by endpoint identity after uuid rotation', async () => {
+    const previous = makeServer({
+      uuid: 'old-id',
+      address: '1.2.3.4',
+      ping: 42,
+      pingTime: 100,
+    });
+    const rotated = makeServer({ uuid: 'new-id', address: '1.2.3.4' });
+    const { deps, manager } = createManager({
+      serverRepository: {
+        list: vi.fn(() => [previous]),
+        saveAll: vi.fn(),
+      },
+      subscriptionService: {
+        fetchAndParseDetailed: vi.fn(async () => ({ configs: [rotated] })),
+        parseDirectLinksFromText: vi.fn(() => []),
+      },
+      connectionController: {
+        getConnectionState: vi.fn(() => ({
+          type: 'connected',
+          serverId: 'old-id',
+          mode: 'proxy',
+        })),
+        reconcileActiveServer: vi.fn(() => 'new-id'),
+      },
+    });
+
+    await manager.queueRefreshAllSubscriptions('');
+
+    expect(deps.connectionController.reconcileActiveServer).toHaveBeenCalled();
+    expect(deps.configService.setSelectedServerId).toHaveBeenCalledWith(
+      'new-id',
+    );
+    expect(deps.serverRepository.saveAll).toHaveBeenCalledWith([
+      expect.objectContaining({ uuid: 'new-id', ping: 42, pingStale: true }),
+    ]);
   });
 });

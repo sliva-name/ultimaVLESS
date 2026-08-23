@@ -7,7 +7,7 @@ import { app } from 'electron';
 import path from 'path';
 import { extractBlockingErrors, isBlockingErrorText } from './blockingErrors';
 import { xrayService } from './XrayService';
-import { ConnectionHealthState, XrayHealthStatus } from '@/shared/ipc';
+import { ConnectionHealthState } from '@/shared/ipc';
 import { runConnectionHealthProbe } from './connectionMonitor/healthProbe';
 import { XrayLogCursor } from './connectionMonitor/xrayLogCursor';
 import { CONNECTION_MONITOR_TIMING } from './connectionMonitor/timing';
@@ -188,19 +188,6 @@ export class ConnectionMonitorService extends EventEmitter {
     return true;
   }
 
-  public handleXrayHealthStatusChanged(xrayState: XrayHealthStatus): boolean {
-    if (xrayState.state !== 'failed') {
-      return false;
-    }
-
-    return this.handleCriticalConnectionFailure(
-      this.getXrayFailureReason(xrayState),
-      {
-        localProxyReachable: xrayState.localProxyReachable,
-      },
-    );
-  }
-
   public handleCriticalConnectionFailure(
     error: string,
     options: { localProxyReachable?: boolean | null } = {},
@@ -252,7 +239,8 @@ export class ConnectionMonitorService extends EventEmitter {
       return fuzzy;
     }
 
-    return currentServer;
+    this.status.currentServer = null;
+    return null;
   }
 
   public recordError(
@@ -290,14 +278,14 @@ export class ConnectionMonitorService extends EventEmitter {
     }
 
     this.markServerAsBlocked(targetServer.uuid);
-    if (this.status.isConnected) {
-      this.emit('health-failure', {
-        server: targetServer,
-        reason: error,
-        blocking: true,
-      } satisfies HealthFailureEvent);
-    }
-    return this.status.isConnected;
+    // Probe fact. Session (ConnectionManager) decides whether this kills
+    // the current connection — do not gate on monitor.isConnected.
+    this.emit('health-failure', {
+      server: targetServer,
+      reason: error,
+      blocking: true,
+    } satisfies HealthFailureEvent);
+    return true;
   }
 
   public markServerAsBlocked(serverId: string): void {
@@ -387,14 +375,6 @@ export class ConnectionMonitorService extends EventEmitter {
 
   private isBlockingError(error: string): boolean {
     return isBlockingErrorText(error);
-  }
-
-  private getXrayFailureReason(xrayState: XrayHealthStatus): string {
-    return (
-      xrayState.lastFailureReason ||
-      xrayState.lastReadinessError ||
-      'Xray reported failed health status'
-    );
   }
 
   private startPeriodicCheck(signal: AbortSignal): void {
