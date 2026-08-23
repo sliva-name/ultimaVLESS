@@ -37,7 +37,7 @@ interface SubscriptionRefreshManagerDeps {
     fetchAndParseDetailed: (url: string) => Promise<{ configs: VlessConfig[] }>;
     parseDirectLinksFromText: (text: string) => VlessConfig[];
   };
-  connectionController: {
+  connectionManager: {
     getConnectionState: () => ConnectionState;
     reconcileActiveServer: (
       nextServers: VlessConfig[],
@@ -204,7 +204,7 @@ export function createSubscriptionRefreshManager(
 
     const selectedIdBeforeRefresh = deps.configService.getSelectedServerId();
     const liveServerId = activeServerIdFromState(
-      deps.connectionController.getConnectionState(),
+      deps.connectionManager.getConnectionState(),
     );
     const effectiveConfigs = preserveActiveServerIfNeeded(
       currentConfigsWithPing,
@@ -212,7 +212,10 @@ export function createSubscriptionRefreshManager(
       liveServerId,
       selectedIdBeforeRefresh,
     );
-    if (effectiveConfigs.length !== currentConfigsWithPing.length && liveServerId) {
+    if (
+      effectiveConfigs.length !== currentConfigsWithPing.length &&
+      liveServerId
+    ) {
       logger.warn('IPC', 'Preserving live session server during refresh', {
         serverId: liveServerId.substring(0, 8),
       });
@@ -232,7 +235,7 @@ export function createSubscriptionRefreshManager(
     }
 
     deps.serverRepository.saveAll(effectiveConfigs);
-    const remappedLiveId = deps.connectionController.reconcileActiveServer(
+    const remappedLiveId = deps.connectionManager.reconcileActiveServer(
       effectiveConfigs,
       existingServers,
     );
@@ -240,7 +243,9 @@ export function createSubscriptionRefreshManager(
       deps.configService.setSelectedServerId(remappedLiveId);
     } else if (
       selectedIdBeforeRefresh &&
-      !effectiveConfigs.some((server) => server.uuid === selectedIdBeforeRefresh)
+      !effectiveConfigs.some(
+        (server) => server.uuid === selectedIdBeforeRefresh,
+      )
     ) {
       const oldServer = existingServers.find(
         (server) => server.uuid === selectedIdBeforeRefresh,

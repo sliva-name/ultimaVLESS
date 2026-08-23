@@ -30,7 +30,7 @@ function createDeps(overrides: Partial<any> = {}) {
         localProxyReachable: true,
       })),
     },
-    connectionController: {
+    connectionManager: {
       getPhase: vi.fn(() => 'connected'),
       getConnectionState: vi.fn(() => ({
         type: 'connected',
@@ -80,7 +80,7 @@ describe('app snapshot owners', () => {
             localProxyReachable: false,
           })),
         },
-        connectionController: {
+        connectionManager: {
           getPhase: vi.fn(() => 'failed'),
           getConnectionState: vi.fn(() => ({
             type: 'failed',
@@ -112,7 +112,7 @@ describe('app snapshot owners', () => {
             localProxyReachable: null,
           })),
         },
-        connectionController: {
+        connectionManager: {
           getPhase: vi.fn(() => 'idle'),
           getConnectionState: vi.fn(() => ({ type: 'disconnected' })),
           isBusy: vi.fn(() => false),
@@ -138,7 +138,7 @@ describe('app snapshot owners', () => {
             localProxyReachable: true,
           })),
         },
-        connectionController: {
+        connectionManager: {
           getPhase: vi.fn(() => 'connecting'),
           getConnectionState: vi.fn(() => ({
             type: 'starting',
@@ -170,7 +170,7 @@ describe('app snapshot owners', () => {
             localProxyReachable: true,
           })),
         },
-        connectionController: {
+        connectionManager: {
           getPhase: vi.fn(() => 'connected'),
           getConnectionState: vi.fn(() => ({
             type: 'connected',

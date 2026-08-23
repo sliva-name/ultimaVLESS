@@ -22,7 +22,7 @@ export function createConnectionRecovery(
     logger.error('IPC', 'Pending TUN reconnect failed', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     try {
-      await deps.connectionController.cleanupAfterFailure(errorMessage);
+      await deps.connectionManager.cleanupAfterFailure(errorMessage);
     } catch (cleanupError) {
       logger.error(
         'IPC',
@@ -42,7 +42,7 @@ export function createConnectionRecovery(
       return unexpectedXrayExitRecovery;
     }
 
-    const phase = deps.connectionController.getPhase();
+    const phase = deps.connectionManager.getPhase();
     if (phase !== 'connected') {
       return;
     }
@@ -54,7 +54,7 @@ export function createConnectionRecovery(
         phase,
       });
       try {
-        await deps.connectionController.handleRuntimeFailure(message, {
+        await deps.connectionManager.handleRuntimeFailure(message, {
           localProxyReachable: false,
         });
         snapshotPublisher.push('recovery');
@@ -76,7 +76,7 @@ export function createConnectionRecovery(
     options: { emitErrorOnFailure: boolean } = { emitErrorOnFailure: true },
   ): Promise<boolean> => {
     try {
-      return await deps.connectionController.resumePendingTunAfterRelaunch();
+      return await deps.connectionManager.resumePendingTunAfterRelaunch();
     } catch (error) {
       return handlePendingTunReconnectFailure(
         error,

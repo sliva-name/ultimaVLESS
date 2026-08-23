@@ -54,7 +54,7 @@ export function registerHandlers({
     deps,
     notifySnapshot,
     assertTrustedSender,
-    isConnectionBusy: () => deps.connectionController.isBusy(),
+    isConnectionBusy: () => deps.connectionManager.isBusy(),
   });
 
   registerDiagnosticsHandlers({

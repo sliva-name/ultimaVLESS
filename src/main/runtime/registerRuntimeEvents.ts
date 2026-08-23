@@ -36,7 +36,7 @@ function syncTrayAndTrafficForPhase(
 
   if (phase === 'connected') {
     const serverId = activeServerIdFromState(
-      deps.connectionController.getConnectionState(),
+      deps.connectionManager.getConnectionState(),
     );
     const server = serverId ? deps.serverRepository.get(serverId) : null;
     if (!server) return;
@@ -73,7 +73,7 @@ export function registerRuntimeEvents({
       healthStatus.lastReadinessError ||
       'Xray reported failed health status';
     void Promise.resolve(
-      deps.connectionController.handleRuntimeFailure(reason, {
+      deps.connectionManager.handleRuntimeFailure(reason, {
         localProxyReachable: healthStatus.localProxyReachable,
       }),
     ).catch((error) => {
@@ -81,8 +81,8 @@ export function registerRuntimeEvents({
     });
   });
 
-  deps.connectionController.removeAllListeners('policy-changed');
-  deps.connectionController.on('policy-changed', () => {
+  deps.connectionManager.removeAllListeners('policy-changed');
+  deps.connectionManager.on('policy-changed', () => {
     snapshotPublisher.push('connection');
   });
 
@@ -96,16 +96,16 @@ export function registerRuntimeEvents({
     'health-failure',
     (event: HealthFailureEvent) => {
       void Promise.resolve(
-        deps.connectionController.handleHealthFailure(event),
+        deps.connectionManager.handleHealthFailure(event),
       ).catch((error) => {
         logger.error('Runtime', 'Failed to handle health failure', error);
       });
     },
   );
 
-  deps.connectionController.removeAllListeners('phase-changed');
-  deps.connectionController.removeAllListeners('state-changed');
-  deps.connectionController.on('phase-changed', (phase: SessionPhase) => {
+  deps.connectionManager.removeAllListeners('phase-changed');
+  deps.connectionManager.removeAllListeners('state-changed');
+  deps.connectionManager.on('phase-changed', (phase: SessionPhase) => {
     snapshotPublisher.push('connection');
     syncTrayAndTrafficForPhase(deps, phase);
   });
@@ -124,7 +124,7 @@ export function registerRuntimeEvents({
     sendToRenderer(IPC_EVENT_CHANNELS.updateStatus, status);
   });
   deps.appUpdaterService.setConnectionBusyGetter(() =>
-    deps.connectionController.isBusy(),
+    deps.connectionManager.isBusy(),
   );
 
   const monitorEvents = [

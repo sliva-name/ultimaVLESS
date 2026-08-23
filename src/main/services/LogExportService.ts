@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { app, shell } from 'electron';
 import { logger } from './LoggerService';
-import { connectionController } from './ConnectionController';
+import { connectionManager } from '@/main/domain/connection/ConnectionManager';
 import { connectionMonitorService } from './ConnectionMonitorService';
 import { xrayService } from './XrayService';
 import { appRecoveryService } from './AppRecoveryService';
@@ -54,16 +54,16 @@ export class LogExportService {
   }
 
   private summarizeSession(): Record<string, unknown> {
-    const state = connectionController.getConnectionState();
+    const state = connectionManager.getConnectionState();
     const activeServerId = activeServerIdFromState(state);
     const server = activeServerId
       ? getServerRepository().get(activeServerId)
       : undefined;
     return {
-      phase: connectionController.getPhase(),
+      phase: connectionManager.getPhase(),
       lastError: lastErrorFromState(state),
       activeServerId,
-      blockedServerIds: connectionController.getBlockedServerIds(),
+      blockedServerIds: connectionManager.getBlockedServerIds(),
       currentServer: server ? toSafeServer(server) : null,
     };
   }

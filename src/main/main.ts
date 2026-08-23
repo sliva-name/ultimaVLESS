@@ -32,12 +32,11 @@ if (!process.versions.electron) {
 }
 
 async function stopNetworkStack(): Promise<void> {
-  const { connectionController } = await import(
-    './services/ConnectionController'
-  );
+  const { connectionManager } =
+    await import('./domain/connection/ConnectionManager');
   // Preserve pending TUN reconnect across quit — required when we relaunch
   // elevated after UAC so the new process can resume the connection.
-  await connectionController.disconnect({
+  await connectionManager.disconnect({
     preservePendingTunReconnect: true,
   });
 }
@@ -71,9 +70,8 @@ function registerPowerMonitor(): void {
         logger.warn('Main', 'Failed to reapply TUN routes after resume', error);
       }
       try {
-        const { connectionMonitorService } = await import(
-          './services/ConnectionMonitorService'
-        );
+        const { connectionMonitorService } =
+          await import('./services/ConnectionMonitorService');
         connectionMonitorService.triggerImmediateHealthCheck(trigger);
       } catch (error) {
         logger.warn('Main', 'Failed to handle resume health check', error);
@@ -612,7 +610,11 @@ async function createWindow() {
           logStartupStep('State re-sent after reload');
         }
       } catch (error) {
-        logger.error('Main', 'Failed to load state after did-finish-load', error);
+        logger.error(
+          'Main',
+          'Failed to load state after did-finish-load',
+          error,
+        );
       } finally {
         appRecoveryService.completeRecovery();
       }
@@ -753,12 +755,15 @@ async function performShutdown(): Promise<void> {
     deferredStartupWorkTimer = null;
   }
   try {
-    const { stopAllSubscriptionAutoRefreshTimers } = await import(
-      './ipc/subscriptionRefresh'
-    );
+    const { stopAllSubscriptionAutoRefreshTimers } =
+      await import('./ipc/subscriptionRefresh');
     stopAllSubscriptionAutoRefreshTimers();
   } catch (error) {
-    logger.warn('Main', 'Failed to stop subscription auto-refresh timers', error);
+    logger.warn(
+      'Main',
+      'Failed to stop subscription auto-refresh timers',
+      error,
+    );
   }
   appUpdaterService.dispose();
   trayService.dispose();

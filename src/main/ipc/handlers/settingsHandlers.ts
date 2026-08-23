@@ -83,12 +83,12 @@ export function registerSettingsHandlers({
             'TUN mode is not supported on this operating system.',
         );
       }
-      const phase = deps.connectionController.getPhase();
+      const phase = deps.connectionManager.getPhase();
       if (
         phase === 'connected' ||
         phase === 'connecting' ||
         phase === 'switching' ||
-        deps.connectionController.isBusy()
+        deps.connectionManager.isBusy()
       ) {
         throw new Error('Disconnect before changing connection mode.');
       }

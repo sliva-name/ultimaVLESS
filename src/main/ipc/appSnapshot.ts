@@ -12,13 +12,15 @@ import {
 import { toSafeServerList } from '@/shared/serverView';
 import { IpcDependencies } from './dependencies';
 
-export function buildSessionSnapshot(deps: IpcDependencies): AppSessionSnapshot {
-  const connectionState = deps.connectionController.getConnectionState();
+export function buildSessionSnapshot(
+  deps: IpcDependencies,
+): AppSessionSnapshot {
+  const connectionState = deps.connectionManager.getConnectionState();
   return {
-    phase: deps.connectionController.getPhase(),
+    phase: deps.connectionManager.getPhase(),
     activeServerId: activeServerIdFromState(connectionState),
     lastError: lastErrorFromState(connectionState),
-    blockedServerIds: deps.connectionController.getBlockedServerIds(),
+    blockedServerIds: deps.connectionManager.getBlockedServerIds(),
   };
 }
 
@@ -33,7 +35,7 @@ export function buildHealthSnapshot(deps: IpcDependencies): AppHealthSnapshot {
 }
 
 export function buildAppSnapshot(deps: IpcDependencies): AppSnapshot {
-  const connectionState = deps.connectionController.getConnectionState();
+  const connectionState = deps.connectionManager.getConnectionState();
   const activeServerId = activeServerIdFromState(connectionState);
   const selectedServerId =
     deps.configService.getSelectedServerId() ?? activeServerId;
@@ -47,7 +49,7 @@ export function buildAppSnapshot(deps: IpcDependencies): AppSnapshot {
     health: buildHealthSnapshot(deps),
     process: deps.xrayService.getHealthStatus(),
     recovery: deps.appRecoveryService.getStatus(),
-    autoSwitchingEnabled: deps.connectionController.getAutoSwitchingEnabled(),
+    autoSwitchingEnabled: deps.connectionManager.getAutoSwitchingEnabled(),
     traffic: deps.trafficStatsService.getLastSnapshot(),
   };
 }

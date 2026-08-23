@@ -3,7 +3,7 @@ import { IpcEventChannel } from '@/shared/ipc';
 import { configService } from '@/main/services/ConfigService';
 import { getSubscriptionRepository } from '@/main/infrastructure/persistence/ElectronSubscriptionRepository';
 import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
-import { connectionController } from '@/main/services/ConnectionController';
+import { connectionManager } from '@/main/domain/connection/ConnectionManager';
 import { subscriptionService } from '@/main/services/SubscriptionService';
 import { SnapshotPublisher } from '@/main/runtime/SnapshotPublisher';
 import { createConnectionRecovery } from '@/main/runtime/ConnectionRecovery';
@@ -46,7 +46,7 @@ const subscriptionRefreshManager = createSubscriptionRefreshManager({
   subscriptionRepository: getSubscriptionRepository(),
   serverRepository: getServerRepository(),
   subscriptionService,
-  connectionController,
+  connectionManager,
   notifyStateChanged: () => snapshotPublisher?.push('subscriptions'),
 });
 

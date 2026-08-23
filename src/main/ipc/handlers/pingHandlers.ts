@@ -54,7 +54,7 @@ export function registerPingHandlers({
 
   const pingAllQueue = createSerialQueue();
   const isUnsafePingState = (): boolean => {
-    const phase = deps.connectionController.getPhase();
+    const phase = deps.connectionManager.getPhase();
     return (
       phase === 'connected' ||
       phase === 'connecting' ||

@@ -73,12 +73,12 @@ interface ConnectionManagerDeps {
   policy?: ConnectionPolicy;
 }
 
-export class ConnectionControllerRelaunchError extends Error {
+export class ConnectionManagerRelaunchError extends Error {
   public readonly relaunched = true;
 
   constructor(message = 'Restarting as administrator') {
     super(message);
-    this.name = 'ConnectionControllerRelaunchError';
+    this.name = 'ConnectionManagerRelaunchError';
   }
 }
 
@@ -266,9 +266,7 @@ export class ConnectionManager extends EventEmitter {
     if (fromPhase !== toPhase) {
       const allowed = ALLOWED_TRANSITIONS[fromPhase];
       if (!allowed.includes(toPhase)) {
-        throw new Error(
-          `Illegal session transition ${fromPhase} → ${toPhase}`,
-        );
+        throw new Error(`Illegal session transition ${fromPhase} → ${toPhase}`);
       }
     }
     this.state = next;
@@ -317,7 +315,7 @@ export class ConnectionManager extends EventEmitter {
         return result;
       } catch (error) {
         if (
-          error instanceof ConnectionControllerRelaunchError ||
+          error instanceof ConnectionManagerRelaunchError ||
           isConnectionOperationCancelled(error) ||
           abort.signal.aborted
         ) {
@@ -366,7 +364,7 @@ export class ConnectionManager extends EventEmitter {
       if (relaunched) {
         this.deps.app.releaseSingleInstanceLock();
         this.deps.app.quit();
-        throw new ConnectionControllerRelaunchError();
+        throw new ConnectionManagerRelaunchError();
       }
       this.deps.configService.clearPendingTunReconnect();
       throw new Error(
@@ -475,7 +473,7 @@ export class ConnectionManager extends EventEmitter {
     );
   }
 
-  public resumePendingTun(serverId: string): Promise<boolean> {
+  private resumePendingTun(serverId: string): Promise<boolean> {
     if (this.deps.configService.getConnectionMode() !== 'tun') {
       return Promise.resolve(false);
     }
@@ -654,4 +652,3 @@ export class ConnectionManager extends EventEmitter {
 }
 
 export const connectionManager = new ConnectionManager();
-export const connectionController = connectionManager;

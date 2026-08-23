@@ -22,8 +22,6 @@ export type SafeServerConfig = {
   pingStale?: boolean;
 };
 
-export type SafeVlessConfig = SafeServerConfig;
-
 export function toSafeServer(server: VlessConfig): SafeServerConfig {
   const safe: SafeServerConfig = {
     uuid: server.uuid,

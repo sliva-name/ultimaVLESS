@@ -24,7 +24,7 @@ function createRefresh(overrides: Partial<any> = {}) {
       fetchAndParseDetailed: vi.fn(async () => ({ configs: [server] })),
       parseDirectLinksFromText: vi.fn(() => []),
     },
-    connectionController: {
+    connectionManager: {
       getConnectionState: vi.fn(() => ({ type: 'disconnected' })),
       reconcileActiveServer: vi.fn(() => null),
     },
@@ -103,7 +103,7 @@ describe('catalog refresh', () => {
         fetchAndParseDetailed: vi.fn(async () => ({ configs: [next] })),
         parseDirectLinksFromText: vi.fn(() => []),
       },
-      connectionController: {
+      connectionManager: {
         getConnectionState: vi.fn(() => ({
           type: 'connected',
           serverId: 'live',
@@ -139,7 +139,7 @@ describe('catalog refresh', () => {
         fetchAndParseDetailed: vi.fn(async () => ({ configs: [rotated] })),
         parseDirectLinksFromText: vi.fn(() => []),
       },
-      connectionController: {
+      connectionManager: {
         getConnectionState: vi.fn(() => ({
           type: 'connected',
           serverId: 'old-id',
@@ -151,7 +151,7 @@ describe('catalog refresh', () => {
 
     await manager.queueRefreshAllSubscriptions('');
 
-    expect(deps.connectionController.reconcileActiveServer).toHaveBeenCalled();
+    expect(deps.connectionManager.reconcileActiveServer).toHaveBeenCalled();
     expect(deps.configService.setSelectedServerId).toHaveBeenCalledWith(
       'new-id',
     );

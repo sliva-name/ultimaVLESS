@@ -2,7 +2,7 @@ import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { IPC_INVOKE_CHANNELS } from '@/shared/ipc';
-import { ConnectionControllerRelaunchError } from '@/main/services/ConnectionController';
+import { ConnectionManagerRelaunchError } from '@/main/domain/connection/ConnectionManager';
 
 function assertServerId(payload: unknown): string {
   if (typeof payload !== 'string' || payload.trim().length === 0) {
@@ -21,7 +21,7 @@ export function registerConnectionHandlers({
   assertTrustedSender,
 }: RegisterConnectionHandlersParams): void {
   const handleConnectFailure = (error: unknown) => {
-    if (error instanceof ConnectionControllerRelaunchError) {
+    if (error instanceof ConnectionManagerRelaunchError) {
       return {
         ok: false as const,
         error: error.message,
@@ -42,7 +42,7 @@ export function registerConnectionHandlers({
         serverId: requestedServerId.substring(0, 8),
       });
       try {
-        await deps.connectionController.connect(requestedServerId);
+        await deps.connectionManager.connect(requestedServerId);
         return { ok: true as const };
       } catch (error) {
         return handleConnectFailure(error);
@@ -56,7 +56,7 @@ export function registerConnectionHandlers({
       assertTrustedSender(event);
       logger.info('IPC', 'disconnect');
       try {
-        await deps.connectionController.disconnect();
+        await deps.connectionManager.disconnect();
         return { ok: true as const };
       } catch (error) {
         logger.error('IPC', 'Failed to disconnect', error);

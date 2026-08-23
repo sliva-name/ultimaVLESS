@@ -43,7 +43,7 @@ export function registerDiagnosticsHandlers({
     (event: IpcMainInvokeEvent, enabledValue: unknown) => {
       assertTrustedSender(event);
       const enabled = assertBoolean(enabledValue, 'auto switching value');
-      deps.connectionController.setAutoSwitchingEnabled(enabled);
+      deps.connectionManager.setAutoSwitchingEnabled(enabled);
       notifySnapshot('connection');
       return true;
     },
@@ -53,7 +53,7 @@ export function registerDiagnosticsHandlers({
     IPC_INVOKE_CHANNELS.clearBlockedServers,
     (event: IpcMainInvokeEvent) => {
       assertTrustedSender(event);
-      deps.connectionController.clearBlockedServers();
+      deps.connectionManager.clearBlockedServers();
       notifySnapshot('connection');
       return true;
     },
