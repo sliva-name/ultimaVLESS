@@ -137,6 +137,16 @@ const resources = {
           remoteDnsCustom: 'Custom',
           remoteDnsPrimary: 'Primary DNS',
           remoteDnsSecondary: 'Secondary DNS (optional)',
+          tunMtu: 'TUN MTU',
+          tunMtuHint:
+            'Packet size on the TUN interface (1280–1500). Default 1400 leaves room for VLESS/REALITY/TLS. Lower toward 1280 if sites stall in TUN on a slow server; 1500 is native ethernet.',
+          tunDnsQueryStrategy: 'TUN DNS query strategy',
+          tunDnsQueryStrategyHint:
+            'Which answers Xray returns in TUN mode. UseIPv4 avoids a Windows AAAA-first hang (~10–12s) while health probes still go through the HTTP proxy. UseSystem or UseIP if you need IPv6 sites through the tunnel.',
+          tunDnsUseIPv4: 'IPv4 only',
+          tunDnsUseIPv6: 'IPv6 only',
+          tunDnsUseIP: 'IPv4 and IPv6',
+          tunDnsUseSystem: 'Follow the OS',
           xudpConcurrency: 'XUDP concurrency',
           xudpConcurrencyHint: 'Max concurrent UDP sub-connections (1–1024).',
           xudpProxyUDP443: 'UDP/443 (QUIC) policy',
@@ -164,11 +174,13 @@ const resources = {
           splitTunnel: 'Bypass the tunnel (split tunneling)',
           splitTunnelHint:
             'Sites and addresses that go straight out through your normal connection instead of the VPN. A host also covers its subdomains.',
-          splitTunnelPlaceholder: 'example.com, 10.0.0.0/8, geosite:category-ru',
+          splitTunnelPlaceholder:
+            'example.com, 10.0.0.0/8, geosite:category-ru',
           splitTunnelAdd: 'Add',
           splitTunnelDomains: 'Sites',
           splitTunnelIps: 'Addresses',
-          splitTunnelEmpty: 'Nothing excluded: all traffic goes through the VPN.',
+          splitTunnelEmpty:
+            'Nothing excluded: all traffic goes through the VPN.',
           splitTunnelInvalid: 'Not a host or address: {{entries}}',
           splitTunnelLimit: 'Exclusion list is full.',
           splitTunnelRemove: 'Remove {{entry}}',
@@ -356,6 +368,16 @@ const resources = {
           remoteDnsCustom: 'Свой',
           remoteDnsPrimary: 'Основной DNS',
           remoteDnsSecondary: 'Дополнительный DNS (необязательно)',
+          tunMtu: 'MTU туннеля',
+          tunMtuHint:
+            'Размер пакета на интерфейсе TUN (1280–1500). 1400 оставляет запас под VLESS/REALITY/TLS. Если сайты в TUN не открываются на медленном сервере — снизьте к 1280. 1500 — как обычный ethernet.',
+          tunDnsQueryStrategy: 'DNS в TUN',
+          tunDnsQueryStrategyHint:
+            'Какие ответы отдаёт Xray в режиме TUN. UseIPv4 избегает зависания Windows на AAAA (~10–12 с), пока пробы здоровья идут через HTTP-прокси. UseSystem или UseIP — если нужны IPv6-сайты через туннель.',
+          tunDnsUseIPv4: 'Только IPv4',
+          tunDnsUseIPv6: 'Только IPv6',
+          tunDnsUseIP: 'IPv4 и IPv6',
+          tunDnsUseSystem: 'Как в системе',
           xudpConcurrency: 'Параллельность XUDP',
           xudpConcurrencyHint:
             'Максимум параллельных UDP-подключений (1–1024).',
@@ -387,7 +409,8 @@ const resources = {
           splitTunnel: 'Исключения из туннеля (split tunneling)',
           splitTunnelHint:
             'Сайты и адреса, которые идут напрямую через обычное подключение, минуя VPN. Домен включает и поддомены.',
-          splitTunnelPlaceholder: 'example.com, 10.0.0.0/8, geosite:category-ru',
+          splitTunnelPlaceholder:
+            'example.com, 10.0.0.0/8, geosite:category-ru',
           splitTunnelAdd: 'Добавить',
           splitTunnelDomains: 'Сайты',
           splitTunnelIps: 'Адреса',

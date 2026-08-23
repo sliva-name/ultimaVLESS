@@ -15,6 +15,8 @@ interface TunInboundOptions {
   /** DNS servers advertised on the TUN interface (Windows). */
   dnsServers?: string[];
   sniffingRouteOnly?: boolean;
+  /** Advertised TUN MTU; falls back to TUN_MTU when omitted. */
+  mtu?: number;
 }
 
 /**
@@ -146,7 +148,7 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
     sniffing: createSniffing(options.sniffingRouteOnly ?? true),
     settings: {
       name: TUN_INTERFACE_NAME,
-      mtu: TUN_MTU,
+      mtu: options.mtu ?? TUN_MTU,
       gateway: [
         `${TUN_ADDRESS}/${TUN_PREFIX}`,
         `${TUN_IPV6_ADDRESS}/${TUN_IPV6_PREFIX}`,

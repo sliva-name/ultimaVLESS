@@ -20,16 +20,25 @@ describe('configGenerator/dns', () => {
     });
   });
 
-  it('buildDnsObject uses UseIPv4 in both connection modes', () => {
-    // Proxy has no IPv6 path. TUN still routes ::/0, but AAAA-first on
-    // Windows hangs the browser for ~10–12s on slow nodes while HTTP-proxy
-    // health probes still succeed.
+  it('buildDnsObject uses UseIPv4 in proxy and the TUN setting in TUN', () => {
     expect(
       buildDnsObject(DEFAULT_PERFORMANCE_SETTINGS, { tunMode: false }),
     ).toMatchObject({ queryStrategy: 'UseIPv4' });
     expect(
       buildDnsObject(DEFAULT_PERFORMANCE_SETTINGS, { tunMode: true }),
     ).toMatchObject({ queryStrategy: 'UseIPv4' });
+
+    const tunIpv6 = {
+      ...DEFAULT_PERFORMANCE_SETTINGS,
+      tunDnsQueryStrategy: 'UseSystem' as const,
+    };
+    expect(buildDnsObject(tunIpv6, { tunMode: true })).toMatchObject({
+      queryStrategy: 'UseSystem',
+    });
+    // Proxy never carries IPv6, even if the TUN strategy asks for it.
+    expect(buildDnsObject(tunIpv6, { tunMode: false })).toMatchObject({
+      queryStrategy: 'UseIPv4',
+    });
   });
 
   it('dns-out hijacks every query type so qType 65 cannot leak', () => {

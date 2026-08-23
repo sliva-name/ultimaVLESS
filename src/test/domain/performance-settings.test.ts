@@ -5,7 +5,7 @@ import {
   normalizePerformanceSettings,
   performanceSettingsEqual,
 } from '@/shared/performanceSettings';
-import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
+import { DEFAULT_PERFORMANCE_SETTINGS, TUN_MTU_DEFAULT } from '@/shared/types';
 
 describe('normalizePerformanceSettings', () => {
   it('accepts extended TLS fingerprints', () => {
@@ -37,6 +37,29 @@ describe('normalizePerformanceSettings', () => {
       normalizePerformanceSettings({ xhttpMaxConnections: 99 })
         .xhttpMaxConnections,
     ).toBe(16);
+  });
+
+  it('clamps TUN MTU and accepts Xray DNS query strategies', () => {
+    expect(normalizePerformanceSettings({}).tunMtu).toBe(TUN_MTU_DEFAULT);
+    expect(normalizePerformanceSettings({}).tunDnsQueryStrategy).toBe(
+      'UseIPv4',
+    );
+    expect(normalizePerformanceSettings({ tunMtu: 1280 }).tunMtu).toBe(1280);
+    expect(normalizePerformanceSettings({ tunMtu: 1500 }).tunMtu).toBe(1500);
+    expect(normalizePerformanceSettings({ tunMtu: 9000 }).tunMtu).toBe(1500);
+    expect(normalizePerformanceSettings({ tunMtu: 500 }).tunMtu).toBe(1280);
+    expect(
+      normalizePerformanceSettings({ tunDnsQueryStrategy: 'UseSystem' })
+        .tunDnsQueryStrategy,
+    ).toBe('UseSystem');
+    expect(
+      normalizePerformanceSettings({ tunDnsQueryStrategy: 'UseIP' })
+        .tunDnsQueryStrategy,
+    ).toBe('UseIP');
+    expect(
+      normalizePerformanceSettings({ tunDnsQueryStrategy: 'not-a-strategy' })
+        .tunDnsQueryStrategy,
+    ).toBe('UseIPv4');
   });
 
   it('resolves remote DNS presets and validates custom IPv4', () => {
@@ -132,6 +155,18 @@ describe('legacy performance migration guard', () => {
       isUnmodifiedLegacyPerformanceSettings({
         ...legacyCore,
         windowsTunRouting: 'xray',
+      }),
+    ).toBe(false);
+    expect(
+      isUnmodifiedLegacyPerformanceSettings({
+        ...legacyCore,
+        tunMtu: 1280,
+      }),
+    ).toBe(false);
+    expect(
+      isUnmodifiedLegacyPerformanceSettings({
+        ...legacyCore,
+        tunDnsQueryStrategy: 'UseSystem',
       }),
     ).toBe(false);
   });

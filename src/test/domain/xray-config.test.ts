@@ -84,6 +84,28 @@ describe('XrayConfigCompiler', () => {
     );
   });
 
+  it('honours user TUN MTU and DNS query strategy', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({ security: 'tls', sni: 'example.com' }),
+      {
+        logPath: '/tmp/xray.log',
+        connectionMode: 'tun',
+        tunAutoRoute: true,
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          tunMtu: 1280,
+          tunDnsQueryStrategy: 'UseSystem',
+        },
+      },
+    );
+
+    const tunInbound = config.inbounds?.find(
+      (inbound) => inbound.protocol === 'tun',
+    );
+    expect(tunInbound?.settings).toMatchObject({ mtu: 1280 });
+    expect(config.dns).toMatchObject({ queryStrategy: 'UseSystem' });
+  });
+
   it('applies remote DNS without localhost and hijacks port 53 in TUN mode', () => {
     const config = XrayConfigCompiler.compile(
       makeServer({ security: 'tls', sni: 'example.com' }),
@@ -457,21 +479,8 @@ describe('XrayConfigCompiler', () => {
         logPath: '/tmp/xray.log',
         connectionMode: 'proxy',
         performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
           muxEnabled: false,
-          muxConcurrency: 8,
-          xudpConcurrency: 16,
-          xudpProxyUDP443: 'reject',
-          xhttpMaxConnections: 3,
-          remoteDnsPreset: 'cloudflare',
-          remoteDnsServers: ['1.1.1.1', '1.0.0.1'],
-          tcpFastOpen: true,
-          sniffingRouteOnly: true,
-          logLevel: 'warning',
-          fingerprint: 'chrome',
-          blockAds: false,
-          blockBittorrent: false,
-          domainStrategy: 'AsIs',
-          windowsTunRouting: 'xray',
         },
       },
     );

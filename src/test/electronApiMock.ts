@@ -48,9 +48,11 @@ export function createElectronApiMock(
   };
 
   const api: ElectronApiMock = {
-    connect: vi.fn(async (_serverId: string): Promise<ConnectResult> => ({
-      ok: true,
-    })),
+    connect: vi.fn(
+      async (_serverId: string): Promise<ConnectResult> => ({
+        ok: true,
+      }),
+    ),
     disconnect: vi.fn(async (): Promise<DisconnectResult> => ({ ok: true })),
 
     // Subscriptions CRUD
@@ -133,6 +135,8 @@ export function createElectronApiMock(
         blockBittorrent: false,
         domainStrategy: 'AsIs',
         windowsTunRouting: 'xray',
+        tunMtu: 1400,
+        tunDnsQueryStrategy: 'UseIPv4',
         bypassDomains: [],
         bypassIps: [],
       }),

@@ -20,7 +20,7 @@ type MutableOutbound = MutableConfigNode & {
 
 export function buildDnsObject(
   perf: PerformanceSettings,
-  _options: { tunMode?: boolean } = {},
+  options: { tunMode?: boolean } = {},
 ): Record<string, unknown> {
   const servers =
     perf.remoteDnsServers.length > 0
@@ -28,12 +28,10 @@ export function buildDnsObject(
       : ['1.1.1.1', '1.0.0.1'];
   return {
     servers,
-    // Always IPv4. Proxy has no IPv6 path. TUN still routes `::/0` for apps
-    // that already hold an IPv6 literal, but `UseSystem`/`UseIP` lets Windows
-    // chase AAAA first (~10–12s) while health probes go through the local HTTP
-    // proxy and stay green. Slow servers make that hang look like “TUN is
-    // dead” even though the same node works in proxy mode.
-    queryStrategy: 'UseIPv4',
+    // Proxy has no IPv6 path, so AAAA would leave the machine off-tunnel.
+    // TUN still routes `::/0`; the user picks the strategy (default UseIPv4
+    // skips Windows AAAA-first hangs of ~10–12s on slow nodes).
+    queryStrategy: options.tunMode ? perf.tunDnsQueryStrategy : 'UseIPv4',
     tag: DNS_MODULE_TAG,
     // Without this, a failed remote resolver falls through to later entries —
     // including any `localhost` a subscription might have injected before we

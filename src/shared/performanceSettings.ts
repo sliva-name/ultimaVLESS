@@ -7,7 +7,11 @@ import {
   VALID_LOG_LEVELS,
   VALID_REMOTE_DNS_PRESETS,
   VALID_TLS_FINGERPRINTS,
+  VALID_TUN_DNS_QUERY_STRATEGIES,
   VALID_XUDP_PROXY_UDP_443_VALUES,
+  TUN_MTU_MAX,
+  TUN_MTU_MIN,
+  TunDnsQueryStrategy,
   WindowsTunRouting,
 } from './types';
 import { VALID_WINDOWS_TUN_ROUTING } from './tunRouting';
@@ -88,6 +92,8 @@ export function performanceSettingsEqual(
     left.blockBittorrent === right.blockBittorrent &&
     left.domainStrategy === right.domainStrategy &&
     left.windowsTunRouting === right.windowsTunRouting &&
+    left.tunMtu === right.tunMtu &&
+    left.tunDnsQueryStrategy === right.tunDnsQueryStrategy &&
     sameStringList(left.bypassDomains, right.bypassDomains) &&
     sameStringList(left.bypassIps, right.bypassIps)
   );
@@ -150,6 +156,19 @@ export function isUnmodifiedLegacyPerformanceSettings(value: unknown): boolean {
   if (
     'windowsTunRouting' in value &&
     value.windowsTunRouting !== 'powershell'
+  ) {
+    return false;
+  }
+  if (
+    'tunMtu' in value &&
+    value.tunMtu !== DEFAULT_PERFORMANCE_SETTINGS.tunMtu
+  ) {
+    return false;
+  }
+  if (
+    'tunDnsQueryStrategy' in value &&
+    value.tunDnsQueryStrategy !==
+      DEFAULT_PERFORMANCE_SETTINGS.tunDnsQueryStrategy
   ) {
     return false;
   }
@@ -238,6 +257,17 @@ export function normalizePerformanceSettings(
     )
       ? (value.windowsTunRouting as WindowsTunRouting)
       : DEFAULT_PERFORMANCE_SETTINGS.windowsTunRouting,
+    tunMtu: clamp(
+      value.tunMtu,
+      TUN_MTU_MIN,
+      TUN_MTU_MAX,
+      DEFAULT_PERFORMANCE_SETTINGS.tunMtu,
+    ),
+    tunDnsQueryStrategy: VALID_TUN_DNS_QUERY_STRATEGIES.includes(
+      value.tunDnsQueryStrategy as TunDnsQueryStrategy,
+    )
+      ? (value.tunDnsQueryStrategy as TunDnsQueryStrategy)
+      : DEFAULT_PERFORMANCE_SETTINGS.tunDnsQueryStrategy,
     // Only an existing list is authoritative — an empty one means the user
     // cleared the defaults. Settings saved before split tunneling existed carry
     // no list at all and inherit the shipped exclusions.
