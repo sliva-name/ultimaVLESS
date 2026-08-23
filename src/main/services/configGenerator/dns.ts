@@ -20,7 +20,7 @@ type MutableOutbound = MutableConfigNode & {
 
 export function buildDnsObject(
   perf: PerformanceSettings,
-  options: { tunMode?: boolean } = {},
+  _options: { tunMode?: boolean } = {},
 ): Record<string, unknown> {
   const servers =
     perf.remoteDnsServers.length > 0
@@ -28,10 +28,12 @@ export function buildDnsObject(
       : ['1.1.1.1', '1.0.0.1'];
   return {
     servers,
-    // TUN routes ::/0 into the tunnel, so AAAA is safe and `UseSystem` adapts to
-    // whether the host actually has an IPv6 default gateway. A WinINET/gsettings
-    // proxy carries no IPv6, so there IPv4-only prevents an off-tunnel fallback.
-    queryStrategy: options.tunMode ? 'UseSystem' : 'UseIPv4',
+    // Always IPv4. Proxy has no IPv6 path. TUN still routes `::/0` for apps
+    // that already hold an IPv6 literal, but `UseSystem`/`UseIP` lets Windows
+    // chase AAAA first (~10–12s) while health probes go through the local HTTP
+    // proxy and stay green. Slow servers make that hang look like “TUN is
+    // dead” even though the same node works in proxy mode.
+    queryStrategy: 'UseIPv4',
     tag: DNS_MODULE_TAG,
     // Without this, a failed remote resolver falls through to later entries —
     // including any `localhost` a subscription might have injected before we
@@ -45,10 +47,7 @@ export function buildDnsObject(
  * via routing) and rewrites other queries to the primary remote resolver.
  * @see https://xtls.github.io/en/config/outbounds/dns.html
  */
-export function ensureDnsOutbound(
-  cfg: XrayConfig,
-  primaryDnsIp: string,
-): void {
+export function ensureDnsOutbound(cfg: XrayConfig, primaryDnsIp: string): void {
   if (!Array.isArray(cfg.outbounds)) cfg.outbounds = [];
   const outbounds = cfg.outbounds as MutableOutbound[];
   // `action: 'hijack'` without a qType filter routes *every* query type into the

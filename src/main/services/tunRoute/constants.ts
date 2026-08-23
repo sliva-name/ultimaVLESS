@@ -5,6 +5,14 @@ export const TUN_NEXTHOP = '172.19.0.2';
 export const TUN_IPV6_ADDRESS = 'fd7a:115c:a1e0::1';
 export const TUN_IPV6_PREFIX = 126;
 export const TUN_IPV6_NEXTHOP = '::';
+/**
+ * TUN advertised MTU. Ethernet is 1500, but VLESS/REALITY/TLS headers sit on
+ * top of every packet. At 1500, apps emit full-size frames that fragment on
+ * the physical NIC; slow/lossy servers drop those fragments and TCP stalls.
+ * Proxy mode never sees this (HTTP CONNECT is stream-framed). WireGuard in
+ * this codebase uses 1350; 1400 is the usual TLS-VPN compromise.
+ */
+export const TUN_MTU = 1400;
 /** IPv4-only: advertising IPv6 resolvers makes Windows prefer AAAA DNS first
  * (~2s timeout each) before falling back to 1.1.1.1 — often ~10–12s until
  * the first useful browser TCP after TUN connect. Fallback matches Cloudflare

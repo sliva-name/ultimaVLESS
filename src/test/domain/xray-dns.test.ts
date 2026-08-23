@@ -20,16 +20,16 @@ describe('configGenerator/dns', () => {
     });
   });
 
-  it('buildDnsObject adapts queryStrategy to the connection mode', () => {
-    // Proxy mode carries no IPv6, so AAAA answers would resolve to addresses
-    // that can only leave the machine outside the tunnel.
+  it('buildDnsObject uses UseIPv4 in both connection modes', () => {
+    // Proxy has no IPv6 path. TUN still routes ::/0, but AAAA-first on
+    // Windows hangs the browser for ~10–12s on slow nodes while HTTP-proxy
+    // health probes still succeed.
     expect(
       buildDnsObject(DEFAULT_PERFORMANCE_SETTINGS, { tunMode: false }),
     ).toMatchObject({ queryStrategy: 'UseIPv4' });
-    // TUN routes ::/0, so let Xray follow the host's actual gateways.
     expect(
       buildDnsObject(DEFAULT_PERFORMANCE_SETTINGS, { tunMode: true }),
-    ).toMatchObject({ queryStrategy: 'UseSystem' });
+    ).toMatchObject({ queryStrategy: 'UseIPv4' });
   });
 
   it('dns-out hijacks every query type so qType 65 cannot leak', () => {

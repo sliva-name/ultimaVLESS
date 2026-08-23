@@ -6,6 +6,7 @@ import {
   TUN_INTERFACE_NAME,
   TUN_IPV6_ADDRESS,
   TUN_IPV6_PREFIX,
+  TUN_MTU,
   TUN_PREFIX,
 } from '../tunRoute/constants';
 
@@ -145,7 +146,7 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
     sniffing: createSniffing(options.sniffingRouteOnly ?? true),
     settings: {
       name: TUN_INTERFACE_NAME,
-      mtu: 1500,
+      mtu: TUN_MTU,
       gateway: [
         `${TUN_ADDRESS}/${TUN_PREFIX}`,
         `${TUN_IPV6_ADDRESS}/${TUN_IPV6_PREFIX}`,
