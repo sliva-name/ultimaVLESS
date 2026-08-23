@@ -3,7 +3,6 @@ import { selectAutoSwitchCandidates } from '@/main/services/connectionMonitor/au
 
 export type PolicyDecision =
   | { action: 'switch'; candidates: VlessConfig[] }
-  | { action: 'retry'; delayMs: number }
   | { action: 'disconnect' }
   | { action: 'none' };
 
@@ -41,9 +40,6 @@ export function createAutoSwitchPolicy(): ConnectionPolicy {
 
       if (selection.type === 'selected-candidates') {
         return { action: 'switch', candidates: selection.candidates };
-      }
-      if (selection.type === 'selected') {
-        return { action: 'switch', candidates: [selection.server] };
       }
       return { action: 'disconnect' };
     },

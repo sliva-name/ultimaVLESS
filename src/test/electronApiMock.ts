@@ -5,7 +5,6 @@ import type {
   AddSubscriptionResult,
   AppSnapshot,
   ConnectionMonitorEvent,
-  ConnectionMonitorStatus,
   ConnectResult,
   DisconnectResult,
   SaveManualLinksResult,
@@ -16,7 +15,7 @@ import type {
   PerformanceSettings,
   VlessConfig,
 } from '@/shared/types';
-import { makeMonitorStatus } from './factories';
+import { makeAppSnapshot } from './factories';
 
 type ListenerMap = {
   appSnapshotChanged: Set<(snapshot: AppSnapshot) => void>;
@@ -86,26 +85,11 @@ export function createElectronApiMock(
     ),
     onUpdateStatus: createListenerRegistration(listeners.updateStatus),
 
-    getConnectionMonitorStatus: vi.fn(
-      async (): Promise<ConnectionMonitorStatus> => makeMonitorStatus(),
-    ),
     setAutoSwitching: vi.fn(async (_enabled: boolean) => true),
     clearBlockedServers: vi.fn(async () => true),
     getAppSnapshot: vi.fn(async (): Promise<AppSnapshot> => {
       const connectionMode = await api.getConnectionMode();
-      return {
-        servers: [],
-        subscriptions: [],
-        selectedServerId: null,
-        connectionMode,
-        session: {
-          phase: 'idle',
-          activeServerId: null,
-          lastError: null,
-          blockedServerIds: [],
-        },
-        traffic: null,
-      };
+      return makeAppSnapshot({ connectionMode });
     }),
     setSelectedServerId: vi.fn(async (_serverId: string | null) => true),
     getConnectionMode: vi.fn(async (): Promise<ConnectionMode> => 'proxy'),

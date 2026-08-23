@@ -9,9 +9,6 @@ import { useAppSnapshotContext } from './useAppSnapshot';
 
 export function useNetworkSettings(isOpen: boolean) {
   const { snapshot, refreshSnapshot } = useAppSnapshotContext();
-  // Optimistic mode override, remembered together with the snapshot value it
-  // was based on. Once the snapshot moves off that baseline (main confirmed a
-  // mode change), the override is ignored — no cleanup effect needed.
   const [connectionModeOverride, setConnectionModeOverride] = useState<{
     mode: ConnectionMode;
     baseline: ConnectionMode;

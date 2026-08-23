@@ -21,16 +21,12 @@ interface SettingsNetworkTabProps {
   isOpen: boolean;
   isConnected: boolean;
   isConnectionBusy: boolean;
-  hasLoadedMonitorStatus: boolean;
-  monitorIsConnected: boolean;
 }
 
 export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
   isOpen,
   isConnected,
   isConnectionBusy,
-  hasLoadedMonitorStatus,
-  monitorIsConnected,
 }) => {
   const { t } = useTranslation();
   const {
@@ -49,8 +45,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
 
   const handleConnectionModeChange = useCallback(
     async (mode: ConnectionMode) => {
-      if (!hasLoadedMonitorStatus) return;
-      if (monitorIsConnected) {
+      if (isConnected || isConnectionBusy) {
         setModeError(t('settings.network.disconnectHintError'));
         return;
       }
@@ -72,8 +67,8 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
       }
     },
     [
-      hasLoadedMonitorStatus,
-      monitorIsConnected,
+      isConnected,
+      isConnectionBusy,
       setConnectionMode,
       setModeError,
       tunCapability,
@@ -115,11 +110,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
   const tunNeedsPrivileges =
     !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
   const tunButtonDisabled = tunUnavailable;
-  const modeControlsDisabled = !hasLoadedMonitorStatus;
-  // Prefer the authoritative renderer-side connection state (ws-fast updates)
-  // and only fall back to the polled monitor status so the lock reacts the
-  // moment a user (dis)connects, even before the next monitor poll.
-  const networkLocked = isConnected || isConnectionBusy || monitorIsConnected;
+  const networkLocked = isConnected || isConnectionBusy;
   const modeLockedByConnection = networkLocked;
 
   const modeButtonClass = (active: boolean, disabled: boolean) =>
@@ -145,10 +136,10 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
         <button
           type="button"
           onClick={() => handleConnectionModeChange('proxy')}
-          disabled={modeControlsDisabled || modeLockedByConnection}
+          disabled={modeLockedByConnection}
           className={modeButtonClass(
             connectionMode === 'proxy',
-            modeControlsDisabled || modeLockedByConnection,
+            modeLockedByConnection,
           )}
         >
           <div className="text-sm font-semibold mb-1">
@@ -161,12 +152,10 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
         <button
           type="button"
           onClick={() => handleConnectionModeChange('tun')}
-          disabled={
-            modeControlsDisabled || tunButtonDisabled || modeLockedByConnection
-          }
+          disabled={tunButtonDisabled || modeLockedByConnection}
           className={modeButtonClass(
             connectionMode === 'tun',
-            modeControlsDisabled || tunButtonDisabled || modeLockedByConnection,
+            tunButtonDisabled || modeLockedByConnection,
           )}
         >
           <div className="text-sm font-semibold mb-1">

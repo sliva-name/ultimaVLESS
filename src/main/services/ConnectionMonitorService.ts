@@ -1,5 +1,4 @@
 import { VlessConfig } from '@/shared/types';
-import { isSameServerIdentity } from '@/shared/serverIdentity';
 import { logger } from './LoggerService';
 import { configService } from './ConfigService';
 import { EventEmitter } from 'events';
@@ -7,18 +6,15 @@ import { app } from 'electron';
 import path from 'path';
 import { extractBlockingErrors, isBlockingErrorText } from './blockingErrors';
 import { xrayService } from './XrayService';
-import { ConnectionHealthState, XrayHealthStatus } from '@/shared/ipc';
+import { ConnectionHealthState } from '@/shared/ipc';
 import { runConnectionHealthProbe } from './connectionMonitor/healthProbe';
 import { XrayLogCursor } from './connectionMonitor/xrayLogCursor';
 import { CONNECTION_MONITOR_TIMING } from './connectionMonitor/timing';
+import { HealthCheckGate } from '@/main/runtime/healthCheckGate';
 
 export interface ConnectionStatus {
-  isConnected: boolean;
+  probeArmed: boolean;
   currentServer: VlessConfig | null;
-  lastError: string | null;
-  connectionAttempts: number;
-  lastConnectionTime: number | null;
-  blockedServers: string[];
   lastHealthCheckAt: number | null;
   lastHealthState: ConnectionHealthState;
   lastHealthFailureReason: string | null;
@@ -26,12 +22,8 @@ export interface ConnectionStatus {
 }
 
 interface InternalConnectionStatus {
-  isConnected: boolean;
+  probeArmed: boolean;
   currentServer: VlessConfig | null;
-  lastError: string | null;
-  connectionAttempts: number;
-  lastConnectionTime: number | null;
-  blockedServers: Set<string>;
   lastHealthCheckAt: number | null;
   lastHealthState: ConnectionHealthState;
   lastHealthFailureReason: string | null;
@@ -63,16 +55,13 @@ export class ConnectionMonitorService extends EventEmitter {
   private status: InternalConnectionStatus;
   private checkInterval: NodeJS.Timeout | null = null;
   private initialHealthCheckTimer: NodeJS.Timeout | null = null;
-  private isAutoSwitchingEnabled: boolean = true;
   private checkIntervalMs: number =
     CONNECTION_MONITOR_TIMING.healthCheckIntervalMs;
   private xrayLogCursor: XrayLogCursor;
   private sessionAbort: AbortController | null = null;
-  private healthCheckInFlight: boolean = false;
+  private readonly healthCheckGate = new HealthCheckGate();
   private tunnelProbeFailStreak: number = 0;
   private localProxyFailStreak: number = 0;
-  private autoSwitchFailedAt: Map<string, number> = new Map();
-  private static readonly BLOCKED_SERVER_COOLDOWN_MS = 10 * 60 * 1000;
   private static readonly TUNNEL_PROBE_STREAK_BEFORE_NOTIFY =
     CONNECTION_MONITOR_TIMING.tunnelProbeStreakBeforeAction;
   private static readonly LOCAL_PROXY_STREAK_BEFORE_NOTIFY =
@@ -81,12 +70,8 @@ export class ConnectionMonitorService extends EventEmitter {
   constructor() {
     super();
     this.status = {
-      isConnected: false,
+      probeArmed: false,
       currentServer: null,
-      lastError: null,
-      connectionAttempts: 0,
-      lastConnectionTime: null,
-      blockedServers: new Set(),
       lastHealthCheckAt: null,
       lastHealthState: 'idle',
       lastHealthFailureReason: null,
@@ -107,10 +92,7 @@ export class ConnectionMonitorService extends EventEmitter {
 
     this.replaceSession();
     this.status.currentServer = server;
-    this.status.isConnected = true;
-    this.status.lastConnectionTime = Date.now();
-    this.status.connectionAttempts = 0;
-    this.status.lastError = null;
+    this.status.probeArmed = true;
     this.status.lastHealthCheckAt = null;
     this.status.lastHealthState = 'idle';
     this.status.lastHealthFailureReason = null;
@@ -133,18 +115,17 @@ export class ConnectionMonitorService extends EventEmitter {
     const { message = 'Monitoring stopped', preserveLastError = false } =
       options;
     this.replaceSession();
-    this.healthCheckInFlight = false;
+    this.healthCheckGate.reset();
     logger.info('ConnectionMonitorService', 'Stopping monitoring');
 
-    this.status.isConnected = false;
+    this.status.probeArmed = false;
     this.status.currentServer = null;
     this.status.localProxyReachable = null;
     this.tunnelProbeFailStreak = 0;
     this.localProxyFailStreak = 0;
     this.status.lastHealthState = 'idle';
-    this.status.lastHealthFailureReason = null;
     if (!preserveLastError) {
-      this.status.lastError = null;
+      this.status.lastHealthFailureReason = null;
     }
 
     this.emit('disconnected', {
@@ -164,47 +145,15 @@ export class ConnectionMonitorService extends EventEmitter {
     } as ConnectionEvent);
   }
 
-  public handleUnexpectedDisconnect(error: string): boolean {
-    const server = this.status.currentServer;
-    if (!this.status.isConnected || !server) {
-      return false;
-    }
-
-    this.status.lastError = error;
-    this.status.connectionAttempts += 1;
-    this.status.lastHealthState = 'failed';
-    this.status.lastHealthFailureReason = error;
-    this.emit('error', {
-      type: 'error',
-      server,
-      error,
-      message: `Connection error: ${error}`,
-    } as ConnectionEvent);
-    this.stopMonitoring({
-      message: `Connection lost: ${error}`,
-      preserveLastError: true,
-    });
-    return true;
-  }
-
-  public handleXrayHealthStatusChanged(xrayState: XrayHealthStatus): boolean {
-    if (xrayState.state !== 'failed') {
-      return false;
-    }
-
-    return this.handleCriticalConnectionFailure(
-      this.getXrayFailureReason(xrayState),
-      {
-        localProxyReachable: xrayState.localProxyReachable,
-      },
-    );
+  public setProbeTarget(server: VlessConfig | null): void {
+    this.status.currentServer = server;
   }
 
   public handleCriticalConnectionFailure(
     error: string,
     options: { localProxyReachable?: boolean | null } = {},
   ): boolean {
-    if (!this.status.isConnected || !this.status.currentServer) {
+    if (!this.status.probeArmed || !this.status.currentServer) {
       return false;
     }
 
@@ -218,40 +167,6 @@ export class ConnectionMonitorService extends EventEmitter {
     return this.recordError(error, this.status.currentServer, {
       forceBlocking: true,
     });
-  }
-
-  public syncCurrentServer(servers: VlessConfig[]): VlessConfig | null {
-    const currentServer = this.status.currentServer;
-    if (!currentServer) {
-      return null;
-    }
-
-    const exact = servers.find((server) => server.uuid === currentServer.uuid);
-    if (exact) {
-      this.status.currentServer = exact;
-      return exact;
-    }
-
-    const fuzzy = servers.find((server) =>
-      isSameServerIdentity(server, currentServer),
-    );
-
-    if (fuzzy) {
-      logger.info(
-        'ConnectionMonitorService',
-        'Tracked server matched by address/port after uuid rotation',
-        {
-          from: currentServer.uuid.substring(0, 12),
-          to: fuzzy.uuid.substring(0, 12),
-          address: currentServer.address,
-          port: currentServer.port,
-        },
-      );
-      this.status.currentServer = fuzzy;
-      return fuzzy;
-    }
-
-    return currentServer;
   }
 
   public recordError(
@@ -268,8 +183,6 @@ export class ConnectionMonitorService extends EventEmitter {
       serverAddress: targetServer?.address,
     });
 
-    this.status.lastError = error;
-    this.status.connectionAttempts++;
     this.status.lastHealthState = isBlocking ? 'failed' : 'degraded';
     this.status.lastHealthFailureReason = error;
 
@@ -288,50 +201,16 @@ export class ConnectionMonitorService extends EventEmitter {
       return false;
     }
 
-    this.markServerAsBlocked(targetServer.uuid);
-    if (this.status.isConnected) {
-      this.emit('health-failure', {
-        server: targetServer,
-        reason: error,
-        blocking: true,
-      } satisfies HealthFailureEvent);
-    }
-    return this.status.isConnected;
-  }
-
-  public markServerAsBlocked(serverId: string): void {
-    this.autoSwitchFailedAt.set(serverId, Date.now());
-    if (!this.status.blockedServers.has(serverId)) {
-      this.status.blockedServers.add(serverId);
-      logger.warn('ConnectionMonitorService', 'Server marked as blocked', {
-        serverId,
-        cooldownMs: ConnectionMonitorService.BLOCKED_SERVER_COOLDOWN_MS,
-      });
-
-      const server = this.status.currentServer;
-      if (server && server.uuid === serverId) {
-        this.emit('blocked', {
-          type: 'blocked',
-          server,
-          message: `Server ${server.name} appears to be blocked`,
-        } as ConnectionEvent);
-      }
-    }
-  }
-
-  public pruneExpiredBlockedServers(now: number = Date.now()): void {
-    const cooldown = ConnectionMonitorService.BLOCKED_SERVER_COOLDOWN_MS;
-    for (const serverId of [...this.status.blockedServers]) {
-      const failedAt = this.autoSwitchFailedAt.get(serverId);
-      if (failedAt == null || now - failedAt >= cooldown) {
-        this.status.blockedServers.delete(serverId);
-        this.autoSwitchFailedAt.delete(serverId);
-      }
-    }
+    this.emit('health-failure', {
+      server: targetServer,
+      reason: error,
+      blocking: true,
+    } satisfies HealthFailureEvent);
+    return true;
   }
 
   public triggerImmediateHealthCheck(reason: string): void {
-    if (!this.status.isConnected || !this.status.currentServer) {
+    if (!this.status.probeArmed || !this.status.currentServer) {
       return;
     }
     const signal = this.sessionAbort?.signal;
@@ -340,24 +219,37 @@ export class ConnectionMonitorService extends EventEmitter {
     }
     logger.info('ConnectionMonitorService', 'Forcing immediate health check', {
       reason,
-      deferred: this.healthCheckInFlight,
+      deferred: this.healthCheckGate.isInFlight,
     });
-    if (this.healthCheckInFlight) {
-      void (async () => {
-        while (this.healthCheckInFlight) {
-          await new Promise((r) => setTimeout(r, 100));
-          if (signal.aborted || !this.status.isConnected) {
-            return;
-          }
-        }
-        void this.checkConnectionHealth(signal);
-      })();
-      return;
+    this.healthCheckGate.request(() => this.checkConnectionHealth(signal));
+  }
+
+  /**
+   * Probe/diagnostic fact. Does not emit health-failure — ConnectionManager
+   * owns policy for session death.
+   */
+  public noteFailure(
+    error: string,
+    options: { localProxyReachable?: boolean | null } = {},
+  ): void {
+    if ('localProxyReachable' in options) {
+      this.status.localProxyReachable = options.localProxyReachable ?? null;
     }
-    void this.checkConnectionHealth(signal);
+    this.status.lastHealthState = 'failed';
+    this.status.lastHealthFailureReason = error;
+    this.status.lastHealthCheckAt = Date.now();
+    if (this.status.currentServer) {
+      this.emit('error', {
+        type: 'error',
+        server: this.status.currentServer,
+        error,
+        message: `Connection error: ${error}`,
+      } as ConnectionEvent);
+    }
   }
 
   private replaceSession(): void {
+    this.healthCheckGate.reset();
     this.sessionAbort?.abort();
     this.sessionAbort = new AbortController();
     if (this.checkInterval) {
@@ -374,26 +266,18 @@ export class ConnectionMonitorService extends EventEmitter {
     return isBlockingErrorText(error);
   }
 
-  private getXrayFailureReason(xrayState: XrayHealthStatus): string {
-    return (
-      xrayState.lastFailureReason ||
-      xrayState.lastReadinessError ||
-      'Xray reported failed health status'
-    );
-  }
-
   private startPeriodicCheck(signal: AbortSignal): void {
     const runCheck = () => {
-      void this.checkConnectionHealth(signal);
+      this.healthCheckGate.request(() => this.checkConnectionHealth(signal));
     };
 
     this.initialHealthCheckTimer = setTimeout(() => {
       this.initialHealthCheckTimer = null;
-      if (signal.aborted || !this.status.isConnected) {
+      if (signal.aborted || !this.status.probeArmed) {
         return;
       }
       runCheck();
-      if (signal.aborted || !this.status.isConnected) {
+      if (signal.aborted || !this.status.probeArmed) {
         return;
       }
       this.checkInterval = setInterval(runCheck, this.checkIntervalMs);
@@ -401,17 +285,16 @@ export class ConnectionMonitorService extends EventEmitter {
   }
 
   private async checkConnectionHealth(signal: AbortSignal): Promise<void> {
-    if (!this.status.isConnected || !this.status.currentServer) {
+    if (!this.status.probeArmed || !this.status.currentServer) {
       return;
     }
-    if (this.healthCheckInFlight || signal.aborted) {
+    if (signal.aborted) {
       return;
     }
 
     const isStale = () =>
-      signal.aborted || !this.status.isConnected || !this.status.currentServer;
+      signal.aborted || !this.status.probeArmed || !this.status.currentServer;
 
-    this.healthCheckInFlight = true;
     try {
       this.status.lastHealthCheckAt = Date.now();
       const probeResult = await runConnectionHealthProbe({
@@ -472,7 +355,6 @@ export class ConnectionMonitorService extends EventEmitter {
         this.tunnelProbeFailStreak = 0;
         this.status.lastHealthState = 'degraded';
         this.status.lastHealthFailureReason = probeResult.failureReason;
-        this.status.lastError = null;
         logger.warn(
           'ConnectionMonitorService',
           'Host internet connectivity unavailable; auto-switch deferred',
@@ -498,9 +380,6 @@ export class ConnectionMonitorService extends EventEmitter {
       }
 
       this.tunnelProbeFailStreak = 0;
-      if (this.status.lastHealthState === 'degraded') {
-        this.status.lastError = null;
-      }
       logger.debug('ConnectionMonitorService', 'HTTP tunnel probe passed');
 
       const logLines = await this.readNewLogLines(50);
@@ -542,8 +421,6 @@ export class ConnectionMonitorService extends EventEmitter {
       ) {
         this.recordError(failureReason, this.status.currentServer);
       }
-    } finally {
-      this.healthCheckInFlight = false;
     }
   }
 
@@ -560,27 +437,8 @@ export class ConnectionMonitorService extends EventEmitter {
   }
 
   public getStatus(): ConnectionStatus {
-    return {
-      ...this.status,
-      blockedServers: Array.from(this.status.blockedServers),
-    };
-  }
-
-  public getAutoSwitchingEnabled(): boolean {
-    return this.isAutoSwitchingEnabled;
-  }
-
-  public setAutoSwitchingEnabled(enabled: boolean): void {
-    this.isAutoSwitchingEnabled = enabled;
-    logger.info('ConnectionMonitorService', 'Auto-switching', { enabled });
-  }
-
-  public clearBlockedServers(): void {
-    this.status.blockedServers.clear();
-    this.autoSwitchFailedAt.clear();
-    logger.info('ConnectionMonitorService', 'Cleared blocked servers list');
+    return { ...this.status };
   }
 }
 
 export const connectionMonitorService = new ConnectionMonitorService();
-export { ConnectionMonitorService as HealthMonitor };

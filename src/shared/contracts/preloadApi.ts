@@ -13,7 +13,6 @@ import type {
 import type { AppSnapshot } from '@/shared/views/appSnapshot';
 import type {
   ConnectionMonitorEvent,
-  ConnectionMonitorStatus,
   TunCapabilityStatus,
 } from '@/shared/views/monitorStatus';
 import type { UpdateStatus } from '@/shared/views/update';
@@ -39,7 +38,6 @@ export interface IElectronAPI {
   ) => () => void;
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
 
-  getConnectionMonitorStatus: () => Promise<ConnectionMonitorStatus>;
   setAutoSwitching: (enabled: boolean) => Promise<boolean>;
   clearBlockedServers: () => Promise<boolean>;
   getAppSnapshot: () => Promise<AppSnapshot>;

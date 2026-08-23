@@ -12,10 +12,7 @@ import {
 } from './types';
 import { VALID_WINDOWS_TUN_ROUTING } from './tunRouting';
 import { isValidIpv4Address } from './networkAddresses';
-import {
-  normalizeBypassDomains,
-  normalizeBypassIps,
-} from './splitTunneling';
+import { normalizeBypassDomains, normalizeBypassIps } from './splitTunneling';
 
 export { isValidIpv4Address };
 
@@ -58,6 +55,105 @@ export function resolveRemoteDnsServers(
   return custom.length > 0
     ? custom
     : [...DEFAULT_PERFORMANCE_SETTINGS.remoteDnsServers];
+}
+
+export function sameStringList(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+/** Structural equality across every persisted performance field. */
+export function performanceSettingsEqual(
+  left: PerformanceSettings,
+  right: PerformanceSettings,
+): boolean {
+  return (
+    left.muxEnabled === right.muxEnabled &&
+    left.muxConcurrency === right.muxConcurrency &&
+    left.xudpConcurrency === right.xudpConcurrency &&
+    left.xudpProxyUDP443 === right.xudpProxyUDP443 &&
+    left.xhttpMaxConnections === right.xhttpMaxConnections &&
+    left.remoteDnsPreset === right.remoteDnsPreset &&
+    sameStringList(left.remoteDnsServers, right.remoteDnsServers) &&
+    left.tcpFastOpen === right.tcpFastOpen &&
+    left.sniffingRouteOnly === right.sniffingRouteOnly &&
+    left.logLevel === right.logLevel &&
+    left.fingerprint === right.fingerprint &&
+    left.blockAds === right.blockAds &&
+    left.blockBittorrent === right.blockBittorrent &&
+    left.domainStrategy === right.domainStrategy &&
+    left.windowsTunRouting === right.windowsTunRouting &&
+    sameStringList(left.bypassDomains, right.bypassDomains) &&
+    sameStringList(left.bypassIps, right.bypassIps)
+  );
+}
+
+/**
+ * Pre-lean Xray defaults (TCP mux, ad/BT blocks, IPIfNonMatch).
+ * Later keys (DNS, split tunnel, TUN backend) were added after this blob.
+ */
+export const LEGACY_PERFORMANCE_CORE = {
+  muxEnabled: true,
+  muxConcurrency: 8,
+  xudpConcurrency: 16,
+  xudpProxyUDP443: 'reject',
+  tcpFastOpen: true,
+  sniffingRouteOnly: true,
+  logLevel: 'warning',
+  fingerprint: 'chrome',
+  blockAds: true,
+  blockBittorrent: true,
+  domainStrategy: 'IPIfNonMatch',
+} as const;
+
+/**
+ * True when the store still has the old heavy defaults and the user did not
+ * save any later field. A present later key — including an empty bypass list —
+ * is treated as an explicit value and blocks migration.
+ */
+export function isUnmodifiedLegacyPerformanceSettings(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  for (const [key, expected] of Object.entries(LEGACY_PERFORMANCE_CORE)) {
+    if (value[key] !== expected) {
+      return false;
+    }
+  }
+
+  if ('bypassDomains' in value || 'bypassIps' in value) {
+    return false;
+  }
+  if ('remoteDnsPreset' in value && value.remoteDnsPreset !== 'cloudflare') {
+    return false;
+  }
+  if ('remoteDnsServers' in value) {
+    if (
+      !Array.isArray(value.remoteDnsServers) ||
+      !sameStringList(value.remoteDnsServers as string[], [
+        '1.1.1.1',
+        '1.0.0.1',
+      ])
+    ) {
+      return false;
+    }
+  }
+  if ('xhttpMaxConnections' in value && value.xhttpMaxConnections !== 3) {
+    return false;
+  }
+  if (
+    'windowsTunRouting' in value &&
+    value.windowsTunRouting !== 'powershell'
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export function normalizePerformanceSettings(

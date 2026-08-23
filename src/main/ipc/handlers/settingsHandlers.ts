@@ -1,24 +1,20 @@
 import { IpcMainInvokeEvent, ipcMain } from 'electron';
 import { normalizePerformanceSettings } from '@/shared/performanceSettings';
-import {
-  IPC_EVENT_CHANNELS,
-  IPC_INVOKE_CHANNELS,
-  IpcEventChannel,
-  TunCapabilityStatus,
-} from '@/shared/ipc';
+import { IPC_INVOKE_CHANNELS, TunCapabilityStatus } from '@/shared/ipc';
+import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { assertConnectionMode } from '@/main/ipc/validators';
 
 interface RegisterSettingsHandlersParams {
   deps: IpcDependencies;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
-  sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
+  notifySnapshot: (reason?: SnapshotReason) => void;
 }
 
 export function registerSettingsHandlers({
   deps,
   assertTrustedSender,
-  sendToRenderer,
+  notifySnapshot,
 }: RegisterSettingsHandlersParams): void {
   ipcMain.handle(
     IPC_INVOKE_CHANNELS.openExternalUrl,
@@ -53,6 +49,7 @@ export function registerSettingsHandlers({
         (typeof serverId === 'string' && serverId.trim().length === 0)
       ) {
         deps.configService.setSelectedServerId(null);
+        notifySnapshot('settings');
         return true;
       }
       const exists = deps.serverRepository
@@ -62,6 +59,7 @@ export function registerSettingsHandlers({
         throw new Error('Selected server was not found in local configuration');
       }
       deps.configService.setSelectedServerId(serverId);
+      notifySnapshot('settings');
       return true;
     },
   );
@@ -85,12 +83,17 @@ export function registerSettingsHandlers({
             'TUN mode is not supported on this operating system.',
         );
       }
-      if (deps.xrayService.isRunning()) {
+      const phase = deps.connectionManager.getPhase();
+      if (
+        phase === 'connected' ||
+        phase === 'connecting' ||
+        phase === 'switching' ||
+        deps.connectionManager.isBusy()
+      ) {
         throw new Error('Disconnect before changing connection mode.');
       }
       deps.configService.setConnectionMode(mode);
-      // Push an updated snapshot so the renderer stays in sync with the mode.
-      sendToRenderer(IPC_EVENT_CHANNELS.appSnapshotChanged);
+      notifySnapshot('settings');
       return true;
     },
   );

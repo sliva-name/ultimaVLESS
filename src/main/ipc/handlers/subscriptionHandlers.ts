@@ -1,13 +1,12 @@
 import { IpcMainInvokeEvent, ipcMain } from 'electron';
 import {
   AddSubscriptionResult,
-  IPC_EVENT_CHANNELS,
   IPC_INVOKE_CHANNELS,
-  IpcEventChannel,
   SaveManualLinksResult,
 } from '@/shared/ipc';
 import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '@/shared/subscriptionUrls';
 import { logger } from '@/main/services/LoggerService';
+import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import {
   normalizeAddSubscriptionPayload,
@@ -19,7 +18,7 @@ import {
 interface RegisterSubscriptionHandlersParams {
   deps: IpcDependencies;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
-  sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
+  notifySnapshot: (reason?: SnapshotReason) => void;
   queueRefreshAllSubscriptions: (
     manualLinks: string,
   ) => Promise<{ configCount: number; reason?: string }>;
@@ -29,7 +28,7 @@ interface RegisterSubscriptionHandlersParams {
 export function registerSubscriptionHandlers({
   deps,
   assertTrustedSender,
-  sendToRenderer,
+  notifySnapshot,
   queueRefreshAllSubscriptions,
   restartAutoRefreshTimer,
 }: RegisterSubscriptionHandlersParams): void {
@@ -48,9 +47,7 @@ export function registerSubscriptionHandlers({
         url,
         enabled: true,
       });
-      sendToRenderer(
-        IPC_EVENT_CHANNELS.appSnapshotChanged,
-      );
+      notifySnapshot('subscriptions');
 
       const manualLinks = deps.subscriptionRepository.getManualLinks();
       const result = await queueRefreshAllSubscriptions(manualLinks);
@@ -62,9 +59,7 @@ export function registerSubscriptionHandlers({
         .filter((s) => s.subscriptionId === sub.id);
       if (newSubscriptionServers.length === 0) {
         deps.subscriptionRepository.remove(sub.id);
-        sendToRenderer(
-          IPC_EVENT_CHANNELS.appSnapshotChanged,
-        );
+        notifySnapshot('subscriptions');
         restartAutoRefreshTimer();
         return {
           ok: false,
@@ -96,9 +91,7 @@ export function registerSubscriptionHandlers({
       if (!updated) {
         throw new Error(`Subscription not found: ${id}`);
       }
-      sendToRenderer(
-        IPC_EVENT_CHANNELS.appSnapshotChanged,
-      );
+      notifySnapshot('subscriptions');
 
       if (patch.url !== undefined || patch.enabled === true) {
         const manualLinks = deps.subscriptionRepository.getManualLinks();
@@ -108,9 +101,7 @@ export function registerSubscriptionHandlers({
         const existing = deps.serverRepository.list();
         const without = existing.filter((s) => s.subscriptionId !== id);
         deps.serverRepository.saveAll(without);
-        sendToRenderer(
-          IPC_EVENT_CHANNELS.appSnapshotChanged,
-        );
+        notifySnapshot('subscriptions');
         restartAutoRefreshTimer();
       }
 
@@ -132,16 +123,12 @@ export function registerSubscriptionHandlers({
 
       logger.info('IPC', 'delete-subscription', { id });
       deps.subscriptionRepository.remove(id);
-      sendToRenderer(
-        IPC_EVENT_CHANNELS.appSnapshotChanged,
-      );
+      notifySnapshot('subscriptions');
 
       const existing = deps.serverRepository.list();
       const without = existing.filter((s) => s.subscriptionId !== id);
       deps.serverRepository.saveAll(without);
-      sendToRenderer(
-        IPC_EVENT_CHANNELS.appSnapshotChanged,
-      );
+      notifySnapshot('subscriptions');
 
       restartAutoRefreshTimer();
       return true;
@@ -177,9 +164,7 @@ export function registerSubscriptionHandlers({
           url: YANDEX_TRANSLATED_MOBILE_LIST_URL,
           enabled: true,
         });
-        sendToRenderer(
-          IPC_EVENT_CHANNELS.appSnapshotChanged,
-        );
+        notifySnapshot('subscriptions');
       }
 
       const manualLinks = deps.subscriptionRepository.getManualLinks();

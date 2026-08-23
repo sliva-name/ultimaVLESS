@@ -5,19 +5,17 @@ import {
   filterServersNeedingPing,
 } from '@/shared/pingFilters';
 import { PerfTimer } from '@/shared/perfMetrics';
-import {
-  IpcEventChannel,
-  IPC_EVENT_CHANNELS,
-  IPC_INVOKE_CHANNELS,
-} from '@/shared/ipc';
+import { IPC_INVOKE_CHANNELS } from '@/shared/ipc';
+import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { assertBoolean, assertValidServerPayload } from '@/main/ipc/validators';
 import { createSerialQueue } from '@/main/ipc/serialQueue';
+import { catalogListFingerprint } from '@/shared/serverIdentity';
 
 interface RegisterPingHandlersParams {
   deps: IpcDependencies;
-  sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
+  notifySnapshot: (reason?: SnapshotReason) => void;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
   isConnectionBusy: () => boolean;
 }
@@ -27,10 +25,6 @@ const RETRY_TIMEOUT_MS = 3500;
 const RETRY_DELAY_MS = 250;
 const PARTIAL_UPDATE_BATCH_SIZE = 8;
 const MIN_PING_INTERVAL_MS = 30_000;
-
-function buildServersFingerprint(servers: VlessConfig[]): string {
-  return servers.map((s) => `${s.uuid}|${s.address}:${s.port}`).join('||');
-}
 
 function mergePingResults(
   servers: VlessConfig[],
@@ -52,7 +46,7 @@ function mergePingResults(
 
 export function registerPingHandlers({
   deps,
-  sendToRenderer,
+  notifySnapshot,
   assertTrustedSender,
   isConnectionBusy,
 }: RegisterPingHandlersParams): void {
@@ -61,10 +55,11 @@ export function registerPingHandlers({
 
   const pingAllQueue = createSerialQueue();
   const isUnsafePingState = (): boolean => {
-    const monitorStatus = deps.connectionMonitorService.getStatus();
+    const phase = deps.connectionManager.getPhase();
     return (
-      deps.xrayService.isRunning() ||
-      monitorStatus.isConnected ||
+      phase === 'connected' ||
+      phase === 'connecting' ||
+      phase === 'switching' ||
       isConnectionBusy()
     );
   };
@@ -119,8 +114,6 @@ export function registerPingHandlers({
       return servers.map((s) => ({ uuid: s.uuid, latency: s.ping ?? null }));
     }
 
-    const startFingerprint = buildServersFingerprint(servers);
-
     if (
       !force &&
       servers.length > 0 &&
@@ -147,26 +140,35 @@ export function registerPingHandlers({
       }));
     }
 
+    const startedCatalog = catalogListFingerprint(servers);
     const incrementalResults = new Map<string, number | null>();
     let resultsSinceLastPush = 0;
+
+    const persistPingResults = (
+      results: Map<string, number | null>,
+    ): VlessConfig[] => {
+      const latest = deps.serverRepository.list();
+      if (catalogListFingerprint(latest) !== startedCatalog) {
+        logger.debug(
+          'IPC',
+          'Dropping ping-all-servers result (catalog changed)',
+        );
+        return latest;
+      }
+      const merged = mergePingResults(latest, results, Date.now());
+      deps.serverRepository.saveAll(merged);
+      notifySnapshot('ping');
+      return merged;
+    };
 
     const pushPartialUpdate = (): void => {
       if (incrementalResults.size === 0) {
         return;
       }
-      const latest = deps.serverRepository.list();
-      if (buildServersFingerprint(latest) !== startFingerprint) {
-        return;
-      }
       if (isUnsafePingState()) {
         return;
       }
-      const pingTime = Date.now();
-      const merged = mergePingResults(latest, incrementalResults, pingTime);
-      deps.serverRepository.saveAll(merged);
-      sendToRenderer(
-        IPC_EVENT_CHANNELS.appSnapshotChanged,
-      );
+      persistPingResults(incrementalResults);
     };
 
     const results = await deps.pingService.pingServers(
@@ -189,7 +191,6 @@ export function registerPingHandlers({
     );
 
     const currentServers = deps.serverRepository.list();
-    const currentFingerprint = buildServersFingerprint(currentServers);
     if (isUnsafePingState()) {
       logger.debug(
         'IPC',
@@ -201,28 +202,7 @@ export function registerPingHandlers({
       }));
     }
 
-    if (currentFingerprint !== startFingerprint) {
-      logger.debug(
-        'IPC',
-        'Dropping ping-all-servers result (server list changed)',
-        {
-          startCount: servers.length,
-          currentCount: currentServers.length,
-        },
-      );
-      return currentServers.map((server) => ({
-        uuid: server.uuid,
-        latency: server.ping ?? null,
-      }));
-    }
-
-    const pingTime = Date.now();
-    const updatedServers = mergePingResults(currentServers, results, pingTime);
-
-    deps.serverRepository.saveAll(updatedServers);
-    sendToRenderer(
-      IPC_EVENT_CHANNELS.appSnapshotChanged,
-    );
+    const updatedServers = persistPingResults(results);
 
     timer.end({
       force,
@@ -248,8 +228,6 @@ export function registerPingHandlers({
         );
         if (!hasRecovered) return;
 
-        const latestServers = deps.serverRepository.list();
-        const latestFingerprint = buildServersFingerprint(latestServers);
         if (isUnsafePingState()) {
           logger.debug(
             'IPC',
@@ -257,25 +235,8 @@ export function registerPingHandlers({
           );
           return;
         }
-        if (latestFingerprint !== startFingerprint) {
-          logger.debug(
-            'IPC',
-            'Dropping retry ping results (server list changed)',
-          );
-          return;
-        }
 
-        const retryPingTime = Date.now();
-        const mergedServers = mergePingResults(
-          latestServers,
-          retryResults,
-          retryPingTime,
-        );
-
-        deps.serverRepository.saveAll(mergedServers);
-        sendToRenderer(
-          IPC_EVENT_CHANNELS.appSnapshotChanged,
-        );
+        persistPingResults(retryResults);
       })().catch((error) => {
         logger.error('IPC', 'Background retry ping failed', error);
       });

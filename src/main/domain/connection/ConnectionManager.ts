@@ -3,10 +3,7 @@ import { app } from 'electron';
 import { APP_CONSTANTS, PRIMARY_RUNTIME_PORTS } from '@/shared/constants';
 import type { SessionPhase } from '@/shared/ipc';
 import { VlessConfig } from '@/shared/types';
-import {
-  configService,
-  ConfigService,
-} from '@/main/services/ConfigService';
+import { configService, ConfigService } from '@/main/services/ConfigService';
 import {
   connectionMonitorService,
   ConnectionMonitorService,
@@ -20,7 +17,10 @@ import {
   systemProxyService,
   SystemProxyService,
 } from '@/main/services/SystemProxyService';
-import { tunRouteService, TunRouteService } from '@/main/services/TunRouteService';
+import {
+  tunRouteService,
+  TunRouteService,
+} from '@/main/services/TunRouteService';
 import { xrayService, XrayService } from '@/main/services/XrayService';
 import { logger } from '@/main/services/LoggerService';
 import { CONNECTION_MONITOR_TIMING } from '@/main/services/connectionMonitor/timing';
@@ -36,18 +36,22 @@ import {
 import { createRuntimeValidator } from './RuntimeValidator';
 import {
   ConnectionOperationAbortedError,
+  isConnectionOperationCancelled,
   throwIfAborted,
 } from './abort';
 import {
   createAutoSwitchPolicy,
   type ConnectionPolicy,
 } from './ConnectionPolicy';
+import { SessionPolicyState } from './SessionPolicyState';
 import type { ServerRepository } from '@/main/domain/server/ServerRepository';
 import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
+import { isSameServerIdentity } from '@/shared/serverIdentity';
 import {
   activeServerIdFromState,
   connectionStateToSessionPhase,
   isConnectionStateInFlight,
+  lastErrorFromState,
   type ConnectionState,
 } from './ConnectionState';
 
@@ -69,17 +73,14 @@ interface ConnectionManagerDeps {
   policy?: ConnectionPolicy;
 }
 
-export class ConnectionControllerRelaunchError extends Error {
+export class ConnectionManagerRelaunchError extends Error {
   public readonly relaunched = true;
 
   constructor(message = 'Restarting as administrator') {
     super(message);
-    this.name = 'ConnectionControllerRelaunchError';
+    this.name = 'ConnectionManagerRelaunchError';
   }
 }
-
-/** @deprecated Use SessionPhase from shared/ipc */
-export type ConnectionControllerState = SessionPhase;
 
 const ALLOWED_TRANSITIONS: Record<SessionPhase, readonly SessionPhase[]> = {
   idle: ['connecting', 'disconnecting', 'failed'],
@@ -96,16 +97,22 @@ type InFlightState = Extract<
 >;
 
 /**
- * Single owner of VPN session state. Data-plane mutations go through
- * ConnectionRuntime. HealthMonitor only emits events; policy decides.
+ * Session owner. The data plane (`ConnectionRuntime`) is transactional:
+ * start/switch either finish up or tear themselves down.
+ *
+ * The queue has one running task. A new public call aborts the current task
+ * and then enqueues the replacement. The aborted task must not touch the
+ * stack — the replacement is the owner. There is no follow-up cleanup
+ * enqueue after connect/switch.
  */
 export class ConnectionManager extends EventEmitter {
   private operationQueue: Promise<void> = Promise.resolve();
   private state: ConnectionState = { type: 'disconnected' };
   private generation = 0;
-  private activeOperation: Promise<unknown> | null = null;
   private operationAbort: AbortController | null = null;
   private autoSwitchTimer: NodeJS.Timeout | null = null;
+  private healthPolicyArmed = false;
+  private readonly policyState = new SessionPolicyState();
   private readonly runtime: ConnectionRuntime;
   private readonly servers: ServerRepository;
   private readonly policy: ConnectionPolicy;
@@ -156,13 +163,63 @@ export class ConnectionManager extends EventEmitter {
     return connectionStateToSessionPhase(this.state);
   }
 
-  /** @deprecated Use getPhase() */
-  public getState(): SessionPhase {
-    return this.getPhase();
+  public getLastError(): string | null {
+    return lastErrorFromState(this.state);
   }
 
   public isBusy(): boolean {
-    return isConnectionStateInFlight(this.state) || this.activeOperation !== null;
+    return isConnectionStateInFlight(this.state);
+  }
+
+  public getBlockedServerIds(): string[] {
+    return this.policyState.getBlockedServerIds();
+  }
+
+  public getAutoSwitchingEnabled(): boolean {
+    return this.policyState.getAutoSwitchingEnabled();
+  }
+
+  public setAutoSwitchingEnabled(enabled: boolean): void {
+    this.policyState.setAutoSwitchingEnabled(enabled);
+    this.emit('policy-changed');
+  }
+
+  public clearBlockedServers(): void {
+    this.policyState.clearBlocked();
+    this.emit('policy-changed');
+  }
+
+  /**
+   * Catalog refresh can rotate the stored uuid while the connection
+   * fingerprint stays the same. Session owns the live id — remap it here,
+   * do not infer from monitor or a shared CDN host:port.
+   */
+  public reconcileActiveServer(
+    nextServers: VlessConfig[],
+    previousServers: VlessConfig[],
+  ): string | null {
+    const liveId = activeServerIdFromState(this.state);
+    if (!liveId) {
+      return null;
+    }
+    const exact = nextServers.find((server) => server.uuid === liveId);
+    if (exact) {
+      this.deps.connectionMonitorService.setProbeTarget(exact);
+      return liveId;
+    }
+    const previous = previousServers.find((server) => server.uuid === liveId);
+    if (!previous) {
+      return liveId;
+    }
+    const remapped = nextServers.find((server) =>
+      isSameServerIdentity(server, previous),
+    );
+    if (!remapped) {
+      return liveId;
+    }
+    this.replaceActiveServerId(liveId, remapped.uuid);
+    this.deps.connectionMonitorService.setProbeTarget(remapped);
+    return remapped.uuid;
   }
 
   private nextGeneration(): number {
@@ -175,6 +232,7 @@ export class ConnectionManager extends EventEmitter {
       clearTimeout(this.autoSwitchTimer);
       this.autoSwitchTimer = null;
     }
+    this.healthPolicyArmed = false;
     this.operationAbort?.abort();
   }
 
@@ -186,18 +244,30 @@ export class ConnectionManager extends EventEmitter {
     };
   }
 
+  private replaceActiveServerId(fromId: string, toId: string): void {
+    if (fromId === toId) {
+      return;
+    }
+    if (this.state.type === 'connected' || this.state.type === 'starting') {
+      this.transitionTo({ ...this.state, serverId: toId });
+      return;
+    }
+    if (this.state.type === 'switching') {
+      this.transitionTo({
+        ...this.state,
+        from: this.state.from === fromId ? toId : this.state.from,
+        to: this.state.to === fromId ? toId : this.state.to,
+      });
+    }
+  }
+
   private transitionTo(next: ConnectionState): void {
     const fromPhase = connectionStateToSessionPhase(this.state);
     const toPhase = connectionStateToSessionPhase(next);
     if (fromPhase !== toPhase) {
       const allowed = ALLOWED_TRANSITIONS[fromPhase];
       if (!allowed.includes(toPhase)) {
-        logger.warn('ConnectionManager', 'Unexpected phase transition', {
-          from: fromPhase,
-          to: toPhase,
-          fromState: this.state.type,
-          toState: next.type,
-        });
+        throw new Error(`Illegal session transition ${fromPhase} → ${toPhase}`);
       }
     }
     this.state = next;
@@ -212,7 +282,6 @@ export class ConnectionManager extends EventEmitter {
     task: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     const run = this.operationQueue.then(async () => {
-      this.activeOperation = Promise.resolve();
       const abort = new AbortController();
       this.operationAbort = abort;
       const inFlight = createInFlight();
@@ -221,7 +290,16 @@ export class ConnectionManager extends EventEmitter {
         const result = await task(abort.signal);
         throwIfAborted(abort.signal);
         if (inFlight.type === 'stopping') {
-          this.transitionTo({ type: 'disconnected' });
+          this.transitionTo(
+            inFlight.outcome === 'failed'
+              ? {
+                  type: 'failed',
+                  reason: inFlight.reason ?? {
+                    message: 'Connection failed',
+                  },
+                }
+              : { type: 'disconnected' },
+          );
         } else {
           const serverId =
             this.state.type === 'switching'
@@ -234,16 +312,22 @@ export class ConnectionManager extends EventEmitter {
               ? this.state.mode
               : inFlight.mode;
           this.transitionTo({ type: 'connected', serverId, mode });
+          this.healthPolicyArmed = false;
         }
         return result;
       } catch (error) {
         if (
-          error instanceof ConnectionControllerRelaunchError ||
-          error instanceof ConnectionOperationAbortedError ||
+          error instanceof ConnectionManagerRelaunchError ||
+          isConnectionOperationCancelled(error) ||
           abort.signal.aborted
         ) {
           throw error;
         }
+        this.healthPolicyArmed = false;
+        this.deps.connectionMonitorService.stopMonitoring({
+          message: error instanceof Error ? error.message : String(error),
+          preserveLastError: true,
+        });
         this.transitionTo({
           type: 'failed',
           reason: {
@@ -251,8 +335,6 @@ export class ConnectionManager extends EventEmitter {
           },
         });
         throw error;
-      } finally {
-        this.activeOperation = null;
       }
     });
     this.operationQueue = run.then(
@@ -289,7 +371,7 @@ export class ConnectionManager extends EventEmitter {
       if (relaunched) {
         this.deps.app.releaseSingleInstanceLock();
         this.deps.app.quit();
-        throw new ConnectionControllerRelaunchError();
+        throw new ConnectionManagerRelaunchError();
       }
       this.deps.configService.clearPendingTunReconnect();
       throw new Error(
@@ -308,22 +390,6 @@ export class ConnectionManager extends EventEmitter {
   ): Promise<void> {
     const server = this.getServer(serverId);
     const spec = this.buildSpec(server);
-    const monitorStatus = this.deps.connectionMonitorService.getStatus();
-
-    if (
-      this.runtime.status().xrayRunning &&
-      monitorStatus.isConnected &&
-      monitorStatus.currentServer?.uuid === server.uuid &&
-      (monitorStatus.lastHealthState === 'healthy' ||
-        monitorStatus.lastHealthState === 'idle') &&
-      monitorStatus.localProxyReachable !== false
-    ) {
-      logger.info('ConnectionManager', 'connect skipped: already connected', {
-        serverId: server.uuid.substring(0, 8),
-        mode: spec.mode,
-      });
-      return;
-    }
 
     if (spec.mode === 'tun') {
       await this.ensureTunReady(server);
@@ -337,6 +403,13 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public connect(serverId: string): Promise<void> {
+    if (
+      this.state.type === 'connected' &&
+      this.state.serverId === serverId &&
+      this.runtime.status().xrayRunning
+    ) {
+      return Promise.resolve();
+    }
     this.abortCurrentOperation();
     return this.enqueue(
       () => ({
@@ -346,25 +419,7 @@ export class ConnectionManager extends EventEmitter {
         generation: this.nextGeneration(),
       }),
       (signal) => this.connectUnsafe(serverId, signal),
-    ).catch(async (error) => {
-      if (!(error instanceof ConnectionControllerRelaunchError)) {
-        if (this.deps.connectionMonitorService.getStatus().isConnected) {
-          this.deps.connectionMonitorService.recordError(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-        try {
-          await this.cleanupAfterFailure();
-        } catch (cleanupError) {
-          logger.error(
-            'ConnectionManager',
-            'Failed to cleanup after connect failure',
-            cleanupError,
-          );
-        }
-      }
-      throw error;
-    });
+    );
   }
 
   public disconnect(
@@ -372,8 +427,13 @@ export class ConnectionManager extends EventEmitter {
   ): Promise<void> {
     this.abortCurrentOperation();
     return this.enqueue(
-      () => ({ type: 'stopping', generation: this.nextGeneration() }),
+      () => ({
+        type: 'stopping',
+        generation: this.nextGeneration(),
+        outcome: 'idle',
+      }),
       async () => {
+        this.healthPolicyArmed = false;
         if (!options.preservePendingTunReconnect) {
           this.deps.configService.clearPendingTunReconnect();
         }
@@ -403,23 +463,28 @@ export class ConnectionManager extends EventEmitter {
     );
   }
 
-  /** @deprecated Auto-switch now runs inside ConnectionManager. */
-  public transitionForAutoSwitch(server: VlessConfig): Promise<void> {
-    return this.enqueue(
-      () => ({
-        type: 'switching',
-        from: activeServerIdFromState(this.state) ?? '',
-        to: server.uuid,
-        mode: this.deps.configService.getConnectionMode(),
-        generation: this.nextGeneration(),
-      }),
-      async (signal) => {
-        await this.runtime.switch(this.buildSpec(server), signal);
-      },
+  /**
+   * UAC relaunch persist is a settings-store port. Session consumes it and
+   * either adopts the already-live id or starts TUN again.
+   */
+  public async resumePendingTunAfterRelaunch(): Promise<boolean> {
+    const pendingId = this.deps.configService.consumePendingTunReconnect();
+    if (!pendingId) {
+      return false;
+    }
+    if (this.state.type === 'connected') {
+      const liveId = activeServerIdFromState(this.state);
+      const selectedId = this.deps.configService.getSelectedServerId();
+      if (liveId === pendingId || liveId === selectedId) {
+        return true;
+      }
+    }
+    return this.resumePendingTun(
+      this.deps.configService.getSelectedServerId() ?? pendingId,
     );
   }
 
-  public resumePendingTun(serverId: string): Promise<boolean> {
+  private resumePendingTun(serverId: string): Promise<boolean> {
     if (this.deps.configService.getConnectionMode() !== 'tun') {
       return Promise.resolve(false);
     }
@@ -442,13 +507,18 @@ export class ConnectionManager extends EventEmitter {
     );
   }
 
-  public cleanupAfterFailure(): Promise<void> {
-    this.abortCurrentOperation();
+  public cleanupAfterFailure(reason?: string): Promise<void> {
+    const message = reason ?? 'Connection cleanup';
     return this.enqueue(
-      () => ({ type: 'stopping', generation: this.nextGeneration() }),
+      () => ({
+        type: 'stopping',
+        generation: this.nextGeneration(),
+        outcome: 'failed',
+        reason: { message },
+      }),
       async () => {
         this.deps.connectionMonitorService.stopMonitoring({
-          message: 'Connection cleanup',
+          message,
           preserveLastError: true,
         });
         await this.runtime.stop();
@@ -457,57 +527,79 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public async handleHealthFailure(event: HealthFailureEvent): Promise<void> {
-    if (this.state.type !== 'connected') {
+    if (this.state.type !== 'connected' || this.healthPolicyArmed) {
       return;
     }
-    const monitor = this.deps.connectionMonitorService;
-    monitor.pruneExpiredBlockedServers();
+    this.healthPolicyArmed = true;
+    this.policyState.pruneExpired();
+    if (event.blocking) {
+      this.policyState.markBlocked(event.server.uuid);
+      this.emit('policy-changed');
+    }
     const decision = this.policy.onHealthFailure({
       server: event.server,
       reason: event.reason,
       blocking: event.blocking,
-      autoSwitchEnabled: monitor.getAutoSwitchingEnabled(),
+      autoSwitchEnabled: this.policyState.getAutoSwitchingEnabled(),
       servers: this.servers.list(),
-      blockedServerIds: new Set(monitor.getStatus().blockedServers),
+      blockedServerIds: new Set(this.policyState.getBlockedServerIds()),
     });
 
     if (decision.action === 'switch') {
-      this.scheduleAutoSwitch(decision.candidates, event.server);
+      if (!this.scheduleAutoSwitch(decision.candidates, event.server)) {
+        if (!this.autoSwitchTimer) {
+          this.healthPolicyArmed = false;
+        }
+      }
       return;
     }
     if (decision.action === 'disconnect') {
       try {
-        await this.cleanupAfterFailure();
+        await this.cleanupAfterFailure(event.reason);
       } catch (error) {
-        logger.error('ConnectionManager', 'Cleanup after health failure failed', error);
+        logger.error(
+          'ConnectionManager',
+          'Cleanup after health failure failed',
+          error,
+        );
+      } finally {
+        this.healthPolicyArmed = false;
       }
+      return;
     }
+    this.healthPolicyArmed = false;
   }
 
   public async handleRuntimeFailure(
     reason: string,
     options: { localProxyReachable?: boolean | null } = {},
   ): Promise<void> {
-    const recorded =
-      this.deps.connectionMonitorService.handleCriticalConnectionFailure(
-        reason,
-        options,
-      );
-    if (!recorded) {
+    this.deps.connectionMonitorService.noteFailure(reason, options);
+    if (this.state.type !== 'connected') {
       return;
     }
-    const server = this.deps.connectionMonitorService.getStatus().currentServer;
-    if (server) {
-      this.handleHealthFailure({ server, reason, blocking: true });
+    const server = this.servers.get(this.state.serverId);
+    if (!server) {
+      logger.warn(
+        'ConnectionManager',
+        'Runtime failure without a catalog server',
+        { reason },
+      );
+      return;
     }
+    await this.handleHealthFailure({
+      server,
+      reason,
+      blocking: true,
+    });
   }
 
   private scheduleAutoSwitch(
     candidates: VlessConfig[],
     from: VlessConfig,
-  ): void {
+  ): boolean {
     if (this.autoSwitchTimer || this.state.type === 'switching') {
-      return;
+      return false;
     }
     logger.info('ConnectionManager', 'Scheduling auto-switch', {
       from: from.name,
@@ -515,8 +607,11 @@ export class ConnectionManager extends EventEmitter {
     });
     this.autoSwitchTimer = setTimeout(() => {
       this.autoSwitchTimer = null;
-      void this.runAutoSwitch(candidates, from);
+      void this.runAutoSwitch(candidates, from).finally(() => {
+        this.healthPolicyArmed = false;
+      });
     }, CONNECTION_MONITOR_TIMING.autoSwitchDelayMs);
+    return true;
   }
 
   private async runAutoSwitch(
@@ -539,13 +634,6 @@ export class ConnectionManager extends EventEmitter {
         async (signal) => {
           for (const candidate of candidates) {
             throwIfAborted(signal);
-            this.transitionTo({
-              type: 'switching',
-              from: from.uuid,
-              to: candidate.uuid,
-              mode: this.deps.configService.getConnectionMode(),
-              generation: this.generation,
-            });
             monitor.notifySwitching(candidate, from.name);
             try {
               await this.runtime.switch(this.buildSpec(candidate), signal);
@@ -562,35 +650,29 @@ export class ConnectionManager extends EventEmitter {
               }
               const reason =
                 error instanceof Error ? error.message : String(error);
-              monitor.markServerAsBlocked(candidate.uuid);
+              this.policyState.markBlocked(candidate.uuid);
+              this.emit('policy-changed');
               logger.warn('ConnectionManager', 'Auto-switch candidate failed', {
                 server: candidate.name,
                 reason,
               });
             }
           }
+          monitor.stopMonitoring({
+            message: 'Auto-switch failed',
+            preserveLastError: true,
+          });
+          await this.runtime.stop();
           throw new Error('Auto-switch failed: no working servers found');
         },
       );
     } catch (error) {
-      if (error instanceof ConnectionOperationAbortedError) {
+      if (isConnectionOperationCancelled(error)) {
         return;
       }
       logger.error('ConnectionManager', 'Auto-switch failed', error);
-      try {
-        await this.cleanupAfterFailure();
-      } catch (cleanupError) {
-        logger.error(
-          'ConnectionManager',
-          'Cleanup after auto-switch dead end failed',
-          cleanupError,
-        );
-      }
     }
   }
 }
 
-export { ConnectionManager as ConnectionController };
-
 export const connectionManager = new ConnectionManager();
-export const connectionController = connectionManager;

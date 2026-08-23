@@ -10,3 +10,7 @@ export function throwIfAborted(signal?: AbortSignal): void {
     throw new ConnectionOperationAbortedError();
   }
 }
+
+export function isConnectionOperationCancelled(error: unknown): boolean {
+  return error instanceof ConnectionOperationAbortedError;
+}

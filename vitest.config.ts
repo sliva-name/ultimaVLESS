@@ -9,6 +9,7 @@ export default defineConfig({
     environmentMatchGlobs: [
       ['**/src/renderer/**/*.test.ts', 'jsdom'],
       ['**/src/renderer/**/*.test.tsx', 'jsdom'],
+      ['**/src/test/domain/**/*.test.tsx', 'jsdom'],
     ],
     setupFiles: ['./src/test/setup.ts'],
     coverage: {

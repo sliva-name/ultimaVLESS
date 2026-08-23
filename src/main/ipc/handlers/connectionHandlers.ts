@@ -2,7 +2,7 @@ import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { IPC_INVOKE_CHANNELS } from '@/shared/ipc';
-import { ConnectionControllerRelaunchError } from '@/main/services/ConnectionController';
+import { ConnectionManagerRelaunchError } from '@/main/domain/connection/ConnectionManager';
 
 function assertServerId(payload: unknown): string {
   if (typeof payload !== 'string' || payload.trim().length === 0) {
@@ -20,8 +20,8 @@ export function registerConnectionHandlers({
   deps,
   assertTrustedSender,
 }: RegisterConnectionHandlersParams): void {
-  const handleConnectFailure = async (error: unknown) => {
-    if (error instanceof ConnectionControllerRelaunchError) {
+  const handleConnectFailure = (error: unknown) => {
+    if (error instanceof ConnectionManagerRelaunchError) {
       return {
         ok: false as const,
         error: error.message,
@@ -30,22 +30,6 @@ export function registerConnectionHandlers({
     }
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('IPC', 'Failed to connect', error);
-    // Only feed the monitor when a monitoring session is actually active;
-    // a failure before startMonitoring (config compile, spawn) must surface
-    // through the IPC response alone.
-    if (deps.connectionMonitorService.getStatus().isConnected) {
-      deps.connectionMonitorService.recordError(errorMessage);
-    }
-
-    try {
-      await deps.connectionController.cleanupAfterFailure();
-    } catch (cleanupError) {
-      logger.error(
-        'IPC',
-        'Failed to cleanup network stack after connect failure',
-        cleanupError,
-      );
-    }
     return { ok: false as const, error: errorMessage };
   };
 
@@ -58,7 +42,7 @@ export function registerConnectionHandlers({
         serverId: requestedServerId.substring(0, 8),
       });
       try {
-        await deps.connectionController.connect(requestedServerId);
+        await deps.connectionManager.connect(requestedServerId);
         return { ok: true as const };
       } catch (error) {
         return handleConnectFailure(error);
@@ -72,7 +56,7 @@ export function registerConnectionHandlers({
       assertTrustedSender(event);
       logger.info('IPC', 'disconnect');
       try {
-        await deps.connectionController.disconnect();
+        await deps.connectionManager.disconnect();
         return { ok: true as const };
       } catch (error) {
         logger.error('IPC', 'Failed to disconnect', error);

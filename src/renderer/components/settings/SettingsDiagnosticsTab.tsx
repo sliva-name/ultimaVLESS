@@ -10,16 +10,13 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { VlessConfig } from '@/shared/types';
-import { ConnectionMonitorEvent, ConnectionMonitorStatus } from '@/shared/ipc';
+import { ConnectionMonitorEvent, type AppSnapshot } from '@/shared/ipc';
 import { Toggle } from '@/renderer/components/ui';
 
 interface SettingsDiagnosticsTabProps {
   servers: VlessConfig[];
-  monitorStatus: ConnectionMonitorStatus | null;
+  snapshot: AppSnapshot;
   recentEvents: ConnectionMonitorEvent[];
-  autoSwitching: boolean;
-  onAutoSwitchingChange: (next: boolean) => void;
-  onReloadMonitorStatus: () => void;
 }
 
 const formatTimestamp = (value: number | null | undefined) =>
@@ -30,43 +27,37 @@ const capitalize = (value: string): string =>
 
 export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
   servers,
-  monitorStatus,
+  snapshot,
   recentEvents,
-  autoSwitching,
-  onAutoSwitchingChange,
-  onReloadMonitorStatus,
 }) => {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
-
-  const xrayStateLabel = monitorStatus?.xrayState
-    ? capitalize(monitorStatus.xrayState)
-    : null;
-  const healthStateLabel = monitorStatus?.lastHealthState
-    ? capitalize(monitorStatus.lastHealthState)
-    : null;
-
-  const handleToggleAutoSwitching = useCallback(
-    async (enabled: boolean) => {
-      try {
-        await window.electronAPI.setAutoSwitching(enabled);
-        onAutoSwitchingChange(enabled);
-      } catch (err) {
-        console.error('Failed to toggle auto-switching:', err);
-      }
-    },
-    [onAutoSwitchingChange],
+  const { session, health, process, recovery, autoSwitchingEnabled } = snapshot;
+  const activeServer = servers.find(
+    (server) => server.uuid === session.activeServerId,
   );
+
+  const xrayStateLabel = process.state ? capitalize(process.state) : null;
+  const healthStateLabel = health.lastHealthState
+    ? capitalize(health.lastHealthState)
+    : null;
+
+  const handleToggleAutoSwitching = useCallback(async (enabled: boolean) => {
+    try {
+      await window.electronAPI.setAutoSwitching(enabled);
+    } catch (err) {
+      console.error('Failed to toggle auto-switching:', err);
+    }
+  }, []);
 
   const handleClearBlocked = useCallback(async () => {
     try {
       await window.electronAPI.clearBlockedServers();
-      onReloadMonitorStatus();
     } catch (err) {
       console.error('Failed to clear blocked servers:', err);
     }
-  }, [onReloadMonitorStatus]);
+  }, []);
 
   const handleCopyLogs = useCallback(async () => {
     setCopyError(null);
@@ -109,38 +100,37 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
           </div>
           <Toggle
             size="md"
-            checked={autoSwitching}
+            checked={autoSwitchingEnabled}
             onChange={handleToggleAutoSwitching}
             ariaLabel={t('settings.diagnostics.autoSwitching')}
           />
         </div>
 
-        {monitorStatus && (
-          <div className="mt-4 pt-4 border-t border-gray-700/50 space-y-3">
-            {monitorStatus.isConnected && monitorStatus.currentServer && (
+        <div className="mt-4 pt-4 border-t border-gray-700/50 space-y-3">
+            {session.phase === 'connected' && activeServer && (
               <DiagRow label={t('settings.diagnostics.currentServer')}>
                 <span className="text-white font-medium text-right truncate">
-                  {monitorStatus.currentServer.name}
+                  {activeServer.name}
                 </span>
               </DiagRow>
             )}
-            {monitorStatus.blockedServers.length > 0 && (
+            {session.blockedServerIds.length > 0 && (
               <DiagRow label={t('settings.diagnostics.blockedServers')}>
                 <span className="text-orange-400 font-medium">
-                  {monitorStatus.blockedServers.length}
+                  {session.blockedServerIds.length}
                 </span>
               </DiagRow>
             )}
-            {monitorStatus.lastError && (
+            {session.lastError && (
               <DiagError
-                label={`${t('settings.diagnostics.lastError')}: ${monitorStatus.lastError}`}
+                label={`${t('settings.diagnostics.lastError')}: ${session.lastError}`}
               />
             )}
             {xrayStateLabel && (
               <DiagRow label={t('settings.diagnostics.xrayState')}>
                 <span
                   className={
-                    monitorStatus.xrayRunning
+                    process.xrayRunning
                       ? 'text-green-400 font-medium'
                       : 'text-gray-300 font-medium'
                   }
@@ -151,7 +141,7 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
             )}
             <DiagRow label={t('settings.diagnostics.lastHealthCheck')}>
               <span className="text-gray-300">
-                {formatTimestamp(monitorStatus.lastHealthCheckAt)}
+                {formatTimestamp(health.lastHealthCheckAt)}
               </span>
             </DiagRow>
             {healthStateLabel && (
@@ -161,80 +151,78 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
             )}
             <DiagRow label={t('settings.diagnostics.localProxy')}>
               <span className="text-gray-300">
-                {monitorStatus.localProxyReachable == null
+                {health.localProxyReachable == null
                   ? 'n/a'
-                  : monitorStatus.localProxyReachable
+                  : health.localProxyReachable
                     ? 'yes'
                     : 'no'}
               </span>
             </DiagRow>
-            {(monitorStatus.lastHealthFailureReason ||
-              monitorStatus.xrayLastFailureReason ||
-              monitorStatus.recoveryInProgress ||
-              monitorStatus.recoveryBlocked ||
-              monitorStatus.lastFatalReason) && (
+            {(health.lastHealthFailureReason ||
+              process.lastFailureReason ||
+              recovery.recoveryInProgress ||
+              recovery.recoveryBlocked ||
+              recovery.lastFatalReason) && (
               <div className="space-y-2 pt-2">
-                {monitorStatus.lastHealthFailureReason && (
+                {health.lastHealthFailureReason && (
                   <DiagError
-                    label={`${t('settings.diagnostics.healthFailure')}: ${monitorStatus.lastHealthFailureReason}`}
+                    label={`${t('settings.diagnostics.healthFailure')}: ${health.lastHealthFailureReason}`}
                   />
                 )}
-                {monitorStatus.xrayLastFailureReason && (
+                {process.lastFailureReason && (
                   <DiagError
-                    label={`${t('settings.diagnostics.xrayFailure')}: ${monitorStatus.xrayLastFailureReason}`}
+                    label={`${t('settings.diagnostics.xrayFailure')}: ${process.lastFailureReason}`}
                   />
                 )}
-                {(monitorStatus.recoveryInProgress ||
-                  monitorStatus.recoveryBlocked) && (
+                {(recovery.recoveryInProgress || recovery.recoveryBlocked) && (
                   <div className="flex items-start gap-2.5 text-sm">
                     <RefreshCw
-                      className={`w-4 h-4 mt-0.5 shrink-0 ${monitorStatus.recoveryInProgress ? 'text-blue-400 animate-spin' : 'text-orange-400'}`}
+                      className={`w-4 h-4 mt-0.5 shrink-0 ${recovery.recoveryInProgress ? 'text-blue-400 animate-spin' : 'text-orange-400'}`}
                     />
                     <span className="text-gray-400 flex-1 leading-relaxed">
-                      {monitorStatus.recoveryInProgress
+                      {recovery.recoveryInProgress
                         ? t('settings.diagnostics.recoveryInProgress', {
-                            count: monitorStatus.recoveryAttemptCount,
+                            count: recovery.recoveryAttemptCount,
                           })
                         : t('settings.diagnostics.recoveryPaused', {
-                            count: monitorStatus.recoveryAttemptCount,
+                            count: recovery.recoveryAttemptCount,
                           })}
-                      {monitorStatus.lastRecoveryTrigger
-                        ? ` via ${monitorStatus.lastRecoveryTrigger}`
+                      {recovery.lastRecoveryTrigger
+                        ? ` via ${recovery.lastRecoveryTrigger}`
                         : ''}
-                      {monitorStatus.lastRecoveryReason
-                        ? `: ${monitorStatus.lastRecoveryReason}`
+                      {recovery.lastRecoveryReason
+                        ? `: ${recovery.lastRecoveryReason}`
                         : ''}
                     </span>
                   </div>
                 )}
-                {monitorStatus.lastFatalReason && (
+                {recovery.lastFatalReason && (
                   <div className="flex items-start gap-2.5 text-sm">
                     <X className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
                     <span
                       className="text-gray-400 flex-1 min-w-0 break-words"
-                      title={monitorStatus.lastFatalReason}
+                      title={recovery.lastFatalReason}
                     >
                       {t('settings.diagnostics.lastFatal')}:{' '}
-                      {monitorStatus.lastFatalReason}
+                      {recovery.lastFatalReason}
                     </span>
                   </div>
                 )}
                 <DiagRow label={t('settings.diagnostics.lastRecovery')}>
                   <span className="text-gray-300">
-                    {formatTimestamp(monitorStatus.lastRecoveryAt)}
+                    {formatTimestamp(recovery.lastRecoveryAt)}
                   </span>
                 </DiagRow>
               </div>
             )}
-          </div>
-        )}
+        </div>
 
-        {monitorStatus && monitorStatus.blockedServers.length > 0 && (
+        {session.blockedServerIds.length > 0 && (
           <div className="mt-4 pt-4 border-t border-gray-700/50">
             <div className="flex items-center justify-between mb-3 gap-2">
               <span className="text-sm text-gray-400">
                 {t('settings.diagnostics.blockedServers')} (
-                {monitorStatus.blockedServers.length})
+                {session.blockedServerIds.length})
               </span>
               <button
                 type="button"
@@ -246,12 +234,12 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
               </button>
             </div>
             <div className="space-y-2 max-h-28 overflow-y-auto">
-              {monitorStatus.blockedServers.map((serverId) => {
+              {session.blockedServerIds.map((serverId) => {
                 const server = servers.find((s) => s.uuid === serverId);
                 const serverName =
                   server?.name ??
-                  (monitorStatus.currentServer?.uuid === serverId
-                    ? monitorStatus.currentServer.name
+                  (activeServer?.uuid === serverId
+                    ? activeServer.name
                     : t('settings.diagnostics.serverShort', {
                         id: serverId.substring(0, 8),
                       }));

@@ -45,7 +45,7 @@ function AppShell() {
         subscriptions={subscriptions}
         selectedServer={selectedServer}
         isConnected={isConnected}
-        selectionLocked={session.phase !== 'idle'}
+        selectionLocked={isConnectionBusy || isConnected}
         isRefreshingPings={isRefreshingPings}
         onSelectServer={selectServer}
         onOpenSettings={handleOpenSettings}

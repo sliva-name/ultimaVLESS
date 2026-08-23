@@ -25,7 +25,12 @@ export type ConnectionState =
       mode: ConnectionMode;
       generation: number;
     }
-  | { type: 'stopping'; generation: number }
+  | {
+      type: 'stopping';
+      generation: number;
+      outcome: 'idle' | 'failed';
+      reason?: ConnectionError;
+    }
   | { type: 'failed'; reason: ConnectionError };
 
 export function connectionStateToSessionPhase(
@@ -53,6 +58,16 @@ export function isConnectionStateInFlight(state: ConnectionState): boolean {
     state.type === 'switching' ||
     state.type === 'stopping'
   );
+}
+
+export function lastErrorFromState(state: ConnectionState): string | null {
+  if (state.type === 'failed') {
+    return state.reason.message;
+  }
+  if (state.type === 'stopping' && state.outcome === 'failed') {
+    return state.reason?.message ?? null;
+  }
+  return null;
 }
 
 export function activeServerIdFromState(state: ConnectionState): string | null {

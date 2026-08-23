@@ -14,7 +14,7 @@ import {
   hasTunPrivileges,
   requestTunPrivilegesRelaunch,
 } from '@/main/services/PrivilegeService';
-import { connectionController } from '@/main/services/ConnectionController';
+import { connectionManager } from '@/main/domain/connection/ConnectionManager';
 import { systemProxyService } from '@/main/services/SystemProxyService';
 import { tunRouteService } from '@/main/services/TunRouteService';
 import { xrayService } from '@/main/services/XrayService';
@@ -44,7 +44,7 @@ export interface IpcDependencies {
   configService: typeof configService;
   serverRepository: ServerRepository;
   subscriptionRepository: SubscriptionRepository;
-  connectionController: typeof connectionController;
+  connectionManager: typeof connectionManager;
   connectionMonitorService: typeof connectionMonitorService;
   isElevatedOnWindows: typeof isElevatedOnWindows;
   relaunchAsAdminOnWindows: typeof relaunchAsAdminOnWindows;
@@ -75,7 +75,7 @@ export function createIpcDependencies(): IpcDependencies {
     configService,
     serverRepository: getServerRepository(),
     subscriptionRepository: getSubscriptionRepository(),
-    connectionController,
+    connectionManager,
     connectionMonitorService,
     isElevatedOnWindows,
     relaunchAsAdminOnWindows,

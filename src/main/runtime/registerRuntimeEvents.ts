@@ -1,4 +1,6 @@
 import type { VlessConfig } from '@/shared/types';
+import { toSafeServer } from '@/shared/serverView';
+import { activeServerIdFromState } from '@/main/domain/connection/ConnectionState';
 import type { SessionPhase } from '@/shared/ipc';
 import { IPC_EVENT_CHANNELS, type IpcEventChannel } from '@/shared/ipc';
 import { trayService } from '@/main/services/TrayService';
@@ -6,6 +8,7 @@ import type { IpcDependencies } from '@/main/ipc/dependencies';
 import type { SnapshotPublisher } from './SnapshotPublisher';
 import type { ConnectionRecovery } from './ConnectionRecovery';
 import type { HealthFailureEvent } from '@/main/services/ConnectionMonitorService';
+import { logger } from '@/main/services/LoggerService';
 
 interface RegisterRuntimeEventsParams {
   deps: IpcDependencies;
@@ -32,13 +35,14 @@ function syncTrayAndTrafficForPhase(
   }
 
   if (phase === 'connected') {
-    const status = deps.connectionMonitorService.getStatus();
-    const server = status.currentServer;
+    const serverId = activeServerIdFromState(
+      deps.connectionManager.getConnectionState(),
+    );
+    const server = serverId ? deps.serverRepository.get(serverId) : null;
     if (!server) return;
     trayService.setConnected(server.name, server.ping ?? null);
-    const connectedAt = status.lastConnectionTime ?? Date.now();
     deps.trafficStatsService.start(
-      connectedAt,
+      Date.now(),
       deps.xrayService.getActivePorts?.()?.api,
     );
     return;
@@ -60,21 +64,48 @@ export function registerRuntimeEvents({
   });
   deps.xrayService.removeAllListeners('health-changed');
   deps.xrayService.on('health-changed', (healthStatus) => {
-    deps.connectionMonitorService.handleXrayHealthStatusChanged(healthStatus);
+    snapshotPublisher.push('process');
+    if (healthStatus.state !== 'failed') {
+      return;
+    }
+    const reason =
+      healthStatus.lastFailureReason ||
+      healthStatus.lastReadinessError ||
+      'Xray reported failed health status';
+    void Promise.resolve(
+      deps.connectionManager.handleRuntimeFailure(reason, {
+        localProxyReachable: healthStatus.localProxyReachable,
+      }),
+    ).catch((error) => {
+      logger.error('Runtime', 'Failed to handle Xray health failure', error);
+    });
+  });
+
+  deps.connectionManager.removeAllListeners('policy-changed');
+  deps.connectionManager.on('policy-changed', () => {
+    snapshotPublisher.push('connection');
+  });
+
+  deps.appRecoveryService.removeAllListeners('changed');
+  deps.appRecoveryService.on('changed', () => {
+    snapshotPublisher.push('recovery');
   });
 
   deps.connectionMonitorService.removeAllListeners('health-failure');
   deps.connectionMonitorService.on(
     'health-failure',
     (event: HealthFailureEvent) => {
-      deps.connectionController.handleHealthFailure(event);
+      void Promise.resolve(
+        deps.connectionManager.handleHealthFailure(event),
+      ).catch((error) => {
+        logger.error('Runtime', 'Failed to handle health failure', error);
+      });
     },
   );
 
-  deps.connectionController.removeAllListeners('phase-changed');
-  deps.connectionController.removeAllListeners('busy-changed');
-  deps.connectionController.removeAllListeners('state-changed');
-  deps.connectionController.on('phase-changed', (phase: SessionPhase) => {
+  deps.connectionManager.removeAllListeners('phase-changed');
+  deps.connectionManager.removeAllListeners('state-changed');
+  deps.connectionManager.on('phase-changed', (phase: SessionPhase) => {
     snapshotPublisher.push('connection');
     syncTrayAndTrafficForPhase(deps, phase);
   });
@@ -93,7 +124,7 @@ export function registerRuntimeEvents({
     sendToRenderer(IPC_EVENT_CHANNELS.updateStatus, status);
   });
   deps.appUpdaterService.setConnectionBusyGetter(() =>
-    deps.connectionController.isBusy(),
+    deps.connectionManager.isBusy(),
   );
 
   const monitorEvents = [
@@ -107,13 +138,11 @@ export function registerRuntimeEvents({
     deps.connectionMonitorService.on(eventName, (event) => {
       const safeEvent = { ...event };
       if (safeEvent.server) {
-        const { rawConfig: _rawConfig, ...restServer } = safeEvent.server;
-        safeEvent.server = restServer as VlessConfig;
+        safeEvent.server = toSafeServer(safeEvent.server) as VlessConfig;
       }
       sendToRenderer(IPC_EVENT_CHANNELS.connectionMonitorEvent, safeEvent);
-      snapshotPublisher.push('monitor');
-
       if (eventName === 'error') {
+        snapshotPublisher.push('health');
         const message =
           (event as { error?: string; message?: string }).error ??
           (event as { message?: string }).message ??

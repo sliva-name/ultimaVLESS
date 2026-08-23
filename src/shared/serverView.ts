@@ -1,30 +1,62 @@
 import { VlessConfig } from './types';
-
-export type SafeVlessConfig = Omit<VlessConfig, 'rawConfig'>;
-
-export function toSafeServer(server: VlessConfig): SafeVlessConfig {
-  const { rawConfig: _rawConfig, ...rest } = server;
-  return rest;
-}
-
-let cachedSource: VlessConfig[] | null = null;
-let cachedSafeList: SafeVlessConfig[] | null = null;
+import { uniqueCatalogServers } from './serverIdentity';
 
 /**
- * Strips `rawConfig` before IPC. Reuses the last projection when the same
- * servers array reference is sent again (common on no-op refreshes).
+ * Renderer-facing server row. Secrets stay in main; the UI only needs
+ * identity, display and latency.
  */
-export function toSafeServerList(servers: VlessConfig[]): SafeVlessConfig[] {
-  if (cachedSource === servers && cachedSafeList) {
-    return cachedSafeList;
+export type SafeServerConfig = {
+  uuid: string;
+  name: string;
+  address: string;
+  port: number;
+  protocol?: VlessConfig['protocol'];
+  source?: VlessConfig['source'];
+  subscriptionId?: string;
+  type?: VlessConfig['type'];
+  security?: VlessConfig['security'];
+  sni?: string;
+  fp?: string;
+  flow?: string;
+  ping?: number | null;
+  pingTime?: number;
+  pingStale?: boolean;
+};
+
+export function toSafeServer(server: VlessConfig): SafeServerConfig {
+  const safe: SafeServerConfig = {
+    uuid: server.uuid,
+    name: server.name,
+    address: server.address,
+    port: server.port,
+  };
+  if (server.protocol !== undefined) safe.protocol = server.protocol;
+  if (server.source !== undefined) safe.source = server.source;
+  if (server.subscriptionId !== undefined) {
+    safe.subscriptionId = server.subscriptionId;
   }
-  const safe = servers.map(toSafeServer);
-  cachedSource = servers;
-  cachedSafeList = safe;
+  if (server.type !== undefined) safe.type = server.type;
+  if (server.security !== undefined) safe.security = server.security;
+  if (server.sni !== undefined) safe.sni = server.sni;
+  if (server.fp !== undefined) safe.fp = server.fp;
+  if (server.flow !== undefined) safe.flow = server.flow;
+  if (server.ping !== undefined) safe.ping = server.ping;
+  if (server.pingTime !== undefined) safe.pingTime = server.pingTime;
+  if (server.pingStale !== undefined) safe.pingStale = server.pingStale;
   return safe;
 }
 
-export function invalidateSafeServerListCache(): void {
-  cachedSource = null;
-  cachedSafeList = null;
+let cachedFingerprint: string | null = null;
+let cachedSafeList: SafeServerConfig[] | null = null;
+
+export function toSafeServerList(servers: VlessConfig[]): SafeServerConfig[] {
+  const unique = uniqueCatalogServers(servers);
+  const safe = unique.map(toSafeServer);
+  const fingerprint = safe.map((server) => JSON.stringify(server)).join('||');
+  if (cachedFingerprint === fingerprint && cachedSafeList) {
+    return cachedSafeList;
+  }
+  cachedFingerprint = fingerprint;
+  cachedSafeList = safe;
+  return safe;
 }

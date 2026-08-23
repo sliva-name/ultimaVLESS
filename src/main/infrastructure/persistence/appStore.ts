@@ -23,6 +23,10 @@ export interface AppStoreSchema {
   subscriptions: Subscription[];
   manualLinksInput: string;
   servers: VlessConfig[];
+  serverPings?: Record<
+    string,
+    { ping: number | null; pingTime?: number; pingStale?: boolean }
+  >;
   selectedServerId: string | null;
   connectionMode: ConnectionMode;
   pendingTunReconnect: {

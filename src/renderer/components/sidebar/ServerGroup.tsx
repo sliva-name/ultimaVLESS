@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import clsx from 'clsx';
 import { ChevronDown } from 'lucide-react';
 import { VlessConfig } from '@/shared/types';
+import { isSameServerRow } from '@/shared/serverRow';
 import {
   GroupColor,
   SERVER_LIST_VIRTUALIZE_THRESHOLD,
@@ -37,7 +38,7 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
   // it is large enough to be collapsed by default.
   const containsSelectedServer =
     selectedServer != null &&
-    servers.some((server) => server.uuid === selectedServer.uuid);
+    servers.some((server) => isSameServerRow(server, selectedServer));
   const initialExpanded =
     defaultExpanded ??
     (containsSelectedServer ||
