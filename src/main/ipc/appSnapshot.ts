@@ -1,5 +1,6 @@
 import { IpcMainInvokeEvent, ipcMain } from 'electron';
 import { AppSnapshot, IPC_INVOKE_CHANNELS } from '@/shared/ipc';
+import { lastErrorFromState } from '@/main/domain/connection/ConnectionState';
 import { toSafeServerList } from '@/shared/serverView';
 import { IpcDependencies } from './dependencies';
 
@@ -17,7 +18,9 @@ export function buildAppSnapshot(deps: IpcDependencies): AppSnapshot {
       // Controller is the single owner of the UI verb — no monitor reconciliation.
       phase: deps.connectionController.getPhase(),
       activeServerId,
-      lastError: monitorStatus.lastError,
+      lastError:
+        monitorStatus.lastError ??
+        lastErrorFromState(deps.connectionController.getConnectionState()),
       blockedServerIds: monitorStatus.blockedServers,
     },
     traffic: deps.trafficStatsService.getLastSnapshot(),

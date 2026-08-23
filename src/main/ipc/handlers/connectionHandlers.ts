@@ -30,8 +30,6 @@ export function registerConnectionHandlers({
     }
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('IPC', 'Failed to connect', error);
-    // Cleanup and monitor.recordError live in ConnectionManager.connect().
-    // Doing them again here raced with the next queued connect/disconnect.
     return { ok: false as const, error: errorMessage };
   };
 

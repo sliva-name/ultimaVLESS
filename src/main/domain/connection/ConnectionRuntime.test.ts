@@ -2,23 +2,31 @@ import { describe, expect, it, vi } from 'vitest';
 import { makeServer } from '@/test/factories';
 import { createConnectionRuntime } from './ConnectionRuntime';
 import type { ConnectionSpec } from './ConnectionSpec';
-import type { NetworkModeRuntime, PreparedConnection } from './NetworkModeRuntime';
+import type {
+  NetworkModeRuntime,
+  PreparedConnection,
+} from './NetworkModeRuntime';
 
 function fakeNetwork(mode: 'proxy' | 'tun'): NetworkModeRuntime & {
   prepare: ReturnType<typeof vi.fn>;
   activate: ReturnType<typeof vi.fn>;
   deactivate: ReturnType<typeof vi.fn>;
 } {
-  const prepare = vi.fn(async (spec: ConnectionSpec): Promise<PreparedConnection> => ({
-    spec,
-    server: spec.server,
-  }));
+  const prepare = vi.fn(
+    async (spec: ConnectionSpec): Promise<PreparedConnection> => ({
+      spec,
+      server: spec.server,
+    }),
+  );
   const activate = vi.fn(async () => undefined);
   const deactivate = vi.fn(async () => undefined);
   return { mode, prepare, activate, deactivate };
 }
 
-function spec(mode: ConnectionSpec['mode'] = 'proxy', uuid = 'server-1'): ConnectionSpec {
+function spec(
+  mode: ConnectionSpec['mode'] = 'proxy',
+  uuid = 'server-1',
+): ConnectionSpec {
   return {
     server: makeServer({ uuid }),
     mode,
@@ -27,6 +35,29 @@ function spec(mode: ConnectionSpec['mode'] = 'proxy', uuid = 'server-1'): Connec
 }
 
 describe('ConnectionRuntime', () => {
+  it('rolls the data plane back if bring-up fails', async () => {
+    const proxy = fakeNetwork('proxy');
+    const tun = fakeNetwork('tun');
+    const xrayStop = vi.fn();
+    const runtime = createConnectionRuntime({
+      xray: {
+        start: vi.fn(async () => {
+          throw new Error('spawn failed');
+        }),
+        stop: xrayStop,
+        isRunning: () => false,
+      },
+      proxy,
+      tun,
+    });
+
+    await expect(runtime.start(spec('proxy'))).rejects.toThrow('spawn failed');
+    expect(proxy.activate).not.toHaveBeenCalled();
+    expect(proxy.deactivate).toHaveBeenCalled();
+    expect(tun.deactivate).toHaveBeenCalled();
+    expect(xrayStop).toHaveBeenCalled();
+  });
+
   it('start fully tears down then prepares, starts Xray, and activates', async () => {
     const proxy = fakeNetwork('proxy');
     const tun = fakeNetwork('tun');
@@ -74,7 +105,11 @@ describe('ConnectionRuntime', () => {
     const tun = fakeNetwork('tun');
     const validate = vi.fn(async () => true);
     const runtime = createConnectionRuntime({
-      xray: { start: vi.fn(async () => undefined), stop: vi.fn(), isRunning: () => true },
+      xray: {
+        start: vi.fn(async () => undefined),
+        stop: vi.fn(),
+        isRunning: () => true,
+      },
       proxy,
       tun,
       validator: { validate },
@@ -95,7 +130,11 @@ describe('ConnectionRuntime', () => {
     const tun = fakeNetwork('tun');
     const validate = vi.fn(async () => true);
     const runtime = createConnectionRuntime({
-      xray: { start: vi.fn(async () => undefined), stop: vi.fn(), isRunning: () => true },
+      xray: {
+        start: vi.fn(async () => undefined),
+        stop: vi.fn(),
+        isRunning: () => true,
+      },
       proxy,
       tun,
       validator: { validate },
@@ -114,7 +153,11 @@ describe('ConnectionRuntime', () => {
     const proxy = fakeNetwork('proxy');
     const tun = fakeNetwork('tun');
     const runtime = createConnectionRuntime({
-      xray: { start: vi.fn(async () => undefined), stop: vi.fn(), isRunning: () => true },
+      xray: {
+        start: vi.fn(async () => undefined),
+        stop: vi.fn(),
+        isRunning: () => true,
+      },
       proxy,
       tun,
       validator: { validate: vi.fn(async () => false) },

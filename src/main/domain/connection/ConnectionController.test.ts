@@ -415,7 +415,7 @@ describe('ConnectionController', () => {
     releaseStart?.();
   });
 
-  it('cleans up a real connect failure when nothing newer is queued', async () => {
+  it('marks a real connect failure as failed and does not enqueue a second teardown', async () => {
     const start = vi.fn(async () => {
       throw new Error('spawn failed');
     });
@@ -432,11 +432,12 @@ describe('ConnectionController', () => {
     await expect(controller.connect(server.uuid)).rejects.toThrow(
       'spawn failed',
     );
-    expect(stop).toHaveBeenCalledTimes(1);
-    expect(controller.getPhase()).toBe('idle');
+    expect(stop).not.toHaveBeenCalled();
+    expect(controller.getPhase()).toBe('failed');
+    expect(controller.getLastError()).toBe('spawn failed');
   });
 
-  it('skips failure cleanup when a newer operation was already scheduled', async () => {
+  it('lets a queued disconnect own the stack after a failed connect', async () => {
     const start = vi.fn(async () => {
       throw new Error('spawn failed');
     });

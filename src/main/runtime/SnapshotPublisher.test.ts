@@ -27,6 +27,7 @@ function createDeps() {
     connectionController: {
       isBusy: vi.fn(() => false),
       getPhase: vi.fn(() => 'idle'),
+      getConnectionState: vi.fn(() => ({ type: 'disconnected' })),
     },
     trafficStatsService: {
       getLastSnapshot: vi.fn(() => null),

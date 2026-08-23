@@ -55,6 +55,10 @@ export function isConnectionStateInFlight(state: ConnectionState): boolean {
   );
 }
 
+export function lastErrorFromState(state: ConnectionState): string | null {
+  return state.type === 'failed' ? state.reason.message : null;
+}
+
 export function activeServerIdFromState(state: ConnectionState): string | null {
   switch (state.type) {
     case 'starting':

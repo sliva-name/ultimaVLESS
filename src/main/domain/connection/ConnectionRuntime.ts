@@ -1,5 +1,8 @@
 import type { ConnectionMode } from '@/shared/types';
-import type { XrayService, XrayStartOptions } from '@/main/services/XrayService';
+import type {
+  XrayService,
+  XrayStartOptions,
+} from '@/main/services/XrayService';
 import {
   otherRuntimePorts,
   PRIMARY_RUNTIME_PORTS,
@@ -67,6 +70,13 @@ export function createConnectionRuntime(deps: {
     }
   }
 
+  async function tearDown(): Promise<void> {
+    await deactivateNetwork(false);
+    xray.stop();
+    activeMode = null;
+    activePorts = { ...PRIMARY_RUNTIME_PORTS };
+  }
+
   async function bringUp(
     spec: ConnectionSpec,
     signal?: AbortSignal,
@@ -111,7 +121,10 @@ export function createConnectionRuntime(deps: {
         ports: nextPorts,
       });
       throwIfAborted(signal);
-      if (deps.validator && !(await deps.validator.validate(nextSpec, signal))) {
+      if (
+        deps.validator &&
+        !(await deps.validator.validate(nextSpec, signal))
+      ) {
         throw new Error('Post-switch traffic validation failed');
       }
       throwIfAborted(signal);
@@ -151,16 +164,17 @@ export function createConnectionRuntime(deps: {
 
   return {
     async start(spec: ConnectionSpec, signal?: AbortSignal): Promise<void> {
-      await deactivateNetwork(false);
-      xray.stop();
-      await bringUp(spec, signal, { validate: false });
+      await tearDown();
+      try {
+        await bringUp(spec, signal, { validate: false });
+      } catch (error) {
+        await tearDown();
+        throw error;
+      }
     },
 
     async stop(): Promise<void> {
-      await deactivateNetwork(false);
-      xray.stop();
-      activeMode = null;
-      activePorts = { ...PRIMARY_RUNTIME_PORTS };
+      await tearDown();
     },
 
     async switch(spec: ConnectionSpec, signal?: AbortSignal): Promise<void> {
@@ -175,10 +189,14 @@ export function createConnectionRuntime(deps: {
           await switchProxyTransaction(spec, signal);
           return;
         } catch (error) {
-          logger.warn('ConnectionRuntime', 'Transactional proxy switch failed', {
-            serverId: spec.server.uuid.substring(0, 8),
-            error: error instanceof Error ? error.message : String(error),
-          });
+          logger.warn(
+            'ConnectionRuntime',
+            'Transactional proxy switch failed',
+            {
+              serverId: spec.server.uuid.substring(0, 8),
+              error: error instanceof Error ? error.message : String(error),
+            },
+          );
           throw error;
         }
       }
@@ -189,11 +207,16 @@ export function createConnectionRuntime(deps: {
       try {
         await bringUp(spec, signal, { validate: true });
       } catch (error) {
-        logger.warn('ConnectionRuntime', 'Switch did not validate; runtime not committed', {
-          mode: spec.mode,
-          serverId: spec.server.uuid.substring(0, 8),
-          error: error instanceof Error ? error.message : String(error),
-        });
+        await tearDown();
+        logger.warn(
+          'ConnectionRuntime',
+          'Switch did not commit; runtime torn down',
+          {
+            mode: spec.mode,
+            serverId: spec.server.uuid.substring(0, 8),
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
         throw error;
       }
     },

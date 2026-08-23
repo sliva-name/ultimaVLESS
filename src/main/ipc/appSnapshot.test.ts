@@ -25,6 +25,11 @@ function createDeps(overrides: Partial<any> = {}) {
     },
     connectionController: {
       getPhase: vi.fn(() => 'connected'),
+      getConnectionState: vi.fn(() => ({
+        type: 'connected',
+        serverId: server.uuid,
+        mode: 'proxy',
+      })),
       isBusy: vi.fn(() => false),
     },
     trafficStatsService: {
@@ -57,6 +62,10 @@ describe('buildAppSnapshot', () => {
         },
         connectionController: {
           getPhase: vi.fn(() => 'disconnecting'),
+          getConnectionState: vi.fn(() => ({
+            type: 'stopping',
+            generation: 1,
+          })),
           isBusy: vi.fn(() => true),
         },
       }) as any,
@@ -70,11 +79,35 @@ describe('buildAppSnapshot', () => {
       createDeps({
         connectionController: {
           getPhase: vi.fn(() => 'connecting'),
+          getConnectionState: vi.fn(() => ({
+            type: 'starting',
+            serverId: 'server-1',
+            mode: 'proxy',
+            generation: 1,
+          })),
           isBusy: vi.fn(() => true),
         },
       }) as any,
     );
 
     expect(snapshot.session.phase).toBe('connecting');
+  });
+
+  it('projects the controller failure reason when the monitor has no lastError', () => {
+    const snapshot = buildAppSnapshot(
+      createDeps({
+        connectionController: {
+          getPhase: vi.fn(() => 'failed'),
+          getConnectionState: vi.fn(() => ({
+            type: 'failed',
+            reason: { message: 'spawn failed' },
+          })),
+          isBusy: vi.fn(() => false),
+        },
+      }) as any,
+    );
+
+    expect(snapshot.session.phase).toBe('failed');
+    expect(snapshot.session.lastError).toBe('spawn failed');
   });
 });

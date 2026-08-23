@@ -49,6 +49,7 @@ import {
   activeServerIdFromState,
   connectionStateToSessionPhase,
   isConnectionStateInFlight,
+  lastErrorFromState,
   type ConnectionState,
 } from './ConnectionState';
 
@@ -94,19 +95,13 @@ type InFlightState = Extract<
 >;
 
 /**
- * Single owner of VPN session state. Data-plane mutations go through
- * ConnectionRuntime. The monitor only emits events; policy decides.
+ * Session owner. The data plane (`ConnectionRuntime`) is transactional:
+ * start/switch either finish up or tear themselves down.
  *
- * Queue ownership (this is what keeps connect/disconnect races out):
- * 1. Every public mutation goes through `enqueue`. Generation is assigned at
- *    schedule time, not when the task starts.
- * 2. `abortCurrentOperation()` is only called immediately before enqueueing a
- *    replacement. The aborted task must not tear the stack down — the
- *    replacement owns it.
- * 3. Cleanup after a *real* failure runs only if this operation is still the
- *    latest generation. A newer connect/disconnect already in the queue wins.
- * 4. `cleanupAfterFailure` never aborts. It waits its turn so it cannot cancel
- *    a user operation that was queued behind the failed one.
+ * The queue has one running task. A new public call aborts the current task
+ * and then enqueues the replacement. The aborted task must not touch the
+ * stack — the replacement is the owner. There is no follow-up cleanup
+ * enqueue after connect/switch.
  */
 export class ConnectionManager extends EventEmitter {
   private operationQueue: Promise<void> = Promise.resolve();
@@ -165,6 +160,10 @@ export class ConnectionManager extends EventEmitter {
     return connectionStateToSessionPhase(this.state);
   }
 
+  public getLastError(): string | null {
+    return lastErrorFromState(this.state);
+  }
+
   public isBusy(): boolean {
     return (
       isConnectionStateInFlight(this.state) || this.activeOperation !== null
@@ -214,22 +213,18 @@ export class ConnectionManager extends EventEmitter {
   }
 
   private enqueue<T>(
-    createInFlight: (generation: number) => InFlightState,
+    createInFlight: () => InFlightState,
     task: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
-    const generation = this.nextGeneration();
     const run = this.operationQueue.then(async () => {
       this.activeOperation = Promise.resolve();
       const abort = new AbortController();
       this.operationAbort = abort;
-      const inFlight = createInFlight(generation);
+      const inFlight = createInFlight();
       this.transitionTo(inFlight);
       try {
         const result = await task(abort.signal);
         throwIfAborted(abort.signal);
-        if (this.generation !== generation) {
-          throw new ConnectionOperationAbortedError();
-        }
         if (inFlight.type === 'stopping') {
           this.transitionTo({ type: 'disconnected' });
         } else {
@@ -270,17 +265,6 @@ export class ConnectionManager extends EventEmitter {
       () => undefined,
     );
     return run;
-  }
-
-  private isLatestGeneration(generation: number): boolean {
-    return this.generation === generation;
-  }
-
-  private shouldCleanupFailedOperation(error: unknown): boolean {
-    return (
-      !(error instanceof ConnectionControllerRelaunchError) &&
-      !isConnectionOperationCancelled(error)
-    );
   }
 
   private getServer(serverId: string): VlessConfig {
@@ -359,38 +343,15 @@ export class ConnectionManager extends EventEmitter {
 
   public connect(serverId: string): Promise<void> {
     this.abortCurrentOperation();
-    const operation = this.enqueue(
-      (generation) => ({
+    return this.enqueue(
+      () => ({
         type: 'starting',
         serverId,
         mode: this.deps.configService.getConnectionMode(),
-        generation,
+        generation: this.nextGeneration(),
       }),
       (signal) => this.connectUnsafe(serverId, signal),
     );
-    const scheduledGeneration = this.generation;
-    return operation.catch(async (error) => {
-      if (
-        this.shouldCleanupFailedOperation(error) &&
-        this.isLatestGeneration(scheduledGeneration)
-      ) {
-        if (this.deps.connectionMonitorService.getStatus().isConnected) {
-          this.deps.connectionMonitorService.recordError(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-        try {
-          await this.cleanupAfterFailure();
-        } catch (cleanupError) {
-          logger.error(
-            'ConnectionManager',
-            'Failed to cleanup after connect failure',
-            cleanupError,
-          );
-        }
-      }
-      throw error;
-    });
   }
 
   public disconnect(
@@ -398,7 +359,7 @@ export class ConnectionManager extends EventEmitter {
   ): Promise<void> {
     this.abortCurrentOperation();
     return this.enqueue(
-      (generation) => ({ type: 'stopping', generation }),
+      () => ({ type: 'stopping', generation: this.nextGeneration() }),
       async () => {
         if (!options.preservePendingTunReconnect) {
           this.deps.configService.clearPendingTunReconnect();
@@ -414,12 +375,12 @@ export class ConnectionManager extends EventEmitter {
   public switchToServer(server: VlessConfig): Promise<void> {
     this.abortCurrentOperation();
     return this.enqueue(
-      (generation) => ({
+      () => ({
         type: 'switching',
         from: activeServerIdFromState(this.state) ?? '',
         to: server.uuid,
         mode: this.deps.configService.getConnectionMode(),
-        generation,
+        generation: this.nextGeneration(),
       }),
       async (signal) => {
         await this.runtime.switch(this.buildSpec(server), signal);
@@ -435,11 +396,11 @@ export class ConnectionManager extends EventEmitter {
     }
     this.abortCurrentOperation();
     return this.enqueue(
-      (generation) => ({
+      () => ({
         type: 'starting',
         serverId,
         mode: 'tun' as const,
-        generation,
+        generation: this.nextGeneration(),
       }),
       async (signal) => {
         const server = this.getServer(serverId);
@@ -454,7 +415,7 @@ export class ConnectionManager extends EventEmitter {
 
   public cleanupAfterFailure(): Promise<void> {
     return this.enqueue(
-      (generation) => ({ type: 'stopping', generation }),
+      () => ({ type: 'stopping', generation: this.nextGeneration() }),
       async () => {
         this.deps.connectionMonitorService.stopMonitoring({
           message: 'Connection cleanup',
@@ -534,12 +495,12 @@ export class ConnectionManager extends EventEmitter {
     const monitor = this.deps.connectionMonitorService;
     try {
       await this.enqueue(
-        (generation) => ({
+        () => ({
           type: 'switching',
           from: from.uuid,
           to: candidates[0]?.uuid ?? from.uuid,
           mode: this.deps.configService.getConnectionMode(),
-          generation,
+          generation: this.nextGeneration(),
         }),
         async (signal) => {
           for (const candidate of candidates) {
@@ -574,23 +535,19 @@ export class ConnectionManager extends EventEmitter {
               });
             }
           }
+          monitor.stopMonitoring({
+            message: 'Auto-switch failed',
+            preserveLastError: true,
+          });
+          await this.runtime.stop();
           throw new Error('Auto-switch failed: no working servers found');
         },
       );
     } catch (error) {
-      if (error instanceof ConnectionOperationAbortedError) {
+      if (isConnectionOperationCancelled(error)) {
         return;
       }
       logger.error('ConnectionManager', 'Auto-switch failed', error);
-      try {
-        await this.cleanupAfterFailure();
-      } catch (cleanupError) {
-        logger.error(
-          'ConnectionManager',
-          'Cleanup after auto-switch dead end failed',
-          cleanupError,
-        );
-      }
     }
   }
 }
