@@ -178,4 +178,59 @@ describe('renderer session view', () => {
       'Failed to persist selected server',
     );
   });
+
+  it('highlights the clicked row when two catalog servers share a uuid', async () => {
+    const serverA = makeServer({
+      uuid: 'dup',
+      name: 'Germany',
+      sni: 'de.example',
+    });
+    const serverB = makeServer({
+      uuid: 'dup',
+      name: 'Netherlands',
+      sni: 'nl.example',
+    });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [serverA, serverB],
+        selectedServerId: serverA.uuid,
+      }),
+    );
+    let resolvePersist: (value: boolean) => void = () => undefined;
+    electronApi.setSelectedServerId.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolvePersist = resolve;
+        }),
+    );
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.selectedServer?.name).toBe('Germany'),
+    );
+
+    act(() => {
+      result.current.selectServer(serverB);
+    });
+    expect(result.current.selectedServer?.name).toBe('Netherlands');
+
+    act(() => {
+      electronApi.emitAppSnapshotChanged(
+        makeAppSnapshot({
+          servers: [serverA, serverB],
+          selectedServerId: serverA.uuid,
+        }),
+      );
+    });
+    expect(result.current.selectedServer?.name).toBe('Netherlands');
+
+    await act(async () => {
+      resolvePersist(true);
+    });
+    await waitFor(() =>
+      expect(result.current.selectedServer?.name).toBe('Netherlands'),
+    );
+  });
 });

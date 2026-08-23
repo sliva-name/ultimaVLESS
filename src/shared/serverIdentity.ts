@@ -37,9 +37,13 @@ export function createStableServerId(
   return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
 }
 
-export function getServerDedupKey(config: VlessConfig): string {
+/**
+ * Connection fingerprint without catalog uuid. Same tunnel after a provider
+ * rotates the stored id; different tunnels that only share a CDN host:port
+ * (different SNI/sid/path) stay distinct.
+ */
+export function getServerConfigFingerprint(config: VlessConfig): string {
   return [
-    config.uuid || '',
     config.protocol || 'vless',
     config.address || '',
     String(config.port || 0),
@@ -66,6 +70,10 @@ export function getServerDedupKey(config: VlessConfig): string {
   ].join('|');
 }
 
+export function getServerDedupKey(config: VlessConfig): string {
+  return `${config.uuid || ''}|${getServerConfigFingerprint(config)}`;
+}
+
 export function getServerEndpointKey(config: VlessConfig): string {
   return `${config.protocol ?? 'vless'}|${config.address}:${config.port}`;
 }
@@ -74,10 +82,50 @@ export function isSameServerIdentity(
   left: VlessConfig,
   right: VlessConfig,
 ): boolean {
-  return (
-    left.uuid === right.uuid ||
-    getServerEndpointKey(left) === getServerEndpointKey(right)
-  );
+  // Uuid is not identity: subscription nodes on one CDN host can collide on
+  // the stored id. Same tunnel after rotation shares the connection fingerprint.
+  return getServerConfigFingerprint(left) === getServerConfigFingerprint(right);
+}
+
+function disambiguatedUuid(server: VlessConfig): string {
+  const digest = createHash('sha256')
+    .update(getServerConfigFingerprint(server))
+    .digest('hex')
+    .slice(0, 12);
+  return `${server.uuid}~${digest}`;
+}
+
+/**
+ * One catalog row per tunnel. True duplicates (same fingerprint) are dropped.
+ * Distinct tunnels that collided on uuid keep both rows: the later ones get a
+ * fingerprint suffix so sidebar selection can highlight exactly one card.
+ */
+export function uniqueCatalogServers(servers: VlessConfig[]): VlessConfig[] {
+  const seenFingerprints = new Set<string>();
+  const seenUuids = new Set<string>();
+  const unique: VlessConfig[] = [];
+
+  for (const server of servers) {
+    const fingerprint = getServerConfigFingerprint(server);
+    if (seenFingerprints.has(fingerprint)) {
+      continue;
+    }
+    seenFingerprints.add(fingerprint);
+
+    let next = server;
+    if (seenUuids.has(server.uuid)) {
+      let uuid = disambiguatedUuid(server);
+      let suffix = 2;
+      while (seenUuids.has(uuid)) {
+        uuid = `${disambiguatedUuid(server)}-${suffix}`;
+        suffix += 1;
+      }
+      next = { ...server, uuid };
+    }
+    seenUuids.add(next.uuid);
+    unique.push(next);
+  }
+  return unique;
 }
 
 export function findMatchingServer(

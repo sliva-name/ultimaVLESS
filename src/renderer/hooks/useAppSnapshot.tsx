@@ -8,11 +8,13 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import {
-  isSessionPhaseInFlight,
-  type AppSnapshot,
-} from '@/shared/ipc';
+import { isSessionPhaseInFlight, type AppSnapshot } from '@/shared/ipc';
 import type { VlessConfig } from '@/shared/types';
+import {
+  findServerRow,
+  isSameServerRow,
+  type ServerRowIdentity,
+} from '@/shared/serverRow';
 import { useConnectionActions } from './useConnectionActions';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
@@ -81,13 +83,17 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
   // Optimistic server selection that hasn't been confirmed by main yet.
   // Incoming snapshots (ping/traffic pushes, refreshes) may still carry the
   // old selectedServerId, so the pending value is overlaid until confirmed.
-  const pendingSelectionRef = useRef<{ uuid: string; version: number } | null>(
-    null,
-  );
+  const [pendingSelectionRow, setPendingSelectionRow] =
+    useState<ServerRowIdentity | null>(null);
+  const pendingSelectionRef = useRef<{
+    row: ServerRowIdentity;
+    version: number;
+  } | null>(null);
   const selectVersionRef = useRef(0);
   const refreshSeqRef = useRef(0);
 
   const selectedServer =
+    findServerRow(snapshot.servers, pendingSelectionRow) ??
     snapshot.servers.find(
       (server) => server.uuid === snapshot.selectedServerId,
     ) ??
@@ -107,11 +113,34 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
     setSnapshot({
       ...nextSnapshot,
       selectedServerId: pendingSelection
-        ? pendingSelection.uuid
+        ? pendingSelection.row.uuid
         : nextSnapshot.selectedServerId,
     });
-    if (pendingSelection && nextSnapshot.selectedServerId === pendingSelection.uuid) {
+    if (!pendingSelection) {
+      return;
+    }
+    const selectedId = nextSnapshot.selectedServerId;
+    if (selectedId !== pendingSelection.row.uuid) {
+      return;
+    }
+    const uuidOwner = nextSnapshot.servers.find(
+      (server) => server.uuid === selectedId,
+    );
+    const pendingRow = findServerRow(
+      nextSnapshot.servers,
+      pendingSelection.row,
+    );
+    // Uuid collisions: the stored id may already equal the clicked uuid while
+    // the uuid owner in the list is a different row. Keep the pending row
+    // until the snapshot's uuid owner is the clicked card.
+    if (
+      pendingRow &&
+      isSameServerRow(pendingRow, pendingSelection.row) &&
+      uuidOwner &&
+      isSameServerRow(uuidOwner, pendingSelection.row)
+    ) {
       pendingSelectionRef.current = null;
+      setPendingSelectionRow(null);
     }
   }, []);
 
@@ -188,7 +217,15 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
         return;
       }
       const version = ++selectVersionRef.current;
-      pendingSelectionRef.current = { uuid: server.uuid, version };
+      const row: ServerRowIdentity = {
+        uuid: server.uuid,
+        name: server.name,
+        address: server.address,
+        port: server.port,
+        sni: server.sni,
+      };
+      pendingSelectionRef.current = { row, version };
+      setPendingSelectionRow(row);
       let previousSelectedId: string | null = null;
       setSnapshot((current) => {
         previousSelectedId = current.selectedServerId;
@@ -203,6 +240,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
             // Roll back the optimistic selection unless a newer click
             // already superseded it.
             pendingSelectionRef.current = null;
+            setPendingSelectionRow(null);
             setSnapshot((current) => ({
               ...current,
               selectedServerId: previousSelectedId,
@@ -251,7 +289,9 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
 export function useAppSnapshotContext(): AppSnapshotContextValue {
   const value = useContext(AppSnapshotContext);
   if (!value) {
-    throw new Error('useAppSnapshotContext must be used within AppSnapshotProvider');
+    throw new Error(
+      'useAppSnapshotContext must be used within AppSnapshotProvider',
+    );
   }
   return value;
 }
@@ -261,8 +301,13 @@ export function useAppSnapshot(): AppSnapshot {
 }
 
 export function useServers() {
-  const { snapshot, selectedServer, selectServer, isRefreshingPings, pingAllServers } =
-    useAppSnapshotContext();
+  const {
+    snapshot,
+    selectedServer,
+    selectServer,
+    isRefreshingPings,
+    pingAllServers,
+  } = useAppSnapshotContext();
   return {
     servers: snapshot.servers,
     subscriptions: snapshot.subscriptions,

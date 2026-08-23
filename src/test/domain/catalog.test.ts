@@ -122,7 +122,7 @@ describe('catalog refresh', () => {
     expect(deps.configService.setSelectedServerId).toHaveBeenCalledWith('live');
   });
 
-  it('reapplies ping by endpoint after uuid rotation and remaps the live session', async () => {
+  it('reapplies ping by fingerprint after uuid rotation and remaps the live session', async () => {
     const previous = makeServer({
       uuid: 'old-id',
       address: '1.2.3.4',
@@ -189,7 +189,7 @@ describe('preserve live/selected catalog identity', () => {
     ).toEqual(['picked', 'new']);
   });
 
-  it('does not duplicate a live server already represented by identity', () => {
+  it('does not duplicate a live server already represented by fingerprint', () => {
     const live = makeServer({ uuid: 'old-id', address: '1.2.3.4' });
     const rotated = makeServer({ uuid: 'new-id', address: '1.2.3.4' });
 
@@ -199,20 +199,40 @@ describe('preserve live/selected catalog identity', () => {
       ),
     ).toEqual(['new-id']);
   });
+
+  it('does not treat a CDN sibling as the same live catalog row', () => {
+    const live = makeServer({
+      uuid: 'old-id',
+      address: '1.2.3.4',
+      sni: 'a.example',
+    });
+    const sibling = makeServer({
+      uuid: 'new-id',
+      address: '1.2.3.4',
+      sni: 'b.example',
+    });
+
+    expect(
+      preserveActiveServerIfNeeded([sibling], [live], 'old-id').map(
+        (server) => server.uuid,
+      ),
+    ).toEqual(['old-id', 'new-id']);
+  });
 });
 
 describe('ping overlay', () => {
-  it('reapplies latency by uuid, then by endpoint identity', () => {
+  it('reapplies ping by uuid, then by fingerprint after uuid rotation', () => {
     const stored = [
       makeServer({
         uuid: 'old-id',
         address: '1.2.3.4',
+        sni: 'a.example',
         ping: 18,
         pingTime: 50,
       }),
     ];
     const refreshed = [
-      makeServer({ uuid: 'new-id', address: '1.2.3.4' }),
+      makeServer({ uuid: 'new-id', address: '1.2.3.4', sni: 'a.example' }),
       makeServer({ uuid: 'other', address: '8.8.8.8' }),
     ];
 
@@ -225,6 +245,29 @@ describe('ping overlay', () => {
     });
     expect(merged[1]).toMatchObject({
       uuid: 'other',
+      ping: null,
+      pingStale: false,
+    });
+  });
+
+  it('does not copy ping between nodes that only share host:port', () => {
+    const stored = [
+      makeServer({
+        uuid: 'cdn-a',
+        address: '1.2.3.4',
+        sni: 'a.example',
+        ping: 18,
+        pingTime: 50,
+      }),
+    ];
+    const refreshed = [
+      makeServer({ uuid: 'cdn-b', address: '1.2.3.4', sni: 'b.example' }),
+    ];
+
+    const merged = applyPingOverlay(refreshed, collectPingOverlay(stored));
+
+    expect(merged[0]).toMatchObject({
+      uuid: 'cdn-b',
       ping: null,
       pingStale: false,
     });

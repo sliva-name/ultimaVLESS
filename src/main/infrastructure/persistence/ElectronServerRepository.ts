@@ -2,6 +2,7 @@ import type { VlessConfig } from '@/shared/types';
 import { logger } from '@/main/services/LoggerService';
 import { getAppStore } from '@/main/infrastructure/persistence/appStore';
 import type { ServerRepository } from '@/main/domain/server/ServerRepository';
+import { uniqueCatalogServers } from '@/shared/serverIdentity';
 
 type StoredPing = {
   ping: number | null;
@@ -36,7 +37,9 @@ function stripPing(server: VlessConfig): VlessConfig {
   return catalog;
 }
 
-function extractPingOverlay(servers: VlessConfig[]): Record<string, StoredPing> {
+function extractPingOverlay(
+  servers: VlessConfig[],
+): Record<string, StoredPing> {
   const overlay: Record<string, StoredPing> = {};
   for (const server of servers) {
     if (
@@ -82,10 +85,12 @@ export function createServerRepository(): ServerRepository {
       return this.list().find((server) => server.uuid === id);
     },
     list() {
-      return applyPingOverlay(store.get('servers') || [], readOverlay());
+      return uniqueCatalogServers(
+        applyPingOverlay(store.get('servers') || [], readOverlay()),
+      );
     },
     saveAll(servers: VlessConfig[]) {
-      const catalog = servers.map(stripPing);
+      const catalog = uniqueCatalogServers(servers).map(stripPing);
       const overlay = extractPingOverlay(servers);
       const fingerprint = `${catalogIdentityFingerprint(catalog)}##${pingOverlayFingerprint(overlay)}`;
       if (fingerprint === lastPersistedFingerprint) {

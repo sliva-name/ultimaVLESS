@@ -4,7 +4,9 @@ import {
   findMatchingServer,
   getServerEndpointKey,
   isSameServerIdentity,
+  uniqueCatalogServers,
 } from '@/shared/serverIdentity';
+import { isSameServerRow } from '@/shared/serverRow';
 import { toSafeServer } from '@/shared/serverView';
 import {
   isPrivateOrReservedHost,
@@ -20,7 +22,7 @@ import {
 import { makeServer } from '@/test/factories';
 
 describe('safe public server DTO', () => {
-  it('creates deterministic identities and matches by endpoint after uuid rotation', () => {
+  it('creates deterministic identities and matches by fingerprint after uuid rotation', () => {
     const first = createStableServerId('user-id', 'example.com', 443, [
       'tcp',
       'reality',
@@ -29,13 +31,83 @@ describe('safe public server DTO', () => {
       'tcp',
       'reality',
     ]);
-    const current = makeServer({ uuid: 'old-id', address: '1.2.3.4' });
-    const refreshed = makeServer({ uuid: 'new-id', address: '1.2.3.4' });
+    const current = makeServer({
+      uuid: 'old-id',
+      address: '1.2.3.4',
+      sni: 'a.example',
+    });
+    const rotated = makeServer({
+      uuid: 'new-id',
+      address: '1.2.3.4',
+      sni: 'a.example',
+    });
+    const otherHost = makeServer({
+      uuid: 'other-host',
+      address: '9.9.9.9',
+      sni: 'a.example',
+    });
+    const otherSni = makeServer({
+      uuid: 'other-sni',
+      address: '1.2.3.4',
+      sni: 'b.example',
+    });
 
     expect(first).toBe(second);
     expect(getServerEndpointKey(current)).toBe('vless|1.2.3.4:443');
-    expect(isSameServerIdentity(current, refreshed)).toBe(true);
-    expect(findMatchingServer([refreshed], current)?.uuid).toBe('new-id');
+    expect(isSameServerIdentity(current, rotated)).toBe(true);
+    expect(isSameServerIdentity(current, otherHost)).toBe(false);
+    expect(isSameServerIdentity(current, otherSni)).toBe(false);
+    expect(
+      isSameServerIdentity(
+        makeServer({ uuid: 'dup', sni: 'de.example' }),
+        makeServer({ uuid: 'dup', sni: 'nl.example' }),
+      ),
+    ).toBe(false);
+    expect(findMatchingServer([rotated, otherSni], current)?.uuid).toBe(
+      'new-id',
+    );
+  });
+
+  it('keeps distinct tunnels that collided on uuid and drops true duplicates', () => {
+    const first = makeServer({
+      uuid: 'dup',
+      name: 'Germany',
+      sni: 'de.example',
+    });
+    const collided = makeServer({
+      uuid: 'dup',
+      name: 'Netherlands',
+      sni: 'nl.example',
+    });
+    const duplicate = makeServer({
+      uuid: 'dup',
+      name: 'Germany copy',
+      sni: 'de.example',
+    });
+
+    const unique = uniqueCatalogServers([first, collided, duplicate]);
+    expect(unique).toHaveLength(2);
+    expect(unique[0]?.name).toBe('Germany');
+    expect(unique[0]?.uuid).toBe('dup');
+    expect(unique[1]?.name).toBe('Netherlands');
+    expect(unique[1]?.uuid).not.toBe('dup');
+    expect(unique[1]?.uuid.startsWith('dup~')).toBe(true);
+  });
+
+  it('does not treat two sidebar rows as selected just because uuids match', () => {
+    const selected = makeServer({
+      uuid: 'dup',
+      name: 'Germany',
+      sni: 'de.example',
+    });
+    const other = makeServer({
+      uuid: 'dup',
+      name: 'Netherlands',
+      sni: 'nl.example',
+    });
+
+    expect(isSameServerRow(selected, selected)).toBe(true);
+    expect(isSameServerRow(selected, other)).toBe(false);
   });
 
   it('strips credentials and raw Xray config from renderer-facing servers', () => {

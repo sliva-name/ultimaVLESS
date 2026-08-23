@@ -1,5 +1,5 @@
 import type { VlessConfig } from './types';
-import { getServerEndpointKey } from './serverIdentity';
+import { getServerConfigFingerprint } from './serverIdentity';
 
 export type StoredPing = {
   ping: number | null;
@@ -8,10 +8,10 @@ export type StoredPing = {
 
 export function collectPingOverlay(servers: VlessConfig[]): {
   byUuid: Map<string, StoredPing>;
-  byEndpoint: Map<string, StoredPing>;
+  byFingerprint: Map<string, StoredPing>;
 } {
   const byUuid = new Map<string, StoredPing>();
-  const byEndpoint = new Map<string, StoredPing>();
+  const byFingerprint = new Map<string, StoredPing>();
 
   for (const server of servers) {
     if (server.ping === undefined && server.pingTime === undefined) {
@@ -22,14 +22,14 @@ export function collectPingOverlay(servers: VlessConfig[]): {
       pingTime: server.pingTime,
     };
     byUuid.set(server.uuid, stored);
-    const endpoint = getServerEndpointKey(server);
-    const previous = byEndpoint.get(endpoint);
+    const fingerprint = getServerConfigFingerprint(server);
+    const previous = byFingerprint.get(fingerprint);
     if (!previous || (stored.pingTime ?? 0) > (previous.pingTime ?? 0)) {
-      byEndpoint.set(endpoint, stored);
+      byFingerprint.set(fingerprint, stored);
     }
   }
 
-  return { byUuid, byEndpoint };
+  return { byUuid, byFingerprint };
 }
 
 export function lookupStoredPing(
@@ -38,13 +38,13 @@ export function lookupStoredPing(
 ): StoredPing | undefined {
   return (
     overlay.byUuid.get(server.uuid) ??
-    overlay.byEndpoint.get(getServerEndpointKey(server))
+    overlay.byFingerprint.get(getServerConfigFingerprint(server))
   );
 }
 
 /**
  * Re-applies stored latency onto a refreshed catalog.
- * Identity is uuid, then endpoint — not name/source heuristics.
+ * Identity is uuid, then connection fingerprint — not a shared CDN host:port.
  */
 export function applyPingOverlay(
   servers: VlessConfig[],

@@ -474,6 +474,37 @@ describe('session lifecycle', () => {
     });
   });
 
+  it('does not remap a live session onto a CDN sibling that only shares host:port', async () => {
+    const previous = makeServer({
+      uuid: 'old-id',
+      address: '1.2.3.4',
+      sni: 'a.example',
+    });
+    const sibling = makeServer({
+      uuid: 'new-id',
+      address: '1.2.3.4',
+      sni: 'b.example',
+    });
+    const { session } = createSession({
+      serverRepository: {
+        get: (id: string) =>
+          [previous, sibling].find((server) => server.uuid === id),
+        list: () => [previous],
+        saveAll: vi.fn(),
+      },
+    });
+
+    await session.connect(previous.uuid);
+    const remapped = session.reconcileActiveServer([sibling], [previous]);
+
+    expect(remapped).toBe('old-id');
+    expect(session.getConnectionState()).toEqual({
+      type: 'connected',
+      serverId: 'old-id',
+      mode: 'proxy',
+    });
+  });
+
   it('treats busy as in-flight session state only', async () => {
     const { session, server } = createSession();
     expect(session.isBusy()).toBe(false);

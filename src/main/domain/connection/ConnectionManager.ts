@@ -190,8 +190,9 @@ export class ConnectionManager extends EventEmitter {
   }
 
   /**
-   * Catalog refresh can rotate the stored uuid while the endpoint stays the
-   * same. Session owns the live id — remap it here, do not infer from monitor.
+   * Catalog refresh can rotate the stored uuid while the connection
+   * fingerprint stays the same. Session owns the live id — remap it here,
+   * do not infer from monitor or a shared CDN host:port.
    */
   public reconcileActiveServer(
     nextServers: VlessConfig[],

@@ -1,4 +1,5 @@
 import { VlessConfig } from './types';
+import { uniqueCatalogServers } from './serverIdentity';
 
 /**
  * Renderer-facing server row. Secrets stay in main; the UI only needs
@@ -52,7 +53,7 @@ function publicListFingerprint(servers: VlessConfig[]): string {
   return servers
     .map(
       (server) =>
-        `${server.uuid}|${server.name}|${server.address}:${server.port}|${server.protocol ?? ''}|${server.ping ?? ''}|${server.pingTime ?? ''}|${server.pingStale ? 1 : 0}`,
+        `${server.uuid}|${server.name}|${server.address}:${server.port}|${server.sni ?? ''}|${server.protocol ?? ''}|${server.ping ?? ''}|${server.pingTime ?? ''}|${server.pingStale ? 1 : 0}`,
     )
     .join('||');
 }
@@ -63,11 +64,12 @@ function publicListFingerprint(servers: VlessConfig[]): string {
  * of secrets must not leak a stale unsafe object.
  */
 export function toSafeServerList(servers: VlessConfig[]): SafeServerConfig[] {
-  const fingerprint = publicListFingerprint(servers);
+  const unique = uniqueCatalogServers(servers);
+  const fingerprint = publicListFingerprint(unique);
   if (cachedFingerprint === fingerprint && cachedSafeList) {
     return cachedSafeList;
   }
-  const safe = servers.map(toSafeServer);
+  const safe = unique.map(toSafeServer);
   cachedFingerprint = fingerprint;
   cachedSafeList = safe;
   return safe;
