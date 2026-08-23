@@ -62,11 +62,11 @@ describe('buildAppSnapshot', () => {
         },
         connectionController: {
           getPhase: vi.fn(() => 'disconnecting'),
-      getConnectionState: vi.fn(() => ({
-        type: 'stopping',
-        generation: 1,
-        outcome: 'idle',
-      })),
+          getConnectionState: vi.fn(() => ({
+            type: 'stopping',
+            generation: 1,
+            outcome: 'idle',
+          })),
           isBusy: vi.fn(() => true),
         },
       }) as any,
@@ -132,5 +132,32 @@ describe('buildAppSnapshot', () => {
     );
 
     expect(snapshot.session.lastError).toBeNull();
+  });
+
+  it('projects activeServerId from the controller, not the monitor', () => {
+    const snapshot = buildAppSnapshot(
+      createDeps({
+        connectionMonitorService: {
+          getStatus: vi.fn(() => ({
+            isConnected: true,
+            currentServer: makeServer({ uuid: 'monitor-server' }),
+            lastError: null,
+            blockedServers: ['blocked-1'],
+          })),
+        },
+        connectionController: {
+          getPhase: vi.fn(() => 'connected'),
+          getConnectionState: vi.fn(() => ({
+            type: 'connected',
+            serverId: 'controller-server',
+            mode: 'proxy',
+          })),
+          isBusy: vi.fn(() => false),
+        },
+      }) as any,
+    );
+
+    expect(snapshot.session.activeServerId).toBe('controller-server');
+    expect(snapshot.session.blockedServerIds).toEqual(['blocked-1']);
   });
 });

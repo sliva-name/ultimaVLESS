@@ -1,5 +1,6 @@
 import type { VlessConfig } from '@/shared/types';
 import { toSafeServer } from '@/shared/serverView';
+import { activeServerIdFromState } from '@/main/domain/connection/ConnectionState';
 import type { SessionPhase } from '@/shared/ipc';
 import { IPC_EVENT_CHANNELS, type IpcEventChannel } from '@/shared/ipc';
 import { trayService } from '@/main/services/TrayService';
@@ -34,13 +35,14 @@ function syncTrayAndTrafficForPhase(
   }
 
   if (phase === 'connected') {
-    const status = deps.connectionMonitorService.getStatus();
-    const server = status.currentServer;
+    const serverId = activeServerIdFromState(
+      deps.connectionController.getConnectionState(),
+    );
+    const server = serverId ? deps.serverRepository.get(serverId) : null;
     if (!server) return;
     trayService.setConnected(server.name, server.ping ?? null);
-    const connectedAt = status.lastConnectionTime ?? Date.now();
     deps.trafficStatsService.start(
-      connectedAt,
+      Date.now(),
       deps.xrayService.getActivePorts?.()?.api,
     );
     return;

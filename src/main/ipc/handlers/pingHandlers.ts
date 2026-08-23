@@ -54,10 +54,11 @@ export function registerPingHandlers({
 
   const pingAllQueue = createSerialQueue();
   const isUnsafePingState = (): boolean => {
-    const monitorStatus = deps.connectionMonitorService.getStatus();
+    const phase = deps.connectionController.getPhase();
     return (
-      deps.xrayService.isRunning() ||
-      monitorStatus.isConnected ||
+      phase === 'connected' ||
+      phase === 'connecting' ||
+      phase === 'switching' ||
       isConnectionBusy()
     );
   };

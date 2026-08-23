@@ -38,7 +38,15 @@ describe('registerRuntimeEvents', () => {
         cleanupAfterFailure: vi.fn(),
         isBusy: vi.fn(() => false),
         getPhase: vi.fn(() => 'idle'),
+        getConnectionState: vi.fn(() => ({
+          type: 'connected',
+          serverId: 'server-1',
+          mode: 'proxy',
+        })),
       }),
+      serverRepository: {
+        get: vi.fn(() => makeServer({ uuid: 'server-1', name: 'SE' })),
+      },
       trafficStatsService: Object.assign(new EventEmitter(), {
         start: vi.fn(),
         stop: vi.fn(),
@@ -102,7 +110,10 @@ describe('registerRuntimeEvents', () => {
 
     deps.connectionController.emit('phase-changed', 'connected');
     expect(trayService.setConnected).toHaveBeenCalledWith('SE', null);
-    expect(deps.trafficStatsService.start).toHaveBeenCalledWith(123, 10810);
+    expect(deps.trafficStatsService.start).toHaveBeenCalledWith(
+      expect.any(Number),
+      10810,
+    );
 
     deps.connectionController.emit('phase-changed', 'idle');
     expect(trayService.setDisconnected).toHaveBeenCalled();

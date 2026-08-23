@@ -44,7 +44,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     monitorStatus,
     recentEvents,
     autoSwitching,
-    hasLoadedMonitorStatus,
     setAutoSwitching,
     loadMonitorStatus,
   } = useSettingsMonitor({ isOpen });
@@ -124,8 +123,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               isOpen={isOpen}
               isConnected={isConnected}
               isConnectionBusy={isConnectionBusy}
-              hasLoadedMonitorStatus={hasLoadedMonitorStatus}
-              monitorIsConnected={!!monitorStatus?.isConnected}
             />
           )}
 
