@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeServer } from '@/test/factories';
 import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
 import type { XrayConfig } from '@/shared/xray-types';
+import { TUN_MTU } from '@/main/services/tunRoute/constants';
 import { XrayConfigCompiler } from '@/main/services/XrayConfigCompiler';
 
 describe('XrayConfigCompiler', () => {
@@ -63,7 +64,7 @@ describe('XrayConfigCompiler', () => {
     expect(tunInbound).toMatchObject({
       protocol: 'tun',
       settings: expect.objectContaining({
-        mtu: 1500,
+        mtu: TUN_MTU,
         gateway: expect.any(Array),
         autoSystemRoutingTable: ['0.0.0.0/0', '::/0'],
         autoOutboundsInterface: 'auto',
@@ -99,7 +100,7 @@ describe('XrayConfigCompiler', () => {
     );
 
     expect(config.dns).toMatchObject({
-      queryStrategy: 'UseSystem',
+      queryStrategy: 'UseIPv4',
       servers: ['8.8.8.8', '8.8.4.4'],
     });
     expect(config.dns?.servers).not.toContain('localhost');
@@ -160,7 +161,7 @@ describe('XrayConfigCompiler', () => {
     );
 
     expect(config.dns).toMatchObject({
-      queryStrategy: 'UseSystem',
+      queryStrategy: 'UseIPv4',
       servers: ['1.1.1.1', '1.0.0.1'],
     });
     expect(config.dns?.servers).not.toContain('localhost');
