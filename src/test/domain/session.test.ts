@@ -452,8 +452,16 @@ describe('session lifecycle', () => {
   });
 
   it('remaps the live session id when catalog identity rotates', async () => {
-    const previous = makeServer({ uuid: 'old-id', address: '1.2.3.4' });
-    const rotated = makeServer({ uuid: 'new-id', address: '1.2.3.4' });
+    const previous = makeServer({
+      uuid: 'old-id',
+      name: 'Frankfurt',
+      address: '1.2.3.4',
+    });
+    const rotated = makeServer({
+      uuid: 'new-id',
+      name: 'Frankfurt',
+      address: '1.2.3.4',
+    });
     const { session } = createSession({
       serverRepository: {
         get: (id: string) =>

@@ -37,41 +37,58 @@ export function createStableServerId(
   return `${authToken.substring(0, 8)}-${address}:${port}-${digest}`;
 }
 
+const NON_IDENTITY_CATALOG_KEYS = new Set([
+  'uuid',
+  'ping',
+  'pingTime',
+  'pingStale',
+  'source',
+  'subscriptionId',
+]);
+
+function stableJson(value: unknown): string {
+  if (value === undefined) {
+    return '';
+  }
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).sort(
+    ([left], [right]) => left.localeCompare(right),
+  );
+  return `{${entries
+    .map(([key, nested]) => `${JSON.stringify(key)}:${stableJson(nested)}`)
+    .join(',')}}`;
+}
+
 /**
- * Connection fingerprint without catalog uuid. Same tunnel after a provider
- * rotates the stored id; different tunnels that only share a CDN host:port
- * (different SNI/sid/path) stay distinct.
+ * Every server parameter except catalog uuid, membership and live ping.
+ * A single differing field (name, SNI, sid, path, userId, password, …)
+ * is a different server.
  */
 export function getServerConfigFingerprint(config: VlessConfig): string {
+  const record = config as unknown as Record<string, unknown>;
+  return Object.keys(record)
+    .filter((key) => !NON_IDENTITY_CATALOG_KEYS.has(key))
+    .sort()
+    .map((key) => `${key}:${stableJson(record[key])}`)
+    .join('|');
+}
+
+export function getServerCatalogKey(config: VlessConfig): string {
   return [
-    config.protocol || 'vless',
-    config.address || '',
-    String(config.port || 0),
-    config.type || '',
-    config.security || '',
-    config.sni || '',
-    config.fp || '',
-    config.pbk || '',
-    config.sid || '',
-    config.spx || '',
-    config.path || '',
-    config.host || '',
-    config.wsMaxEarlyData === undefined ? '' : String(config.wsMaxEarlyData),
-    config.serviceName || '',
-    config.flow || '',
-    config.encryption || '',
-    config.method || '',
-    config.mode || '',
-    JSON.stringify(config.xhttpExtra ?? {}),
-    config.noGRPCHeader === undefined ? '' : String(config.noGRPCHeader),
-    config.allowInsecure === undefined ? '' : String(config.allowInsecure),
-    config.pinnedPeerCertSha256 || '',
-    config.verifyPeerCertByName || '',
+    config.uuid || '',
+    config.source || '',
+    config.subscriptionId || '',
+    getServerConfigFingerprint(config),
   ].join('|');
 }
 
 export function getServerDedupKey(config: VlessConfig): string {
-  return `${config.uuid || ''}|${getServerConfigFingerprint(config)}`;
+  return getServerCatalogKey(config);
 }
 
 export function getServerEndpointKey(config: VlessConfig): string {
@@ -82,8 +99,7 @@ export function isSameServerIdentity(
   left: VlessConfig,
   right: VlessConfig,
 ): boolean {
-  // Uuid is not identity: subscription nodes on one CDN host can collide on
-  // the stored id. Same tunnel after rotation shares the connection fingerprint.
+  // Uuid can rotate; every other persisted parameter is identity.
   return getServerConfigFingerprint(left) === getServerConfigFingerprint(right);
 }
 
@@ -96,21 +112,21 @@ function disambiguatedUuid(server: VlessConfig): string {
 }
 
 /**
- * One catalog row per tunnel. True duplicates (same fingerprint) are dropped.
- * Distinct tunnels that collided on uuid keep both rows: the later ones get a
- * fingerprint suffix so sidebar selection can highlight exactly one card.
+ * Keep every server that differs by any persisted field. Drop only exact
+ * copies. If catalog uuids collided across distinct rows, suffix the later
+ * ones so the sidebar can highlight a single card.
  */
 export function uniqueCatalogServers(servers: VlessConfig[]): VlessConfig[] {
-  const seenFingerprints = new Set<string>();
+  const seenCatalogKeys = new Set<string>();
   const seenUuids = new Set<string>();
   const unique: VlessConfig[] = [];
 
   for (const server of servers) {
-    const fingerprint = getServerConfigFingerprint(server);
-    if (seenFingerprints.has(fingerprint)) {
+    const catalogKey = getServerCatalogKey(server);
+    if (seenCatalogKeys.has(catalogKey)) {
       continue;
     }
-    seenFingerprints.add(fingerprint);
+    seenCatalogKeys.add(catalogKey);
 
     let next = server;
     if (seenUuids.has(server.uuid)) {

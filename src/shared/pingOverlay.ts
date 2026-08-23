@@ -44,7 +44,7 @@ export function lookupStoredPing(
 
 /**
  * Re-applies stored latency onto a refreshed catalog.
- * Identity is uuid, then connection fingerprint — not a shared CDN host:port.
+ * Identity is uuid, then the full persisted-parameter fingerprint.
  */
 export function applyPingOverlay(
   servers: VlessConfig[],

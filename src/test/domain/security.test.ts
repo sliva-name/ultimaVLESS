@@ -33,21 +33,25 @@ describe('safe public server DTO', () => {
     ]);
     const current = makeServer({
       uuid: 'old-id',
+      name: 'Frankfurt',
       address: '1.2.3.4',
       sni: 'a.example',
     });
     const rotated = makeServer({
       uuid: 'new-id',
+      name: 'Frankfurt',
       address: '1.2.3.4',
       sni: 'a.example',
     });
     const otherHost = makeServer({
       uuid: 'other-host',
+      name: 'Frankfurt',
       address: '9.9.9.9',
       sni: 'a.example',
     });
     const otherSni = makeServer({
       uuid: 'other-sni',
+      name: 'Frankfurt',
       address: '1.2.3.4',
       sni: 'b.example',
     });
@@ -59,8 +63,20 @@ describe('safe public server DTO', () => {
     expect(isSameServerIdentity(current, otherSni)).toBe(false);
     expect(
       isSameServerIdentity(
-        makeServer({ uuid: 'dup', sni: 'de.example' }),
-        makeServer({ uuid: 'dup', sni: 'nl.example' }),
+        makeServer({ uuid: 'dup', name: 'Germany', sni: 'de.example' }),
+        makeServer({ uuid: 'dup', name: 'Netherlands', sni: 'nl.example' }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameServerIdentity(
+        makeServer({ uuid: 'a', name: 'Germany', sid: 'aa' }),
+        makeServer({ uuid: 'b', name: 'Germany', sid: 'bb' }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameServerIdentity(
+        makeServer({ uuid: 'a', name: 'Germany 1', address: '1.2.3.4' }),
+        makeServer({ uuid: 'b', name: 'Germany 2', address: '1.2.3.4' }),
       ),
     ).toBe(false);
     expect(findMatchingServer([rotated, otherSni], current)?.uuid).toBe(
@@ -68,7 +84,7 @@ describe('safe public server DTO', () => {
     );
   });
 
-  it('keeps distinct tunnels that collided on uuid and drops true duplicates', () => {
+  it('keeps every server that differs by any field and drops only exact copies', () => {
     const first = makeServer({
       uuid: 'dup',
       name: 'Germany',
@@ -79,19 +95,32 @@ describe('safe public server DTO', () => {
       name: 'Netherlands',
       sni: 'nl.example',
     });
-    const duplicate = makeServer({
+    const sameHostDifferentName = makeServer({
       uuid: 'dup',
-      name: 'Germany copy',
+      name: 'Germany 2',
+      sni: 'de.example',
+    });
+    const exactCopy = makeServer({
+      uuid: 'dup',
+      name: 'Germany',
       sni: 'de.example',
     });
 
-    const unique = uniqueCatalogServers([first, collided, duplicate]);
-    expect(unique).toHaveLength(2);
-    expect(unique[0]?.name).toBe('Germany');
+    const unique = uniqueCatalogServers([
+      first,
+      collided,
+      sameHostDifferentName,
+      exactCopy,
+    ]);
+    expect(unique).toHaveLength(3);
+    expect(unique.map((server) => server.name)).toEqual([
+      'Germany',
+      'Netherlands',
+      'Germany 2',
+    ]);
     expect(unique[0]?.uuid).toBe('dup');
-    expect(unique[1]?.name).toBe('Netherlands');
     expect(unique[1]?.uuid).not.toBe('dup');
-    expect(unique[1]?.uuid.startsWith('dup~')).toBe(true);
+    expect(unique[2]?.uuid).not.toBe(unique[1]?.uuid);
   });
 
   it('does not treat two sidebar rows as selected just because uuids match', () => {

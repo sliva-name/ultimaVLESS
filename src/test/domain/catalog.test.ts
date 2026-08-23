@@ -125,11 +125,16 @@ describe('catalog refresh', () => {
   it('reapplies ping by fingerprint after uuid rotation and remaps the live session', async () => {
     const previous = makeServer({
       uuid: 'old-id',
+      name: 'Frankfurt',
       address: '1.2.3.4',
       ping: 42,
       pingTime: 100,
     });
-    const rotated = makeServer({ uuid: 'new-id', address: '1.2.3.4' });
+    const rotated = makeServer({
+      uuid: 'new-id',
+      name: 'Frankfurt',
+      address: '1.2.3.4',
+    });
     const { deps, manager } = createRefresh({
       serverRepository: {
         list: vi.fn(() => [previous]),
@@ -190,8 +195,16 @@ describe('preserve live/selected catalog identity', () => {
   });
 
   it('does not duplicate a live server already represented by fingerprint', () => {
-    const live = makeServer({ uuid: 'old-id', address: '1.2.3.4' });
-    const rotated = makeServer({ uuid: 'new-id', address: '1.2.3.4' });
+    const live = makeServer({
+      uuid: 'old-id',
+      name: 'Frankfurt',
+      address: '1.2.3.4',
+    });
+    const rotated = makeServer({
+      uuid: 'new-id',
+      name: 'Frankfurt',
+      address: '1.2.3.4',
+    });
 
     expect(
       preserveActiveServerIfNeeded([rotated], [live], 'old-id').map(
@@ -225,6 +238,7 @@ describe('ping overlay', () => {
     const stored = [
       makeServer({
         uuid: 'old-id',
+        name: 'Frankfurt',
         address: '1.2.3.4',
         sni: 'a.example',
         ping: 18,
@@ -232,7 +246,12 @@ describe('ping overlay', () => {
       }),
     ];
     const refreshed = [
-      makeServer({ uuid: 'new-id', address: '1.2.3.4', sni: 'a.example' }),
+      makeServer({
+        uuid: 'new-id',
+        name: 'Frankfurt',
+        address: '1.2.3.4',
+        sni: 'a.example',
+      }),
       makeServer({ uuid: 'other', address: '8.8.8.8' }),
     ];
 
