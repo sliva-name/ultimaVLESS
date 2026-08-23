@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { makeServer } from '@/test/factories';
-import { ConnectionController } from './ConnectionController';
+import { ConnectionManager } from './ConnectionManager';
 import { ConnectionOperationAbortedError } from './abort';
 import type { ConnectionMode } from '@/shared/types';
 import type { SessionPhase } from '@/shared/ipc';
@@ -35,6 +35,8 @@ function createController(overrides: Partial<any> = {}) {
       getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
       setSelectedServerId: vi.fn(),
       setPendingTunReconnect: vi.fn(),
+      consumePendingTunReconnect: vi.fn(() => null),
+      peekPendingTunReconnect: vi.fn(() => null),
       clearPendingTunReconnect: vi.fn(),
     },
     connectionMonitorService: {
@@ -83,7 +85,7 @@ function createController(overrides: Partial<any> = {}) {
   }
 
   return {
-    controller: new ConnectionController(deps as any),
+    controller: new ConnectionManager(deps as any),
     deps,
     server,
     start,
@@ -92,7 +94,7 @@ function createController(overrides: Partial<any> = {}) {
   };
 }
 
-describe('ConnectionController', () => {
+describe('ConnectionManager', () => {
   it('connects through the runtime and starts monitoring', async () => {
     const { controller, deps, server, start, stop } = createController();
 
@@ -528,6 +530,29 @@ describe('ConnectionController', () => {
     expect(controller.isBusy()).toBe(false);
     await controller.connect(server.uuid);
     expect(controller.isBusy()).toBe(false);
+    expect(controller.getPhase()).toBe('connected');
+  });
+
+  it('consumes pending TUN relaunch from the session, not bootstrap', async () => {
+    const consumePendingTunReconnect = vi.fn(() => 'server-1');
+    const { controller, server, start } = createController({
+      configService: {
+        getServers: vi.fn(() => [server]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'tun'),
+        getSelectedServerId: vi.fn(() => server.uuid),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        consumePendingTunReconnect,
+        peekPendingTunReconnect: vi.fn(() => server.uuid),
+        clearPendingTunReconnect: vi.fn(),
+      },
+    });
+
+    await expect(controller.resumePendingTunAfterRelaunch()).resolves.toBe(
+      true,
+    );
+    expect(consumePendingTunReconnect).toHaveBeenCalled();
+    expect(start).toHaveBeenCalled();
     expect(controller.getPhase()).toBe('connected');
   });
 });

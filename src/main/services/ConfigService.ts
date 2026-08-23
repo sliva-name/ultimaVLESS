@@ -69,11 +69,27 @@ export class ConfigService {
     });
   }
 
+  public peekPendingTunReconnect(
+    maxAgeMs: number = 2 * 60 * 1000,
+  ): string | null {
+    return this.readPendingTunReconnect(
+      this.store.get('pendingTunReconnect'),
+      maxAgeMs,
+    );
+  }
+
   public consumePendingTunReconnect(
     maxAgeMs: number = 2 * 60 * 1000,
   ): string | null {
     const pending = this.store.get('pendingTunReconnect');
     this.store.set('pendingTunReconnect', null);
+    return this.readPendingTunReconnect(pending, maxAgeMs);
+  }
+
+  private readPendingTunReconnect(
+    pending: AppStoreSchema['pendingTunReconnect'],
+    maxAgeMs: number,
+  ): string | null {
     if (
       !pending ||
       typeof pending.serverId !== 'string' ||

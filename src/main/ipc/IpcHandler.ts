@@ -106,13 +106,12 @@ export async function loadInitialState(window: BrowserWindow): Promise<void> {
       queueRefreshAllSubscriptions,
       reportSubscriptionRefreshIssue,
       restartAutoRefreshTimer,
-      attemptPendingTunReconnect: (serverId, _runtimeDeps, options) =>
-        sessionRecovery.attemptPendingTunReconnect(serverId, options),
+      attemptPendingTunReconnect: () =>
+        sessionRecovery.attemptPendingTunReconnect(),
     },
     {
       configService,
       subscriptionRepository: getSubscriptionRepository(),
-      createRuntimeDependencies: createIpcDependencies,
       stopAutoRefreshTimer,
     },
   );

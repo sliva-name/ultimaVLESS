@@ -6,7 +6,6 @@ import {
   AppSnapshot,
   ConnectResult,
   ConnectionMonitorEvent,
-  ConnectionMonitorStatus,
   DisconnectResult,
   IPC_EVENT_CHANNELS,
   IPC_INVOKE_CHANNELS,
@@ -78,10 +77,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ),
   onUpdateStatus: createListener<UpdateStatus>(IPC_EVENT_CHANNELS.updateStatus),
 
-  getConnectionMonitorStatus: () =>
-    ipcRenderer.invoke(
-      IPC_INVOKE_CHANNELS.getConnectionMonitorStatus,
-    ) as Promise<ConnectionMonitorStatus>,
   setAutoSwitching: (enabled: boolean) =>
     ipcRenderer.invoke(
       IPC_INVOKE_CHANNELS.setAutoSwitching,

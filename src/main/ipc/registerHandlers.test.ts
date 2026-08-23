@@ -103,7 +103,7 @@ describe('registerHandlers', () => {
         IPC_INVOKE_CHANNELS.disconnect,
         IPC_INVOKE_CHANNELS.addSubscription,
         IPC_INVOKE_CHANNELS.pingAllServers,
-        IPC_INVOKE_CHANNELS.getConnectionMonitorStatus,
+        IPC_INVOKE_CHANNELS.getLogs,
         IPC_INVOKE_CHANNELS.getUpdateStatus,
       ]),
     );

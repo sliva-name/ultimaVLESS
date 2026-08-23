@@ -4,10 +4,9 @@ import type { SnapshotPublisher } from './SnapshotPublisher';
 
 export interface ConnectionRecovery {
   handleUnexpectedXrayExit: (reason: string) => Promise<void>;
-  attemptPendingTunReconnect: (
-    serverId: string,
-    options?: { emitErrorOnFailure: boolean },
-  ) => Promise<boolean>;
+  attemptPendingTunReconnect: (options?: {
+    emitErrorOnFailure: boolean;
+  }) => Promise<boolean>;
 }
 
 export function createConnectionRecovery(
@@ -74,11 +73,10 @@ export function createConnectionRecovery(
   };
 
   const attemptPendingTunReconnect = async (
-    serverId: string,
     options: { emitErrorOnFailure: boolean } = { emitErrorOnFailure: true },
   ): Promise<boolean> => {
     try {
-      return await deps.connectionController.resumePendingTun(serverId);
+      return await deps.connectionController.resumePendingTunAfterRelaunch();
     } catch (error) {
       return handlePendingTunReconnectFailure(
         error,

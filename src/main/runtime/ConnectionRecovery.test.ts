@@ -34,7 +34,7 @@ describe('ConnectionRecovery', () => {
     const snapshotPublisher = { push: vi.fn() };
     const deps = {
       connectionController: {
-        resumePendingTun: vi.fn(async () => {
+        resumePendingTunAfterRelaunch: vi.fn(async () => {
           throw new Error('no privileges');
         }),
         cleanupAfterFailure: vi.fn(async () => undefined),
@@ -47,7 +47,7 @@ describe('ConnectionRecovery', () => {
     const result = await createConnectionRecovery(
       deps as any,
       snapshotPublisher as any,
-    ).attemptPendingTunReconnect('server-1', { emitErrorOnFailure: true });
+    ).attemptPendingTunReconnect({ emitErrorOnFailure: true });
 
     expect(result).toBe(false);
     expect(deps.connectionController.cleanupAfterFailure).toHaveBeenCalledWith(

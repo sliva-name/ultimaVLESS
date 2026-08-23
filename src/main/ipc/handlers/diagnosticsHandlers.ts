@@ -2,11 +2,6 @@ import { IpcMainInvokeEvent, ipcMain } from 'electron';
 import { IPC_INVOKE_CHANNELS } from '@/shared/ipc';
 import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from '@/main/ipc/dependencies';
-import { buildConnectionMonitorStatusSummary } from '@/main/ipc/connectionStatusSummary';
-import {
-  buildHealthSnapshot,
-  buildSessionSnapshot,
-} from '@/main/ipc/appSnapshot';
 import { assertBoolean } from '@/main/ipc/validators';
 import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 
@@ -40,25 +35,6 @@ export function registerDiagnosticsHandlers({
       assertTrustedSender(event);
       await deps.logExportService.openLogFolder();
       return true;
-    },
-  );
-
-  ipcMain.handle(
-    IPC_INVOKE_CHANNELS.getConnectionMonitorStatus,
-    (event: IpcMainInvokeEvent) => {
-      assertTrustedSender(event);
-      const session = buildSessionSnapshot(deps);
-      const currentServer = session.activeServerId
-        ? (deps.serverRepository.get(session.activeServerId) ?? null)
-        : null;
-      return buildConnectionMonitorStatusSummary({
-        session,
-        health: buildHealthSnapshot(deps),
-        process: deps.xrayService.getHealthStatus(),
-        recovery: deps.appRecoveryService.getStatus(),
-        autoSwitchingEnabled: deps.connectionController.getAutoSwitchingEnabled(),
-        currentServer,
-      });
     },
   );
 

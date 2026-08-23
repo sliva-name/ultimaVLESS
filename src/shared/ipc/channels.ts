@@ -18,7 +18,6 @@ export const IPC_INVOKE_CHANNELS = {
   getAppVersion: 'get-app-version',
   pingServer: 'ping-server',
   pingAllServers: 'ping-all-servers',
-  getConnectionMonitorStatus: 'get-connection-monitor-status',
   getTunCapabilityStatus: 'get-tun-capability-status',
   setAutoSwitching: 'set-auto-switching',
   clearBlockedServers: 'clear-blocked-servers',

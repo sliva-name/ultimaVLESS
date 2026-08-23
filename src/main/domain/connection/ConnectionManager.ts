@@ -454,6 +454,27 @@ export class ConnectionManager extends EventEmitter {
     );
   }
 
+  /**
+   * UAC relaunch persist is a settings-store port. Session consumes it and
+   * either adopts the already-live id or starts TUN again.
+   */
+  public async resumePendingTunAfterRelaunch(): Promise<boolean> {
+    const pendingId = this.deps.configService.consumePendingTunReconnect();
+    if (!pendingId) {
+      return false;
+    }
+    if (this.state.type === 'connected') {
+      const liveId = activeServerIdFromState(this.state);
+      const selectedId = this.deps.configService.getSelectedServerId();
+      if (liveId === pendingId || liveId === selectedId) {
+        return true;
+      }
+    }
+    return this.resumePendingTun(
+      this.deps.configService.getSelectedServerId() ?? pendingId,
+    );
+  }
+
   public resumePendingTun(serverId: string): Promise<boolean> {
     if (this.deps.configService.getConnectionMode() !== 'tun') {
       return Promise.resolve(false);
