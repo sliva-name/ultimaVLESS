@@ -3,10 +3,7 @@ import { app } from 'electron';
 import { APP_CONSTANTS, PRIMARY_RUNTIME_PORTS } from '@/shared/constants';
 import type { SessionPhase } from '@/shared/ipc';
 import { VlessConfig } from '@/shared/types';
-import {
-  configService,
-  ConfigService,
-} from '@/main/services/ConfigService';
+import { configService, ConfigService } from '@/main/services/ConfigService';
 import {
   connectionMonitorService,
   ConnectionMonitorService,
@@ -20,7 +17,10 @@ import {
   systemProxyService,
   SystemProxyService,
 } from '@/main/services/SystemProxyService';
-import { tunRouteService, TunRouteService } from '@/main/services/TunRouteService';
+import {
+  tunRouteService,
+  TunRouteService,
+} from '@/main/services/TunRouteService';
 import { xrayService, XrayService } from '@/main/services/XrayService';
 import { logger } from '@/main/services/LoggerService';
 import { CONNECTION_MONITOR_TIMING } from '@/main/services/connectionMonitor/timing';
@@ -36,6 +36,7 @@ import {
 import { createRuntimeValidator } from './RuntimeValidator';
 import {
   ConnectionOperationAbortedError,
+  isConnectionOperationCancelled,
   throwIfAborted,
 } from './abort';
 import {
@@ -78,9 +79,6 @@ export class ConnectionControllerRelaunchError extends Error {
   }
 }
 
-/** @deprecated Use SessionPhase from shared/ipc */
-export type ConnectionControllerState = SessionPhase;
-
 const ALLOWED_TRANSITIONS: Record<SessionPhase, readonly SessionPhase[]> = {
   idle: ['connecting', 'disconnecting', 'failed'],
   connecting: ['connected', 'failed', 'disconnecting'],
@@ -97,7 +95,18 @@ type InFlightState = Extract<
 
 /**
  * Single owner of VPN session state. Data-plane mutations go through
- * ConnectionRuntime. HealthMonitor only emits events; policy decides.
+ * ConnectionRuntime. The monitor only emits events; policy decides.
+ *
+ * Queue ownership (this is what keeps connect/disconnect races out):
+ * 1. Every public mutation goes through `enqueue`. Generation is assigned at
+ *    schedule time, not when the task starts.
+ * 2. `abortCurrentOperation()` is only called immediately before enqueueing a
+ *    replacement. The aborted task must not tear the stack down — the
+ *    replacement owns it.
+ * 3. Cleanup after a *real* failure runs only if this operation is still the
+ *    latest generation. A newer connect/disconnect already in the queue wins.
+ * 4. `cleanupAfterFailure` never aborts. It waits its turn so it cannot cancel
+ *    a user operation that was queued behind the failed one.
  */
 export class ConnectionManager extends EventEmitter {
   private operationQueue: Promise<void> = Promise.resolve();
@@ -156,13 +165,10 @@ export class ConnectionManager extends EventEmitter {
     return connectionStateToSessionPhase(this.state);
   }
 
-  /** @deprecated Use getPhase() */
-  public getState(): SessionPhase {
-    return this.getPhase();
-  }
-
   public isBusy(): boolean {
-    return isConnectionStateInFlight(this.state) || this.activeOperation !== null;
+    return (
+      isConnectionStateInFlight(this.state) || this.activeOperation !== null
+    );
   }
 
   private nextGeneration(): number {
@@ -208,18 +214,22 @@ export class ConnectionManager extends EventEmitter {
   }
 
   private enqueue<T>(
-    createInFlight: () => InFlightState,
+    createInFlight: (generation: number) => InFlightState,
     task: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
+    const generation = this.nextGeneration();
     const run = this.operationQueue.then(async () => {
       this.activeOperation = Promise.resolve();
       const abort = new AbortController();
       this.operationAbort = abort;
-      const inFlight = createInFlight();
+      const inFlight = createInFlight(generation);
       this.transitionTo(inFlight);
       try {
         const result = await task(abort.signal);
         throwIfAborted(abort.signal);
+        if (this.generation !== generation) {
+          throw new ConnectionOperationAbortedError();
+        }
         if (inFlight.type === 'stopping') {
           this.transitionTo({ type: 'disconnected' });
         } else {
@@ -239,7 +249,7 @@ export class ConnectionManager extends EventEmitter {
       } catch (error) {
         if (
           error instanceof ConnectionControllerRelaunchError ||
-          error instanceof ConnectionOperationAbortedError ||
+          isConnectionOperationCancelled(error) ||
           abort.signal.aborted
         ) {
           throw error;
@@ -260,6 +270,17 @@ export class ConnectionManager extends EventEmitter {
       () => undefined,
     );
     return run;
+  }
+
+  private isLatestGeneration(generation: number): boolean {
+    return this.generation === generation;
+  }
+
+  private shouldCleanupFailedOperation(error: unknown): boolean {
+    return (
+      !(error instanceof ConnectionControllerRelaunchError) &&
+      !isConnectionOperationCancelled(error)
+    );
   }
 
   private getServer(serverId: string): VlessConfig {
@@ -338,16 +359,21 @@ export class ConnectionManager extends EventEmitter {
 
   public connect(serverId: string): Promise<void> {
     this.abortCurrentOperation();
-    return this.enqueue(
-      () => ({
+    const operation = this.enqueue(
+      (generation) => ({
         type: 'starting',
         serverId,
         mode: this.deps.configService.getConnectionMode(),
-        generation: this.nextGeneration(),
+        generation,
       }),
       (signal) => this.connectUnsafe(serverId, signal),
-    ).catch(async (error) => {
-      if (!(error instanceof ConnectionControllerRelaunchError)) {
+    );
+    const scheduledGeneration = this.generation;
+    return operation.catch(async (error) => {
+      if (
+        this.shouldCleanupFailedOperation(error) &&
+        this.isLatestGeneration(scheduledGeneration)
+      ) {
         if (this.deps.connectionMonitorService.getStatus().isConnected) {
           this.deps.connectionMonitorService.recordError(
             error instanceof Error ? error.message : String(error),
@@ -372,7 +398,7 @@ export class ConnectionManager extends EventEmitter {
   ): Promise<void> {
     this.abortCurrentOperation();
     return this.enqueue(
-      () => ({ type: 'stopping', generation: this.nextGeneration() }),
+      (generation) => ({ type: 'stopping', generation }),
       async () => {
         if (!options.preservePendingTunReconnect) {
           this.deps.configService.clearPendingTunReconnect();
@@ -388,33 +414,17 @@ export class ConnectionManager extends EventEmitter {
   public switchToServer(server: VlessConfig): Promise<void> {
     this.abortCurrentOperation();
     return this.enqueue(
-      () => ({
+      (generation) => ({
         type: 'switching',
         from: activeServerIdFromState(this.state) ?? '',
         to: server.uuid,
         mode: this.deps.configService.getConnectionMode(),
-        generation: this.nextGeneration(),
+        generation,
       }),
       async (signal) => {
         await this.runtime.switch(this.buildSpec(server), signal);
         this.deps.configService.setSelectedServerId(server.uuid);
         this.deps.connectionMonitorService.startMonitoring(server);
-      },
-    );
-  }
-
-  /** @deprecated Auto-switch now runs inside ConnectionManager. */
-  public transitionForAutoSwitch(server: VlessConfig): Promise<void> {
-    return this.enqueue(
-      () => ({
-        type: 'switching',
-        from: activeServerIdFromState(this.state) ?? '',
-        to: server.uuid,
-        mode: this.deps.configService.getConnectionMode(),
-        generation: this.nextGeneration(),
-      }),
-      async (signal) => {
-        await this.runtime.switch(this.buildSpec(server), signal);
       },
     );
   }
@@ -425,11 +435,11 @@ export class ConnectionManager extends EventEmitter {
     }
     this.abortCurrentOperation();
     return this.enqueue(
-      () => ({
+      (generation) => ({
         type: 'starting',
         serverId,
         mode: 'tun' as const,
-        generation: this.nextGeneration(),
+        generation,
       }),
       async (signal) => {
         const server = this.getServer(serverId);
@@ -443,9 +453,8 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public cleanupAfterFailure(): Promise<void> {
-    this.abortCurrentOperation();
     return this.enqueue(
-      () => ({ type: 'stopping', generation: this.nextGeneration() }),
+      (generation) => ({ type: 'stopping', generation }),
       async () => {
         this.deps.connectionMonitorService.stopMonitoring({
           message: 'Connection cleanup',
@@ -479,7 +488,11 @@ export class ConnectionManager extends EventEmitter {
       try {
         await this.cleanupAfterFailure();
       } catch (error) {
-        logger.error('ConnectionManager', 'Cleanup after health failure failed', error);
+        logger.error(
+          'ConnectionManager',
+          'Cleanup after health failure failed',
+          error,
+        );
       }
     }
   }
@@ -488,18 +501,10 @@ export class ConnectionManager extends EventEmitter {
     reason: string,
     options: { localProxyReachable?: boolean | null } = {},
   ): Promise<void> {
-    const recorded =
-      this.deps.connectionMonitorService.handleCriticalConnectionFailure(
-        reason,
-        options,
-      );
-    if (!recorded) {
-      return;
-    }
-    const server = this.deps.connectionMonitorService.getStatus().currentServer;
-    if (server) {
-      this.handleHealthFailure({ server, reason, blocking: true });
-    }
+    this.deps.connectionMonitorService.handleCriticalConnectionFailure(
+      reason,
+      options,
+    );
   }
 
   private scheduleAutoSwitch(
@@ -529,12 +534,12 @@ export class ConnectionManager extends EventEmitter {
     const monitor = this.deps.connectionMonitorService;
     try {
       await this.enqueue(
-        () => ({
+        (generation) => ({
           type: 'switching',
           from: from.uuid,
           to: candidates[0]?.uuid ?? from.uuid,
           mode: this.deps.configService.getConnectionMode(),
-          generation: this.nextGeneration(),
+          generation,
         }),
         async (signal) => {
           for (const candidate of candidates) {

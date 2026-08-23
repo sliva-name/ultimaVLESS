@@ -23,8 +23,3 @@ export function toSafeServerList(servers: VlessConfig[]): SafeVlessConfig[] {
   cachedSafeList = safe;
   return safe;
 }
-
-export function invalidateSafeServerListCache(): void {
-  cachedSource = null;
-  cachedSafeList = null;
-}

@@ -24,7 +24,10 @@ vi.mock('@/main/services/ConnectionController', () => ({
 }));
 
 describe('connection IPC handlers', () => {
-  const handlers = new Map<string, (event: unknown, payload?: unknown) => any>();
+  const handlers = new Map<
+    string,
+    (event: unknown, payload?: unknown) => any
+  >();
 
   beforeEach(() => {
     handlers.clear();
@@ -64,7 +67,7 @@ describe('connection IPC handlers', () => {
     expect(deps.connectionController.connect).toHaveBeenCalledWith('server-1');
   });
 
-  it('cleans up and returns a structured error when connect fails', async () => {
+  it('returns a structured error and leaves cleanup to ConnectionManager', async () => {
     const deps = registerWith({
       connectionController: {
         connect: vi.fn(async () => {
@@ -81,31 +84,8 @@ describe('connection IPC handlers', () => {
       error: 'boom',
     });
     expect(deps.connectionMonitorService.recordError).not.toHaveBeenCalled();
-    expect(deps.connectionController.cleanupAfterFailure).toHaveBeenCalled();
-  });
-
-  it('records the error in the monitor only when a session is active', async () => {
-    const deps = registerWith({
-      connectionController: {
-        connect: vi.fn(async () => {
-          throw new Error('boom');
-        }),
-        disconnect: vi.fn(),
-        cleanupAfterFailure: vi.fn(async () => undefined),
-      },
-      connectionMonitorService: {
-        recordError: vi.fn(),
-        getStatus: vi.fn(() => ({ isConnected: true })),
-      },
-    });
-    const handler = handlers.get(IPC_INVOKE_CHANNELS.connect)!;
-
-    await expect(handler({} as never, 'server-1')).resolves.toEqual({
-      ok: false,
-      error: 'boom',
-    });
-    expect(deps.connectionMonitorService.recordError).toHaveBeenCalledWith(
-      'boom',
-    );
+    expect(
+      deps.connectionController.cleanupAfterFailure,
+    ).not.toHaveBeenCalled();
   });
 });

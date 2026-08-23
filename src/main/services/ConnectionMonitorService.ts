@@ -583,4 +583,3 @@ export class ConnectionMonitorService extends EventEmitter {
 }
 
 export const connectionMonitorService = new ConnectionMonitorService();
-export { ConnectionMonitorService as HealthMonitor };

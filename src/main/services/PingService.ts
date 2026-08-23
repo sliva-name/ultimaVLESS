@@ -179,17 +179,6 @@ export class PingService {
 
     return results;
   }
-
-  public async pingServerWithResult(
-    server: VlessConfig,
-    timeout: number = this.DEFAULT_TIMEOUT,
-  ): Promise<{ uuid: string; latency: number | null }> {
-    const latency = await this.pingServer(server, timeout);
-    return {
-      uuid: server.uuid,
-      latency,
-    };
-  }
 }
 
 export const pingService = new PingService();

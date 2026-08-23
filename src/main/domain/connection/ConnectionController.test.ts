@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { makeServer } from '@/test/factories';
 import { ConnectionController } from './ConnectionController';
+import { ConnectionOperationAbortedError } from './abort';
 import type { ConnectionMode } from '@/shared/types';
 import type { SessionPhase } from '@/shared/ipc';
 
@@ -12,7 +13,9 @@ vi.mock('@/main/services/PrivilegeService', () => ({
   hasTunPrivileges: vi.fn(),
   requestTunPrivilegesRelaunch: vi.fn(),
 }));
-vi.mock('@/main/services/SystemProxyService', () => ({ systemProxyService: {} }));
+vi.mock('@/main/services/SystemProxyService', () => ({
+  systemProxyService: {},
+}));
 vi.mock('@/main/services/TunRouteService', () => ({ tunRouteService: {} }));
 vi.mock('@/main/services/XrayService', () => ({ xrayService: {} }));
 
@@ -66,8 +69,9 @@ function createController(overrides: Partial<any> = {}) {
 
   if (!overrides.serverRepository) {
     const listServers = () => {
-      const fromConfig = (deps.configService as { getServers?: () => typeof server[] })
-        .getServers;
+      const fromConfig = (
+        deps.configService as { getServers?: () => (typeof server)[] }
+      ).getServers;
       return typeof fromConfig === 'function' ? fromConfig() : [server];
     };
     (deps as { serverRepository: unknown }).serverRepository = {
@@ -247,15 +251,17 @@ describe('ConnectionController', () => {
 
   it('switches through runtime.switch instead of a teardown flag', async () => {
     const next = makeServer({ uuid: 'server-2' });
-    const { controller, server, start, switchRuntime, deps } = createController({
-      configService: {
-        getServers: vi.fn(() => [server, next]),
-        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
-        setSelectedServerId: vi.fn(),
-        setPendingTunReconnect: vi.fn(),
-        clearPendingTunReconnect: vi.fn(),
+    const { controller, server, start, switchRuntime, deps } = createController(
+      {
+        configService: {
+          getServers: vi.fn(() => [server, next]),
+          getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+          setSelectedServerId: vi.fn(),
+          setPendingTunReconnect: vi.fn(),
+          clearPendingTunReconnect: vi.fn(),
+        },
       },
-    });
+    );
 
     await controller.connect(server.uuid);
     start.mockClear();
@@ -366,5 +372,122 @@ describe('ConnectionController', () => {
     expect(stop).toHaveBeenCalled();
     expect(deps.connectionMonitorService.stopMonitoring).toHaveBeenCalled();
     expect(controller.getPhase()).toBe('idle');
+  });
+
+  it('does not cleanup when a connect is aborted by a later disconnect', async () => {
+    let releaseStart: (() => void) | undefined;
+    const start = vi.fn(
+      (_spec: unknown, signal: AbortSignal) =>
+        new Promise<void>((resolve, reject) => {
+          const onAbort = () => {
+            reject(new ConnectionOperationAbortedError());
+          };
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
+          signal.addEventListener('abort', onAbort, { once: true });
+          releaseStart = () => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+          };
+        }),
+    );
+    const stop = vi.fn(async () => undefined);
+    const { controller, server, deps } = createController({
+      runtime: {
+        start,
+        stop,
+        switch: vi.fn(async () => undefined),
+        status: vi.fn(() => ({ xrayRunning: false })),
+      },
+    });
+
+    const first = controller.connect(server.uuid);
+    await Promise.resolve();
+    const disconnecting = controller.disconnect();
+    await expect(first).rejects.toBeInstanceOf(ConnectionOperationAbortedError);
+    await disconnecting;
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(deps.connectionMonitorService.recordError).not.toHaveBeenCalled();
+    expect(controller.getPhase()).toBe('idle');
+    releaseStart?.();
+  });
+
+  it('cleans up a real connect failure when nothing newer is queued', async () => {
+    const start = vi.fn(async () => {
+      throw new Error('spawn failed');
+    });
+    const stop = vi.fn(async () => undefined);
+    const { controller, server } = createController({
+      runtime: {
+        start,
+        stop,
+        switch: vi.fn(async () => undefined),
+        status: vi.fn(() => ({ xrayRunning: false })),
+      },
+    });
+
+    await expect(controller.connect(server.uuid)).rejects.toThrow(
+      'spawn failed',
+    );
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(controller.getPhase()).toBe('idle');
+  });
+
+  it('skips failure cleanup when a newer operation was already scheduled', async () => {
+    const start = vi.fn(async () => {
+      throw new Error('spawn failed');
+    });
+    const stop = vi.fn(async () => undefined);
+    const { controller, server } = createController({
+      runtime: {
+        start,
+        stop,
+        switch: vi.fn(async () => undefined),
+        status: vi.fn(() => ({ xrayRunning: false })),
+      },
+    });
+
+    const first = controller.connect(server.uuid);
+    const disconnecting = controller.disconnect();
+    await expect(first).rejects.toThrow('spawn failed');
+    await disconnecting;
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(controller.getPhase()).toBe('idle');
+  });
+
+  it('handleRuntimeFailure only records the failure; policy stays on the event path', async () => {
+    const policy = { onHealthFailure: vi.fn() };
+    const { controller, server, deps } = createController({
+      policy,
+      connectionMonitorService: {
+        getStatus: vi.fn(() => ({
+          isConnected: true,
+          currentServer: server,
+          blockedServers: [],
+          lastHealthState: 'failed',
+        })),
+        startMonitoring: vi.fn(),
+        stopMonitoring: vi.fn(),
+        pruneExpiredBlockedServers: vi.fn(),
+        getAutoSwitchingEnabled: vi.fn(() => true),
+        notifySwitching: vi.fn(),
+        markServerAsBlocked: vi.fn(),
+        recordError: vi.fn(),
+        handleCriticalConnectionFailure: vi.fn(() => true),
+      },
+    });
+
+    await controller.handleRuntimeFailure('xray died', {
+      localProxyReachable: false,
+    });
+
+    expect(
+      deps.connectionMonitorService.handleCriticalConnectionFailure,
+    ).toHaveBeenCalledWith('xray died', { localProxyReachable: false });
+    expect(policy.onHealthFailure).not.toHaveBeenCalled();
   });
 });

@@ -20,7 +20,7 @@ export function registerConnectionHandlers({
   deps,
   assertTrustedSender,
 }: RegisterConnectionHandlersParams): void {
-  const handleConnectFailure = async (error: unknown) => {
+  const handleConnectFailure = (error: unknown) => {
     if (error instanceof ConnectionControllerRelaunchError) {
       return {
         ok: false as const,
@@ -30,22 +30,8 @@ export function registerConnectionHandlers({
     }
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('IPC', 'Failed to connect', error);
-    // Only feed the monitor when a monitoring session is actually active;
-    // a failure before startMonitoring (config compile, spawn) must surface
-    // through the IPC response alone.
-    if (deps.connectionMonitorService.getStatus().isConnected) {
-      deps.connectionMonitorService.recordError(errorMessage);
-    }
-
-    try {
-      await deps.connectionController.cleanupAfterFailure();
-    } catch (cleanupError) {
-      logger.error(
-        'IPC',
-        'Failed to cleanup network stack after connect failure',
-        cleanupError,
-      );
-    }
+    // Cleanup and monitor.recordError live in ConnectionManager.connect().
+    // Doing them again here raced with the next queued connect/disconnect.
     return { ok: false as const, error: errorMessage };
   };
 

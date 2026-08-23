@@ -18,7 +18,11 @@ describe('registerRuntimeEvents', () => {
   function createDeps() {
     return {
       xrayService: Object.assign(new EventEmitter(), {
-        getActivePorts: vi.fn(() => ({ socks: 10808, http: 10809, api: 10810 })),
+        getActivePorts: vi.fn(() => ({
+          socks: 10808,
+          http: 10809,
+          api: 10810,
+        })),
       }),
       connectionMonitorService: Object.assign(new EventEmitter(), {
         handleXrayHealthStatusChanged: vi.fn(),
@@ -31,7 +35,6 @@ describe('registerRuntimeEvents', () => {
       connectionController: Object.assign(new EventEmitter(), {
         handleHealthFailure: vi.fn(),
         handleRuntimeFailure: vi.fn(),
-        transitionForAutoSwitch: vi.fn(),
         cleanupAfterFailure: vi.fn(),
         isBusy: vi.fn(() => false),
         getPhase: vi.fn(() => 'idle'),

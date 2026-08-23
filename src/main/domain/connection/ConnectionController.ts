@@ -5,4 +5,3 @@ export {
   connectionManager,
   connectionController,
 } from './ConnectionManager';
-export type { ConnectionControllerState } from './ConnectionManager';

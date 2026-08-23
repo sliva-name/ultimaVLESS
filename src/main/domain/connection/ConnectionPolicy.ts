@@ -3,7 +3,6 @@ import { selectAutoSwitchCandidates } from '@/main/services/connectionMonitor/au
 
 export type PolicyDecision =
   | { action: 'switch'; candidates: VlessConfig[] }
-  | { action: 'retry'; delayMs: number }
   | { action: 'disconnect' }
   | { action: 'none' };
 

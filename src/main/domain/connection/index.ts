@@ -5,7 +5,6 @@ export {
   connectionManager,
   connectionController,
 } from './ConnectionManager';
-export type { ConnectionControllerState } from './ConnectionManager';
 export type { ConnectionState } from './ConnectionState';
 export type { ConnectionSpec } from './ConnectionSpec';
 export type { ConnectionRuntime } from './ConnectionRuntime';

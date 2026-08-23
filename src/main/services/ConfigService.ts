@@ -1,5 +1,8 @@
 import Store from 'electron-store';
-import { normalizePerformanceSettings } from '@/shared/performanceSettings';
+import {
+  isUnmodifiedLegacyPerformanceSettings,
+  normalizePerformanceSettings,
+} from '@/shared/performanceSettings';
 import {
   ConnectionMode,
   DEFAULT_PERFORMANCE_SETTINGS,
@@ -10,26 +13,6 @@ import {
   type AppStoreSchema,
 } from '@/main/infrastructure/persistence/appStore';
 import { logger } from './LoggerService';
-
-const LEGACY_PERFORMANCE_DEFAULTS: PerformanceSettings = {
-  muxEnabled: true,
-  muxConcurrency: 8,
-  xudpConcurrency: 16,
-  xudpProxyUDP443: 'reject',
-  xhttpMaxConnections: 3,
-  remoteDnsPreset: 'cloudflare',
-  remoteDnsServers: ['1.1.1.1', '1.0.0.1'],
-  tcpFastOpen: true,
-  sniffingRouteOnly: true,
-  logLevel: 'warning',
-  fingerprint: 'chrome',
-  blockAds: true,
-  blockBittorrent: true,
-  domainStrategy: 'IPIfNonMatch',
-  windowsTunRouting: 'powershell',
-  bypassDomains: [],
-  bypassIps: [],
-};
 
 export type UiLanguage = 'en' | 'ru';
 
@@ -53,33 +36,13 @@ export class ConfigService {
    */
   private migrateLegacyPerformanceDefaults(): void {
     const stored = this.store.get('performanceSettings');
-    if (!stored || !this.matchesPerformanceSettings(stored)) {
+    if (!stored || !isUnmodifiedLegacyPerformanceSettings(stored)) {
       return;
     }
     this.store.set('performanceSettings', DEFAULT_PERFORMANCE_SETTINGS);
     logger.info(
       'ConfigService',
       'Migrated legacy performance defaults to lean Xray defaults',
-    );
-  }
-
-  private matchesPerformanceSettings(settings: PerformanceSettings): boolean {
-    return (
-      settings.muxEnabled === LEGACY_PERFORMANCE_DEFAULTS.muxEnabled &&
-      settings.muxConcurrency === LEGACY_PERFORMANCE_DEFAULTS.muxConcurrency &&
-      settings.xudpConcurrency ===
-        LEGACY_PERFORMANCE_DEFAULTS.xudpConcurrency &&
-      settings.xudpProxyUDP443 ===
-        LEGACY_PERFORMANCE_DEFAULTS.xudpProxyUDP443 &&
-      settings.tcpFastOpen === LEGACY_PERFORMANCE_DEFAULTS.tcpFastOpen &&
-      settings.sniffingRouteOnly ===
-        LEGACY_PERFORMANCE_DEFAULTS.sniffingRouteOnly &&
-      settings.logLevel === LEGACY_PERFORMANCE_DEFAULTS.logLevel &&
-      settings.fingerprint === LEGACY_PERFORMANCE_DEFAULTS.fingerprint &&
-      settings.blockAds === LEGACY_PERFORMANCE_DEFAULTS.blockAds &&
-      settings.blockBittorrent ===
-        LEGACY_PERFORMANCE_DEFAULTS.blockBittorrent &&
-      settings.domainStrategy === LEGACY_PERFORMANCE_DEFAULTS.domainStrategy
     );
   }
 

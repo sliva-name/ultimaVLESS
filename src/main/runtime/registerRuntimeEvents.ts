@@ -6,6 +6,7 @@ import type { IpcDependencies } from '@/main/ipc/dependencies';
 import type { SnapshotPublisher } from './SnapshotPublisher';
 import type { ConnectionRecovery } from './ConnectionRecovery';
 import type { HealthFailureEvent } from '@/main/services/ConnectionMonitorService';
+import { logger } from '@/main/services/LoggerService';
 
 interface RegisterRuntimeEventsParams {
   deps: IpcDependencies;
@@ -67,12 +68,15 @@ export function registerRuntimeEvents({
   deps.connectionMonitorService.on(
     'health-failure',
     (event: HealthFailureEvent) => {
-      deps.connectionController.handleHealthFailure(event);
+      void Promise.resolve(
+        deps.connectionController.handleHealthFailure(event),
+      ).catch((error) => {
+        logger.error('Runtime', 'Failed to handle health failure', error);
+      });
     },
   );
 
   deps.connectionController.removeAllListeners('phase-changed');
-  deps.connectionController.removeAllListeners('busy-changed');
   deps.connectionController.removeAllListeners('state-changed');
   deps.connectionController.on('phase-changed', (phase: SessionPhase) => {
     snapshotPublisher.push('connection');
