@@ -91,6 +91,10 @@ export function getServerDedupKey(config: VlessConfig): string {
   return getServerCatalogKey(config);
 }
 
+export function catalogListFingerprint(servers: VlessConfig[]): string {
+  return servers.map(getServerCatalogKey).join('||');
+}
+
 export function getServerEndpointKey(config: VlessConfig): string {
   return `${config.protocol ?? 'vless'}|${config.address}:${config.port}`;
 }

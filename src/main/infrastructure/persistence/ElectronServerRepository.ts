@@ -2,22 +2,17 @@ import type { VlessConfig } from '@/shared/types';
 import { logger } from '@/main/services/LoggerService';
 import { getAppStore } from '@/main/infrastructure/persistence/appStore';
 import type { ServerRepository } from '@/main/domain/server/ServerRepository';
-import { uniqueCatalogServers } from '@/shared/serverIdentity';
+import {
+  catalogListFingerprint,
+  getServerConfigFingerprint,
+  uniqueCatalogServers,
+} from '@/shared/serverIdentity';
 
 type StoredPing = {
   ping: number | null;
   pingTime?: number;
   pingStale?: boolean;
 };
-
-function catalogIdentityFingerprint(servers: VlessConfig[]): string {
-  return servers
-    .map(
-      (server) =>
-        `${server.uuid}|${server.name}|${server.address}:${server.port}|${server.protocol ?? ''}`,
-    )
-    .join('||');
-}
 
 function pingOverlayFingerprint(overlay: Record<string, StoredPing>): string {
   return Object.entries(overlay)
@@ -58,13 +53,38 @@ function extractPingOverlay(
   return overlay;
 }
 
-function applyPingOverlay(
-  servers: VlessConfig[],
+function hydratePingOverlay(
+  catalog: VlessConfig[],
   overlay: Record<string, StoredPing>,
 ): VlessConfig[] {
-  return servers.map((server) => {
+  const previous = catalog.map((server) => {
     const stored = overlay[server.uuid];
     return stored ? { ...server, ...stored } : server;
+  });
+  const byFingerprint = new Map<string, StoredPing>();
+  for (const server of previous) {
+    if (
+      server.ping === undefined &&
+      server.pingTime === undefined &&
+      server.pingStale === undefined
+    ) {
+      continue;
+    }
+    byFingerprint.set(getServerConfigFingerprint(server), {
+      ping: server.ping ?? null,
+      pingTime: server.pingTime,
+      pingStale: server.pingStale,
+    });
+  }
+
+  const unique = uniqueCatalogServers(catalog);
+  return unique.map((server) => {
+    const byUuid = overlay[server.uuid];
+    if (byUuid) {
+      return { ...server, ...byUuid };
+    }
+    const byFp = byFingerprint.get(getServerConfigFingerprint(server));
+    return byFp ? { ...server, ...byFp } : server;
   });
 }
 
@@ -85,14 +105,13 @@ export function createServerRepository(): ServerRepository {
       return this.list().find((server) => server.uuid === id);
     },
     list() {
-      return uniqueCatalogServers(
-        applyPingOverlay(store.get('servers') || [], readOverlay()),
-      );
+      return hydratePingOverlay(store.get('servers') || [], readOverlay());
     },
     saveAll(servers: VlessConfig[]) {
-      const catalog = uniqueCatalogServers(servers).map(stripPing);
-      const overlay = extractPingOverlay(servers);
-      const fingerprint = `${catalogIdentityFingerprint(catalog)}##${pingOverlayFingerprint(overlay)}`;
+      const unique = uniqueCatalogServers(servers);
+      const catalog = unique.map(stripPing);
+      const overlay = extractPingOverlay(unique);
+      const fingerprint = `${catalogListFingerprint(catalog)}##${pingOverlayFingerprint(overlay)}`;
       if (fingerprint === lastPersistedFingerprint) {
         logger.debug(
           'ServerRepository',

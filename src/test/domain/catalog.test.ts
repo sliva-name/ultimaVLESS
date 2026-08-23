@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createSubscriptionRefreshManager } from '@/main/ipc/subscriptionRefresh';
 import { preserveActiveServerIfNeeded } from '@/main/ipc/refreshUtils';
 import { applyPingOverlay, collectPingOverlay } from '@/shared/pingOverlay';
+import { uniqueCatalogServers } from '@/shared/serverIdentity';
 import { makeServer, makeSubscription } from '@/test/factories';
 
 function createRefresh(overrides: Partial<any> = {}) {
@@ -290,5 +291,30 @@ describe('ping overlay', () => {
       ping: null,
       pingStale: false,
     });
+  });
+
+  it('keeps ping after catalog uuid disambiguation of distinct rows', () => {
+    const stored = [
+      makeServer({
+        uuid: 'dup',
+        name: 'Germany',
+        sni: 'de.example',
+        ping: 22,
+        pingTime: 9,
+      }),
+      makeServer({
+        uuid: 'dup',
+        name: 'Netherlands',
+        sni: 'nl.example',
+        ping: 41,
+        pingTime: 10,
+      }),
+    ];
+    const unique = uniqueCatalogServers(stored);
+
+    expect(unique).toHaveLength(2);
+    expect(unique[0]).toMatchObject({ name: 'Germany', ping: 22 });
+    expect(unique[1]).toMatchObject({ name: 'Netherlands', ping: 41 });
+    expect(unique[1]?.uuid).not.toBe(unique[0]?.uuid);
   });
 });

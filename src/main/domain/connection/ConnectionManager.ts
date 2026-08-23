@@ -312,6 +312,7 @@ export class ConnectionManager extends EventEmitter {
               ? this.state.mode
               : inFlight.mode;
           this.transitionTo({ type: 'connected', serverId, mode });
+          this.healthPolicyArmed = false;
         }
         return result;
       } catch (error) {
@@ -322,6 +323,11 @@ export class ConnectionManager extends EventEmitter {
         ) {
           throw error;
         }
+        this.healthPolicyArmed = false;
+        this.deps.connectionMonitorService.stopMonitoring({
+          message: error instanceof Error ? error.message : String(error),
+          preserveLastError: true,
+        });
         this.transitionTo({
           type: 'failed',
           reason: {
@@ -397,7 +403,11 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public connect(serverId: string): Promise<void> {
-    if (this.state.type === 'connected' && this.state.serverId === serverId) {
+    if (
+      this.state.type === 'connected' &&
+      this.state.serverId === serverId &&
+      this.runtime.status().xrayRunning
+    ) {
       return Promise.resolve();
     }
     this.abortCurrentOperation();
@@ -536,7 +546,11 @@ export class ConnectionManager extends EventEmitter {
     });
 
     if (decision.action === 'switch') {
-      this.scheduleAutoSwitch(decision.candidates, event.server);
+      if (!this.scheduleAutoSwitch(decision.candidates, event.server)) {
+        if (!this.autoSwitchTimer) {
+          this.healthPolicyArmed = false;
+        }
+      }
       return;
     }
     if (decision.action === 'disconnect') {
@@ -564,7 +578,15 @@ export class ConnectionManager extends EventEmitter {
     if (this.state.type !== 'connected') {
       return;
     }
-    const server = this.getServer(this.state.serverId);
+    const server = this.servers.get(this.state.serverId);
+    if (!server) {
+      logger.warn(
+        'ConnectionManager',
+        'Runtime failure without a catalog server',
+        { reason },
+      );
+      return;
+    }
     await this.handleHealthFailure({
       server,
       reason,
@@ -575,9 +597,9 @@ export class ConnectionManager extends EventEmitter {
   private scheduleAutoSwitch(
     candidates: VlessConfig[],
     from: VlessConfig,
-  ): void {
+  ): boolean {
     if (this.autoSwitchTimer || this.state.type === 'switching') {
-      return;
+      return false;
     }
     logger.info('ConnectionManager', 'Scheduling auto-switch', {
       from: from.name,
@@ -589,6 +611,7 @@ export class ConnectionManager extends EventEmitter {
         this.healthPolicyArmed = false;
       });
     }, CONNECTION_MONITOR_TIMING.autoSwitchDelayMs);
+    return true;
   }
 
   private async runAutoSwitch(

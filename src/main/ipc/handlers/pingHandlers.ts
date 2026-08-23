@@ -11,6 +11,7 @@ import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { assertBoolean, assertValidServerPayload } from '@/main/ipc/validators';
 import { createSerialQueue } from '@/main/ipc/serialQueue';
+import { catalogListFingerprint } from '@/shared/serverIdentity';
 
 interface RegisterPingHandlersParams {
   deps: IpcDependencies;
@@ -139,6 +140,7 @@ export function registerPingHandlers({
       }));
     }
 
+    const startedCatalog = catalogListFingerprint(servers);
     const incrementalResults = new Map<string, number | null>();
     let resultsSinceLastPush = 0;
 
@@ -146,6 +148,13 @@ export function registerPingHandlers({
       results: Map<string, number | null>,
     ): VlessConfig[] => {
       const latest = deps.serverRepository.list();
+      if (catalogListFingerprint(latest) !== startedCatalog) {
+        logger.debug(
+          'IPC',
+          'Dropping ping-all-servers result (catalog changed)',
+        );
+        return latest;
+      }
       const merged = mergePingResults(latest, results, Date.now());
       deps.serverRepository.saveAll(merged);
       notifySnapshot('ping');

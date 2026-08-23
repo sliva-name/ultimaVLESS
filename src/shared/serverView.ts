@@ -49,27 +49,13 @@ export function toSafeServer(server: VlessConfig): SafeServerConfig {
 let cachedFingerprint: string | null = null;
 let cachedSafeList: SafeServerConfig[] | null = null;
 
-function publicListFingerprint(servers: VlessConfig[]): string {
-  return servers
-    .map(
-      (server) =>
-        `${server.uuid}|${server.name}|${server.address}:${server.port}|${server.sni ?? ''}|${server.protocol ?? ''}|${server.ping ?? ''}|${server.pingTime ?? ''}|${server.pingStale ? 1 : 0}`,
-    )
-    .join('||');
-}
-
-/**
- * Projects the stored server list into the public DTO. Cache key is the
- * public-field fingerprint, not the array reference — in-place mutation
- * of secrets must not leak a stale unsafe object.
- */
 export function toSafeServerList(servers: VlessConfig[]): SafeServerConfig[] {
   const unique = uniqueCatalogServers(servers);
-  const fingerprint = publicListFingerprint(unique);
+  const safe = unique.map(toSafeServer);
+  const fingerprint = safe.map((server) => JSON.stringify(server)).join('||');
   if (cachedFingerprint === fingerprint && cachedSafeList) {
     return cachedSafeList;
   }
-  const safe = unique.map(toSafeServer);
   cachedFingerprint = fingerprint;
   cachedSafeList = safe;
   return safe;

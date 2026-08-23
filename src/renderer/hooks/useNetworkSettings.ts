@@ -8,8 +8,16 @@ import type { TunCapabilityStatus } from '@/shared/ipc';
 import { useAppSnapshotContext } from './useAppSnapshot';
 
 export function useNetworkSettings(isOpen: boolean) {
-  const { snapshot } = useAppSnapshotContext();
-  const connectionMode = snapshot.connectionMode;
+  const { snapshot, refreshSnapshot } = useAppSnapshotContext();
+  const [connectionModeOverride, setConnectionModeOverride] = useState<{
+    mode: ConnectionMode;
+    baseline: ConnectionMode;
+  } | null>(null);
+  const connectionMode =
+    connectionModeOverride !== null &&
+    snapshot.connectionMode === connectionModeOverride.baseline
+      ? connectionModeOverride.mode
+      : snapshot.connectionMode;
   const [tunCapability, setTunCapability] =
     useState<TunCapabilityStatus | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
@@ -48,10 +56,18 @@ export function useNetworkSettings(isOpen: boolean) {
     };
   }, [isOpen]);
 
-  const setConnectionMode = useCallback(async (mode: ConnectionMode) => {
-    await window.electronAPI.setConnectionMode(mode);
-    setModeError(null);
-  }, []);
+  const setConnectionMode = useCallback(
+    async (mode: ConnectionMode) => {
+      const baseline = snapshot.connectionMode;
+      await window.electronAPI.setConnectionMode(mode);
+      setConnectionModeOverride({ mode, baseline });
+      setModeError(null);
+      void refreshSnapshot().catch((err) =>
+        console.error('Failed to refresh snapshot after mode change:', err),
+      );
+    },
+    [refreshSnapshot, snapshot.connectionMode],
+  );
 
   const updatePerfField = useCallback(
     <K extends keyof PerformanceSettings>(

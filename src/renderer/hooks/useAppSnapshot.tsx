@@ -116,6 +116,9 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
         ? pendingSelection.row.uuid
         : nextSnapshot.selectedServerId,
     });
+    if (!nextSnapshot.session.lastError) {
+      setClientError(null);
+    }
     if (!pendingSelection) {
       return;
     }

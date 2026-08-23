@@ -7,7 +7,7 @@ import {
   uniqueCatalogServers,
 } from '@/shared/serverIdentity';
 import { isSameServerRow } from '@/shared/serverRow';
-import { toSafeServer } from '@/shared/serverView';
+import { toSafeServer, toSafeServerList } from '@/shared/serverView';
 import {
   isPrivateOrReservedHost,
   isValidIpOrCidr,
@@ -137,6 +137,21 @@ describe('safe public server DTO', () => {
 
     expect(isSameServerRow(selected, selected)).toBe(true);
     expect(isSameServerRow(selected, other)).toBe(false);
+  });
+
+  it('rebuilds the public list when security or grouping fields change', () => {
+    const tls = makeServer({
+      uuid: 'row-1',
+      name: 'Cache check',
+      security: 'tls',
+    });
+    expect(toSafeServerList([tls])[0]?.security).toBe('tls');
+    const reality = makeServer({
+      uuid: 'row-1',
+      name: 'Cache check',
+      security: 'reality',
+    });
+    expect(toSafeServerList([reality])[0]?.security).toBe('reality');
   });
 
   it('strips credentials and raw Xray config from renderer-facing servers', () => {

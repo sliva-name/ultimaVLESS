@@ -127,6 +127,31 @@ describe('session lifecycle', () => {
     });
   });
 
+  it('reconnects when session is connected but the data plane is down', async () => {
+    const { session, server, start } = createSession();
+    await session.connect(server.uuid);
+    expect(start).toHaveBeenCalledTimes(1);
+
+    await session.connect(server.uuid);
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips connect when the same server is already live', async () => {
+    const start = vi.fn(async () => undefined);
+    const { session, server } = createSession({
+      runtime: {
+        start,
+        stop: vi.fn(async () => undefined),
+        switch: vi.fn(async () => undefined),
+        status: vi.fn(() => ({ xrayRunning: true })),
+      },
+    });
+
+    await session.connect(server.uuid);
+    await session.connect(server.uuid);
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
   it('emits connecting → connected → disconnecting → idle', async () => {
     const { session, server } = createSession();
     const phases: SessionPhase[] = [];
