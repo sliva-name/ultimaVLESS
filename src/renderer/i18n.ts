@@ -139,14 +139,18 @@ const resources = {
           remoteDnsSecondary: 'Secondary DNS (optional)',
           tunMtu: 'TUN MTU',
           tunMtuHint:
-            'Packet size on the TUN interface (1280–1500). Default 1400 leaves room for VLESS/REALITY/TLS. Lower toward 1280 if sites stall in TUN on a slow server; 1500 is native ethernet.',
+            'If sites open in proxy mode but not in TUN on a slow server, lower this. Default 1400 leaves room for VPN headers so packets are not dropped. 1280 is safer on a bad line; 1500 is native ethernet and may stall.',
           tunDnsQueryStrategy: 'TUN DNS query strategy',
           tunDnsQueryStrategyHint:
-            'Which answers Xray returns in TUN mode. UseIPv4 avoids a Windows AAAA-first hang (~10–12s) while health probes still go through the HTTP proxy. UseSystem or UseIP if you need IPv6 sites through the tunnel.',
+            'TUN only — proxy always uses IPv4. IPv4-only is the default so pages open instead of hanging ~10s while Windows waits for IPv6. Switch to IPv4 and IPv6 or Follow the OS only if you need IPv6 sites through the tunnel.',
           tunDnsUseIPv4: 'IPv4 only',
+          tunDnsUseIPv4Desc: 'Recommended. Pages open faster in TUN',
           tunDnsUseIPv6: 'IPv6 only',
+          tunDnsUseIPv6Desc: 'Rarely needed',
           tunDnsUseIP: 'IPv4 and IPv6',
+          tunDnsUseIPDesc: 'When IPv6 sites must go through TUN',
           tunDnsUseSystem: 'Follow the OS',
+          tunDnsUseSystemDesc: 'May hang ~10s on slow servers',
           xudpConcurrency: 'XUDP concurrency',
           xudpConcurrencyHint: 'Max concurrent UDP sub-connections (1–1024).',
           xudpProxyUDP443: 'UDP/443 (QUIC) policy',
@@ -370,14 +374,19 @@ const resources = {
           remoteDnsSecondary: 'Дополнительный DNS (необязательно)',
           tunMtu: 'MTU туннеля',
           tunMtuHint:
-            'Размер пакета на интерфейсе TUN (1280–1500). 1400 оставляет запас под VLESS/REALITY/TLS. Если сайты в TUN не открываются на медленном сервере — снизьте к 1280. 1500 — как обычный ethernet.',
+            'Если в прокси сайты открываются, а в туннеле на медленном сервере — нет, уменьшите значение. 1400 по умолчанию: пакеты с запасом под VPN, их реже отбрасывают. 1280 — безопаснее на плохой линии. 1500 — как обычная сеть, на медленных серверах страница может не грузиться.',
           tunDnsQueryStrategy: 'DNS в TUN',
           tunDnsQueryStrategyHint:
-            'Какие ответы отдаёт Xray в режиме TUN. UseIPv4 избегает зависания Windows на AAAA (~10–12 с), пока пробы здоровья идут через HTTP-прокси. UseSystem или UseIP — если нужны IPv6-сайты через туннель.',
+            'Только для туннеля: прокси всегда ходит по IPv4. «Только IPv4» — по умолчанию, чтобы страница открывалась, а не висела ~10 с, пока Windows ждёт IPv6. «IPv4 и IPv6» или «Как в системе» — только если нужны сайты, которые работают исключительно по IPv6.',
           tunDnsUseIPv4: 'Только IPv4',
+          tunDnsUseIPv4Desc:
+            'Рекомендуется. Страницы в TUN открываются быстрее',
           tunDnsUseIPv6: 'Только IPv6',
+          tunDnsUseIPv6Desc: 'Нужно редко',
           tunDnsUseIP: 'IPv4 и IPv6',
+          tunDnsUseIPDesc: 'Если IPv6-сайты должны идти через туннель',
           tunDnsUseSystem: 'Как в системе',
+          tunDnsUseSystemDesc: 'На медленных серверах может висеть ~10 с',
           xudpConcurrency: 'Параллельность XUDP',
           xudpConcurrencyHint:
             'Максимум параллельных UDP-подключений (1–1024).',

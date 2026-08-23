@@ -386,22 +386,22 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
               {
                 value: 'UseIPv4',
                 label: t('settings.network.tunDnsUseIPv4'),
-                description: 'A only',
+                description: t('settings.network.tunDnsUseIPv4Desc'),
               },
               {
                 value: 'UseIP',
                 label: t('settings.network.tunDnsUseIP'),
-                description: 'A + AAAA',
+                description: t('settings.network.tunDnsUseIPDesc'),
               },
               {
                 value: 'UseIPv6',
                 label: t('settings.network.tunDnsUseIPv6'),
-                description: 'AAAA only',
+                description: t('settings.network.tunDnsUseIPv6Desc'),
               },
               {
                 value: 'UseSystem',
                 label: t('settings.network.tunDnsUseSystem'),
-                description: 'OS resolver',
+                description: t('settings.network.tunDnsUseSystemDesc'),
               },
             ]}
           />
