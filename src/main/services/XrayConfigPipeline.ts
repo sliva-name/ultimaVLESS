@@ -31,10 +31,7 @@ import {
   buildDefaultRoutingRules,
 } from './configGenerator/routing';
 import { applyStatsApi } from './configGenerator/statsApi';
-import {
-  applyRemoteDnsSettings,
-  buildDnsObject,
-} from './configGenerator/dns';
+import { applyRemoteDnsSettings, buildDnsObject } from './configGenerator/dns';
 import { logger } from './LoggerService';
 
 type MutableConfigNode = Record<string, unknown>;
@@ -123,7 +120,11 @@ export class XrayConfigPipeline {
     }
 
     this.stripUntrustedInbounds(cfg);
-    ensureLocalProxyInbounds(cfg.inbounds, perf.sniffingRouteOnly, options.ports);
+    ensureLocalProxyInbounds(
+      cfg.inbounds,
+      perf.sniffingRouteOnly,
+      options.ports,
+    );
     const hasTun = cfg.inbounds.some(
       (ib) => ib?.protocol === 'tun' || ib?.tag === 'tun-in',
     );
@@ -134,6 +135,7 @@ export class XrayConfigPipeline {
           ...options,
           dnsServers: perf.remoteDnsServers,
           sniffingRouteOnly: perf.sniffingRouteOnly,
+          mtu: perf.tunMtu,
         }),
       );
       // Prefer autoOutboundsInterface for loop prevention; sendThrough is
@@ -270,7 +272,8 @@ export class XrayConfigPipeline {
   }
 
   private static applyBundledVersionConstraint(cfg: XrayConfig): void {
-    const existing = cfg.version && typeof cfg.version === 'object' ? cfg.version : {};
+    const existing =
+      cfg.version && typeof cfg.version === 'object' ? cfg.version : {};
     cfg.version = {
       ...existing,
       min: bundledVersionMin(),
@@ -337,7 +340,8 @@ export class XrayConfigPipeline {
   private static assertRawOutboundCompatibility(cfg: XrayConfig): void {
     if (!Array.isArray(cfg.outbounds)) return;
     for (const outbound of cfg.outbounds as MutableOutbound[]) {
-      if (!outbound || !this.isTunableProxyProtocol(outbound.protocol)) continue;
+      if (!outbound || !this.isTunableProxyProtocol(outbound.protocol))
+        continue;
       const protocol = String(outbound.protocol);
       const stream = outbound.streamSettings;
       const streamSecurity =
@@ -392,7 +396,11 @@ export class XrayConfigPipeline {
       if (typeof address === 'string' && address) return address;
     }
     const servers = settings.servers;
-    if (Array.isArray(servers) && servers[0] && typeof servers[0] === 'object') {
+    if (
+      Array.isArray(servers) &&
+      servers[0] &&
+      typeof servers[0] === 'object'
+    ) {
       const address = (servers[0] as Record<string, unknown>).address;
       if (typeof address === 'string' && address) return address;
     }
@@ -424,7 +432,11 @@ export class XrayConfigPipeline {
     if (!settings) return undefined;
     if (typeof settings.method === 'string') return settings.method;
     const servers = settings.servers;
-    if (Array.isArray(servers) && servers[0] && typeof servers[0] === 'object') {
+    if (
+      Array.isArray(servers) &&
+      servers[0] &&
+      typeof servers[0] === 'object'
+    ) {
       const method = (servers[0] as Record<string, unknown>).method;
       if (typeof method === 'string') return method;
     }
@@ -480,7 +492,10 @@ export class XrayConfigPipeline {
         streamSettings.network === 'tcp' ? 'raw' : streamSettings.network;
     }
     if (typeof streamSettings.method === 'string') {
-      if (streamSettings.network === undefined || streamSettings.network === 'raw') {
+      if (
+        streamSettings.network === undefined ||
+        streamSettings.network === 'raw'
+      ) {
         streamSettings.network =
           streamSettings.method === 'raw' ? 'tcp' : streamSettings.method;
       }
@@ -809,6 +824,7 @@ export class XrayConfigPipeline {
           ...options,
           dnsServers: perf.remoteDnsServers,
           sniffingRouteOnly: perf.sniffingRouteOnly,
+          mtu: perf.tunMtu,
         }) as XrayInbound,
       );
     }
@@ -955,7 +971,9 @@ export class XrayConfigPipeline {
     if (protocol === 'hysteria') {
       const auth = config.hysteriaAuth || config.password || '';
       if (!auth) {
-        throw new Error('Hysteria outbound requires hysteriaAuth (or password).');
+        throw new Error(
+          'Hysteria outbound requires hysteriaAuth (or password).',
+        );
       }
       streamSettings.hysteriaSettings = {
         version: 2,
@@ -1216,4 +1234,3 @@ export class XrayConfigPipeline {
     }
   }
 }
-
