@@ -11,9 +11,9 @@ describe('tunRouting', () => {
   it('defaults Windows routing to xray', () => {
     expect(resolveWindowsTunRouting(null)).toBe('xray');
     expect(resolveWindowsTunRouting({})).toBe('xray');
-    expect(resolveWindowsTunRouting({ windowsTunRouting: 'invalid' as 'xray' })).toBe(
-      'xray',
-    );
+    expect(
+      resolveWindowsTunRouting({ windowsTunRouting: 'invalid' as 'xray' }),
+    ).toBe('xray');
   });
 
   it('resolves tunAutoRoute per platform and Windows setting', () => {

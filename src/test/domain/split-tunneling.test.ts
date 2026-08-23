@@ -89,9 +89,7 @@ describe('normalizeBypassDomains / normalizeBypassIps', () => {
       { length: MAX_SPLIT_TUNNEL_ENTRIES + 20 },
       (_, i) => `host${i}.example.com`,
     );
-    expect(normalizeBypassDomains(many)).toHaveLength(
-      MAX_SPLIT_TUNNEL_ENTRIES,
-    );
+    expect(normalizeBypassDomains(many)).toHaveLength(MAX_SPLIT_TUNNEL_ENTRIES);
   });
 
   it('ignores non-array input', () => {

@@ -41,9 +41,7 @@ describe('configGenerator/dns', () => {
       rules: Array<Record<string, unknown>>;
     };
     expect(settings.rules).toEqual([{ action: 'hijack' }]);
-    expect(
-      settings.rules.some((rule) => rule.action === 'direct'),
-    ).toBe(false);
+    expect(settings.rules.some((rule) => rule.action === 'direct')).toBe(false);
   });
 
   it('ensureDnsOutbound inserts dns-out before direct', () => {
@@ -88,7 +86,10 @@ describe('configGenerator/dns', () => {
   });
 
   it('applyRemoteDnsSettings only adds hijack in TUN mode', () => {
-    const proxyCfg: XrayConfig = { outbounds: [], routing: { domainStrategy: 'AsIs', rules: [] } };
+    const proxyCfg: XrayConfig = {
+      outbounds: [],
+      routing: { domainStrategy: 'AsIs', rules: [] },
+    };
     applyRemoteDnsSettings(proxyCfg, DEFAULT_PERFORMANCE_SETTINGS, {
       tunMode: false,
     });

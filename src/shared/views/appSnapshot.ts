@@ -20,9 +20,7 @@ export type SessionPhase =
 
 export function isSessionPhaseInFlight(phase: SessionPhase): boolean {
   return (
-    phase === 'connecting' ||
-    phase === 'disconnecting' ||
-    phase === 'switching'
+    phase === 'connecting' || phase === 'disconnecting' || phase === 'switching'
   );
 }
 

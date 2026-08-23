@@ -63,9 +63,11 @@ describe('TunRouteService Windows routing', () => {
     const runPowerShell = vi
       .spyOn(service as any, 'runPowerShell')
       .mockResolvedValue(
-        ['HOST_CREATED|203.0.113.10/32', 'DEFAULT4_CREATED', 'DEFAULT6_CREATED'].join(
-          '\n',
-        ),
+        [
+          'HOST_CREATED|203.0.113.10/32',
+          'DEFAULT4_CREATED',
+          'DEFAULT6_CREATED',
+        ].join('\n'),
       );
 
     await service.enable(makeServer(), plan);
@@ -88,9 +90,11 @@ describe('TunRouteService Windows routing', () => {
     const service = new TunRouteService('win32');
     vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
     vi.spyOn(service as any, 'runPowerShell').mockResolvedValue(
-      ['HOST_CREATED|203.0.113.10/32', 'DEFAULT4_CREATED', 'DEFAULT6_CREATED'].join(
-        '\n',
-      ),
+      [
+        'HOST_CREATED|203.0.113.10/32',
+        'DEFAULT4_CREATED',
+        'DEFAULT6_CREATED',
+      ].join('\n'),
     );
 
     await service.enable(makeServer(), plan);
@@ -194,9 +198,11 @@ describe('TunRouteService Windows routing', () => {
     const runPowerShell = vi
       .spyOn(service as any, 'runPowerShell')
       .mockResolvedValue(
-        ['HOST_CREATED|203.0.113.10/32', 'DEFAULT4_CREATED', 'DEFAULT6_CREATED'].join(
-          '\n',
-        ),
+        [
+          'HOST_CREATED|203.0.113.10/32',
+          'DEFAULT4_CREATED',
+          'DEFAULT6_CREATED',
+        ].join('\n'),
       );
     await service.enable(makeServer(), plan);
     runPowerShell.mockClear();
@@ -228,9 +234,11 @@ describe('TunRouteService Windows routing', () => {
     const runPowerShell = vi
       .spyOn(service as any, 'runPowerShell')
       .mockResolvedValue(
-        ['HOST_CREATED|203.0.113.10/32', 'DEFAULT4_CREATED', 'DEFAULT6_CREATED'].join(
-          '\n',
-        ),
+        [
+          'HOST_CREATED|203.0.113.10/32',
+          'DEFAULT4_CREATED',
+          'DEFAULT6_CREATED',
+        ].join('\n'),
       );
     await service.enable(makeServer(), plan);
     runPowerShell.mockClear();

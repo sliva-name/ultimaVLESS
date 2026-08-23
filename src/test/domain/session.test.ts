@@ -64,7 +64,12 @@ function createSession(overrides: Partial<any> = {}) {
     coreService: {
       isRunning: vi.fn(() => false),
     },
-    runtime: { start, stop, switch: switchRuntime, status: vi.fn(() => ({ xrayRunning: false })) },
+    runtime: {
+      start,
+      stop,
+      switch: switchRuntime,
+      status: vi.fn(() => ({ xrayRunning: false })),
+    },
     ...overrides,
   };
 
@@ -552,7 +557,11 @@ describe('session state projection', () => {
   it('treats only in-flight operations as busy and targets the destination id', () => {
     expect(isConnectionStateInFlight({ type: 'disconnected' })).toBe(false);
     expect(
-      isConnectionStateInFlight({ type: 'connected', serverId: 'a', mode: 'proxy' }),
+      isConnectionStateInFlight({
+        type: 'connected',
+        serverId: 'a',
+        mode: 'proxy',
+      }),
     ).toBe(false);
     expect(
       isConnectionStateInFlight({

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
-import { buildBypassRules, buildDefaultRoutingRules } from '@/main/services/configGenerator/routing';
+import {
+  buildBypassRules,
+  buildDefaultRoutingRules,
+} from '@/main/services/configGenerator/routing';
 
 describe('buildBypassRules', () => {
   it('emits nothing when no exclusions are configured', () => {

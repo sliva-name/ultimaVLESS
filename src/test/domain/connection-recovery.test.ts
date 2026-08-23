@@ -21,7 +21,9 @@ describe('connection recovery', () => {
       'Connection lost: process exited',
       expect.objectContaining({ localProxyReachable: false }),
     );
-    expect(deps.connectionController.cleanupAfterFailure).not.toHaveBeenCalled();
+    expect(
+      deps.connectionController.cleanupAfterFailure,
+    ).not.toHaveBeenCalled();
     expect(snapshotPublisher.push).toHaveBeenCalledWith('recovery');
   });
 

@@ -400,7 +400,9 @@ describe('XrayConfigCompiler', () => {
     });
     expect(tunInbound?.settings).not.toHaveProperty('autoSystemRoutingTable');
     expect(config.outbounds[0].sendThrough).toBe('192.168.1.10');
-    const direct = config.outbounds.find((outbound) => outbound.tag === 'direct');
+    const direct = config.outbounds.find(
+      (outbound) => outbound.tag === 'direct',
+    );
     expect(direct?.sendThrough).toBe('192.168.1.10');
   });
 
