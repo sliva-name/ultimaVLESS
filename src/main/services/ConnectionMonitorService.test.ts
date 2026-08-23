@@ -42,6 +42,7 @@ describe('ConnectionMonitorService', () => {
   it('emits health-failure as a probe fact, not a session gate', () => {
     const server = makeServer({ uuid: 'live' });
     const failures: unknown[] = [];
+    monitor.on('error', () => undefined);
     monitor.on('health-failure', (event) => failures.push(event));
 
     const emitted = monitor.recordError('blocked', server, {
