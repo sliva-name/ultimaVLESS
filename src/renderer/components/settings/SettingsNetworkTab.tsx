@@ -9,6 +9,9 @@ import {
   RemoteDnsPreset,
   REMOTE_DNS_PRESET_SERVERS,
   TlsFingerprint,
+  TUN_MTU_MAX,
+  TUN_MTU_MIN,
+  TunDnsQueryStrategy,
   WindowsTunRouting,
   XudpProxyUDP443,
 } from '@/shared/types';
@@ -364,6 +367,46 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
           )}
 
           <PerfNumberRow
+            label={t('settings.network.tunMtu')}
+            hint={t('settings.network.tunMtuHint')}
+            value={perfSettings.tunMtu}
+            min={TUN_MTU_MIN}
+            max={TUN_MTU_MAX}
+            onChange={(v) => updatePerfField('tunMtu', v)}
+          />
+
+          <PerfSelectRow
+            label={t('settings.network.tunDnsQueryStrategy')}
+            hint={t('settings.network.tunDnsQueryStrategyHint')}
+            value={perfSettings.tunDnsQueryStrategy}
+            onChange={(v) =>
+              updatePerfField('tunDnsQueryStrategy', v as TunDnsQueryStrategy)
+            }
+            options={[
+              {
+                value: 'UseIPv4',
+                label: t('settings.network.tunDnsUseIPv4'),
+                description: t('settings.network.tunDnsUseIPv4Desc'),
+              },
+              {
+                value: 'UseIP',
+                label: t('settings.network.tunDnsUseIP'),
+                description: t('settings.network.tunDnsUseIPDesc'),
+              },
+              {
+                value: 'UseIPv6',
+                label: t('settings.network.tunDnsUseIPv6'),
+                description: t('settings.network.tunDnsUseIPv6Desc'),
+              },
+              {
+                value: 'UseSystem',
+                label: t('settings.network.tunDnsUseSystem'),
+                description: t('settings.network.tunDnsUseSystemDesc'),
+              },
+            ]}
+          />
+
+          <PerfNumberRow
             label={t('settings.network.xudpConcurrency')}
             hint={t('settings.network.xudpConcurrencyHint')}
             value={perfSettings.xudpConcurrency}
@@ -547,9 +590,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
           </button>
         </div>
         {perfError && (
-          <p className="text-sm text-orange-400 leading-relaxed">
-            {perfError}
-          </p>
+          <p className="text-sm text-orange-400 leading-relaxed">{perfError}</p>
         )}
       </div>
     </div>

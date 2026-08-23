@@ -72,7 +72,12 @@ export interface ServerConfig {
    * `none` / `zero` are accepted from older links and coerced to `auto`
    * (removed in Xray 26.7+).
    */
-  vmessSecurity?: 'aes-128-gcm' | 'chacha20-poly1305' | 'auto' | 'none' | 'zero';
+  vmessSecurity?:
+    | 'aes-128-gcm'
+    | 'chacha20-poly1305'
+    | 'auto'
+    | 'none'
+    | 'zero';
   flow?: string; // xtls-rprx-vision
   encryption?: string;
   type?: ServerTransport;
@@ -148,6 +153,9 @@ export type TlsFingerprint =
 /** Windows-only: who installs TUN routes — Xray 26.5+ or legacy PowerShell. */
 export type WindowsTunRouting = 'xray' | 'powershell';
 
+/** Xray `dns.queryStrategy`. Used for TUN; proxy mode stays IPv4-only. */
+export type TunDnsQueryStrategy = 'UseIPv4' | 'UseIPv6' | 'UseIP' | 'UseSystem';
+
 export const VALID_XUDP_PROXY_UDP_443_VALUES: readonly XudpProxyUDP443[] = [
   'reject',
   'allow',
@@ -185,6 +193,16 @@ export const VALID_REMOTE_DNS_PRESETS: readonly RemoteDnsPreset[] = [
   'quad9',
   'custom',
 ] as const;
+export const VALID_TUN_DNS_QUERY_STRATEGIES: readonly TunDnsQueryStrategy[] = [
+  'UseIPv4',
+  'UseIPv6',
+  'UseIP',
+  'UseSystem',
+] as const;
+/** IPv6 minimum; ethernet maximum. User-tunable because VLESS/REALITY overhead varies. */
+export const TUN_MTU_MIN = 1280;
+export const TUN_MTU_MAX = 1500;
+export const TUN_MTU_DEFAULT = 1400;
 
 export const REMOTE_DNS_PRESET_SERVERS: Record<
   Exclude<RemoteDnsPreset, 'custom'>,
@@ -219,6 +237,16 @@ export interface PerformanceSettings {
   /** Windows TUN only. Default `xray` for testing; use `powershell` to roll back. */
   windowsTunRouting: WindowsTunRouting;
   /**
+   * Advertised TUN MTU. 1400 leaves room for VLESS/REALITY/TLS on a 1500 path;
+   * drop toward 1280 on slow/lossy nodes, raise to 1500 if the path is clean.
+   */
+  tunMtu: number;
+  /**
+   * Xray DNS queryStrategy in TUN mode. `UseIPv4` skips Windows AAAA-first
+   * hangs (~10–12s). `UseSystem`/`UseIP` if IPv6 destinations must resolve.
+   */
+  tunDnsQueryStrategy: TunDnsQueryStrategy;
+  /**
    * Split tunneling: hosts that leave through the physical interface instead of
    * the tunnel. Bare hosts cover subdomains; `full:`/`keyword:`/`geosite:`
    * matchers are stored verbatim.
@@ -244,6 +272,8 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   blockBittorrent: false,
   domainStrategy: 'AsIs',
   windowsTunRouting: 'xray',
+  tunMtu: TUN_MTU_DEFAULT,
+  tunDnsQueryStrategy: 'UseIPv4',
   // VK blocks or throttles traffic from many VPN exit IPs, so it is excluded
   // out of the box; users can drop it in the network settings.
   bypassDomains: ['vk.com'],

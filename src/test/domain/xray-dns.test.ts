@@ -20,16 +20,25 @@ describe('configGenerator/dns', () => {
     });
   });
 
-  it('buildDnsObject adapts queryStrategy to the connection mode', () => {
-    // Proxy mode carries no IPv6, so AAAA answers would resolve to addresses
-    // that can only leave the machine outside the tunnel.
+  it('buildDnsObject uses UseIPv4 in proxy and the TUN setting in TUN', () => {
     expect(
       buildDnsObject(DEFAULT_PERFORMANCE_SETTINGS, { tunMode: false }),
     ).toMatchObject({ queryStrategy: 'UseIPv4' });
-    // TUN routes ::/0, so let Xray follow the host's actual gateways.
     expect(
       buildDnsObject(DEFAULT_PERFORMANCE_SETTINGS, { tunMode: true }),
-    ).toMatchObject({ queryStrategy: 'UseSystem' });
+    ).toMatchObject({ queryStrategy: 'UseIPv4' });
+
+    const tunIpv6 = {
+      ...DEFAULT_PERFORMANCE_SETTINGS,
+      tunDnsQueryStrategy: 'UseSystem' as const,
+    };
+    expect(buildDnsObject(tunIpv6, { tunMode: true })).toMatchObject({
+      queryStrategy: 'UseSystem',
+    });
+    // Proxy never carries IPv6, even if the TUN strategy asks for it.
+    expect(buildDnsObject(tunIpv6, { tunMode: false })).toMatchObject({
+      queryStrategy: 'UseIPv4',
+    });
   });
 
   it('dns-out hijacks every query type so qType 65 cannot leak', () => {

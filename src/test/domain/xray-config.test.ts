@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeServer } from '@/test/factories';
 import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
 import type { XrayConfig } from '@/shared/xray-types';
+import { TUN_MTU } from '@/main/services/tunRoute/constants';
 import { XrayConfigCompiler } from '@/main/services/XrayConfigCompiler';
 
 describe('XrayConfigCompiler', () => {
@@ -63,7 +64,7 @@ describe('XrayConfigCompiler', () => {
     expect(tunInbound).toMatchObject({
       protocol: 'tun',
       settings: expect.objectContaining({
-        mtu: 1500,
+        mtu: TUN_MTU,
         gateway: expect.any(Array),
         autoSystemRoutingTable: ['0.0.0.0/0', '::/0'],
         autoOutboundsInterface: 'auto',
@@ -83,6 +84,28 @@ describe('XrayConfigCompiler', () => {
     );
   });
 
+  it('honours user TUN MTU and DNS query strategy', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({ security: 'tls', sni: 'example.com' }),
+      {
+        logPath: '/tmp/xray.log',
+        connectionMode: 'tun',
+        tunAutoRoute: true,
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          tunMtu: 1280,
+          tunDnsQueryStrategy: 'UseSystem',
+        },
+      },
+    );
+
+    const tunInbound = config.inbounds?.find(
+      (inbound) => inbound.protocol === 'tun',
+    );
+    expect(tunInbound?.settings).toMatchObject({ mtu: 1280 });
+    expect(config.dns).toMatchObject({ queryStrategy: 'UseSystem' });
+  });
+
   it('applies remote DNS without localhost and hijacks port 53 in TUN mode', () => {
     const config = XrayConfigCompiler.compile(
       makeServer({ security: 'tls', sni: 'example.com' }),
@@ -99,7 +122,7 @@ describe('XrayConfigCompiler', () => {
     );
 
     expect(config.dns).toMatchObject({
-      queryStrategy: 'UseSystem',
+      queryStrategy: 'UseIPv4',
       servers: ['8.8.8.8', '8.8.4.4'],
     });
     expect(config.dns?.servers).not.toContain('localhost');
@@ -160,7 +183,7 @@ describe('XrayConfigCompiler', () => {
     );
 
     expect(config.dns).toMatchObject({
-      queryStrategy: 'UseSystem',
+      queryStrategy: 'UseIPv4',
       servers: ['1.1.1.1', '1.0.0.1'],
     });
     expect(config.dns?.servers).not.toContain('localhost');
@@ -456,21 +479,8 @@ describe('XrayConfigCompiler', () => {
         logPath: '/tmp/xray.log',
         connectionMode: 'proxy',
         performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
           muxEnabled: false,
-          muxConcurrency: 8,
-          xudpConcurrency: 16,
-          xudpProxyUDP443: 'reject',
-          xhttpMaxConnections: 3,
-          remoteDnsPreset: 'cloudflare',
-          remoteDnsServers: ['1.1.1.1', '1.0.0.1'],
-          tcpFastOpen: true,
-          sniffingRouteOnly: true,
-          logLevel: 'warning',
-          fingerprint: 'chrome',
-          blockAds: false,
-          blockBittorrent: false,
-          domainStrategy: 'AsIs',
-          windowsTunRouting: 'xray',
         },
       },
     );

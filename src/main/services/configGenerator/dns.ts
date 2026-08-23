@@ -28,10 +28,10 @@ export function buildDnsObject(
       : ['1.1.1.1', '1.0.0.1'];
   return {
     servers,
-    // TUN routes ::/0 into the tunnel, so AAAA is safe and `UseSystem` adapts to
-    // whether the host actually has an IPv6 default gateway. A WinINET/gsettings
-    // proxy carries no IPv6, so there IPv4-only prevents an off-tunnel fallback.
-    queryStrategy: options.tunMode ? 'UseSystem' : 'UseIPv4',
+    // Proxy has no IPv6 path, so AAAA would leave the machine off-tunnel.
+    // TUN still routes `::/0`; the user picks the strategy (default UseIPv4
+    // skips Windows AAAA-first hangs of ~10–12s on slow nodes).
+    queryStrategy: options.tunMode ? perf.tunDnsQueryStrategy : 'UseIPv4',
     tag: DNS_MODULE_TAG,
     // Without this, a failed remote resolver falls through to later entries —
     // including any `localhost` a subscription might have injected before we
@@ -45,10 +45,7 @@ export function buildDnsObject(
  * via routing) and rewrites other queries to the primary remote resolver.
  * @see https://xtls.github.io/en/config/outbounds/dns.html
  */
-export function ensureDnsOutbound(
-  cfg: XrayConfig,
-  primaryDnsIp: string,
-): void {
+export function ensureDnsOutbound(cfg: XrayConfig, primaryDnsIp: string): void {
   if (!Array.isArray(cfg.outbounds)) cfg.outbounds = [];
   const outbounds = cfg.outbounds as MutableOutbound[];
   // `action: 'hijack'` without a qType filter routes *every* query type into the

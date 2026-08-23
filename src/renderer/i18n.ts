@@ -137,6 +137,20 @@ const resources = {
           remoteDnsCustom: 'Custom',
           remoteDnsPrimary: 'Primary DNS',
           remoteDnsSecondary: 'Secondary DNS (optional)',
+          tunMtu: 'TUN MTU',
+          tunMtuHint:
+            'If sites open in proxy mode but not in TUN on a slow server, lower this. Default 1400 leaves room for VPN headers so packets are not dropped. 1280 is safer on a bad line; 1500 is native ethernet and may stall.',
+          tunDnsQueryStrategy: 'TUN DNS query strategy',
+          tunDnsQueryStrategyHint:
+            'TUN only — proxy always uses IPv4. IPv4-only is the default so pages open instead of hanging ~10s while Windows waits for IPv6. Switch to IPv4 and IPv6 or Follow the OS only if you need IPv6 sites through the tunnel.',
+          tunDnsUseIPv4: 'IPv4 only',
+          tunDnsUseIPv4Desc: 'Recommended. Pages open faster in TUN',
+          tunDnsUseIPv6: 'IPv6 only',
+          tunDnsUseIPv6Desc: 'Rarely needed',
+          tunDnsUseIP: 'IPv4 and IPv6',
+          tunDnsUseIPDesc: 'When IPv6 sites must go through TUN',
+          tunDnsUseSystem: 'Follow the OS',
+          tunDnsUseSystemDesc: 'May hang ~10s on slow servers',
           xudpConcurrency: 'XUDP concurrency',
           xudpConcurrencyHint: 'Max concurrent UDP sub-connections (1–1024).',
           xudpProxyUDP443: 'UDP/443 (QUIC) policy',
@@ -164,11 +178,13 @@ const resources = {
           splitTunnel: 'Bypass the tunnel (split tunneling)',
           splitTunnelHint:
             'Sites and addresses that go straight out through your normal connection instead of the VPN. A host also covers its subdomains.',
-          splitTunnelPlaceholder: 'example.com, 10.0.0.0/8, geosite:category-ru',
+          splitTunnelPlaceholder:
+            'example.com, 10.0.0.0/8, geosite:category-ru',
           splitTunnelAdd: 'Add',
           splitTunnelDomains: 'Sites',
           splitTunnelIps: 'Addresses',
-          splitTunnelEmpty: 'Nothing excluded: all traffic goes through the VPN.',
+          splitTunnelEmpty:
+            'Nothing excluded: all traffic goes through the VPN.',
           splitTunnelInvalid: 'Not a host or address: {{entries}}',
           splitTunnelLimit: 'Exclusion list is full.',
           splitTunnelRemove: 'Remove {{entry}}',
@@ -356,6 +372,21 @@ const resources = {
           remoteDnsCustom: 'Свой',
           remoteDnsPrimary: 'Основной DNS',
           remoteDnsSecondary: 'Дополнительный DNS (необязательно)',
+          tunMtu: 'MTU туннеля',
+          tunMtuHint:
+            'Если в прокси сайты открываются, а в туннеле на медленном сервере — нет, уменьшите значение. 1400 по умолчанию: пакеты с запасом под VPN, их реже отбрасывают. 1280 — безопаснее на плохой линии. 1500 — как обычная сеть, на медленных серверах страница может не грузиться.',
+          tunDnsQueryStrategy: 'DNS в TUN',
+          tunDnsQueryStrategyHint:
+            'Только для туннеля: прокси всегда ходит по IPv4. «Только IPv4» — по умолчанию, чтобы страница открывалась, а не висела ~10 с, пока Windows ждёт IPv6. «IPv4 и IPv6» или «Как в системе» — только если нужны сайты, которые работают исключительно по IPv6.',
+          tunDnsUseIPv4: 'Только IPv4',
+          tunDnsUseIPv4Desc:
+            'Рекомендуется. Страницы в TUN открываются быстрее',
+          tunDnsUseIPv6: 'Только IPv6',
+          tunDnsUseIPv6Desc: 'Нужно редко',
+          tunDnsUseIP: 'IPv4 и IPv6',
+          tunDnsUseIPDesc: 'Если IPv6-сайты должны идти через туннель',
+          tunDnsUseSystem: 'Как в системе',
+          tunDnsUseSystemDesc: 'На медленных серверах может висеть ~10 с',
           xudpConcurrency: 'Параллельность XUDP',
           xudpConcurrencyHint:
             'Максимум параллельных UDP-подключений (1–1024).',
@@ -387,7 +418,8 @@ const resources = {
           splitTunnel: 'Исключения из туннеля (split tunneling)',
           splitTunnelHint:
             'Сайты и адреса, которые идут напрямую через обычное подключение, минуя VPN. Домен включает и поддомены.',
-          splitTunnelPlaceholder: 'example.com, 10.0.0.0/8, geosite:category-ru',
+          splitTunnelPlaceholder:
+            'example.com, 10.0.0.0/8, geosite:category-ru',
           splitTunnelAdd: 'Добавить',
           splitTunnelDomains: 'Сайты',
           splitTunnelIps: 'Адреса',

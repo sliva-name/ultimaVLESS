@@ -1,3 +1,5 @@
+import { TUN_MTU_DEFAULT } from '@/shared/types';
+
 export const TUN_INTERFACE_NAME = 'ultima0';
 export const TUN_ADDRESS = '172.19.0.1';
 export const TUN_PREFIX = 30;
@@ -5,6 +7,12 @@ export const TUN_NEXTHOP = '172.19.0.2';
 export const TUN_IPV6_ADDRESS = 'fd7a:115c:a1e0::1';
 export const TUN_IPV6_PREFIX = 126;
 export const TUN_IPV6_NEXTHOP = '::';
+/**
+ * Default TUN advertised MTU when performance settings are unavailable.
+ * Override via `PerformanceSettings.tunMtu` (1280–1500). 1400 leaves room for
+ * VLESS/REALITY/TLS on a 1500 path; 1500 fragments on slow/lossy servers.
+ */
+export const TUN_MTU = TUN_MTU_DEFAULT;
 /** IPv4-only: advertising IPv6 resolvers makes Windows prefer AAAA DNS first
  * (~2s timeout each) before falling back to 1.1.1.1 — often ~10–12s until
  * the first useful browser TCP after TUN connect. Fallback matches Cloudflare
