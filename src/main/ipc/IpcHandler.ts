@@ -1,5 +1,5 @@
 import { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent } from 'electron';
-import { IPC_EVENT_CHANNELS, IpcEventChannel } from '@/shared/ipc';
+import { IpcEventChannel } from '@/shared/ipc';
 import { configService } from '@/main/services/ConfigService';
 import { getSubscriptionRepository } from '@/main/infrastructure/persistence/ElectronSubscriptionRepository';
 import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
@@ -17,6 +17,7 @@ import { registerHandlers } from './registerHandlers';
 let windowRef: BrowserWindow | null = null;
 let handlersRegistered = false;
 let snapshotPublisher: SnapshotPublisher | null = null;
+let recovery: ReturnType<typeof createConnectionRecovery> | null = null;
 
 function getWindow(): BrowserWindow | null {
   if (windowRef && !windowRef.isDestroyed()) return windowRef;
@@ -24,11 +25,13 @@ function getWindow(): BrowserWindow | null {
 }
 
 function sendToRenderer(channel: IpcEventChannel, ...args: unknown[]): void {
-  if (channel === IPC_EVENT_CHANNELS.appSnapshotChanged && args.length === 0) {
-    snapshotPublisher?.push('manual');
-    return;
-  }
   getWindow()?.webContents.send(channel, ...args);
+}
+
+function notifySnapshot(
+  reason: Parameters<SnapshotPublisher['push']>[0] = 'manual',
+): void {
+  snapshotPublisher?.push(reason);
 }
 
 function assertTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent): void {
@@ -61,13 +64,13 @@ export function registerIpcHandlers(
   deps: IpcDependencies = createIpcDependencies(),
 ): void {
   windowRef = mainWindow;
-  snapshotPublisher = new SnapshotPublisher({ deps, getWindow });
+  snapshotPublisher ??= new SnapshotPublisher({ deps, getWindow });
+  recovery ??= createConnectionRecovery(deps, snapshotPublisher);
   if (handlersRegistered) {
     return;
   }
   handlersRegistered = true;
 
-  const recovery = createConnectionRecovery(deps, snapshotPublisher);
   registerRuntimeEvents({
     deps,
     snapshotPublisher,
@@ -77,7 +80,7 @@ export function registerIpcHandlers(
   registerHandlers({
     deps,
     assertTrustedSender,
-    sendToRenderer,
+    notifySnapshot,
     queueRefreshAllSubscriptions,
     restartAutoRefreshTimer,
   });
@@ -85,28 +88,26 @@ export function registerIpcHandlers(
 
 export async function loadInitialState(window: BrowserWindow): Promise<void> {
   windowRef = window;
-  const deps = createIpcDependencies();
-  const publisher =
-    snapshotPublisher ?? new SnapshotPublisher({ deps, getWindow });
+  if (!snapshotPublisher || !recovery) {
+    throw new Error(
+      'loadInitialState requires registerIpcHandlers to run first',
+    );
+  }
+  const sessionRecovery = recovery;
 
   await loadInitialStateRuntime(
     window,
     {
-      sendToRenderer,
+      notifySnapshot,
       queueRefreshAllSubscriptions,
       reportSubscriptionRefreshIssue,
       restartAutoRefreshTimer,
-      attemptPendingTunReconnect: (serverId, runtimeDeps, options) =>
-        createConnectionRecovery(
-          runtimeDeps,
-          publisher,
-        ).attemptPendingTunReconnect(serverId, options),
+      attemptPendingTunReconnect: (serverId, _runtimeDeps, options) =>
+        sessionRecovery.attemptPendingTunReconnect(serverId, options),
     },
     {
       configService,
       subscriptionRepository: getSubscriptionRepository(),
-      connectionMonitorService,
-      xrayService,
       createRuntimeDependencies: createIpcDependencies,
       stopAutoRefreshTimer,
     },

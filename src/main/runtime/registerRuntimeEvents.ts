@@ -1,4 +1,5 @@
 import type { VlessConfig } from '@/shared/types';
+import { toSafeServer } from '@/shared/serverView';
 import type { SessionPhase } from '@/shared/ipc';
 import { IPC_EVENT_CHANNELS, type IpcEventChannel } from '@/shared/ipc';
 import { trayService } from '@/main/services/TrayService';
@@ -111,8 +112,7 @@ export function registerRuntimeEvents({
     deps.connectionMonitorService.on(eventName, (event) => {
       const safeEvent = { ...event };
       if (safeEvent.server) {
-        const { rawConfig: _rawConfig, ...restServer } = safeEvent.server;
-        safeEvent.server = restServer as VlessConfig;
+        safeEvent.server = toSafeServer(safeEvent.server) as VlessConfig;
       }
       sendToRenderer(IPC_EVENT_CHANNELS.connectionMonitorEvent, safeEvent);
       snapshotPublisher.push('monitor');

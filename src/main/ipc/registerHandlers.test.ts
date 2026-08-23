@@ -78,7 +78,7 @@ describe('registerHandlers', () => {
         trafficStatsService: { getLastSnapshot: vi.fn(() => null) },
       } as any,
       assertTrustedSender: vi.fn(),
-      sendToRenderer: vi.fn(),
+      notifySnapshot: vi.fn(),
       queueRefreshAllSubscriptions: vi.fn(),
       restartAutoRefreshTimer: vi.fn(),
     });

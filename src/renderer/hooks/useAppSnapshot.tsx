@@ -82,8 +82,8 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
         ? pendingSelection.uuid
         : nextSnapshot.selectedServerId,
     });
-    if (!nextSnapshot.session.lastError) {
-      setClientError(null);
+    if (pendingSelection && nextSnapshot.selectedServerId === pendingSelection.uuid) {
+      pendingSelectionRef.current = null;
     }
   }, []);
 
@@ -170,12 +170,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       });
       void window.electronAPI
         .setSelectedServerId(server.uuid)
-        .then(() => {
-          if (pendingSelectionRef.current?.version === version) {
-            pendingSelectionRef.current = null;
-          }
-          return refreshSnapshot();
-        })
+        .then(() => refreshSnapshot())
         .catch((error) => {
           console.error('Failed to persist selected server', error);
           if (pendingSelectionRef.current?.version === version) {

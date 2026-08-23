@@ -40,6 +40,26 @@ describe('isValidIpv6Address', () => {
   });
 });
 
+describe('isPrivateOrReservedHost', () => {
+  it('blocks loopback, RFC1918, CGNAT and IPv4-mapped forms', async () => {
+    const { isPrivateOrReservedHost } = await import('./networkAddresses');
+    expect(isPrivateOrReservedHost('localhost')).toBe(true);
+    expect(isPrivateOrReservedHost('10.0.0.5')).toBe(true);
+    expect(isPrivateOrReservedHost('192.168.1.1')).toBe(true);
+    expect(isPrivateOrReservedHost('127.0.0.1')).toBe(true);
+    expect(isPrivateOrReservedHost('169.254.1.1')).toBe(true);
+    expect(isPrivateOrReservedHost('100.64.0.1')).toBe(true);
+    expect(isPrivateOrReservedHost('172.16.0.1')).toBe(true);
+    expect(isPrivateOrReservedHost('::1')).toBe(true);
+    expect(isPrivateOrReservedHost('fe80::1')).toBe(true);
+    expect(isPrivateOrReservedHost('fd12:3456::1')).toBe(true);
+    expect(isPrivateOrReservedHost('::ffff:192.168.0.1')).toBe(true);
+    expect(isPrivateOrReservedHost('1.1.1.1')).toBe(false);
+    expect(isPrivateOrReservedHost('2001:db8::1')).toBe(false);
+    expect(isPrivateOrReservedHost('example.com')).toBe(false);
+  });
+});
+
 describe('isValidIpOrCidr', () => {
   it('accepts bare addresses and prefixes within range', () => {
     expect(isValidIpOrCidr('10.0.0.0/8')).toBe(true);

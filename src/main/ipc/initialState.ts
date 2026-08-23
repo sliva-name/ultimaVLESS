@@ -1,7 +1,8 @@
 import { BrowserWindow } from 'electron';
-import { IPC_EVENT_CHANNELS } from '@/shared/ipc';
 import { logger } from '@/main/services/LoggerService';
 import { PerfTimer } from '@/shared/perfMetrics';
+import { activeServerIdFromState } from '@/main/domain/connection/ConnectionState';
+import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 
 /** Defer subscription refresh slightly so first paint is not blocked. */
 const SUBSCRIPTION_REFRESH_DEFER_MS = 800;
@@ -10,17 +11,12 @@ import { IpcDependencies } from './dependencies';
 interface InitialStateDeps {
   configService: IpcDependencies['configService'];
   subscriptionRepository: IpcDependencies['subscriptionRepository'];
-  connectionMonitorService: IpcDependencies['connectionMonitorService'];
-  xrayService: IpcDependencies['xrayService'];
   createRuntimeDependencies: () => IpcDependencies;
   stopAutoRefreshTimer: () => void;
 }
 
 interface InitialStateActions {
-  sendToRenderer: (
-    channel: (typeof IPC_EVENT_CHANNELS)[keyof typeof IPC_EVENT_CHANNELS],
-    ...args: unknown[]
-  ) => void;
+  notifySnapshot: (reason?: SnapshotReason) => void;
   queueRefreshAllSubscriptions: (manualLinks: string) => Promise<{
     configCount: number;
     reason?: string;
@@ -55,7 +51,7 @@ export async function loadInitialState(
     hasPendingTunReconnect: !!pendingTunReconnectServerId,
   });
 
-  actions.sendToRenderer(IPC_EVENT_CHANNELS.appSnapshotChanged);
+  actions.notifySnapshot('bootstrap');
 
   const hasInput = subscriptions.some((s) => s.enabled) || !!manualLinks.trim();
   const attemptPendingReconnectAfterRefresh = async (): Promise<void> => {
@@ -120,13 +116,12 @@ export async function loadInitialState(
     if (pendingTunReconnectServerId) {
       void refreshCompletion
         .then(async () => {
-          const monitorStatus = deps.connectionMonitorService.getStatus();
+          const controller = runtimeDeps.connectionController;
           const alreadyConnected =
-            deps.xrayService.isRunning() &&
-            monitorStatus.isConnected &&
-            (monitorStatus.currentServer?.uuid ===
+            controller.getPhase() === 'connected' &&
+            (activeServerIdFromState(controller.getConnectionState()) ===
               pendingTunReconnectServerId ||
-              monitorStatus.currentServer?.uuid ===
+              activeServerIdFromState(controller.getConnectionState()) ===
                 deps.configService.getSelectedServerId());
           if (alreadyConnected) {
             logger.info(

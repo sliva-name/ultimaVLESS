@@ -3,6 +3,7 @@ import {
   activeServerIdFromState,
   connectionStateToSessionPhase,
   isConnectionStateInFlight,
+  lastErrorFromState,
   type ConnectionState,
 } from './ConnectionState';
 
@@ -25,7 +26,7 @@ describe('ConnectionState', () => {
         },
         'switching',
       ],
-      [{ type: 'stopping', generation: 3 }, 'disconnecting'],
+      [{ type: 'stopping', generation: 3, outcome: 'idle' }, 'disconnecting'],
       [{ type: 'failed', reason: { message: 'boom' } }, 'failed'],
     ];
 
@@ -47,9 +48,13 @@ describe('ConnectionState', () => {
     expect(
       isConnectionStateInFlight({ type: 'connected', serverId: 'a', mode: 'proxy' }),
     ).toBe(false);
-    expect(isConnectionStateInFlight({ type: 'stopping', generation: 1 })).toBe(
-      true,
-    );
+    expect(
+      isConnectionStateInFlight({
+        type: 'stopping',
+        generation: 1,
+        outcome: 'idle',
+      }),
+    ).toBe(true);
   });
 
   it('exposes the server the session is targeting', () => {
@@ -63,5 +68,27 @@ describe('ConnectionState', () => {
         generation: 1,
       }),
     ).toBe('b');
+  });
+
+  it('exposes lastError only from failed or failing stop', () => {
+    expect(lastErrorFromState({ type: 'disconnected' })).toBeNull();
+    expect(
+      lastErrorFromState({ type: 'failed', reason: { message: 'boom' } }),
+    ).toBe('boom');
+    expect(
+      lastErrorFromState({
+        type: 'stopping',
+        generation: 1,
+        outcome: 'failed',
+        reason: { message: 'dead' },
+      }),
+    ).toBe('dead');
+    expect(
+      lastErrorFromState({
+        type: 'stopping',
+        generation: 1,
+        outcome: 'idle',
+      }),
+    ).toBeNull();
   });
 });

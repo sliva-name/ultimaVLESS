@@ -722,6 +722,10 @@ export class XrayService extends EventEmitter {
 
   private waitForProcessExit(processRef: ChildProcess): Promise<void> {
     return new Promise((resolve) => {
+      if (processRef.exitCode != null || processRef.signalCode != null) {
+        resolve();
+        return;
+      }
       let settled = false;
       let timeoutId: NodeJS.Timeout | null = null;
       type ProcessEventHandler = () => void;
@@ -778,12 +782,7 @@ export class XrayService extends EventEmitter {
             pid: processRef.pid ?? null,
           },
         );
-        try {
-          processRef.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-        finish(onClose, onError);
+        this.killProcessSync(processRef);
       }, XrayService.STOP_TIMEOUT_MS);
     });
   }

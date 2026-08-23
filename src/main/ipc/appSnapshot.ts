@@ -18,9 +18,9 @@ export function buildAppSnapshot(deps: IpcDependencies): AppSnapshot {
       // Controller is the single owner of the UI verb — no monitor reconciliation.
       phase: deps.connectionController.getPhase(),
       activeServerId,
-      lastError:
-        monitorStatus.lastError ??
-        lastErrorFromState(deps.connectionController.getConnectionState()),
+      lastError: lastErrorFromState(
+        deps.connectionController.getConnectionState(),
+      ),
       blockedServerIds: monitorStatus.blockedServers,
     },
     traffic: deps.trafficStatsService.getLastSnapshot(),

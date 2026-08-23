@@ -1,25 +1,76 @@
 import { VlessConfig } from './types';
 
-export type SafeVlessConfig = Omit<VlessConfig, 'rawConfig'>;
+/**
+ * Renderer-facing server row. Secrets stay in main; the UI only needs
+ * identity, display and latency.
+ */
+export type SafeServerConfig = {
+  uuid: string;
+  name: string;
+  address: string;
+  port: number;
+  protocol?: VlessConfig['protocol'];
+  source?: VlessConfig['source'];
+  subscriptionId?: string;
+  type?: VlessConfig['type'];
+  security?: VlessConfig['security'];
+  sni?: string;
+  fp?: string;
+  flow?: string;
+  ping?: number | null;
+  pingTime?: number;
+  pingStale?: boolean;
+};
 
-export function toSafeServer(server: VlessConfig): SafeVlessConfig {
-  const { rawConfig: _rawConfig, ...rest } = server;
-  return rest;
+export type SafeVlessConfig = SafeServerConfig;
+
+export function toSafeServer(server: VlessConfig): SafeServerConfig {
+  const safe: SafeServerConfig = {
+    uuid: server.uuid,
+    name: server.name,
+    address: server.address,
+    port: server.port,
+  };
+  if (server.protocol !== undefined) safe.protocol = server.protocol;
+  if (server.source !== undefined) safe.source = server.source;
+  if (server.subscriptionId !== undefined) {
+    safe.subscriptionId = server.subscriptionId;
+  }
+  if (server.type !== undefined) safe.type = server.type;
+  if (server.security !== undefined) safe.security = server.security;
+  if (server.sni !== undefined) safe.sni = server.sni;
+  if (server.fp !== undefined) safe.fp = server.fp;
+  if (server.flow !== undefined) safe.flow = server.flow;
+  if (server.ping !== undefined) safe.ping = server.ping;
+  if (server.pingTime !== undefined) safe.pingTime = server.pingTime;
+  if (server.pingStale !== undefined) safe.pingStale = server.pingStale;
+  return safe;
 }
 
-let cachedSource: VlessConfig[] | null = null;
-let cachedSafeList: SafeVlessConfig[] | null = null;
+let cachedFingerprint: string | null = null;
+let cachedSafeList: SafeServerConfig[] | null = null;
+
+function publicListFingerprint(servers: VlessConfig[]): string {
+  return servers
+    .map(
+      (server) =>
+        `${server.uuid}|${server.name}|${server.address}:${server.port}|${server.protocol ?? ''}|${server.ping ?? ''}|${server.pingTime ?? ''}|${server.pingStale ? 1 : 0}`,
+    )
+    .join('||');
+}
 
 /**
- * Strips `rawConfig` before IPC. Reuses the last projection when the same
- * servers array reference is sent again (common on no-op refreshes).
+ * Projects the stored server list into the public DTO. Cache key is the
+ * public-field fingerprint, not the array reference — in-place mutation
+ * of secrets must not leak a stale unsafe object.
  */
-export function toSafeServerList(servers: VlessConfig[]): SafeVlessConfig[] {
-  if (cachedSource === servers && cachedSafeList) {
+export function toSafeServerList(servers: VlessConfig[]): SafeServerConfig[] {
+  const fingerprint = publicListFingerprint(servers);
+  if (cachedFingerprint === fingerprint && cachedSafeList) {
     return cachedSafeList;
   }
   const safe = servers.map(toSafeServer);
-  cachedSource = servers;
+  cachedFingerprint = fingerprint;
   cachedSafeList = safe;
   return safe;
 }

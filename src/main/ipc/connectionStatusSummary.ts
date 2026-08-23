@@ -5,11 +5,11 @@ import {
 } from '@/shared/ipc';
 import { ConnectionStatus } from '@/main/services/ConnectionMonitorService';
 import { VlessConfig } from '@/shared/types';
+import { toSafeServer } from '@/shared/serverView';
 
 function stripRawConfig(server: VlessConfig | null): VlessConfig | null {
   if (!server) return server;
-  const { rawConfig: _rawConfig, ...rest } = server;
-  return rest as VlessConfig;
+  return toSafeServer(server) as VlessConfig;
 }
 
 export function buildConnectionMonitorStatusSummary(

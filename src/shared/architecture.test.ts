@@ -42,4 +42,26 @@ describe('shared architecture contracts', () => {
 
     expect('rawConfig' in safe).toBe(false);
   });
+
+  it('omits credentials from the renderer-facing server view', () => {
+    const safe = toSafeServer(
+      makeServer({
+        password: 'trojan-pass',
+        userId: 'vless-user',
+        pbk: 'reality-public',
+        sid: 'ab',
+        wgSecretKey: 'wg-secret',
+        rawConfig: { inbounds: [], outbounds: [] },
+      }),
+    );
+
+    expect(safe).not.toHaveProperty('password');
+    expect(safe).not.toHaveProperty('userId');
+    expect(safe).not.toHaveProperty('pbk');
+    expect(safe).not.toHaveProperty('sid');
+    expect(safe).not.toHaveProperty('wgSecretKey');
+    expect(safe).not.toHaveProperty('rawConfig');
+    expect(safe.uuid).toBe('server-1');
+    expect(safe.address).toBe('example.com');
+  });
 });

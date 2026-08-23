@@ -138,6 +138,24 @@ describe('AppSnapshotProvider', () => {
     expect(result.current.connectionError).toBe(
       'Failed to persist selected server',
     );
+
+    act(() => {
+      electronApi.emitAppSnapshotChanged(
+        makeAppSnapshot({
+          servers: [serverA, serverB],
+          selectedServerId: serverA.uuid,
+          session: {
+            phase: 'idle',
+            activeServerId: null,
+            lastError: null,
+            blockedServerIds: [],
+          },
+        }),
+      );
+    });
+    expect(result.current.connectionError).toBe(
+      'Failed to persist selected server',
+    );
   });
 
   it('maps session.phase to connected/busy flags 1:1', async () => {

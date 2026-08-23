@@ -1,5 +1,5 @@
 import type { IpcMainInvokeEvent } from 'electron';
-import type { IpcEventChannel } from '@/shared/ipc';
+import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 import type { IpcDependencies } from './dependencies';
 import { registerAppSnapshotHandler } from './appSnapshot';
 import { registerConnectionHandlers } from './handlers/connectionHandlers';
@@ -12,7 +12,7 @@ import { registerUpdateHandlers } from './handlers/updateHandlers';
 interface RegisterHandlersParams {
   deps: IpcDependencies;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
-  sendToRenderer: (channel: IpcEventChannel, ...args: unknown[]) => void;
+  notifySnapshot: (reason?: SnapshotReason) => void;
   queueRefreshAllSubscriptions: (
     manualLinks: string,
   ) => Promise<{ configCount: number; reason?: string }>;
@@ -22,14 +22,14 @@ interface RegisterHandlersParams {
 export function registerHandlers({
   deps,
   assertTrustedSender,
-  sendToRenderer,
+  notifySnapshot,
   queueRefreshAllSubscriptions,
   restartAutoRefreshTimer,
 }: RegisterHandlersParams): void {
   registerSubscriptionHandlers({
     deps,
     assertTrustedSender,
-    sendToRenderer,
+    notifySnapshot,
     queueRefreshAllSubscriptions,
     restartAutoRefreshTimer,
   });
@@ -42,7 +42,7 @@ export function registerHandlers({
   registerSettingsHandlers({
     deps,
     assertTrustedSender,
-    sendToRenderer,
+    notifySnapshot,
   });
 
   registerAppSnapshotHandler({
@@ -52,7 +52,7 @@ export function registerHandlers({
 
   registerPingHandlers({
     deps,
-    sendToRenderer,
+    notifySnapshot,
     assertTrustedSender,
     isConnectionBusy: () => deps.connectionController.isBusy(),
   });

@@ -52,6 +52,7 @@ function createController(overrides: Partial<any> = {}) {
       markServerAsBlocked: vi.fn(),
       recordError: vi.fn(),
       handleCriticalConnectionFailure: vi.fn(() => false),
+      noteFailure: vi.fn(),
     },
     hasTunPrivileges: vi.fn(async () => true),
     requestTunPrivilegesRelaunch: vi.fn(async () => false),
@@ -160,7 +161,7 @@ describe('ConnectionController', () => {
     expect(controller.getPhase()).toBe('idle');
   });
 
-  it('cleanupAfterFailure uses disconnecting then idle, not failed', async () => {
+  it('cleanupAfterFailure tears the stack down and lands on failed', async () => {
     const { controller, stop } = createController();
     const phases: SessionPhase[] = [];
     controller.on('phase-changed', (phase: SessionPhase) => {
@@ -172,8 +173,9 @@ describe('ConnectionController', () => {
     await controller.cleanupAfterFailure();
 
     expect(stop).toHaveBeenCalled();
-    expect(phases).toEqual(['disconnecting', 'idle']);
-    expect(controller.getPhase()).toBe('idle');
+    expect(phases).toEqual(['disconnecting', 'failed']);
+    expect(controller.getPhase()).toBe('failed');
+    expect(controller.getLastError()).toBe('Connection cleanup');
   });
 
   it('uses the platform-specific privilege path for TUN connections', async () => {
@@ -312,6 +314,7 @@ describe('ConnectionController', () => {
         markServerAsBlocked: vi.fn(),
         recordError: vi.fn(),
         handleCriticalConnectionFailure: vi.fn(() => true),
+        noteFailure: vi.fn(),
       },
     });
 
@@ -359,6 +362,7 @@ describe('ConnectionController', () => {
         markServerAsBlocked: vi.fn(),
         recordError: vi.fn(),
         handleCriticalConnectionFailure: vi.fn(() => true),
+        noteFailure: vi.fn(),
       },
     });
 
@@ -371,7 +375,8 @@ describe('ConnectionController', () => {
 
     expect(stop).toHaveBeenCalled();
     expect(deps.connectionMonitorService.stopMonitoring).toHaveBeenCalled();
-    expect(controller.getPhase()).toBe('idle');
+    expect(controller.getPhase()).toBe('failed');
+    expect(controller.getLastError()).toBe('endpoint blocked');
   });
 
   it('does not cleanup when a connect is aborted by a later disconnect', async () => {
@@ -460,9 +465,11 @@ describe('ConnectionController', () => {
     expect(controller.getPhase()).toBe('idle');
   });
 
-  it('handleRuntimeFailure only records the failure; policy stays on the event path', async () => {
-    const policy = { onHealthFailure: vi.fn() };
-    const { controller, server, deps } = createController({
+  it('handleRuntimeFailure applies policy when the session is connected', async () => {
+    const policy = {
+      onHealthFailure: vi.fn(() => ({ action: 'disconnect' as const })),
+    };
+    const { controller, server, deps, stop } = createController({
       policy,
       connectionMonitorService: {
         getStatus: vi.fn(() => ({
@@ -479,16 +486,22 @@ describe('ConnectionController', () => {
         markServerAsBlocked: vi.fn(),
         recordError: vi.fn(),
         handleCriticalConnectionFailure: vi.fn(() => true),
+        noteFailure: vi.fn(),
       },
     });
 
+    await controller.connect(server.uuid);
     await controller.handleRuntimeFailure('xray died', {
       localProxyReachable: false,
     });
 
-    expect(
-      deps.connectionMonitorService.handleCriticalConnectionFailure,
-    ).toHaveBeenCalledWith('xray died', { localProxyReachable: false });
-    expect(policy.onHealthFailure).not.toHaveBeenCalled();
+    expect(deps.connectionMonitorService.noteFailure).toHaveBeenCalledWith(
+      'xray died',
+      { localProxyReachable: false },
+    );
+    expect(policy.onHealthFailure).toHaveBeenCalled();
+    expect(stop).toHaveBeenCalled();
+    expect(controller.getPhase()).toBe('failed');
+    expect(controller.getLastError()).toBe('xray died');
   });
 });

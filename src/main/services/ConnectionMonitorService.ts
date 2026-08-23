@@ -11,6 +11,7 @@ import { ConnectionHealthState, XrayHealthStatus } from '@/shared/ipc';
 import { runConnectionHealthProbe } from './connectionMonitor/healthProbe';
 import { XrayLogCursor } from './connectionMonitor/xrayLogCursor';
 import { CONNECTION_MONITOR_TIMING } from './connectionMonitor/timing';
+import { HealthCheckGate } from '@/main/runtime/healthCheckGate';
 
 export interface ConnectionStatus {
   isConnected: boolean;
@@ -68,7 +69,7 @@ export class ConnectionMonitorService extends EventEmitter {
     CONNECTION_MONITOR_TIMING.healthCheckIntervalMs;
   private xrayLogCursor: XrayLogCursor;
   private sessionAbort: AbortController | null = null;
-  private healthCheckInFlight: boolean = false;
+  private readonly healthCheckGate = new HealthCheckGate();
   private tunnelProbeFailStreak: number = 0;
   private localProxyFailStreak: number = 0;
   private autoSwitchFailedAt: Map<string, number> = new Map();
@@ -133,7 +134,7 @@ export class ConnectionMonitorService extends EventEmitter {
     const { message = 'Monitoring stopped', preserveLastError = false } =
       options;
     this.replaceSession();
-    this.healthCheckInFlight = false;
+    this.healthCheckGate.reset();
     logger.info('ConnectionMonitorService', 'Stopping monitoring');
 
     this.status.isConnected = false;
@@ -340,24 +341,38 @@ export class ConnectionMonitorService extends EventEmitter {
     }
     logger.info('ConnectionMonitorService', 'Forcing immediate health check', {
       reason,
-      deferred: this.healthCheckInFlight,
+      deferred: this.healthCheckGate.isInFlight,
     });
-    if (this.healthCheckInFlight) {
-      void (async () => {
-        while (this.healthCheckInFlight) {
-          await new Promise((r) => setTimeout(r, 100));
-          if (signal.aborted || !this.status.isConnected) {
-            return;
-          }
-        }
-        void this.checkConnectionHealth(signal);
-      })();
-      return;
+    this.healthCheckGate.request(() => this.checkConnectionHealth(signal));
+  }
+
+  /**
+   * Probe/diagnostic fact. Does not emit health-failure — ConnectionManager
+   * owns policy for session death.
+   */
+  public noteFailure(
+    error: string,
+    options: { localProxyReachable?: boolean | null } = {},
+  ): void {
+    if ('localProxyReachable' in options) {
+      this.status.localProxyReachable = options.localProxyReachable ?? null;
     }
-    void this.checkConnectionHealth(signal);
+    this.status.lastError = error;
+    this.status.lastHealthState = 'failed';
+    this.status.lastHealthFailureReason = error;
+    this.status.lastHealthCheckAt = Date.now();
+    if (this.status.currentServer) {
+      this.emit('error', {
+        type: 'error',
+        server: this.status.currentServer,
+        error,
+        message: `Connection error: ${error}`,
+      } as ConnectionEvent);
+    }
   }
 
   private replaceSession(): void {
+    this.healthCheckGate.reset();
     this.sessionAbort?.abort();
     this.sessionAbort = new AbortController();
     if (this.checkInterval) {
@@ -384,7 +399,7 @@ export class ConnectionMonitorService extends EventEmitter {
 
   private startPeriodicCheck(signal: AbortSignal): void {
     const runCheck = () => {
-      void this.checkConnectionHealth(signal);
+      this.healthCheckGate.request(() => this.checkConnectionHealth(signal));
     };
 
     this.initialHealthCheckTimer = setTimeout(() => {
@@ -404,14 +419,13 @@ export class ConnectionMonitorService extends EventEmitter {
     if (!this.status.isConnected || !this.status.currentServer) {
       return;
     }
-    if (this.healthCheckInFlight || signal.aborted) {
+    if (signal.aborted) {
       return;
     }
 
     const isStale = () =>
       signal.aborted || !this.status.isConnected || !this.status.currentServer;
 
-    this.healthCheckInFlight = true;
     try {
       this.status.lastHealthCheckAt = Date.now();
       const probeResult = await runConnectionHealthProbe({
@@ -542,8 +556,6 @@ export class ConnectionMonitorService extends EventEmitter {
       ) {
         this.recordError(failureReason, this.status.currentServer);
       }
-    } finally {
-      this.healthCheckInFlight = false;
     }
   }
 

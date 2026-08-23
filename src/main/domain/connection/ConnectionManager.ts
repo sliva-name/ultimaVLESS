@@ -110,6 +110,7 @@ export class ConnectionManager extends EventEmitter {
   private activeOperation: Promise<unknown> | null = null;
   private operationAbort: AbortController | null = null;
   private autoSwitchTimer: NodeJS.Timeout | null = null;
+  private healthPolicyArmed = false;
   private readonly runtime: ConnectionRuntime;
   private readonly servers: ServerRepository;
   private readonly policy: ConnectionPolicy;
@@ -180,6 +181,7 @@ export class ConnectionManager extends EventEmitter {
       clearTimeout(this.autoSwitchTimer);
       this.autoSwitchTimer = null;
     }
+    this.healthPolicyArmed = false;
     this.operationAbort?.abort();
   }
 
@@ -197,12 +199,9 @@ export class ConnectionManager extends EventEmitter {
     if (fromPhase !== toPhase) {
       const allowed = ALLOWED_TRANSITIONS[fromPhase];
       if (!allowed.includes(toPhase)) {
-        logger.warn('ConnectionManager', 'Unexpected phase transition', {
-          from: fromPhase,
-          to: toPhase,
-          fromState: this.state.type,
-          toState: next.type,
-        });
+        throw new Error(
+          `Illegal session transition ${fromPhase} → ${toPhase}`,
+        );
       }
     }
     this.state = next;
@@ -226,7 +225,16 @@ export class ConnectionManager extends EventEmitter {
         const result = await task(abort.signal);
         throwIfAborted(abort.signal);
         if (inFlight.type === 'stopping') {
-          this.transitionTo({ type: 'disconnected' });
+          this.transitionTo(
+            inFlight.outcome === 'failed'
+              ? {
+                  type: 'failed',
+                  reason: inFlight.reason ?? {
+                    message: 'Connection failed',
+                  },
+                }
+              : { type: 'disconnected' },
+          );
         } else {
           const serverId =
             this.state.type === 'switching'
@@ -313,22 +321,6 @@ export class ConnectionManager extends EventEmitter {
   ): Promise<void> {
     const server = this.getServer(serverId);
     const spec = this.buildSpec(server);
-    const monitorStatus = this.deps.connectionMonitorService.getStatus();
-
-    if (
-      this.runtime.status().xrayRunning &&
-      monitorStatus.isConnected &&
-      monitorStatus.currentServer?.uuid === server.uuid &&
-      (monitorStatus.lastHealthState === 'healthy' ||
-        monitorStatus.lastHealthState === 'idle') &&
-      monitorStatus.localProxyReachable !== false
-    ) {
-      logger.info('ConnectionManager', 'connect skipped: already connected', {
-        serverId: server.uuid.substring(0, 8),
-        mode: spec.mode,
-      });
-      return;
-    }
 
     if (spec.mode === 'tun') {
       await this.ensureTunReady(server);
@@ -342,6 +334,13 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public connect(serverId: string): Promise<void> {
+    if (
+      this.state.type === 'connected' &&
+      this.state.serverId === serverId &&
+      this.runtime.status().xrayRunning
+    ) {
+      return Promise.resolve();
+    }
     this.abortCurrentOperation();
     return this.enqueue(
       () => ({
@@ -359,8 +358,13 @@ export class ConnectionManager extends EventEmitter {
   ): Promise<void> {
     this.abortCurrentOperation();
     return this.enqueue(
-      () => ({ type: 'stopping', generation: this.nextGeneration() }),
+      () => ({
+        type: 'stopping',
+        generation: this.nextGeneration(),
+        outcome: 'idle',
+      }),
       async () => {
+        this.healthPolicyArmed = false;
         if (!options.preservePendingTunReconnect) {
           this.deps.configService.clearPendingTunReconnect();
         }
@@ -413,12 +417,18 @@ export class ConnectionManager extends EventEmitter {
     );
   }
 
-  public cleanupAfterFailure(): Promise<void> {
+  public cleanupAfterFailure(reason?: string): Promise<void> {
+    const message = reason ?? 'Connection cleanup';
     return this.enqueue(
-      () => ({ type: 'stopping', generation: this.nextGeneration() }),
+      () => ({
+        type: 'stopping',
+        generation: this.nextGeneration(),
+        outcome: 'failed',
+        reason: { message },
+      }),
       async () => {
         this.deps.connectionMonitorService.stopMonitoring({
-          message: 'Connection cleanup',
+          message,
           preserveLastError: true,
         });
         await this.runtime.stop();
@@ -427,9 +437,10 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public async handleHealthFailure(event: HealthFailureEvent): Promise<void> {
-    if (this.state.type !== 'connected') {
+    if (this.state.type !== 'connected' || this.healthPolicyArmed) {
       return;
     }
+    this.healthPolicyArmed = true;
     const monitor = this.deps.connectionMonitorService;
     monitor.pruneExpiredBlockedServers();
     const decision = this.policy.onHealthFailure({
@@ -447,25 +458,35 @@ export class ConnectionManager extends EventEmitter {
     }
     if (decision.action === 'disconnect') {
       try {
-        await this.cleanupAfterFailure();
+        await this.cleanupAfterFailure(event.reason);
       } catch (error) {
         logger.error(
           'ConnectionManager',
           'Cleanup after health failure failed',
           error,
         );
+      } finally {
+        this.healthPolicyArmed = false;
       }
+      return;
     }
+    this.healthPolicyArmed = false;
   }
 
   public async handleRuntimeFailure(
     reason: string,
     options: { localProxyReachable?: boolean | null } = {},
   ): Promise<void> {
-    this.deps.connectionMonitorService.handleCriticalConnectionFailure(
+    this.deps.connectionMonitorService.noteFailure(reason, options);
+    if (this.state.type !== 'connected') {
+      return;
+    }
+    const server = this.getServer(this.state.serverId);
+    await this.handleHealthFailure({
+      server,
       reason,
-      options,
-    );
+      blocking: true,
+    });
   }
 
   private scheduleAutoSwitch(
@@ -481,7 +502,9 @@ export class ConnectionManager extends EventEmitter {
     });
     this.autoSwitchTimer = setTimeout(() => {
       this.autoSwitchTimer = null;
-      void this.runAutoSwitch(candidates, from);
+      void this.runAutoSwitch(candidates, from).finally(() => {
+        this.healthPolicyArmed = false;
+      });
     }, CONNECTION_MONITOR_TIMING.autoSwitchDelayMs);
   }
 

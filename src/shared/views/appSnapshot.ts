@@ -1,7 +1,8 @@
-import type { ConnectionMode, Subscription, VlessConfig } from '@/shared/types';
+import type { ConnectionMode, Subscription } from '@/shared/types';
 import type { TrafficSnapshot } from './traffic';
+import type { SafeServerConfig } from '@/shared/serverView';
 
-export type SafeServerConfig = Omit<VlessConfig, 'rawConfig'>;
+export type { SafeServerConfig } from '@/shared/serverView';
 
 /** Single UI/controller session phase — owned by ConnectionController. */
 export type SessionPhase =

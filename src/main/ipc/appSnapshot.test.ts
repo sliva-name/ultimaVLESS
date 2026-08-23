@@ -62,10 +62,11 @@ describe('buildAppSnapshot', () => {
         },
         connectionController: {
           getPhase: vi.fn(() => 'disconnecting'),
-          getConnectionState: vi.fn(() => ({
-            type: 'stopping',
-            generation: 1,
-          })),
+      getConnectionState: vi.fn(() => ({
+        type: 'stopping',
+        generation: 1,
+        outcome: 'idle',
+      })),
           isBusy: vi.fn(() => true),
         },
       }) as any,
@@ -109,5 +110,27 @@ describe('buildAppSnapshot', () => {
 
     expect(snapshot.session.phase).toBe('failed');
     expect(snapshot.session.lastError).toBe('spawn failed');
+  });
+
+  it('does not project monitor lastError into the session snapshot', () => {
+    const snapshot = buildAppSnapshot(
+      createDeps({
+        connectionMonitorService: {
+          getStatus: vi.fn(() => ({
+            isConnected: false,
+            currentServer: null,
+            lastError: 'stale monitor error',
+            blockedServers: [],
+          })),
+        },
+        connectionController: {
+          getPhase: vi.fn(() => 'idle'),
+          getConnectionState: vi.fn(() => ({ type: 'disconnected' })),
+          isBusy: vi.fn(() => false),
+        },
+      }) as any,
+    );
+
+    expect(snapshot.session.lastError).toBeNull();
   });
 });

@@ -56,9 +56,9 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
 }) => {
   const { t } = useTranslation();
   const isSwitching = phase === 'switching';
-  const isDisconnecting = phase === 'disconnecting' || phase === 'failed';
+  const isDisconnecting = phase === 'disconnecting';
   const isConnecting = phase === 'connecting';
-  const inFlight = isSessionPhaseInFlight(phase) || phase === 'failed';
+  const inFlight = isSessionPhaseInFlight(phase);
   const showSecure = phase === 'connected';
   const busyLabel = isDisconnecting
     ? t('status.disconnecting')

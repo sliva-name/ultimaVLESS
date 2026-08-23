@@ -71,15 +71,18 @@ export const VirtualizedServerList: React.FC<VirtualizedServerListProps> = ({
   }, [shouldVirtualize, servers.length, scheduleViewportMeasure]);
 
   const selectedServerUuid = selectedServer?.uuid ?? null;
+  const selectedIndex = useMemo(() => {
+    if (!selectedServerUuid) {
+      return -1;
+    }
+    return servers.findIndex((server) => server.uuid === selectedServerUuid);
+  }, [selectedServerUuid, servers]);
 
   useLayoutEffect(() => {
-    if (!shouldVirtualize || !selectedServerUuid) {
+    if (!shouldVirtualize || selectedIndex < 0) {
       return;
     }
-    const index = servers.findIndex((s) => s.uuid === selectedServerUuid);
-    if (index < 0) {
-      return;
-    }
+    const index = selectedIndex;
     const node = scrollRef.current;
     if (!node) {
       return;
@@ -104,12 +107,7 @@ export const VirtualizedServerList: React.FC<VirtualizedServerListProps> = ({
       setScrollTop(node.scrollTop);
     });
     return () => cancelAnimationFrame(frame);
-  }, [
-    shouldVirtualize,
-    selectedServerUuid,
-    servers,
-    viewportHeight,
-  ]);
+  }, [shouldVirtualize, selectedIndex, servers.length, viewportHeight]);
 
   const effectiveViewportHeight =
     viewportHeight > 0 ? viewportHeight : FALLBACK_VIEWPORT_HEIGHT_PX;

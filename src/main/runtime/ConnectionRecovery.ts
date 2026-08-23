@@ -21,8 +21,9 @@ export function createConnectionRecovery(
     emitErrorOnFailure: boolean,
   ): Promise<false> => {
     logger.error('IPC', 'Pending TUN reconnect failed', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     try {
-      await deps.connectionController.cleanupAfterFailure();
+      await deps.connectionController.cleanupAfterFailure(errorMessage);
     } catch (cleanupError) {
       logger.error(
         'IPC',
@@ -32,9 +33,6 @@ export function createConnectionRecovery(
     }
 
     if (emitErrorOnFailure) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      deps.connectionMonitorService.recordError(errorMessage);
       snapshotPublisher.push('recovery');
     }
     return false;
@@ -45,8 +43,8 @@ export function createConnectionRecovery(
       return unexpectedXrayExitRecovery;
     }
 
-    const monitorStatus = deps.connectionMonitorService.getStatus();
-    if (!monitorStatus.isConnected || !monitorStatus.currentServer) {
+    const phase = deps.connectionController.getPhase();
+    if (phase !== 'connected') {
       return;
     }
 
@@ -54,7 +52,7 @@ export function createConnectionRecovery(
       const message = `Connection lost: ${reason}`;
       logger.error('IPC', 'Handling unexpected Xray exit', {
         reason,
-        serverId: monitorStatus.currentServer?.uuid.substring(0, 8),
+        phase,
       });
       try {
         await deps.connectionController.handleRuntimeFailure(message, {

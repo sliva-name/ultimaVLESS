@@ -11,6 +11,7 @@ describe('ConnectionRecovery', () => {
         getStatus: vi.fn(() => ({ isConnected: true, currentServer: server })),
       },
       connectionController: {
+        getPhase: vi.fn(() => 'connected'),
         handleRuntimeFailure: vi.fn(async () => undefined),
         cleanupAfterFailure: vi.fn(async () => undefined),
       },
@@ -49,9 +50,29 @@ describe('ConnectionRecovery', () => {
     ).attemptPendingTunReconnect('server-1', { emitErrorOnFailure: true });
 
     expect(result).toBe(false);
-    expect(deps.connectionMonitorService.recordError).toHaveBeenCalledWith(
+    expect(deps.connectionController.cleanupAfterFailure).toHaveBeenCalledWith(
       'no privileges',
     );
     expect(snapshotPublisher.push).toHaveBeenCalledWith('recovery');
+  });
+
+  it('ignores unexpected Xray exits when the session is not live', async () => {
+    const snapshotPublisher = { push: vi.fn() };
+    const deps = {
+      connectionController: {
+        getPhase: vi.fn(() => 'idle'),
+        handleRuntimeFailure: vi.fn(async () => undefined),
+      },
+    };
+
+    await createConnectionRecovery(
+      deps as any,
+      snapshotPublisher as any,
+    ).handleUnexpectedXrayExit('process exited');
+
+    expect(
+      deps.connectionController.handleRuntimeFailure,
+    ).not.toHaveBeenCalled();
+    expect(snapshotPublisher.push).not.toHaveBeenCalled();
   });
 });

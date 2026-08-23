@@ -49,11 +49,9 @@ export function useSettingsMonitor({ isOpen }: UseSettingsMonitorOptions) {
 
     const removeMonitorListener =
       window.electronAPI.onConnectionMonitorEvent(handleMonitorEvent);
-    const interval = setInterval(loadMonitorStatus, 5000);
 
     return () => {
       removeMonitorListener();
-      clearInterval(interval);
     };
   }, [isOpen, loadMonitorStatus, applyMonitorStatus]);
 

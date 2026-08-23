@@ -1,5 +1,4 @@
 import { decode, isValid } from 'js-base64';
-import net from 'net';
 import dns from 'dns';
 import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
@@ -9,6 +8,7 @@ import {
   parseDirectLinksFromText,
 } from './subscription/linkParsing';
 import { redactUrl } from '@/main/utils/redactUrl';
+import { isPrivateOrReservedHost } from '@/shared/networkAddresses';
 
 /** translate.yandex.ru often expects a browser-like client for the full HTML body. */
 const YANDEX_TRANSLATE_FETCH_HEADERS: Record<string, string> = {
@@ -69,36 +69,7 @@ async function lookupPublicHostAddresses(
 }
 
 function isPrivateOrLoopbackHost(hostname: string): boolean {
-  const normalized = hostname.toLowerCase();
-  if (normalized === 'localhost' || normalized.endsWith('.localhost'))
-    return true;
-  if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true;
-
-  const ipVersion = net.isIP(normalized);
-  if (ipVersion === 4) {
-    const octets = normalized.split('.').map(Number);
-    if (octets.length !== 4 || octets.some((value) => Number.isNaN(value)))
-      return false;
-    const [a, b] = octets;
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168)
-    );
-  }
-
-  if (ipVersion === 6) {
-    return (
-      normalized.startsWith('fc') ||
-      normalized.startsWith('fd') ||
-      normalized.startsWith('fe80:')
-    );
-  }
-
-  return false;
+  return isPrivateOrReservedHost(hostname);
 }
 
 export class SubscriptionService {

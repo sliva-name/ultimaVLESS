@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS } from '@/shared/ipc';
+import { IPC_INVOKE_CHANNELS } from '@/shared/ipc';
 import { registerSettingsHandlers } from './settingsHandlers';
 
 const ipcHandleMock = vi.hoisted(() => vi.fn());
@@ -20,7 +20,7 @@ describe('settings IPC handlers', () => {
   });
 
   function registerWith(overrides: Partial<any> = {}) {
-    const sendToRenderer = vi.fn();
+    const notifySnapshot = vi.fn();
     const deps = {
       shell: { openExternal: vi.fn() },
       configService: {
@@ -51,9 +51,9 @@ describe('settings IPC handlers', () => {
     registerSettingsHandlers({
       deps: deps as any,
       assertTrustedSender: vi.fn(),
-      sendToRenderer,
+      notifySnapshot,
     });
-    return { ...deps, sendToRenderer };
+    return { ...deps, notifySnapshot };
   }
 
   it('refuses connection mode changes while Xray is running', () => {
@@ -71,9 +71,7 @@ describe('settings IPC handlers', () => {
 
     expect(handler({} as never, 'tun')).toBe(true);
     expect(deps.configService.setConnectionMode).toHaveBeenCalledWith('tun');
-    expect(deps.sendToRenderer).toHaveBeenCalledWith(
-      IPC_EVENT_CHANNELS.appSnapshotChanged,
-    );
+    expect(deps.notifySnapshot).toHaveBeenCalledWith('settings');
   });
 
   it('rejects selecting a server id that does not exist', () => {
