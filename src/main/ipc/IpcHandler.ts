@@ -3,7 +3,6 @@ import { IpcEventChannel } from '@/shared/ipc';
 import { configService } from '@/main/services/ConfigService';
 import { getSubscriptionRepository } from '@/main/infrastructure/persistence/ElectronSubscriptionRepository';
 import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
-import { connectionMonitorService } from '@/main/services/ConnectionMonitorService';
 import { connectionController } from '@/main/services/ConnectionController';
 import { subscriptionService } from '@/main/services/SubscriptionService';
 import { SnapshotPublisher } from '@/main/runtime/SnapshotPublisher';
@@ -48,7 +47,6 @@ const subscriptionRefreshManager = createSubscriptionRefreshManager({
   serverRepository: getServerRepository(),
   subscriptionService,
   connectionController,
-  connectionMonitorService,
   notifyStateChanged: () => snapshotPublisher?.push('subscriptions'),
 });
 
@@ -58,6 +56,12 @@ const {
   stopAutoRefreshTimer,
   reportSubscriptionRefreshIssue,
 } = subscriptionRefreshManager;
+
+export function pushAppSnapshot(
+  reason: Parameters<SnapshotPublisher['push']>[0] = 'manual',
+): void {
+  snapshotPublisher?.push(reason);
+}
 
 export function registerIpcHandlers(
   mainWindow: BrowserWindow,

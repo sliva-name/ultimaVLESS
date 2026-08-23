@@ -12,6 +12,8 @@ export type SnapshotReason =
   | 'subscriptions'
   | 'ping'
   | 'recovery'
+  | 'health'
+  | 'process'
   | 'manual';
 
 interface SnapshotPublisherOptions {

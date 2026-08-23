@@ -3,16 +3,23 @@ import { IPC_INVOKE_CHANNELS } from '@/shared/ipc';
 import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { buildConnectionMonitorStatusSummary } from '@/main/ipc/connectionStatusSummary';
+import {
+  buildHealthSnapshot,
+  buildSessionSnapshot,
+} from '@/main/ipc/appSnapshot';
 import { assertBoolean } from '@/main/ipc/validators';
+import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 
 interface RegisterDiagnosticsHandlersParams {
   deps: IpcDependencies;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
+  notifySnapshot: (reason?: SnapshotReason) => void;
 }
 
 export function registerDiagnosticsHandlers({
   deps,
   assertTrustedSender,
+  notifySnapshot,
 }: RegisterDiagnosticsHandlersParams): void {
   ipcMain.handle(
     IPC_INVOKE_CHANNELS.getLogs,
@@ -40,12 +47,18 @@ export function registerDiagnosticsHandlers({
     IPC_INVOKE_CHANNELS.getConnectionMonitorStatus,
     (event: IpcMainInvokeEvent) => {
       assertTrustedSender(event);
-      return buildConnectionMonitorStatusSummary(
-        deps.connectionMonitorService.getStatus(),
-        deps.connectionMonitorService.getAutoSwitchingEnabled(),
-        deps.xrayService.getHealthStatus(),
-        deps.appRecoveryService.getStatus(),
-      );
+      const session = buildSessionSnapshot(deps);
+      const currentServer = session.activeServerId
+        ? (deps.serverRepository.get(session.activeServerId) ?? null)
+        : null;
+      return buildConnectionMonitorStatusSummary({
+        session,
+        health: buildHealthSnapshot(deps),
+        process: deps.xrayService.getHealthStatus(),
+        recovery: deps.appRecoveryService.getStatus(),
+        autoSwitchingEnabled: deps.connectionController.getAutoSwitchingEnabled(),
+        currentServer,
+      });
     },
   );
 
@@ -54,7 +67,8 @@ export function registerDiagnosticsHandlers({
     (event: IpcMainInvokeEvent, enabledValue: unknown) => {
       assertTrustedSender(event);
       const enabled = assertBoolean(enabledValue, 'auto switching value');
-      deps.connectionMonitorService.setAutoSwitchingEnabled(enabled);
+      deps.connectionController.setAutoSwitchingEnabled(enabled);
+      notifySnapshot('connection');
       return true;
     },
   );
@@ -63,7 +77,8 @@ export function registerDiagnosticsHandlers({
     IPC_INVOKE_CHANNELS.clearBlockedServers,
     (event: IpcMainInvokeEvent) => {
       assertTrustedSender(event);
-      deps.connectionMonitorService.clearBlockedServers();
+      deps.connectionController.clearBlockedServers();
+      notifySnapshot('connection');
       return true;
     },
   );

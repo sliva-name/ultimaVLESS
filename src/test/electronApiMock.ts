@@ -16,7 +16,7 @@ import type {
   PerformanceSettings,
   VlessConfig,
 } from '@/shared/types';
-import { makeMonitorStatus } from './factories';
+import { makeAppSnapshot, makeMonitorStatus } from './factories';
 
 type ListenerMap = {
   appSnapshotChanged: Set<(snapshot: AppSnapshot) => void>;
@@ -93,19 +93,7 @@ export function createElectronApiMock(
     clearBlockedServers: vi.fn(async () => true),
     getAppSnapshot: vi.fn(async (): Promise<AppSnapshot> => {
       const connectionMode = await api.getConnectionMode();
-      return {
-        servers: [],
-        subscriptions: [],
-        selectedServerId: null,
-        connectionMode,
-        session: {
-          phase: 'idle',
-          activeServerId: null,
-          lastError: null,
-          blockedServerIds: [],
-        },
-        traffic: null,
-      };
+      return makeAppSnapshot({ connectionMode });
     }),
     setSelectedServerId: vi.fn(async (_serverId: string | null) => true),
     getConnectionMode: vi.fn(async (): Promise<ConnectionMode> => 'proxy'),

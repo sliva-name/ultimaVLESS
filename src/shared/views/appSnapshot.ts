@@ -1,6 +1,11 @@
 import type { ConnectionMode, Subscription } from '@/shared/types';
 import type { TrafficSnapshot } from './traffic';
 import type { SafeServerConfig } from '@/shared/serverView';
+import type {
+  AppRecoveryStatus,
+  ConnectionHealthState,
+  XrayHealthStatus,
+} from './monitorStatus';
 
 export type { SafeServerConfig } from '@/shared/serverView';
 
@@ -31,11 +36,22 @@ export interface AppSessionSnapshot {
   blockedServerIds: string[];
 }
 
+export interface AppHealthSnapshot {
+  lastHealthState: ConnectionHealthState;
+  lastHealthFailureReason: string | null;
+  lastHealthCheckAt: number | null;
+  localProxyReachable: boolean | null;
+}
+
 export interface AppSnapshot {
   servers: SafeServerConfig[];
   subscriptions: Subscription[];
   selectedServerId: string | null;
   connectionMode: ConnectionMode;
   session: AppSessionSnapshot;
+  health: AppHealthSnapshot;
+  process: XrayHealthStatus;
+  recovery: AppRecoveryStatus;
+  autoSwitchingEnabled: boolean;
   traffic: TrafficSnapshot | null;
 }

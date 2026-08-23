@@ -45,12 +45,21 @@ describe('registerHandlers', () => {
         connectionController: {
           isBusy: vi.fn(() => false),
           getPhase: vi.fn(() => 'idle'),
-        },
-        connectionMonitorService: {
-          getStatus: vi.fn(() => ({ blockedServers: [] })),
+          getConnectionState: vi.fn(() => ({ type: 'disconnected' })),
+          getBlockedServerIds: vi.fn(() => []),
           getAutoSwitchingEnabled: vi.fn(() => true),
           setAutoSwitchingEnabled: vi.fn(),
           clearBlockedServers: vi.fn(),
+        },
+        connectionMonitorService: {
+          getStatus: vi.fn(() => ({
+            probeArmed: false,
+            currentServer: null,
+            lastHealthState: 'idle',
+            lastHealthFailureReason: null,
+            lastHealthCheckAt: null,
+            localProxyReachable: null,
+          })),
         },
         xrayService: {
           isRunning: vi.fn(() => false),

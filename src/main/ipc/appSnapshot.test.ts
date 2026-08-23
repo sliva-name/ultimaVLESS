@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildAppSnapshot } from './appSnapshot';
-import { makeServer, makeSubscription } from '@/test/factories';
+import {
+  makeAppRecoveryStatus,
+  makeServer,
+  makeSubscription,
+  makeXrayHealthStatus,
+} from '@/test/factories';
 
 function createDeps(overrides: Partial<any> = {}) {
   const server = makeServer({ uuid: 'server-1', rawConfig: { outbounds: [] } });
@@ -17,10 +22,12 @@ function createDeps(overrides: Partial<any> = {}) {
     },
     connectionMonitorService: {
       getStatus: vi.fn(() => ({
-        isConnected: true,
+        probeArmed: true,
         currentServer: server,
-        lastError: null,
-        blockedServers: [],
+        lastHealthState: 'healthy',
+        lastHealthFailureReason: null,
+        lastHealthCheckAt: null,
+        localProxyReachable: true,
       })),
     },
     connectionController: {
@@ -31,6 +38,14 @@ function createDeps(overrides: Partial<any> = {}) {
         mode: 'proxy',
       })),
       isBusy: vi.fn(() => false),
+      getBlockedServerIds: vi.fn(() => []),
+      getAutoSwitchingEnabled: vi.fn(() => true),
+    },
+    xrayService: {
+      getHealthStatus: vi.fn(() => makeXrayHealthStatus()),
+    },
+    appRecoveryService: {
+      getStatus: vi.fn(() => makeAppRecoveryStatus()),
     },
     trafficStatsService: {
       getLastSnapshot: vi.fn(() => null),
@@ -68,6 +83,8 @@ describe('buildAppSnapshot', () => {
             outcome: 'idle',
           })),
           isBusy: vi.fn(() => true),
+          getBlockedServerIds: vi.fn(() => []),
+          getAutoSwitchingEnabled: vi.fn(() => true),
         },
       }) as any,
     );
@@ -87,6 +104,8 @@ describe('buildAppSnapshot', () => {
             generation: 1,
           })),
           isBusy: vi.fn(() => true),
+          getBlockedServerIds: vi.fn(() => []),
+          getAutoSwitchingEnabled: vi.fn(() => true),
         },
       }) as any,
     );
@@ -104,6 +123,8 @@ describe('buildAppSnapshot', () => {
             reason: { message: 'spawn failed' },
           })),
           isBusy: vi.fn(() => false),
+          getBlockedServerIds: vi.fn(() => []),
+          getAutoSwitchingEnabled: vi.fn(() => true),
         },
       }) as any,
     );
@@ -127,6 +148,8 @@ describe('buildAppSnapshot', () => {
           getPhase: vi.fn(() => 'idle'),
           getConnectionState: vi.fn(() => ({ type: 'disconnected' })),
           isBusy: vi.fn(() => false),
+          getBlockedServerIds: vi.fn(() => []),
+          getAutoSwitchingEnabled: vi.fn(() => true),
         },
       }) as any,
     );
@@ -153,6 +176,8 @@ describe('buildAppSnapshot', () => {
             mode: 'proxy',
           })),
           isBusy: vi.fn(() => false),
+          getBlockedServerIds: vi.fn(() => ['blocked-1']),
+          getAutoSwitchingEnabled: vi.fn(() => true),
         },
       }) as any,
     );

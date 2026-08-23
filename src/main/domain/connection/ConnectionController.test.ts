@@ -49,7 +49,7 @@ function createController(overrides: Partial<any> = {}) {
       pruneExpiredBlockedServers: vi.fn(),
       getAutoSwitchingEnabled: vi.fn(() => true),
       notifySwitching: vi.fn(),
-      markServerAsBlocked: vi.fn(),
+      setProbeTarget: vi.fn(),
       recordError: vi.fn(),
       handleCriticalConnectionFailure: vi.fn(() => false),
       noteFailure: vi.fn(),
@@ -308,10 +308,8 @@ describe('ConnectionController', () => {
         })),
         startMonitoring: vi.fn(),
         stopMonitoring: vi.fn(),
-        pruneExpiredBlockedServers: vi.fn(),
-        getAutoSwitchingEnabled: vi.fn(() => true),
         notifySwitching: vi.fn(),
-        markServerAsBlocked: vi.fn(),
+        setProbeTarget: vi.fn(),
         recordError: vi.fn(),
         handleCriticalConnectionFailure: vi.fn(() => true),
         noteFailure: vi.fn(),
@@ -356,10 +354,8 @@ describe('ConnectionController', () => {
         })),
         startMonitoring: vi.fn(),
         stopMonitoring: vi.fn(),
-        pruneExpiredBlockedServers: vi.fn(),
-        getAutoSwitchingEnabled: vi.fn(() => false),
         notifySwitching: vi.fn(),
-        markServerAsBlocked: vi.fn(),
+        setProbeTarget: vi.fn(),
         recordError: vi.fn(),
         handleCriticalConnectionFailure: vi.fn(() => true),
         noteFailure: vi.fn(),
@@ -367,6 +363,7 @@ describe('ConnectionController', () => {
     });
 
     await controller.connect(server.uuid);
+    controller.setAutoSwitchingEnabled(false);
     await controller.handleHealthFailure({
       server,
       reason: 'endpoint blocked',
@@ -480,10 +477,8 @@ describe('ConnectionController', () => {
         })),
         startMonitoring: vi.fn(),
         stopMonitoring: vi.fn(),
-        pruneExpiredBlockedServers: vi.fn(),
-        getAutoSwitchingEnabled: vi.fn(() => true),
         notifySwitching: vi.fn(),
-        markServerAsBlocked: vi.fn(),
+        setProbeTarget: vi.fn(),
         recordError: vi.fn(),
         handleCriticalConnectionFailure: vi.fn(() => true),
         noteFailure: vi.fn(),

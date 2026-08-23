@@ -53,6 +53,7 @@ describe('registerRuntimeEvents', () => {
       appUpdaterService: Object.assign(new EventEmitter(), {
         setConnectionBusyGetter: vi.fn(),
       }),
+      appRecoveryService: Object.assign(new EventEmitter(), {}),
     };
   }
 
@@ -88,7 +89,7 @@ describe('registerRuntimeEvents', () => {
     expect(snapshotPublisher.push).toHaveBeenCalledWith('traffic');
   });
 
-  it('publishes a snapshot only when the block ledger changes', () => {
+  it('publishes health snapshot on probe error', () => {
     const deps = createDeps();
     const snapshotPublisher = { push: vi.fn() };
     registerRuntimeEvents({
@@ -98,11 +99,12 @@ describe('registerRuntimeEvents', () => {
       sendToRenderer: vi.fn(),
     });
 
-    deps.connectionMonitorService.emit('blocked', {
-      type: 'blocked',
+    deps.connectionMonitorService.emit('error', {
+      type: 'error',
       server: makeServer(),
+      error: 'blocked',
     });
-    expect(snapshotPublisher.push).toHaveBeenCalledWith('monitor');
+    expect(snapshotPublisher.push).toHaveBeenCalledWith('health');
   });
 
   it('routes Xray process failure to the session owner', () => {

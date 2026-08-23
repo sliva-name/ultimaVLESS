@@ -4,6 +4,7 @@ import { Shield, X, Layers, Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Subscription, VlessConfig } from '@/shared/types';
 import { useSettingsMonitor } from '@/renderer/hooks/useSettingsMonitor';
+import { useAppSnapshot } from '@/renderer/hooks/useAppSnapshot';
 import { SettingsSourcesTab } from './settings/SettingsSourcesTab';
 import { SettingsNetworkTab } from './settings/SettingsNetworkTab';
 import { SettingsDiagnosticsTab } from './settings/SettingsDiagnosticsTab';
@@ -40,13 +41,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingsTabId>('sources');
 
-  const {
-    monitorStatus,
-    recentEvents,
-    autoSwitching,
-    setAutoSwitching,
-    loadMonitorStatus,
-  } = useSettingsMonitor({ isOpen });
+  const snapshot = useAppSnapshot();
+  const { recentEvents } = useSettingsMonitor({ isOpen });
 
   if (!isOpen) return null;
 
@@ -129,11 +125,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'diagnostics' && (
             <SettingsDiagnosticsTab
               servers={servers}
-              monitorStatus={monitorStatus}
+              snapshot={snapshot}
               recentEvents={recentEvents}
-              autoSwitching={autoSwitching}
-              onAutoSwitchingChange={setAutoSwitching}
-              onReloadMonitorStatus={loadMonitorStatus}
             />
           )}
         </div>

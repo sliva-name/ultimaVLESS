@@ -26,9 +26,6 @@ function createManager(overrides: Partial<any> = {}) {
       getConnectionState: vi.fn(() => ({ type: 'disconnected' })),
       reconcileActiveServer: vi.fn(() => null),
     },
-    connectionMonitorService: {
-      syncCurrentServer: vi.fn(() => null),
-    },
     notifyStateChanged: vi.fn(),
     ...overrides,
   };

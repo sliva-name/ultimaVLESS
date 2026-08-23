@@ -80,6 +80,15 @@ export function makeAppSnapshot(
       lastError: null,
       blockedServerIds: [],
     },
+    health: {
+      lastHealthState: 'idle',
+      lastHealthFailureReason: null,
+      lastHealthCheckAt: null,
+      localProxyReachable: null,
+    },
+    process: makeXrayHealthStatus(),
+    recovery: makeAppRecoveryStatus(),
+    autoSwitchingEnabled: true,
     traffic: null,
     ...overrides,
   };

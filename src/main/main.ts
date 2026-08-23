@@ -397,17 +397,9 @@ async function ensureTray() {
 }
 
 async function resendStateToRenderer(window: BrowserWindow): Promise<void> {
-  const [{ buildAppSnapshot }, { createIpcDependencies }, { IPC_EVENT_CHANNELS }] =
-    await Promise.all([
-      import('./ipc/appSnapshot'),
-      import('./ipc/dependencies'),
-      import('@/shared/ipc'),
-    ]);
+  const { pushAppSnapshot } = await import('./ipc/IpcHandler');
   if (!window.isDestroyed()) {
-    window.webContents.send(
-      IPC_EVENT_CHANNELS.appSnapshotChanged,
-      buildAppSnapshot(createIpcDependencies()),
-    );
+    pushAppSnapshot('bootstrap');
   }
 }
 

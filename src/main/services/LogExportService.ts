@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { app, shell } from 'electron';
 import { logger } from './LoggerService';
+import { connectionController } from './ConnectionController';
 import { connectionMonitorService } from './ConnectionMonitorService';
 import { xrayService } from './XrayService';
 import { appRecoveryService } from './AppRecoveryService';
@@ -9,6 +10,12 @@ import {
   sanitizeDiagnosticPayload,
   sanitizeSensitiveText,
 } from '@/shared/sanitizeDiagnostics';
+import {
+  lastErrorFromState,
+  activeServerIdFromState,
+} from '@/main/domain/connection/ConnectionState';
+import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
+import { toSafeServer } from '@/shared/serverView';
 
 export class LogExportService {
   /**
@@ -28,7 +35,8 @@ export class LogExportService {
     content += '=== HEALTH SUMMARY ===\n';
     content += `${JSON.stringify(
       sanitizeDiagnosticPayload({
-        connection: this.summarizeConnection(),
+        session: this.summarizeSession(),
+        health: connectionMonitorService.getStatus(),
         xray: xrayService.getHealthStatus(),
         recovery: appRecoveryService.getStatus(),
       }),
@@ -45,40 +53,21 @@ export class LogExportService {
     return this.sanitize(content);
   }
 
-  /**
-   * `ConnectionStatus.currentServer` is the full profile, including the VLESS id,
-   * Trojan/Shadowsocks password, REALITY keys and the raw config. Only the fields
-   * that help diagnose a session are copied out.
-   */
-  private summarizeConnection(): Record<string, unknown> {
-    const status = connectionMonitorService.getStatus();
-    const server = status.currentServer;
+  private summarizeSession(): Record<string, unknown> {
+    const state = connectionController.getConnectionState();
+    const activeServerId = activeServerIdFromState(state);
+    const server = activeServerId
+      ? getServerRepository().get(activeServerId)
+      : undefined;
     return {
-      isConnected: status.isConnected,
-      lastError: status.lastError,
-      connectionAttempts: status.connectionAttempts,
-      lastConnectionTime: status.lastConnectionTime,
-      blockedServerCount: status.blockedServers.length,
-      lastHealthCheckAt: status.lastHealthCheckAt,
-      lastHealthState: status.lastHealthState,
-      lastHealthFailureReason: status.lastHealthFailureReason,
-      localProxyReachable: status.localProxyReachable,
-      currentServer: server
-        ? {
-            name: server.name,
-            protocol: server.protocol,
-            port: server.port,
-            security: server.security,
-            transport: server.type,
-            hasRawConfig: Boolean(server.rawConfig),
-          }
-        : null,
+      phase: connectionController.getPhase(),
+      lastError: lastErrorFromState(state),
+      activeServerId,
+      blockedServerIds: connectionController.getBlockedServerIds(),
+      currentServer: server ? toSafeServer(server) : null,
     };
   }
 
-  /**
-   * Opens the folder containing the logs in the OS file explorer.
-   */
   public async openLogFolder(): Promise<void> {
     try {
       const logDir = path.dirname(logger.getLogPath());
@@ -116,9 +105,6 @@ export class LogExportService {
     }
   }
 
-  /**
-   * Removes sensitive data like UUIDs and IPs.
-   */
   private sanitize(text: string): string {
     return sanitizeSensitiveText(text);
   }

@@ -43,6 +43,7 @@ import {
   createAutoSwitchPolicy,
   type ConnectionPolicy,
 } from './ConnectionPolicy';
+import { SessionPolicyState } from './SessionPolicyState';
 import type { ServerRepository } from '@/main/domain/server/ServerRepository';
 import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
 import { isSameServerIdentity } from '@/shared/serverIdentity';
@@ -111,6 +112,7 @@ export class ConnectionManager extends EventEmitter {
   private operationAbort: AbortController | null = null;
   private autoSwitchTimer: NodeJS.Timeout | null = null;
   private healthPolicyArmed = false;
+  private readonly policyState = new SessionPolicyState();
   private readonly runtime: ConnectionRuntime;
   private readonly servers: ServerRepository;
   private readonly policy: ConnectionPolicy;
@@ -169,6 +171,24 @@ export class ConnectionManager extends EventEmitter {
     return isConnectionStateInFlight(this.state);
   }
 
+  public getBlockedServerIds(): string[] {
+    return this.policyState.getBlockedServerIds();
+  }
+
+  public getAutoSwitchingEnabled(): boolean {
+    return this.policyState.getAutoSwitchingEnabled();
+  }
+
+  public setAutoSwitchingEnabled(enabled: boolean): void {
+    this.policyState.setAutoSwitchingEnabled(enabled);
+    this.emit('policy-changed');
+  }
+
+  public clearBlockedServers(): void {
+    this.policyState.clearBlocked();
+    this.emit('policy-changed');
+  }
+
   /**
    * Catalog refresh can rotate the stored uuid while the endpoint stays the
    * same. Session owns the live id — remap it here, do not infer from monitor.
@@ -181,7 +201,9 @@ export class ConnectionManager extends EventEmitter {
     if (!liveId) {
       return null;
     }
-    if (nextServers.some((server) => server.uuid === liveId)) {
+    const exact = nextServers.find((server) => server.uuid === liveId);
+    if (exact) {
+      this.deps.connectionMonitorService.setProbeTarget(exact);
       return liveId;
     }
     const previous = previousServers.find((server) => server.uuid === liveId);
@@ -195,6 +217,7 @@ export class ConnectionManager extends EventEmitter {
       return liveId;
     }
     this.replaceActiveServerId(liveId, remapped.uuid);
+    this.deps.connectionMonitorService.setProbeTarget(remapped);
     return remapped.uuid;
   }
 
@@ -375,11 +398,7 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public connect(serverId: string): Promise<void> {
-    if (
-      this.state.type === 'connected' &&
-      this.state.serverId === serverId &&
-      this.runtime.status().xrayRunning
-    ) {
+    if (this.state.type === 'connected' && this.state.serverId === serverId) {
       return Promise.resolve();
     }
     this.abortCurrentOperation();
@@ -482,15 +501,18 @@ export class ConnectionManager extends EventEmitter {
       return;
     }
     this.healthPolicyArmed = true;
-    const monitor = this.deps.connectionMonitorService;
-    monitor.pruneExpiredBlockedServers();
+    this.policyState.pruneExpired();
+    if (event.blocking) {
+      this.policyState.markBlocked(event.server.uuid);
+      this.emit('policy-changed');
+    }
     const decision = this.policy.onHealthFailure({
       server: event.server,
       reason: event.reason,
       blocking: event.blocking,
-      autoSwitchEnabled: monitor.getAutoSwitchingEnabled(),
+      autoSwitchEnabled: this.policyState.getAutoSwitchingEnabled(),
       servers: this.servers.list(),
-      blockedServerIds: new Set(monitor.getStatus().blockedServers),
+      blockedServerIds: new Set(this.policyState.getBlockedServerIds()),
     });
 
     if (decision.action === 'switch') {
@@ -585,7 +607,8 @@ export class ConnectionManager extends EventEmitter {
               }
               const reason =
                 error instanceof Error ? error.message : String(error);
-              monitor.markServerAsBlocked(candidate.uuid);
+              this.policyState.markBlocked(candidate.uuid);
+              this.emit('policy-changed');
               logger.warn('ConnectionManager', 'Auto-switch candidate failed', {
                 server: candidate.name,
                 reason,

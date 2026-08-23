@@ -60,6 +60,7 @@ export function registerHandlers({
   registerDiagnosticsHandlers({
     deps,
     assertTrustedSender,
+    notifySnapshot,
   });
 
   registerUpdateHandlers({

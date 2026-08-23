@@ -44,9 +44,6 @@ interface SubscriptionRefreshManagerDeps {
       previousServers: VlessConfig[],
     ) => string | null;
   };
-  connectionMonitorService: {
-    syncCurrentServer: (servers: VlessConfig[]) => VlessConfig | null;
-  };
   notifyStateChanged?: () => void;
 }
 
@@ -235,7 +232,6 @@ export function createSubscriptionRefreshManager(
     }
 
     deps.serverRepository.saveAll(effectiveConfigs);
-    deps.connectionMonitorService.syncCurrentServer(effectiveConfigs);
     const remappedLiveId = deps.connectionController.reconcileActiveServer(
       effectiveConfigs,
       existingServers,
