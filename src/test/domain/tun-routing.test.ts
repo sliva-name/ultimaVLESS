@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PERFORMANCE_SETTINGS } from './types';
+import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
 import {
   getWindowsTunRouteModeLabel,
   resolveTunAutoRoute,
   resolveWindowsTunRouting,
   usesWindowsPowerShellTunRouting,
-} from './tunRouting';
+} from '@/shared/tunRouting';
 
 describe('tunRouting', () => {
   it('defaults Windows routing to xray', () => {

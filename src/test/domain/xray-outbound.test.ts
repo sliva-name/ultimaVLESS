@@ -6,7 +6,7 @@ import {
   isPrivateOrLocalEndpoint,
   normalizeVmessSecurity,
   requiresPublicTrojanMux,
-} from './outboundCompat';
+} from '@/main/services/configGenerator/outboundCompat';
 
 describe('outboundCompat', () => {
   it('detects private and local endpoints', () => {

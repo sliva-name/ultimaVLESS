@@ -41,9 +41,6 @@ export function createAutoSwitchPolicy(): ConnectionPolicy {
       if (selection.type === 'selected-candidates') {
         return { action: 'switch', candidates: selection.candidates };
       }
-      if (selection.type === 'selected') {
-        return { action: 'switch', candidates: [selection.server] };
-      }
       return { action: 'disconnect' };
     },
   };

@@ -9,7 +9,7 @@ import type {
 
 export type { SafeServerConfig } from '@/shared/serverView';
 
-/** Single UI/controller session phase — owned by ConnectionController. */
+/** Single UI session phase — owned by ConnectionManager. */
 export type SessionPhase =
   | 'idle'
   | 'connecting'
@@ -17,9 +17,6 @@ export type SessionPhase =
   | 'switching'
   | 'disconnecting'
   | 'failed';
-
-/** @deprecated Use SessionPhase */
-export type AppSessionStatus = SessionPhase;
 
 export function isSessionPhaseInFlight(phase: SessionPhase): boolean {
   return (

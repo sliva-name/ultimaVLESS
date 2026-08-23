@@ -1,7 +1,6 @@
 import type { VlessConfig } from '@/shared/types';
 
 export type AutoSwitchSelection =
-  | { type: 'selected'; server: VlessConfig }
   | { type: 'selected-candidates'; candidates: VlessConfig[] }
   | { type: 'no-servers' }
   | { type: 'all-blocked' }
@@ -106,23 +105,4 @@ export function selectAutoSwitchCandidates(
     .map(({ server }) => server);
 
   return { type: 'selected-candidates', candidates };
-}
-
-export function selectNextServerForAutoSwitch(
-  servers: VlessConfig[],
-  currentServer: VlessConfig,
-  blockedServerIds: ReadonlySet<string>,
-): AutoSwitchSelection {
-  const selection = selectAutoSwitchCandidates(
-    servers,
-    currentServer,
-    blockedServerIds,
-    {
-      maxCandidates: 1,
-    },
-  );
-  if (selection.type !== 'selected-candidates') {
-    return selection;
-  }
-  return { type: 'selected', server: selection.candidates[0]! };
 }

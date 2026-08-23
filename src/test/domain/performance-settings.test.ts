@@ -4,8 +4,8 @@ import {
   LEGACY_PERFORMANCE_CORE,
   normalizePerformanceSettings,
   performanceSettingsEqual,
-} from './performanceSettings';
-import { DEFAULT_PERFORMANCE_SETTINGS } from './types';
+} from '@/shared/performanceSettings';
+import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
 
 describe('normalizePerformanceSettings', () => {
   it('accepts extended TLS fingerprints', () => {

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createSubscriptionRefreshManager } from './subscriptionRefresh';
+import { createSubscriptionRefreshManager } from '@/main/ipc/subscriptionRefresh';
+import { preserveActiveServerIfNeeded } from '@/main/ipc/refreshUtils';
+import { applyPingOverlay, collectPingOverlay } from '@/shared/pingOverlay';
 import { makeServer, makeSubscription } from '@/test/factories';
 
-function createManager(overrides: Partial<any> = {}) {
+function createRefresh(overrides: Partial<any> = {}) {
   const server = makeServer({ uuid: 'server-1' });
   const deps = {
     getWindow: vi.fn(() => null),
@@ -32,9 +34,9 @@ function createManager(overrides: Partial<any> = {}) {
   return { deps, manager: createSubscriptionRefreshManager(deps) };
 }
 
-describe('SubscriptionRefreshManager', () => {
-  it('persists refreshed servers and notifies the snapshot publisher', async () => {
-    const { deps, manager } = createManager();
+describe('catalog refresh', () => {
+  it('persists refreshed servers without catalog pings', async () => {
+    const { deps, manager } = createRefresh();
 
     const result = await manager.queueRefreshAllSubscriptions('');
 
@@ -45,22 +47,15 @@ describe('SubscriptionRefreshManager', () => {
     expect(deps.notifyStateChanged).toHaveBeenCalledTimes(1);
   });
 
-  it('drops configs of subscriptions disabled while the refresh was in flight', async () => {
+  it('drops configs of a subscription disabled while refresh was in flight', async () => {
     const subscription = makeSubscription();
     let fetchStarted = false;
-    const { deps, manager } = createManager({
+    const { deps, manager } = createRefresh({
       subscriptionRepository: {
-        // Enabled when the refresh starts, disabled by the time it finishes.
         list: vi.fn(() =>
-          fetchStarted
-            ? [{ ...subscription, enabled: false }]
-            : [subscription],
+          fetchStarted ? [{ ...subscription, enabled: false }] : [subscription],
         ),
         getManualLinks: vi.fn(() => ''),
-      },
-      serverRepository: {
-        list: vi.fn(() => []),
-        saveAll: vi.fn(),
       },
       subscriptionService: {
         fetchAndParseDetailed: vi.fn(async () => {
@@ -77,8 +72,8 @@ describe('SubscriptionRefreshManager', () => {
     expect(deps.serverRepository.saveAll).not.toHaveBeenCalled();
   });
 
-  it('does not send renderer events directly when refresh fails', async () => {
-    const { deps, manager } = createManager({
+  it('does not talk to the renderer window when refresh fails', async () => {
+    const { deps, manager } = createRefresh({
       subscriptionService: {
         fetchAndParseDetailed: vi.fn(async () => {
           throw new Error('offline');
@@ -87,19 +82,19 @@ describe('SubscriptionRefreshManager', () => {
       },
     });
 
-    await expect(manager.queueRefreshAllSubscriptions('')).resolves.toMatchObject(
-      { configCount: 0 },
-    );
+    await expect(
+      manager.queueRefreshAllSubscriptions(''),
+    ).resolves.toMatchObject({ configCount: 0 });
     manager.reportSubscriptionRefreshIssue('offline');
 
     expect(deps.getWindow).not.toHaveBeenCalled();
     expect(deps.notifyStateChanged).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves a live session server omitted by refresh', async () => {
+  it('keeps a live session server omitted by refresh', async () => {
     const live = makeServer({ uuid: 'live', address: '9.9.9.9', name: 'Live' });
     const next = makeServer({ uuid: 'new', address: '1.2.3.4', name: 'New' });
-    const { deps, manager } = createManager({
+    const { deps, manager } = createRefresh({
       serverRepository: {
         list: vi.fn(() => [live]),
         saveAll: vi.fn(),
@@ -127,7 +122,7 @@ describe('SubscriptionRefreshManager', () => {
     expect(deps.configService.setSelectedServerId).toHaveBeenCalledWith('live');
   });
 
-  it('reapplies ping by endpoint identity after uuid rotation', async () => {
+  it('reapplies ping by endpoint after uuid rotation and remaps the live session', async () => {
     const previous = makeServer({
       uuid: 'old-id',
       address: '1.2.3.4',
@@ -135,7 +130,7 @@ describe('SubscriptionRefreshManager', () => {
       pingTime: 100,
     });
     const rotated = makeServer({ uuid: 'new-id', address: '1.2.3.4' });
-    const { deps, manager } = createManager({
+    const { deps, manager } = createRefresh({
       serverRepository: {
         list: vi.fn(() => [previous]),
         saveAll: vi.fn(),
@@ -163,5 +158,75 @@ describe('SubscriptionRefreshManager', () => {
     expect(deps.serverRepository.saveAll).toHaveBeenCalledWith([
       expect.objectContaining({ uuid: 'new-id', ping: 42, pingStale: true }),
     ]);
+  });
+});
+
+describe('preserve live/selected catalog identity', () => {
+  it('keeps the live session server when refresh omits it', () => {
+    const live = makeServer({ uuid: 'live', name: 'Live', address: '9.9.9.9' });
+    const next = makeServer({ uuid: 'new', name: 'New', address: '1.2.3.4' });
+
+    expect(
+      preserveActiveServerIfNeeded([next], [live, next], 'live').map(
+        (server) => server.uuid,
+      ),
+    ).toEqual(['live', 'new']);
+  });
+
+  it('does not invent a live server from empty session state', () => {
+    const next = makeServer({ uuid: 'new' });
+    expect(preserveActiveServerIfNeeded([next], [next], null)).toEqual([next]);
+  });
+
+  it('keeps an unmatched selected server', () => {
+    const selected = makeServer({ uuid: 'picked', address: '9.9.9.9' });
+    const next = makeServer({ uuid: 'new', address: '1.2.3.4' });
+
+    expect(
+      preserveActiveServerIfNeeded([next], [selected], null, 'picked').map(
+        (server) => server.uuid,
+      ),
+    ).toEqual(['picked', 'new']);
+  });
+
+  it('does not duplicate a live server already represented by identity', () => {
+    const live = makeServer({ uuid: 'old-id', address: '1.2.3.4' });
+    const rotated = makeServer({ uuid: 'new-id', address: '1.2.3.4' });
+
+    expect(
+      preserveActiveServerIfNeeded([rotated], [live], 'old-id').map(
+        (server) => server.uuid,
+      ),
+    ).toEqual(['new-id']);
+  });
+});
+
+describe('ping overlay', () => {
+  it('reapplies latency by uuid, then by endpoint identity', () => {
+    const stored = [
+      makeServer({
+        uuid: 'old-id',
+        address: '1.2.3.4',
+        ping: 18,
+        pingTime: 50,
+      }),
+    ];
+    const refreshed = [
+      makeServer({ uuid: 'new-id', address: '1.2.3.4' }),
+      makeServer({ uuid: 'other', address: '8.8.8.8' }),
+    ];
+
+    const merged = applyPingOverlay(refreshed, collectPingOverlay(stored));
+
+    expect(merged[0]).toMatchObject({
+      uuid: 'new-id',
+      ping: 18,
+      pingStale: true,
+    });
+    expect(merged[1]).toMatchObject({
+      uuid: 'other',
+      ping: null,
+      pingStale: false,
+    });
   });
 });

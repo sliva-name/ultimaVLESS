@@ -1,5 +1,4 @@
 import { VlessConfig } from '@/shared/types';
-import { isSameServerIdentity } from '@/shared/serverIdentity';
 import { logger } from './LoggerService';
 import { configService } from './ConfigService';
 import { EventEmitter } from 'events';
@@ -168,41 +167,6 @@ export class ConnectionMonitorService extends EventEmitter {
     return this.recordError(error, this.status.currentServer, {
       forceBlocking: true,
     });
-  }
-
-  public syncCurrentServer(servers: VlessConfig[]): VlessConfig | null {
-    const currentServer = this.status.currentServer;
-    if (!currentServer) {
-      return null;
-    }
-
-    const exact = servers.find((server) => server.uuid === currentServer.uuid);
-    if (exact) {
-      this.status.currentServer = exact;
-      return exact;
-    }
-
-    const fuzzy = servers.find((server) =>
-      isSameServerIdentity(server, currentServer),
-    );
-
-    if (fuzzy) {
-      logger.info(
-        'ConnectionMonitorService',
-        'Tracked server matched by address/port after uuid rotation',
-        {
-          from: currentServer.uuid.substring(0, 12),
-          to: fuzzy.uuid.substring(0, 12),
-          address: currentServer.address,
-          port: currentServer.port,
-        },
-      );
-      this.status.currentServer = fuzzy;
-      return fuzzy;
-    }
-
-    this.status.currentServer = null;
-    return null;
   }
 
   public recordError(

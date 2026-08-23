@@ -8,7 +8,7 @@ import {
   DNS_OUTBOUND_TAG,
   ensureDnsHijackRule,
   ensureDnsOutbound,
-} from './dns';
+} from '@/main/services/configGenerator/dns';
 
 describe('configGenerator/dns', () => {
   it('buildDnsObject uses remote servers without localhost', () => {

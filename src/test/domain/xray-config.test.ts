@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeServer } from '@/test/factories';
 import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
 import type { XrayConfig } from '@/shared/xray-types';
-import { XrayConfigCompiler } from './XrayConfigCompiler';
+import { XrayConfigCompiler } from '@/main/services/XrayConfigCompiler';
 
 describe('XrayConfigCompiler', () => {
   it('compiles a structured server profile into a runnable Xray config', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HealthCheckGate } from './healthCheckGate';
+import { HealthCheckGate } from '@/main/runtime/healthCheckGate';
 
 describe('HealthCheckGate', () => {
   it('runs the first request immediately', async () => {

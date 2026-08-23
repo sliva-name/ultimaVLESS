@@ -5,7 +5,7 @@ import { makeServer } from '@/test/factories';
 import {
   createConnectionStrategies,
   createNetworkTeardown,
-} from './connectionStrategies';
+} from '@/main/domain/connection/connectionStrategies';
 
 describe('connection strategies', () => {
   it('proxy strategy starts Xray before enabling system proxy', async () => {

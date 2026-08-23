@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseDirectLinksFromText } from './subscription/linkParsing';
-import { parseJsonConfigs } from './subscription/jsonParsing';
+import { parseDirectLinksFromText } from '@/main/services/subscription/linkParsing';
+import { parseJsonConfigs } from '@/main/services/subscription/jsonParsing';
 
 describe('subscription parsing', () => {
   it('extracts VLESS links from mixed clipboard text', () => {

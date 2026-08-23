@@ -5,7 +5,7 @@ import {
   normalizeBypassDomains,
   normalizeBypassIps,
   toXrayDomainMatcher,
-} from './splitTunneling';
+} from '@/shared/splitTunneling';
 
 describe('classifySplitTunnelEntry', () => {
   it('reduces pasted addresses to a bare host', () => {

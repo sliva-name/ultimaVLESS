@@ -653,7 +653,5 @@ export class ConnectionManager extends EventEmitter {
   }
 }
 
-export { ConnectionManager as ConnectionController };
-
 export const connectionManager = new ConnectionManager();
 export const connectionController = connectionManager;

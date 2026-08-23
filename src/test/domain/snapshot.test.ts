@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildAppSnapshot } from './appSnapshot';
+import { buildAppSnapshot } from '@/main/ipc/appSnapshot';
 import {
   makeAppRecoveryStatus,
   makeServer,
@@ -54,47 +54,90 @@ function createDeps(overrides: Partial<any> = {}) {
   };
 }
 
-describe('buildAppSnapshot', () => {
-  it('projects main runtime state into a safe renderer snapshot', () => {
+describe('app snapshot owners', () => {
+  it('projects a safe renderer snapshot from named owners', () => {
     const snapshot = buildAppSnapshot(createDeps() as any);
 
     expect(snapshot.selectedServerId).toBe('server-1');
     expect(snapshot.session.phase).toBe('connected');
+    expect(snapshot.session.activeServerId).toBe('server-1');
+    expect(snapshot.health.lastHealthState).toBe('healthy');
     expect(snapshot.servers).toHaveLength(1);
     expect('rawConfig' in snapshot.servers[0]).toBe(false);
   });
 
-  it('uses controller phase directly without monitor reconciliation', () => {
+  it('session phase and lastError come from ConnectionState, not probe facts', () => {
     const snapshot = buildAppSnapshot(
       createDeps({
         connectionMonitorService: {
           getStatus: vi.fn(() => ({
-            isConnected: false,
+            probeArmed: false,
             currentServer: null,
-            lastError: null,
-            blockedServers: [],
+            lastError: 'stale monitor error',
+            lastHealthState: 'failed',
+            lastHealthFailureReason: 'probe failed',
+            lastHealthCheckAt: 1,
+            localProxyReachable: false,
           })),
         },
         connectionController: {
-          getPhase: vi.fn(() => 'disconnecting'),
+          getPhase: vi.fn(() => 'failed'),
           getConnectionState: vi.fn(() => ({
-            type: 'stopping',
-            generation: 1,
-            outcome: 'idle',
+            type: 'failed',
+            reason: { message: 'spawn failed' },
           })),
-          isBusy: vi.fn(() => true),
+          isBusy: vi.fn(() => false),
           getBlockedServerIds: vi.fn(() => []),
           getAutoSwitchingEnabled: vi.fn(() => true),
         },
       }) as any,
     );
 
-    expect(snapshot.session.phase).toBe('disconnecting');
+    expect(snapshot.session.phase).toBe('failed');
+    expect(snapshot.session.lastError).toBe('spawn failed');
+    expect(snapshot.health.lastHealthFailureReason).toBe('probe failed');
   });
 
-  it('does not let monitor connected override an in-flight phase', () => {
+  it('does not project probe lastError into an idle session', () => {
     const snapshot = buildAppSnapshot(
       createDeps({
+        connectionMonitorService: {
+          getStatus: vi.fn(() => ({
+            probeArmed: false,
+            currentServer: null,
+            lastError: 'stale monitor error',
+            lastHealthState: 'idle',
+            lastHealthFailureReason: null,
+            lastHealthCheckAt: null,
+            localProxyReachable: null,
+          })),
+        },
+        connectionController: {
+          getPhase: vi.fn(() => 'idle'),
+          getConnectionState: vi.fn(() => ({ type: 'disconnected' })),
+          isBusy: vi.fn(() => false),
+          getBlockedServerIds: vi.fn(() => []),
+          getAutoSwitchingEnabled: vi.fn(() => true),
+        },
+      }) as any,
+    );
+
+    expect(snapshot.session.lastError).toBeNull();
+  });
+
+  it('keeps in-flight session phase even when probes still look connected', () => {
+    const snapshot = buildAppSnapshot(
+      createDeps({
+        connectionMonitorService: {
+          getStatus: vi.fn(() => ({
+            probeArmed: true,
+            currentServer: makeServer({ uuid: 'monitor-server' }),
+            lastHealthState: 'healthy',
+            lastHealthFailureReason: null,
+            lastHealthCheckAt: null,
+            localProxyReachable: true,
+          })),
+        },
         connectionController: {
           getPhase: vi.fn(() => 'connecting'),
           getConnectionState: vi.fn(() => ({
@@ -111,61 +154,20 @@ describe('buildAppSnapshot', () => {
     );
 
     expect(snapshot.session.phase).toBe('connecting');
+    expect(snapshot.session.activeServerId).toBe('server-1');
   });
 
-  it('projects the controller failure reason when the monitor has no lastError', () => {
-    const snapshot = buildAppSnapshot(
-      createDeps({
-        connectionController: {
-          getPhase: vi.fn(() => 'failed'),
-          getConnectionState: vi.fn(() => ({
-            type: 'failed',
-            reason: { message: 'spawn failed' },
-          })),
-          isBusy: vi.fn(() => false),
-          getBlockedServerIds: vi.fn(() => []),
-          getAutoSwitchingEnabled: vi.fn(() => true),
-        },
-      }) as any,
-    );
-
-    expect(snapshot.session.phase).toBe('failed');
-    expect(snapshot.session.lastError).toBe('spawn failed');
-  });
-
-  it('does not project monitor lastError into the session snapshot', () => {
+  it('projects activeServerId and blocked ids from the session, not the probe', () => {
     const snapshot = buildAppSnapshot(
       createDeps({
         connectionMonitorService: {
           getStatus: vi.fn(() => ({
-            isConnected: false,
-            currentServer: null,
-            lastError: 'stale monitor error',
-            blockedServers: [],
-          })),
-        },
-        connectionController: {
-          getPhase: vi.fn(() => 'idle'),
-          getConnectionState: vi.fn(() => ({ type: 'disconnected' })),
-          isBusy: vi.fn(() => false),
-          getBlockedServerIds: vi.fn(() => []),
-          getAutoSwitchingEnabled: vi.fn(() => true),
-        },
-      }) as any,
-    );
-
-    expect(snapshot.session.lastError).toBeNull();
-  });
-
-  it('projects activeServerId from the controller, not the monitor', () => {
-    const snapshot = buildAppSnapshot(
-      createDeps({
-        connectionMonitorService: {
-          getStatus: vi.fn(() => ({
-            isConnected: true,
+            probeArmed: true,
             currentServer: makeServer({ uuid: 'monitor-server' }),
-            lastError: null,
-            blockedServers: ['blocked-1'],
+            lastHealthState: 'healthy',
+            lastHealthFailureReason: null,
+            lastHealthCheckAt: null,
+            localProxyReachable: true,
           })),
         },
         connectionController: {

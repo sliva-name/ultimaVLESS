@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { makeServer } from '@/test/factories';
-import { createConnectionRuntime } from './ConnectionRuntime';
-import type { ConnectionSpec } from './ConnectionSpec';
+import { createConnectionRuntime } from '@/main/domain/connection/ConnectionRuntime';
+import type { ConnectionSpec } from '@/main/domain/connection/ConnectionSpec';
 import type {
   NetworkModeRuntime,
   PreparedConnection,
-} from './NetworkModeRuntime';
+} from '@/main/domain/connection/NetworkModeRuntime';
 
 function fakeNetwork(mode: 'proxy' | 'tun'): NetworkModeRuntime & {
   prepare: ReturnType<typeof vi.fn>;

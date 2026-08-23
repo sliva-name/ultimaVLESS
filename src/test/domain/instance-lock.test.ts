@@ -9,7 +9,7 @@ import {
   readLiveOwner,
   startInstanceActivationService,
   stopInstanceActivationService,
-} from './instanceActivation';
+} from '@/main/runtime/instanceActivation';
 
 let userDataDir: string;
 

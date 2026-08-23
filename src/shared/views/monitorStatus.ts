@@ -57,38 +57,6 @@ export interface AppRecoveryStatus {
   lastFatalReason: string | null;
 }
 
-export interface ConnectionMonitorStatus {
-  isConnected: boolean;
-  currentServer: VlessConfig | null;
-  lastError: string | null;
-  connectionAttempts: number;
-  lastConnectionTime: number | null;
-  blockedServers: string[];
-  autoSwitchingEnabled: boolean;
-  lastHealthCheckAt: number | null;
-  lastHealthState: ConnectionHealthState;
-  lastHealthFailureReason: string | null;
-  localProxyReachable: boolean | null;
-  xrayState: XrayHealthState;
-  xrayReady: boolean;
-  xrayRunning: boolean;
-  xrayLastStartAt: number | null;
-  xrayLastReadyAt: number | null;
-  xrayLastReadinessCheckAt: number | null;
-  xrayLocalProxyReachable: boolean | null;
-  xrayLastFailureAt: number | null;
-  xrayLastFailureReason: string | null;
-  xrayLastReadinessError: string | null;
-  recoveryInProgress: boolean;
-  recoveryAttemptCount: number;
-  recoveryBlocked: boolean;
-  lastRecoveryAt: number | null;
-  lastRecoveryTrigger: AppRecoveryTrigger | null;
-  lastRecoveryOutcome: AppRecoveryOutcome | null;
-  lastRecoveryReason: string | null;
-  lastFatalReason: string | null;
-}
-
 export interface TunCapabilityStatus {
   platform: string;
   supported: boolean;

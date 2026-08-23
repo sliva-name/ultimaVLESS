@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRecoveryVbsContent } from './windowsProxyRecovery';
+import { buildRecoveryVbsContent } from '@/main/services/systemProxy/windowsProxyRecovery';
 
 /**
  * Minimal VBScript string-literal tokenizer: starting at the opening quote,

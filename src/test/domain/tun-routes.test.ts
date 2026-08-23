@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
-import { TunRouteService, type TunRoutingPlan } from './TunRouteService';
-import { configService } from './ConfigService';
+import {
+  TunRouteService,
+  type TunRoutingPlan,
+} from '@/main/services/TunRouteService';
+import { configService } from '@/main/services/ConfigService';
 import { makeServer } from '@/test/factories';
 
-vi.mock('./ConfigService', () => ({
+vi.mock('@/main/services/ConfigService', () => ({
   configService: {
     getPerformanceSettings: vi.fn(() => ({
       windowsTunRouting: 'powershell',
@@ -18,7 +21,7 @@ vi.mock('@/main/infrastructure/persistence/ElectronServerRepository', () => ({
   }),
 }));
 
-vi.mock('./tunRoute/platformAdapter', () => ({
+vi.mock('@/main/services/tunRoute/platformAdapter', () => ({
   createPlatformTunAdapter: () => ({
     isSupported: () => true,
     getUnsupportedReason: () => null,
@@ -27,7 +30,7 @@ vi.mock('./tunRoute/platformAdapter', () => ({
   }),
 }));
 
-vi.mock('./tunRoute/powerShellRunner', () => ({
+vi.mock('@/main/services/tunRoute/powerShellRunner', () => ({
   runPowerShell: vi.fn(async (script: string) => {
     if (script.includes('waitForTunInterface')) return '7';
     if (script.includes('CREATED_IPV6')) return 'CREATED\nCREATED_IPV6';

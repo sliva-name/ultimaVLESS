@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeServer } from '@/test/factories';
 import type { XrayConfig } from '@/shared/xray-types';
-import { bindProxyEndpointToIp } from './bindProxyEndpoint';
+import { bindProxyEndpointToIp } from '@/main/domain/connection/bindProxyEndpoint';
 
 describe('bindProxyEndpointToIp', () => {
   it('rewrites structured address and leaves SNI alone', () => {

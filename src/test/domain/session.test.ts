@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { makeServer } from '@/test/factories';
-import { ConnectionManager } from './ConnectionManager';
-import { ConnectionOperationAbortedError } from './abort';
+import { ConnectionManager } from '@/main/domain/connection/ConnectionManager';
+import { ConnectionOperationAbortedError } from '@/main/domain/connection/abort';
+import {
+  activeServerIdFromState,
+  connectionStateToSessionPhase,
+  isConnectionStateInFlight,
+  lastErrorFromState,
+  type ConnectionState,
+} from '@/main/domain/connection/ConnectionState';
+import { createAutoSwitchPolicy } from '@/main/domain/connection/ConnectionPolicy';
+import { SessionPolicyState } from '@/main/domain/connection/SessionPolicyState';
 import type { ConnectionMode } from '@/shared/types';
 import type { SessionPhase } from '@/shared/ipc';
 
@@ -19,12 +28,11 @@ vi.mock('@/main/services/SystemProxyService', () => ({
 vi.mock('@/main/services/TunRouteService', () => ({ tunRouteService: {} }));
 vi.mock('@/main/services/XrayService', () => ({ xrayService: {} }));
 
-function createController(overrides: Partial<any> = {}) {
+function createSession(overrides: Partial<any> = {}) {
   const server = makeServer({ uuid: 'server-1' });
   const start = vi.fn(async () => undefined);
   const stop = vi.fn(async () => undefined);
   const switchRuntime = vi.fn(async () => undefined);
-  const status = vi.fn(() => ({ xrayRunning: false }));
   const deps = {
     app: {
       releaseSingleInstanceLock: vi.fn(),
@@ -40,20 +48,10 @@ function createController(overrides: Partial<any> = {}) {
       clearPendingTunReconnect: vi.fn(),
     },
     connectionMonitorService: {
-      getStatus: vi.fn(() => ({
-        isConnected: false,
-        currentServer: null,
-        blockedServers: [],
-        lastHealthState: 'idle',
-      })),
       startMonitoring: vi.fn(),
       stopMonitoring: vi.fn(),
-      pruneExpiredBlockedServers: vi.fn(),
-      getAutoSwitchingEnabled: vi.fn(() => true),
       notifySwitching: vi.fn(),
       setProbeTarget: vi.fn(),
-      recordError: vi.fn(),
-      handleCriticalConnectionFailure: vi.fn(() => false),
       noteFailure: vi.fn(),
     },
     hasTunPrivileges: vi.fn(async () => true),
@@ -66,7 +64,7 @@ function createController(overrides: Partial<any> = {}) {
     coreService: {
       isRunning: vi.fn(() => false),
     },
-    runtime: { start, stop, switch: switchRuntime, status },
+    runtime: { start, stop, switch: switchRuntime, status: vi.fn(() => ({ xrayRunning: false })) },
     ...overrides,
   };
 
@@ -85,7 +83,7 @@ function createController(overrides: Partial<any> = {}) {
   }
 
   return {
-    controller: new ConnectionManager(deps as any),
+    session: new ConnectionManager(deps as any),
     deps,
     server,
     start,
@@ -94,11 +92,11 @@ function createController(overrides: Partial<any> = {}) {
   };
 }
 
-describe('ConnectionManager', () => {
-  it('connects through the runtime and starts monitoring', async () => {
-    const { controller, deps, server, start, stop } = createController();
+describe('session lifecycle', () => {
+  it('connects through the runtime and arms health probes', async () => {
+    const { session, deps, server, start, stop } = createSession();
 
-    await controller.connect(server.uuid);
+    await session.connect(server.uuid);
 
     expect(start).toHaveBeenCalledWith(
       {
@@ -115,24 +113,24 @@ describe('ConnectionManager', () => {
     expect(deps.connectionMonitorService.startMonitoring).toHaveBeenCalledWith(
       server,
     );
-    expect(controller.isBusy()).toBe(false);
-    expect(controller.getPhase()).toBe('connected');
-    expect(controller.getConnectionState()).toEqual({
+    expect(session.isBusy()).toBe(false);
+    expect(session.getPhase()).toBe('connected');
+    expect(session.getConnectionState()).toEqual({
       type: 'connected',
       serverId: server.uuid,
       mode: 'proxy',
     });
   });
 
-  it('emits phase transitions without a separate busy channel', async () => {
-    const { controller, server } = createController();
+  it('emits connecting → connected → disconnecting → idle', async () => {
+    const { session, server } = createSession();
     const phases: SessionPhase[] = [];
-    controller.on('phase-changed', (phase: SessionPhase) => {
+    session.on('phase-changed', (phase: SessionPhase) => {
       phases.push(phase);
     });
 
-    await controller.connect(server.uuid);
-    await controller.disconnect();
+    await session.connect(server.uuid);
+    await session.disconnect();
 
     expect(phases).toEqual([
       'connecting',
@@ -142,46 +140,48 @@ describe('ConnectionManager', () => {
     ]);
   });
 
-  it('is already in disconnecting when stopMonitoring runs synchronously', async () => {
+  it('is already disconnecting when probes stop synchronously', async () => {
     const phasesAtStop: SessionPhase[] = [];
-    const { controller, deps, server } = createController({
+    const { session, deps, server } = createSession({
       connectionMonitorService: {
-        getStatus: vi.fn(() => ({ isConnected: true, currentServer: server })),
         startMonitoring: vi.fn(),
         stopMonitoring: vi.fn(() => {
-          phasesAtStop.push(controller.getPhase());
-          expect(controller.isBusy()).toBe(true);
+          phasesAtStop.push(session.getPhase());
+          expect(session.isBusy()).toBe(true);
         }),
+        notifySwitching: vi.fn(),
+        setProbeTarget: vi.fn(),
+        noteFailure: vi.fn(),
       },
     });
 
-    await controller.connect(server.uuid);
-    await controller.disconnect();
+    await session.connect(server.uuid);
+    await session.disconnect();
 
     expect(deps.connectionMonitorService.stopMonitoring).toHaveBeenCalled();
     expect(phasesAtStop).toEqual(['disconnecting']);
-    expect(controller.getPhase()).toBe('idle');
+    expect(session.getPhase()).toBe('idle');
   });
 
-  it('cleanupAfterFailure tears the stack down and lands on failed', async () => {
-    const { controller, stop } = createController();
+  it('failure cleanup tears the stack down and lands on failed', async () => {
+    const { session, stop } = createSession();
     const phases: SessionPhase[] = [];
-    controller.on('phase-changed', (phase: SessionPhase) => {
+    session.on('phase-changed', (phase: SessionPhase) => {
       phases.push(phase);
     });
 
-    await controller.connect(makeServer({ uuid: 'server-1' }).uuid);
+    await session.connect(makeServer({ uuid: 'server-1' }).uuid);
     phases.length = 0;
-    await controller.cleanupAfterFailure();
+    await session.cleanupAfterFailure();
 
     expect(stop).toHaveBeenCalled();
     expect(phases).toEqual(['disconnecting', 'failed']);
-    expect(controller.getPhase()).toBe('failed');
-    expect(controller.getLastError()).toBe('Connection cleanup');
+    expect(session.getPhase()).toBe('failed');
+    expect(session.getLastError()).toBe('Connection cleanup');
   });
 
-  it('uses the platform-specific privilege path for TUN connections', async () => {
-    const { controller, deps, server, start } = createController({
+  it('uses the platform privilege path for TUN and keeps connecting across UAC', async () => {
+    const { session, deps, server, start } = createSession({
       configService: {
         getServers: vi.fn(() => [makeServer({ uuid: 'server-1' })]),
         getConnectionMode: vi.fn((): ConnectionMode => 'tun'),
@@ -194,7 +194,7 @@ describe('ConnectionManager', () => {
     });
 
     if (process.platform === 'win32') {
-      await expect(controller.connect(server.uuid)).rejects.toMatchObject({
+      await expect(session.connect(server.uuid)).rejects.toMatchObject({
         relaunched: true,
       });
       expect(deps.configService.setPendingTunReconnect).toHaveBeenCalledWith(
@@ -202,11 +202,9 @@ describe('ConnectionManager', () => {
       );
       expect(deps.app.quit).toHaveBeenCalledTimes(1);
       expect(start).not.toHaveBeenCalled();
-      // Must stay connecting (not failed) so shutdown can unwind cleanly
-      // without looking like a hard connect error.
-      expect(controller.getPhase()).toBe('connecting');
+      expect(session.getPhase()).toBe('connecting');
     } else {
-      await expect(controller.connect(server.uuid)).rejects.toThrow(
+      await expect(session.connect(server.uuid)).rejects.toThrow(
         /root privileges/,
       );
       expect(deps.configService.setPendingTunReconnect).not.toHaveBeenCalled();
@@ -216,7 +214,7 @@ describe('ConnectionManager', () => {
 
   it('preserves pending TUN reconnect across shutdown disconnect', async () => {
     const clearPendingTunReconnect = vi.fn();
-    const { controller, server } = createController({
+    const { session, server } = createSession({
       configService: {
         getServers: vi.fn(() => [server]),
         getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
@@ -226,17 +224,17 @@ describe('ConnectionManager', () => {
       },
     });
 
-    await controller.connect(server.uuid);
+    await session.connect(server.uuid);
     clearPendingTunReconnect.mockClear();
-    await controller.disconnect({ preservePendingTunReconnect: true });
+    await session.disconnect({ preservePendingTunReconnect: true });
 
     expect(clearPendingTunReconnect).not.toHaveBeenCalled();
-    expect(controller.getPhase()).toBe('idle');
+    expect(session.getPhase()).toBe('idle');
   });
 
   it('clears pending TUN reconnect on user disconnect', async () => {
     const clearPendingTunReconnect = vi.fn();
-    const { controller, server } = createController({
+    const { session, server } = createSession({
       configService: {
         getServers: vi.fn(() => [server]),
         getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
@@ -246,30 +244,28 @@ describe('ConnectionManager', () => {
       },
     });
 
-    await controller.connect(server.uuid);
+    await session.connect(server.uuid);
     clearPendingTunReconnect.mockClear();
-    await controller.disconnect();
+    await session.disconnect();
 
     expect(clearPendingTunReconnect).toHaveBeenCalledTimes(1);
   });
 
-  it('switches through runtime.switch instead of a teardown flag', async () => {
+  it('switches through runtime.switch and retargets probes', async () => {
     const next = makeServer({ uuid: 'server-2' });
-    const { controller, server, start, switchRuntime, deps } = createController(
-      {
-        configService: {
-          getServers: vi.fn(() => [server, next]),
-          getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
-          setSelectedServerId: vi.fn(),
-          setPendingTunReconnect: vi.fn(),
-          clearPendingTunReconnect: vi.fn(),
-        },
+    const { session, server, start, switchRuntime, deps } = createSession({
+      configService: {
+        getServers: vi.fn(() => [server, next]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
       },
-    );
+    });
 
-    await controller.connect(server.uuid);
+    await session.connect(server.uuid);
     start.mockClear();
-    await controller.switchToServer(next);
+    await session.switchToServer(next);
 
     expect(start).not.toHaveBeenCalled();
     expect(switchRuntime).toHaveBeenCalledWith(
@@ -280,7 +276,7 @@ describe('ConnectionManager', () => {
       },
       expect.any(AbortSignal),
     );
-    expect(controller.getConnectionState()).toEqual({
+    expect(session.getConnectionState()).toEqual({
       type: 'connected',
       serverId: next.uuid,
       mode: 'proxy',
@@ -290,9 +286,9 @@ describe('ConnectionManager', () => {
     );
   });
 
-  it('applies connection policy on health failure instead of monitor-owned switch', async () => {
+  it('auto-switches on a blocking health failure', async () => {
     const next = makeServer({ uuid: 'server-2' });
-    const { controller, server, switchRuntime, deps } = createController({
+    const { session, server, switchRuntime, deps } = createSession({
       configService: {
         getServers: vi.fn(() => [server, next]),
         getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
@@ -300,28 +296,12 @@ describe('ConnectionManager', () => {
         setPendingTunReconnect: vi.fn(),
         clearPendingTunReconnect: vi.fn(),
       },
-      connectionMonitorService: {
-        getStatus: vi.fn(() => ({
-          isConnected: true,
-          currentServer: server,
-          blockedServers: [],
-          lastHealthState: 'healthy',
-          localProxyReachable: true,
-        })),
-        startMonitoring: vi.fn(),
-        stopMonitoring: vi.fn(),
-        notifySwitching: vi.fn(),
-        setProbeTarget: vi.fn(),
-        recordError: vi.fn(),
-        handleCriticalConnectionFailure: vi.fn(() => true),
-        noteFailure: vi.fn(),
-      },
     });
 
-    await controller.connect(server.uuid);
+    await session.connect(server.uuid);
     vi.useFakeTimers();
     try {
-      await controller.handleHealthFailure({
+      await session.handleHealthFailure({
         server,
         reason: 'endpoint blocked',
         blocking: true,
@@ -345,28 +325,12 @@ describe('ConnectionManager', () => {
     );
   });
 
-  it('disconnects when policy says not to auto-switch', async () => {
-    const { controller, server, stop, deps } = createController({
-      connectionMonitorService: {
-        getStatus: vi.fn(() => ({
-          isConnected: true,
-          currentServer: server,
-          blockedServers: [],
-          lastHealthState: 'failed',
-        })),
-        startMonitoring: vi.fn(),
-        stopMonitoring: vi.fn(),
-        notifySwitching: vi.fn(),
-        setProbeTarget: vi.fn(),
-        recordError: vi.fn(),
-        handleCriticalConnectionFailure: vi.fn(() => true),
-        noteFailure: vi.fn(),
-      },
-    });
+  it('disconnects to failed when auto-switch is off', async () => {
+    const { session, server, stop, deps } = createSession();
 
-    await controller.connect(server.uuid);
-    controller.setAutoSwitchingEnabled(false);
-    await controller.handleHealthFailure({
+    await session.connect(server.uuid);
+    session.setAutoSwitchingEnabled(false);
+    await session.handleHealthFailure({
       server,
       reason: 'endpoint blocked',
       blocking: true,
@@ -374,11 +338,11 @@ describe('ConnectionManager', () => {
 
     expect(stop).toHaveBeenCalled();
     expect(deps.connectionMonitorService.stopMonitoring).toHaveBeenCalled();
-    expect(controller.getPhase()).toBe('failed');
-    expect(controller.getLastError()).toBe('endpoint blocked');
+    expect(session.getPhase()).toBe('failed');
+    expect(session.getLastError()).toBe('endpoint blocked');
   });
 
-  it('does not cleanup when a connect is aborted by a later disconnect', async () => {
+  it('does not treat a later disconnect as a connect failure', async () => {
     let releaseStart: (() => void) | undefined;
     const start = vi.fn(
       (_spec: unknown, signal: AbortSignal) =>
@@ -398,7 +362,7 @@ describe('ConnectionManager', () => {
         }),
     );
     const stop = vi.fn(async () => undefined);
-    const { controller, server, deps } = createController({
+    const { session, server } = createSession({
       runtime: {
         start,
         stop,
@@ -407,24 +371,23 @@ describe('ConnectionManager', () => {
       },
     });
 
-    const first = controller.connect(server.uuid);
+    const first = session.connect(server.uuid);
     await Promise.resolve();
-    const disconnecting = controller.disconnect();
+    const disconnecting = session.disconnect();
     await expect(first).rejects.toBeInstanceOf(ConnectionOperationAbortedError);
     await disconnecting;
 
     expect(stop).toHaveBeenCalledTimes(1);
-    expect(deps.connectionMonitorService.recordError).not.toHaveBeenCalled();
-    expect(controller.getPhase()).toBe('idle');
+    expect(session.getPhase()).toBe('idle');
     releaseStart?.();
   });
 
-  it('marks a real connect failure as failed and does not enqueue a second teardown', async () => {
+  it('marks a real connect failure as failed without a second teardown', async () => {
     const start = vi.fn(async () => {
       throw new Error('spawn failed');
     });
     const stop = vi.fn(async () => undefined);
-    const { controller, server } = createController({
+    const { session, server } = createSession({
       runtime: {
         start,
         stop,
@@ -433,12 +396,10 @@ describe('ConnectionManager', () => {
       },
     });
 
-    await expect(controller.connect(server.uuid)).rejects.toThrow(
-      'spawn failed',
-    );
+    await expect(session.connect(server.uuid)).rejects.toThrow('spawn failed');
     expect(stop).not.toHaveBeenCalled();
-    expect(controller.getPhase()).toBe('failed');
-    expect(controller.getLastError()).toBe('spawn failed');
+    expect(session.getPhase()).toBe('failed');
+    expect(session.getLastError()).toBe('spawn failed');
   });
 
   it('lets a queued disconnect own the stack after a failed connect', async () => {
@@ -446,7 +407,7 @@ describe('ConnectionManager', () => {
       throw new Error('spawn failed');
     });
     const stop = vi.fn(async () => undefined);
-    const { controller, server } = createController({
+    const { session, server } = createSession({
       runtime: {
         start,
         stop,
@@ -455,40 +416,23 @@ describe('ConnectionManager', () => {
       },
     });
 
-    const first = controller.connect(server.uuid);
-    const disconnecting = controller.disconnect();
+    const first = session.connect(server.uuid);
+    const disconnecting = session.disconnect();
     await expect(first).rejects.toThrow('spawn failed');
     await disconnecting;
 
     expect(stop).toHaveBeenCalledTimes(1);
-    expect(controller.getPhase()).toBe('idle');
+    expect(session.getPhase()).toBe('idle');
   });
 
-  it('handleRuntimeFailure applies policy when the session is connected', async () => {
+  it('runtime death while connected is a session health decision', async () => {
     const policy = {
       onHealthFailure: vi.fn(() => ({ action: 'disconnect' as const })),
     };
-    const { controller, server, deps, stop } = createController({
-      policy,
-      connectionMonitorService: {
-        getStatus: vi.fn(() => ({
-          isConnected: true,
-          currentServer: server,
-          blockedServers: [],
-          lastHealthState: 'failed',
-        })),
-        startMonitoring: vi.fn(),
-        stopMonitoring: vi.fn(),
-        notifySwitching: vi.fn(),
-        setProbeTarget: vi.fn(),
-        recordError: vi.fn(),
-        handleCriticalConnectionFailure: vi.fn(() => true),
-        noteFailure: vi.fn(),
-      },
-    });
+    const { session, server, deps, stop } = createSession({ policy });
 
-    await controller.connect(server.uuid);
-    await controller.handleRuntimeFailure('xray died', {
+    await session.connect(server.uuid);
+    await session.handleRuntimeFailure('xray died', {
       localProxyReachable: false,
     });
 
@@ -498,14 +442,14 @@ describe('ConnectionManager', () => {
     );
     expect(policy.onHealthFailure).toHaveBeenCalled();
     expect(stop).toHaveBeenCalled();
-    expect(controller.getPhase()).toBe('failed');
-    expect(controller.getLastError()).toBe('xray died');
+    expect(session.getPhase()).toBe('failed');
+    expect(session.getLastError()).toBe('xray died');
   });
 
   it('remaps the live session id when catalog identity rotates', async () => {
     const previous = makeServer({ uuid: 'old-id', address: '1.2.3.4' });
     const rotated = makeServer({ uuid: 'new-id', address: '1.2.3.4' });
-    const { controller } = createController({
+    const { session } = createSession({
       serverRepository: {
         get: (id: string) =>
           [previous, rotated].find((server) => server.uuid === id),
@@ -514,11 +458,11 @@ describe('ConnectionManager', () => {
       },
     });
 
-    await controller.connect(previous.uuid);
-    const remapped = controller.reconcileActiveServer([rotated], [previous]);
+    await session.connect(previous.uuid);
+    const remapped = session.reconcileActiveServer([rotated], [previous]);
 
     expect(remapped).toBe('new-id');
-    expect(controller.getConnectionState()).toEqual({
+    expect(session.getConnectionState()).toEqual({
       type: 'connected',
       serverId: 'new-id',
       mode: 'proxy',
@@ -526,16 +470,16 @@ describe('ConnectionManager', () => {
   });
 
   it('treats busy as in-flight session state only', async () => {
-    const { controller, server } = createController();
-    expect(controller.isBusy()).toBe(false);
-    await controller.connect(server.uuid);
-    expect(controller.isBusy()).toBe(false);
-    expect(controller.getPhase()).toBe('connected');
+    const { session, server } = createSession();
+    expect(session.isBusy()).toBe(false);
+    await session.connect(server.uuid);
+    expect(session.isBusy()).toBe(false);
+    expect(session.getPhase()).toBe('connected');
   });
 
   it('consumes pending TUN relaunch from the session, not bootstrap', async () => {
     const consumePendingTunReconnect = vi.fn(() => 'server-1');
-    const { controller, server, start } = createController({
+    const { session, server, start } = createSession({
       configService: {
         getServers: vi.fn(() => [server]),
         getConnectionMode: vi.fn((): ConnectionMode => 'tun'),
@@ -548,11 +492,153 @@ describe('ConnectionManager', () => {
       },
     });
 
-    await expect(controller.resumePendingTunAfterRelaunch()).resolves.toBe(
-      true,
-    );
+    await expect(session.resumePendingTunAfterRelaunch()).resolves.toBe(true);
     expect(consumePendingTunReconnect).toHaveBeenCalled();
     expect(start).toHaveBeenCalled();
-    expect(controller.getPhase()).toBe('connected');
+    expect(session.getPhase()).toBe('connected');
+  });
+});
+
+describe('session state projection', () => {
+  it('maps ConnectionState onto SessionPhase', () => {
+    const cases: Array<[ConnectionState, string]> = [
+      [{ type: 'disconnected' }, 'idle'],
+      [
+        { type: 'starting', serverId: 'a', mode: 'proxy', generation: 1 },
+        'connecting',
+      ],
+      [{ type: 'connected', serverId: 'a', mode: 'tun' }, 'connected'],
+      [
+        {
+          type: 'switching',
+          from: 'a',
+          to: 'b',
+          mode: 'proxy',
+          generation: 2,
+        },
+        'switching',
+      ],
+      [{ type: 'stopping', generation: 3, outcome: 'idle' }, 'disconnecting'],
+      [{ type: 'failed', reason: { message: 'boom' } }, 'failed'],
+    ];
+
+    for (const [state, phase] of cases) {
+      expect(connectionStateToSessionPhase(state)).toBe(phase);
+    }
+  });
+
+  it('exposes lastError only from failed or a failing stop', () => {
+    expect(lastErrorFromState({ type: 'disconnected' })).toBeNull();
+    expect(
+      lastErrorFromState({ type: 'failed', reason: { message: 'boom' } }),
+    ).toBe('boom');
+    expect(
+      lastErrorFromState({
+        type: 'stopping',
+        generation: 1,
+        outcome: 'failed',
+        reason: { message: 'dead' },
+      }),
+    ).toBe('dead');
+    expect(
+      lastErrorFromState({
+        type: 'stopping',
+        generation: 1,
+        outcome: 'idle',
+      }),
+    ).toBeNull();
+  });
+
+  it('treats only in-flight operations as busy and targets the destination id', () => {
+    expect(isConnectionStateInFlight({ type: 'disconnected' })).toBe(false);
+    expect(
+      isConnectionStateInFlight({ type: 'connected', serverId: 'a', mode: 'proxy' }),
+    ).toBe(false);
+    expect(
+      isConnectionStateInFlight({
+        type: 'starting',
+        serverId: 'a',
+        mode: 'proxy',
+        generation: 1,
+      }),
+    ).toBe(true);
+    expect(
+      activeServerIdFromState({
+        type: 'switching',
+        from: 'a',
+        to: 'b',
+        mode: 'proxy',
+        generation: 1,
+      }),
+    ).toBe('b');
+  });
+});
+
+describe('health policy', () => {
+  const policy = createAutoSwitchPolicy();
+
+  it('ignores non-blocking probe noise', () => {
+    const server = makeServer({ uuid: 'a' });
+    expect(
+      policy.onHealthFailure({
+        server,
+        reason: 'slow',
+        blocking: false,
+        autoSwitchEnabled: true,
+        servers: [server, makeServer({ uuid: 'b' })],
+        blockedServerIds: new Set(),
+      }),
+    ).toEqual({ action: 'none' });
+  });
+
+  it('disconnects when auto-switch is disabled or every alternative is blocked', () => {
+    const current = makeServer({ uuid: 'a' });
+    const other = makeServer({ uuid: 'b' });
+    expect(
+      policy.onHealthFailure({
+        server: current,
+        reason: 'blocked',
+        blocking: true,
+        autoSwitchEnabled: false,
+        servers: [current, other],
+        blockedServerIds: new Set(),
+      }),
+    ).toEqual({ action: 'disconnect' });
+    expect(
+      policy.onHealthFailure({
+        server: current,
+        reason: 'blocked',
+        blocking: true,
+        autoSwitchEnabled: true,
+        servers: [current, other],
+        blockedServerIds: new Set(['a', 'b']),
+      }),
+    ).toEqual({ action: 'disconnect' });
+  });
+
+  it('switches to ranked candidates when auto-switch is enabled', () => {
+    const current = makeServer({ uuid: 'a', ping: 200 });
+    const next = makeServer({ uuid: 'b', ping: 20 });
+    expect(
+      policy.onHealthFailure({
+        server: current,
+        reason: 'blocked',
+        blocking: true,
+        autoSwitchEnabled: true,
+        servers: [current, next],
+        blockedServerIds: new Set(),
+      }),
+    ).toEqual({ action: 'switch', candidates: [next] });
+  });
+
+  it('session owns the blocked ledger and auto-switch toggle', () => {
+    const ledger = new SessionPolicyState();
+    ledger.setAutoSwitchingEnabled(false);
+    ledger.markBlocked('server-1', 1_000);
+    expect(ledger.getAutoSwitchingEnabled()).toBe(false);
+    expect(ledger.getBlockedServerIds(1_000)).toEqual(['server-1']);
+    expect(ledger.getBlockedServerIds(1_000 + 10 * 60 * 1000)).toEqual([]);
+    ledger.clearBlocked();
+    expect(ledger.getBlockedServerIds(1_000)).toEqual([]);
   });
 });
