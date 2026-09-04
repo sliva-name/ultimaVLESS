@@ -24,6 +24,11 @@ export function isSessionPhaseInFlight(phase: SessionPhase): boolean {
   );
 }
 
+/** Server list picks are allowed while idle or after a failed connect. */
+export function isSessionPhaseSelectable(phase: SessionPhase): boolean {
+  return phase === 'idle' || phase === 'failed';
+}
+
 export interface AppSessionSnapshot {
   phase: SessionPhase;
   activeServerId: string | null;

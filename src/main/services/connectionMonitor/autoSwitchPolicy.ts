@@ -10,6 +10,8 @@ interface AutoSwitchCandidateOptions {
   maxCandidates?: number;
   now?: number;
   freshPingMaxAgeMs?: number;
+  /** Return false to drop a server before ranking (e.g. Xray-incompatible). */
+  isEligible?: (server: VlessConfig) => boolean;
 }
 
 interface RankedServer {
@@ -73,6 +75,9 @@ export function selectAutoSwitchCandidates(
         return null;
       }
       if (server.uuid === currentServer.uuid) {
+        return null;
+      }
+      if (options.isEligible && !options.isEligible(server)) {
         return null;
       }
       return {

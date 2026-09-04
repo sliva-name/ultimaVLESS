@@ -45,6 +45,7 @@ function AppShell() {
         subscriptions={subscriptions}
         selectedServer={selectedServer}
         isConnected={isConnected}
+        // Failed sessions stay selectable so a bad profile does not freeze the list.
         selectionLocked={isConnectionBusy || isConnected}
         isRefreshingPings={isRefreshingPings}
         onSelectServer={selectServer}

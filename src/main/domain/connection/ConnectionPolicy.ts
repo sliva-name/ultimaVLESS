@@ -1,5 +1,6 @@
 import type { VlessConfig } from '@/shared/types';
 import { selectAutoSwitchCandidates } from '@/main/services/connectionMonitor/autoSwitchPolicy';
+import { isServerPublicOutboundCompatible } from '@/main/services/configGenerator/outboundCompat';
 
 export type PolicyDecision =
   | { action: 'switch'; candidates: VlessConfig[] }
@@ -35,7 +36,10 @@ export function createAutoSwitchPolicy(): ConnectionPolicy {
         context.servers,
         context.server,
         context.blockedServerIds,
-        { maxCandidates: AUTO_SWITCH_CANDIDATE_LIMIT },
+        {
+          maxCandidates: AUTO_SWITCH_CANDIDATE_LIMIT,
+          isEligible: isServerPublicOutboundCompatible,
+        },
       );
 
       if (selection.type === 'selected-candidates') {

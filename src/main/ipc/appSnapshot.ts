@@ -10,6 +10,7 @@ import {
   lastErrorFromState,
 } from '@/main/domain/connection/ConnectionState';
 import { toSafeServerList } from '@/shared/serverView';
+import { isServerPublicOutboundCompatible } from '@/main/services/configGenerator/outboundCompat';
 import { IpcDependencies } from './dependencies';
 
 export function buildSessionSnapshot(
@@ -41,7 +42,11 @@ export function buildAppSnapshot(deps: IpcDependencies): AppSnapshot {
     deps.configService.getSelectedServerId() ?? activeServerId;
   const session = buildSessionSnapshot(deps);
   return {
-    servers: toSafeServerList(deps.serverRepository.list()),
+    servers: toSafeServerList(deps.serverRepository.list(), (server, safe) =>
+      isServerPublicOutboundCompatible(server)
+        ? safe
+        : { ...safe, outboundCompatible: false },
+    ),
     subscriptions: deps.subscriptionRepository.list(),
     selectedServerId,
     connectionMode: deps.configService.getConnectionMode(),

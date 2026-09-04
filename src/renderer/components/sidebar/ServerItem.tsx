@@ -2,10 +2,11 @@ import React, { useCallback, KeyboardEvent } from 'react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { VlessConfig } from '@/shared/types';
+import type { SafeServerConfig } from '@/shared/serverView';
 import { CountryFlag } from '@/renderer/components/CountryFlag';
 
 interface ServerItemProps {
-  server: VlessConfig;
+  server: VlessConfig & Pick<SafeServerConfig, 'outboundCompatible'>;
   isSelected: boolean;
   /** When true, selection is disabled for every row (connect/disconnect/in use). */
   selectionLocked?: boolean;
@@ -105,8 +106,19 @@ export const ServerItem = React.memo<ServerItemProps>(
                 <div className="text-xs text-gray-500 shrink-0">—</div>
               )}
             </div>
-            <div className="text-xs text-gray-500 truncate font-mono">
-              {server.address}
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="text-xs text-gray-500 truncate font-mono min-w-0 flex-1">
+                {server.address}
+              </div>
+              {server.outboundCompatible === false && (
+                <span
+                  title={t('sidebar.incompatibleOutbound')}
+                  data-testid={`server-incompatible-${server.uuid}`}
+                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 text-amber-300 bg-amber-500/15 border border-amber-500/30"
+                >
+                  {t('sidebar.incompatibleOutboundShort')}
+                </span>
+              )}
             </div>
           </div>
         </div>

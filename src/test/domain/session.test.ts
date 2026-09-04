@@ -12,7 +12,11 @@ import {
 import { createAutoSwitchPolicy } from '@/main/domain/connection/ConnectionPolicy';
 import { SessionPolicyState } from '@/main/domain/connection/SessionPolicyState';
 import type { ConnectionMode } from '@/shared/types';
-import type { SessionPhase } from '@/shared/ipc';
+import {
+  isSessionPhaseInFlight,
+  isSessionPhaseSelectable,
+  type SessionPhase,
+} from '@/shared/ipc';
 
 vi.mock('@/main/services/ConfigService', () => ({ configService: {} }));
 vi.mock('@/main/services/ConnectionMonitorService', () => ({
@@ -282,7 +286,7 @@ describe('session lifecycle', () => {
   });
 
   it('switches through runtime.switch and retargets probes', async () => {
-    const next = makeServer({ uuid: 'server-2' });
+    const next = makeServer({ uuid: 'server-2', security: 'tls' });
     const { session, server, start, switchRuntime, deps } = createSession({
       configService: {
         getServers: vi.fn(() => [server, next]),
@@ -317,7 +321,7 @@ describe('session lifecycle', () => {
   });
 
   it('auto-switches on a blocking health failure', async () => {
-    const next = makeServer({ uuid: 'server-2' });
+    const next = makeServer({ uuid: 'server-2', security: 'tls' });
     const { session, server, switchRuntime, deps } = createSession({
       configService: {
         getServers: vi.fn(() => [server, next]),
@@ -352,6 +356,56 @@ describe('session lifecycle', () => {
     );
     expect(deps.connectionMonitorService.startMonitoring).toHaveBeenCalledWith(
       next,
+    );
+  });
+
+  it('auto-switch skips public VLESS profiles that Xray would reject', async () => {
+    const insecure = makeServer({
+      uuid: 'insecure',
+      ping: 5,
+      security: 'none',
+      address: '1.2.3.4',
+    });
+    const next = makeServer({
+      uuid: 'secure',
+      ping: 80,
+      security: 'tls',
+    });
+    const { session, server, switchRuntime, deps } = createSession({
+      configService: {
+        getServers: vi.fn(() => [server, insecure, next]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+    });
+
+    await session.connect(server.uuid);
+    vi.useFakeTimers();
+    try {
+      await session.handleHealthFailure({
+        server,
+        reason: 'endpoint blocked',
+        blocking: true,
+      });
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.runAllTimersAsync();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(switchRuntime).toHaveBeenCalledTimes(1);
+    expect(switchRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({ server: next, mode: 'proxy' }),
+      expect.any(AbortSignal),
+    );
+    expect(switchRuntime).not.toHaveBeenCalledWith(
+      expect.objectContaining({ server: insecure }),
+      expect.any(AbortSignal),
+    );
+    expect(deps.configService.setSelectedServerId).toHaveBeenCalledWith(
+      next.uuid,
     );
   });
 
@@ -430,6 +484,50 @@ describe('session lifecycle', () => {
     expect(stop).not.toHaveBeenCalled();
     expect(session.getPhase()).toBe('failed');
     expect(session.getLastError()).toBe('spawn failed');
+  });
+
+  it('lets a later connect recover from a failed config generation', async () => {
+    const start = vi.fn(async () => {
+      throw new Error(
+        'VLESS requires TLS/REALITY (or VLESS Encryption) for public server addresses',
+      );
+    });
+    const stop = vi.fn(async () => undefined);
+    const good = makeServer({ uuid: 'good', security: 'tls' });
+    const bad = makeServer({
+      uuid: 'bad',
+      security: 'none',
+      address: '1.2.3.4',
+    });
+    const { session } = createSession({
+      runtime: {
+        start,
+        stop,
+        switch: vi.fn(async () => undefined),
+        status: vi.fn(() => ({ xrayRunning: false })),
+      },
+      configService: {
+        getServers: vi.fn(() => [bad, good]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+    });
+
+    await expect(session.connect(bad.uuid)).rejects.toThrow(/TLS\/REALITY/);
+    expect(session.getPhase()).toBe('failed');
+    expect(stop).not.toHaveBeenCalled();
+
+    start.mockImplementation(async () => undefined);
+    await session.connect(good.uuid);
+
+    expect(session.getPhase()).toBe('connected');
+    expect(session.getConnectionState()).toEqual({
+      type: 'connected',
+      serverId: good.uuid,
+      mode: 'proxy',
+    });
   });
 
   it('lets a queued disconnect own the stack after a failed connect', async () => {
@@ -645,6 +743,17 @@ describe('session state projection', () => {
       }),
     ).toBe('b');
   });
+
+  it('treats failed as selectable and idle, but not in-flight', () => {
+    expect(isSessionPhaseSelectable('idle')).toBe(true);
+    expect(isSessionPhaseSelectable('failed')).toBe(true);
+    expect(isSessionPhaseSelectable('connecting')).toBe(false);
+    expect(isSessionPhaseSelectable('connected')).toBe(false);
+    expect(isSessionPhaseSelectable('switching')).toBe(false);
+    expect(isSessionPhaseSelectable('disconnecting')).toBe(false);
+    expect(isSessionPhaseInFlight('failed')).toBe(false);
+    expect(isSessionPhaseInFlight('idle')).toBe(false);
+  });
 });
 
 describe('health policy', () => {
@@ -658,15 +767,15 @@ describe('health policy', () => {
         reason: 'slow',
         blocking: false,
         autoSwitchEnabled: true,
-        servers: [server, makeServer({ uuid: 'b' })],
+        servers: [server, makeServer({ uuid: 'b', security: 'tls' })],
         blockedServerIds: new Set(),
       }),
     ).toEqual({ action: 'none' });
   });
 
   it('disconnects when auto-switch is disabled or every alternative is blocked', () => {
-    const current = makeServer({ uuid: 'a' });
-    const other = makeServer({ uuid: 'b' });
+    const current = makeServer({ uuid: 'a', security: 'tls' });
+    const other = makeServer({ uuid: 'b', security: 'tls' });
     expect(
       policy.onHealthFailure({
         server: current,
@@ -690,8 +799,8 @@ describe('health policy', () => {
   });
 
   it('switches to ranked candidates when auto-switch is enabled', () => {
-    const current = makeServer({ uuid: 'a', ping: 200 });
-    const next = makeServer({ uuid: 'b', ping: 20 });
+    const current = makeServer({ uuid: 'a', ping: 200, security: 'tls' });
+    const next = makeServer({ uuid: 'b', ping: 20, security: 'tls' });
     expect(
       policy.onHealthFailure({
         server: current,
@@ -702,6 +811,46 @@ describe('health policy', () => {
         blockedServerIds: new Set(),
       }),
     ).toEqual({ action: 'switch', candidates: [next] });
+  });
+
+  it('skips Xray-incompatible public outbounds when ranking auto-switch candidates', () => {
+    const current = makeServer({ uuid: 'a', ping: 200, security: 'tls' });
+    const insecure = makeServer({
+      uuid: 'insecure',
+      ping: 1,
+      security: 'none',
+      address: '8.8.8.8',
+    });
+    const next = makeServer({ uuid: 'b', ping: 40, security: 'reality' });
+    expect(
+      policy.onHealthFailure({
+        server: current,
+        reason: 'blocked',
+        blocking: true,
+        autoSwitchEnabled: true,
+        servers: [current, insecure, next],
+        blockedServerIds: new Set(),
+      }),
+    ).toEqual({ action: 'switch', candidates: [next] });
+  });
+
+  it('disconnects when every alternative is Xray-incompatible', () => {
+    const current = makeServer({ uuid: 'a', security: 'tls' });
+    const insecure = makeServer({
+      uuid: 'insecure',
+      security: 'none',
+      address: '1.2.3.4',
+    });
+    expect(
+      policy.onHealthFailure({
+        server: current,
+        reason: 'blocked',
+        blocking: true,
+        autoSwitchEnabled: true,
+        servers: [current, insecure],
+        blockedServerIds: new Set(),
+      }),
+    ).toEqual({ action: 'disconnect' });
   });
 
   it('session owns the blocked ledger and auto-switch toggle', () => {
