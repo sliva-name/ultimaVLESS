@@ -233,4 +233,119 @@ describe('renderer session view', () => {
       expect(result.current.selectedServer?.name).toBe('Netherlands'),
     );
   });
+
+  it('lets the user pick another server after a failed connect', async () => {
+    const serverA = makeServer({ uuid: 'server-a' });
+    const serverB = makeServer({ uuid: 'server-b' });
+    const failedSnapshot = makeAppSnapshot({
+      servers: [serverA, serverB],
+      selectedServerId: serverA.uuid,
+      session: {
+        phase: 'failed',
+        activeServerId: null,
+        lastError:
+          'VLESS requires TLS/REALITY (or VLESS Encryption) for public server addresses',
+        blockedServerIds: [],
+      },
+    });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(failedSnapshot);
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.snapshot.session.phase).toBe('failed');
+      expect(result.current.selectedServer?.uuid).toBe(serverA.uuid);
+    });
+
+    act(() => {
+      result.current.selectServer(serverB);
+    });
+
+    expect(result.current.selectedServer?.uuid).toBe(serverB.uuid);
+    await waitFor(() =>
+      expect(electronApi.setSelectedServerId).toHaveBeenCalledWith(serverB.uuid),
+    );
+  });
+
+  it('connects the newly selected server after a failed session', async () => {
+    const serverA = makeServer({ uuid: 'bad-server' });
+    const serverB = makeServer({ uuid: 'good-server' });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [serverA, serverB],
+        selectedServerId: serverA.uuid,
+        session: {
+          phase: 'failed',
+          activeServerId: null,
+          lastError: 'Config generation failed: VLESS requires TLS/REALITY',
+          blockedServerIds: [],
+        },
+      }),
+    );
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.snapshot.session.phase).toBe('failed'),
+    );
+
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [serverA, serverB],
+        selectedServerId: serverB.uuid,
+        session: {
+          phase: 'failed',
+          activeServerId: null,
+          lastError: 'Config generation failed: VLESS requires TLS/REALITY',
+          blockedServerIds: [],
+        },
+      }),
+    );
+
+    act(() => {
+      result.current.selectServer(serverB);
+    });
+    await waitFor(() =>
+      expect(result.current.selectedServer?.uuid).toBe(serverB.uuid),
+    );
+
+    await act(async () => {
+      await result.current.toggleConnection();
+    });
+
+    expect(electronApi.connect).toHaveBeenCalledWith(serverB.uuid);
+  });
+
+  it('ignores server clicks while a connect is in flight', async () => {
+    const serverA = makeServer({ uuid: 'server-a' });
+    const serverB = makeServer({ uuid: 'server-b' });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [serverA, serverB],
+        selectedServerId: serverA.uuid,
+        session: {
+          phase: 'connecting',
+          activeServerId: serverA.uuid,
+          lastError: null,
+          blockedServerIds: [],
+        },
+      }),
+    );
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.snapshot.session.phase).toBe('connecting'),
+    );
+
+    act(() => {
+      result.current.selectServer(serverB);
+    });
+
+    expect(electronApi.setSelectedServerId).not.toHaveBeenCalled();
+    expect(result.current.selectedServer?.uuid).toBe(serverA.uuid);
+  });
 });

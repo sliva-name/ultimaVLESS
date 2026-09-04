@@ -24,7 +24,7 @@ interface SidebarProps {
   subscriptions: Subscription[];
   selectedServer: VlessConfig | null;
   isConnected: boolean;
-  /** True unless session is fully idle — blocks server picks during connect/disconnect. */
+  /** True while connected or in-flight — idle and failed sessions can still pick a server. */
   selectionLocked?: boolean;
   isRefreshingPings?: boolean;
   onSelectServer: (server: VlessConfig) => void;
@@ -160,7 +160,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   disabled={pingInProgress || selectionLocked}
                   aria-busy={pingInProgress}
                   aria-label={t(
-                    pingInProgress ? 'sidebar.pingRefreshing' : 'sidebar.pingAll',
+                    pingInProgress
+                      ? 'sidebar.pingRefreshing'
+                      : 'sidebar.pingAll',
                   )}
                   className={clsx(
                     'p-1.5 rounded-lg transition-all duration-200',
@@ -170,7 +172,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50',
                   )}
                   title={t(
-                    pingInProgress ? 'sidebar.pingRefreshing' : 'sidebar.pingAll',
+                    pingInProgress
+                      ? 'sidebar.pingRefreshing'
+                      : 'sidebar.pingAll',
                   )}
                 >
                   <RefreshCw

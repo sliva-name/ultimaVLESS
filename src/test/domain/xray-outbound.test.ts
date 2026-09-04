@@ -4,9 +4,12 @@ import {
   assertEncryptedPublicOutbound,
   assertSupportedShadowsocksMethod,
   isPrivateOrLocalEndpoint,
+  isServerPublicOutboundCompatible,
   normalizeVmessSecurity,
   requiresPublicTrojanMux,
 } from '@/main/services/configGenerator/outboundCompat';
+import { makeServer } from '@/test/factories';
+import type { XrayConfig } from '@/shared/xray-types';
 
 describe('outboundCompat', () => {
   it('detects private and local endpoints', () => {
@@ -97,5 +100,84 @@ describe('outboundCompat', () => {
   it('requires Mux for public Trojan addresses only', () => {
     expect(requiresPublicTrojanMux('example.com')).toBe(true);
     expect(requiresPublicTrojanMux('192.168.0.10')).toBe(false);
+  });
+
+  it('classifies catalog servers with the same public-outbound rules as generation', () => {
+    expect(
+      isServerPublicOutboundCompatible(
+        makeServer({
+          protocol: 'vless',
+          address: '1.2.3.4',
+          security: 'none',
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isServerPublicOutboundCompatible(
+        makeServer({
+          protocol: 'vless',
+          address: 'example.com',
+          security: 'reality',
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isServerPublicOutboundCompatible(
+        makeServer({
+          protocol: 'vless',
+          address: '192.168.0.10',
+          security: 'none',
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isServerPublicOutboundCompatible(
+        makeServer({
+          protocol: 'vless',
+          address: 'example.com',
+          security: 'none',
+          encryption: 'mlkem768x25519plus',
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('prefers raw outbound stream security over structured fields', () => {
+    expect(
+      isServerPublicOutboundCompatible(
+        makeServer({
+          address: 'example.com',
+          security: 'tls',
+          rawConfig: {
+            outbounds: [
+              {
+                tag: 'proxy',
+                protocol: 'vless',
+                settings: { address: '1.2.3.4', encryption: 'none' },
+                streamSettings: { network: 'tcp', security: 'none' },
+              },
+            ],
+          } as XrayConfig,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isServerPublicOutboundCompatible(
+        makeServer({
+          address: '1.2.3.4',
+          security: 'none',
+          rawConfig: {
+            outbounds: [
+              {
+                tag: 'proxy',
+                protocol: 'vless',
+                settings: { address: 'example.com', encryption: 'none' },
+                streamSettings: { network: 'tcp', security: 'reality' },
+              },
+            ],
+          } as XrayConfig,
+        }),
+      ),
+    ).toBe(true);
   });
 });

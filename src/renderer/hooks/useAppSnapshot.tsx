@@ -8,7 +8,11 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { isSessionPhaseInFlight, type AppSnapshot } from '@/shared/ipc';
+import {
+  isSessionPhaseInFlight,
+  isSessionPhaseSelectable,
+  type AppSnapshot,
+} from '@/shared/ipc';
 import type { VlessConfig } from '@/shared/types';
 import {
   findServerRow,
@@ -215,8 +219,10 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
 
   const selectServer = useCallback(
     (server: VlessConfig) => {
-      // Server list is interactive only while fully disconnected.
-      if (snapshot.session.phase !== 'idle') {
+      // Allow picks while idle or after a failed connect. In-flight and
+      // connected sessions keep the current server so the tunnel is not
+      // retargeted from under a live operation.
+      if (!isSessionPhaseSelectable(snapshot.session.phase)) {
         return;
       }
       const version = ++selectVersionRef.current;

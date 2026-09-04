@@ -20,6 +20,9 @@ const resources = {
         connected: 'Connected',
         subscriptionShort: 'Subscription',
         manualShort: 'Manual',
+        incompatibleOutboundShort: 'No TLS',
+        incompatibleOutbound:
+          'Xray rejects this public profile without TLS/REALITY (or VLESS Encryption).',
       },
       status: {
         secure: 'SECURE',
@@ -250,6 +253,9 @@ const resources = {
         connected: 'Подключено',
         subscriptionShort: 'Подписка',
         manualShort: 'Ручные',
+        incompatibleOutboundShort: 'Нет TLS',
+        incompatibleOutbound:
+          'Xray отклоняет этот публичный профиль без TLS/REALITY (или VLESS Encryption).',
       },
       status: {
         secure: 'ЗАЩИЩЕНО',

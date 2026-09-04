@@ -66,6 +66,40 @@ describe('app snapshot owners', () => {
     expect('rawConfig' in snapshot.servers[0]).toBe(false);
   });
 
+  it('marks public VLESS/none catalog rows as incompatible with bundled Xray', () => {
+    const insecure = makeServer({
+      uuid: 'insecure',
+      address: '1.2.3.4',
+      security: 'none',
+    });
+    const secure = makeServer({
+      uuid: 'secure',
+      address: 'example.com',
+      security: 'reality',
+    });
+    const snapshot = buildAppSnapshot(
+      createDeps({
+        serverRepository: {
+          list: vi.fn(() => [insecure, secure]),
+        },
+        configService: {
+          getSelectedServerId: vi.fn(() => secure.uuid),
+          getConnectionMode: vi.fn(() => 'proxy'),
+        },
+      }) as any,
+    );
+
+    expect(snapshot.servers.find((row) => row.uuid === 'insecure')).toEqual(
+      expect.objectContaining({
+        uuid: 'insecure',
+        outboundCompatible: false,
+      }),
+    );
+    expect(
+      snapshot.servers.find((row) => row.uuid === 'secure'),
+    ).not.toHaveProperty('outboundCompatible');
+  });
+
   it('session phase and lastError come from ConnectionState, not probe facts', () => {
     const snapshot = buildAppSnapshot(
       createDeps({

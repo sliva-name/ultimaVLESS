@@ -1,5 +1,7 @@
 import net from 'net';
 import { BUNDLED_XRAY_VERSION } from '@/shared/constants';
+import type { VlessConfig } from '@/shared/types';
+import type { XrayOutbound } from '@/shared/xray-types';
 
 const REMOVED_SS_METHODS = new Set(['none', 'plain']);
 const REMOVED_VMESS_SECURITY = new Set(['none', 'zero']);
@@ -106,7 +108,11 @@ export function assertEncryptedPublicOutbound(options: {
   vlessEncryption?: string;
 }): void {
   const protocol = options.protocol.toLowerCase();
-  if (protocol === 'wireguard' || protocol === 'shadowsocks' || protocol === 'vmess') {
+  if (
+    protocol === 'wireguard' ||
+    protocol === 'shadowsocks' ||
+    protocol === 'vmess'
+  ) {
     return;
   }
   if (isPrivateOrLocalEndpoint(options.address)) return;
@@ -133,6 +139,139 @@ export function assertEncryptedPublicOutbound(options: {
       : 'VLESS requires TLS/REALITY (or VLESS Encryption) for public server addresses';
   throw new Error(
     `${transportHint} in Xray ${BUNDLED_XRAY_VERSION}. Set security=tls or security=reality.`,
+  );
+}
+
+export function isEncryptedPublicOutboundCompatible(options: {
+  protocol: string;
+  address: string;
+  streamSecurity?: string;
+  vlessEncryption?: string;
+}): boolean {
+  try {
+    assertEncryptedPublicOutbound(options);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Default stream security used by field-based config generation
+ * (`XrayConfigPipeline.getDefaultSecurity`).
+ */
+function defaultStructuredStreamSecurity(
+  protocol: string,
+  security: VlessConfig['security'],
+): string {
+  if (security) return security;
+  if (protocol === 'trojan' || protocol === 'hysteria') return 'tls';
+  return 'none';
+}
+
+function readRawOutboundAddress(settings: unknown): string | undefined {
+  if (!settings || typeof settings !== 'object') return undefined;
+  const record = settings as Record<string, unknown>;
+  if (typeof record.address === 'string' && record.address) {
+    return record.address;
+  }
+  const vnext = record.vnext;
+  if (Array.isArray(vnext) && vnext[0] && typeof vnext[0] === 'object') {
+    const address = (vnext[0] as Record<string, unknown>).address;
+    if (typeof address === 'string' && address) return address;
+  }
+  const servers = record.servers;
+  if (Array.isArray(servers) && servers[0] && typeof servers[0] === 'object') {
+    const address = (servers[0] as Record<string, unknown>).address;
+    if (typeof address === 'string' && address) return address;
+  }
+  return undefined;
+}
+
+function readRawVlessEncryption(settings: unknown): string | undefined {
+  if (!settings || typeof settings !== 'object') return undefined;
+  const record = settings as Record<string, unknown>;
+  if (typeof record.encryption === 'string') return record.encryption;
+  const vnext = record.vnext;
+  if (!Array.isArray(vnext) || !vnext[0] || typeof vnext[0] !== 'object') {
+    return undefined;
+  }
+  const users = (vnext[0] as Record<string, unknown>).users;
+  if (!Array.isArray(users) || !users[0] || typeof users[0] !== 'object') {
+    return undefined;
+  }
+  const encryption = (users[0] as Record<string, unknown>).encryption;
+  return typeof encryption === 'string' ? encryption : undefined;
+}
+
+function collectPublicOutboundCompatTargets(server: VlessConfig): Array<{
+  protocol: string;
+  address: string;
+  streamSecurity?: string;
+  vlessEncryption?: string;
+}> {
+  const rawOutbounds = server.rawConfig?.outbounds;
+  if (Array.isArray(rawOutbounds) && rawOutbounds.length > 0) {
+    const targets: Array<{
+      protocol: string;
+      address: string;
+      streamSecurity?: string;
+      vlessEncryption?: string;
+    }> = [];
+    for (const outbound of rawOutbounds as XrayOutbound[]) {
+      if (!outbound || typeof outbound !== 'object') continue;
+      const protocol = String(outbound.protocol || '').toLowerCase();
+      if (
+        protocol !== 'vless' &&
+        protocol !== 'trojan' &&
+        protocol !== 'hysteria'
+      ) {
+        continue;
+      }
+      const address = readRawOutboundAddress(outbound.settings);
+      if (!address) continue;
+      const stream = outbound.streamSettings;
+      const streamSecurity =
+        stream &&
+        typeof stream === 'object' &&
+        typeof (stream as { security?: unknown }).security === 'string'
+          ? (stream as { security: string }).security
+          : undefined;
+      targets.push({
+        protocol,
+        address,
+        streamSecurity,
+        vlessEncryption:
+          protocol === 'vless'
+            ? readRawVlessEncryption(outbound.settings)
+            : undefined,
+      });
+    }
+    if (targets.length > 0) return targets;
+  }
+
+  const protocol = (server.protocol || 'vless').toLowerCase();
+  return [
+    {
+      protocol,
+      address: server.address,
+      streamSecurity: defaultStructuredStreamSecurity(
+        protocol,
+        server.security,
+      ),
+      vlessEncryption: server.encryption,
+    },
+  ];
+}
+
+/**
+ * True when config generation would accept this catalog server under the
+ * bundled Xray public-outbound encryption rules. Reuses
+ * `assertEncryptedPublicOutbound` so auto-switch skip matches generation.
+ */
+export function isServerPublicOutboundCompatible(server: VlessConfig): boolean {
+  return collectPublicOutboundCompatTargets(server).every((target) =>
+    isEncryptedPublicOutboundCompatible(target),
   );
 }
 

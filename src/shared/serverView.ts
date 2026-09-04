@@ -21,6 +21,12 @@ export type SafeServerConfig = {
   ping?: number | null;
   pingTime?: number;
   pingStale?: boolean;
+  /**
+   * False when bundled Xray will reject this public outbound
+   * (e.g. VLESS/Trojan with security=none and no VLESS encryption).
+   * Omitted when the profile is compatible.
+   */
+  outboundCompatible?: boolean;
 };
 
 export function toSafeServer(server: VlessConfig): SafeServerConfig {
@@ -49,9 +55,15 @@ export function toSafeServer(server: VlessConfig): SafeServerConfig {
 let cachedFingerprint: string | null = null;
 let cachedSafeList: SafeServerConfig[] | null = null;
 
-export function toSafeServerList(servers: VlessConfig[]): SafeServerConfig[] {
+export function toSafeServerList(
+  servers: VlessConfig[],
+  annotate?: (server: VlessConfig, safe: SafeServerConfig) => SafeServerConfig,
+): SafeServerConfig[] {
   const unique = uniqueCatalogServers(servers);
-  const safe = unique.map(toSafeServer);
+  const safe = unique.map((server) => {
+    const row = toSafeServer(server);
+    return annotate ? annotate(server, row) : row;
+  });
   const fingerprint = safe.map((server) => JSON.stringify(server)).join('||');
   if (cachedFingerprint === fingerprint && cachedSafeList) {
     return cachedSafeList;
