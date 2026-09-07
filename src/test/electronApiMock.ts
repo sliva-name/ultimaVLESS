@@ -4,6 +4,7 @@ import type {
   AddSubscriptionPayload,
   AddSubscriptionResult,
   AppSnapshot,
+  AppSnapshotRuntimePatch,
   ConnectionMonitorEvent,
   ConnectResult,
   DisconnectResult,
@@ -19,12 +20,14 @@ import { makeAppSnapshot } from './factories';
 
 type ListenerMap = {
   appSnapshotChanged: Set<(snapshot: AppSnapshot) => void>;
+  appSnapshotPatch: Set<(patch: AppSnapshotRuntimePatch) => void>;
   connectionMonitorEvent: Set<(event: ConnectionMonitorEvent) => void>;
   updateStatus: Set<(status: UpdateStatus) => void>;
 };
 
 export interface ElectronApiMock extends IElectronAPI {
   emitAppSnapshotChanged: (snapshot: AppSnapshot) => void;
+  emitAppSnapshotPatch: (patch: AppSnapshotRuntimePatch) => void;
   emitConnectionMonitorEvent: (event: ConnectionMonitorEvent) => void;
   emitUpdateStatus: (status: UpdateStatus) => void;
 }
@@ -43,6 +46,7 @@ export function createElectronApiMock(
 ): ElectronApiMock {
   const listeners: ListenerMap = {
     appSnapshotChanged: new Set(),
+    appSnapshotPatch: new Set(),
     connectionMonitorEvent: new Set(),
     updateStatus: new Set(),
   };
@@ -82,6 +86,7 @@ export function createElectronApiMock(
     onAppSnapshotChanged: createListenerRegistration(
       listeners.appSnapshotChanged,
     ),
+    onAppSnapshotPatch: createListenerRegistration(listeners.appSnapshotPatch),
     onConnectionMonitorEvent: createListenerRegistration(
       listeners.connectionMonitorEvent,
     ),
@@ -173,6 +178,9 @@ export function createElectronApiMock(
 
     emitAppSnapshotChanged: (snapshot: AppSnapshot) => {
       listeners.appSnapshotChanged.forEach((listener) => listener(snapshot));
+    },
+    emitAppSnapshotPatch: (patch: AppSnapshotRuntimePatch) => {
+      listeners.appSnapshotPatch.forEach((listener) => listener(patch));
     },
     emitConnectionMonitorEvent: (event: ConnectionMonitorEvent) => {
       listeners.connectionMonitorEvent.forEach((listener) => listener(event));

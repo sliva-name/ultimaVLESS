@@ -4,6 +4,7 @@ import {
   AddSubscriptionPayload,
   AddSubscriptionResult,
   AppSnapshot,
+  AppSnapshotRuntimePatch,
   ConnectResult,
   ConnectionMonitorEvent,
   DisconnectResult,
@@ -71,6 +72,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Events
   onAppSnapshotChanged: createListener<AppSnapshot>(
     IPC_EVENT_CHANNELS.appSnapshotChanged,
+  ),
+  onAppSnapshotPatch: createListener<AppSnapshotRuntimePatch>(
+    IPC_EVENT_CHANNELS.appSnapshotPatch,
   ),
   onConnectionMonitorEvent: createListener<ConnectionMonitorEvent>(
     IPC_EVENT_CHANNELS.connectionMonitorEvent,

@@ -32,6 +32,7 @@ export const IPC_INVOKE_CHANNELS = {
 
 export const IPC_EVENT_CHANNELS = {
   appSnapshotChanged: 'app-snapshot-changed',
+  appSnapshotPatch: 'app-snapshot-patch',
   connectionMonitorEvent: 'connection-monitor-event',
   updateStatus: 'update-status',
 } as const;

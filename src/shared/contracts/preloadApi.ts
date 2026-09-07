@@ -10,7 +10,10 @@ import type {
   SaveManualLinksResult,
   UpdateSubscriptionPayload,
 } from '@/shared/ipc/payloads';
-import type { AppSnapshot } from '@/shared/views/appSnapshot';
+import type {
+  AppSnapshot,
+  AppSnapshotRuntimePatch,
+} from '@/shared/views/appSnapshot';
 import type {
   ConnectionMonitorEvent,
   TunCapabilityStatus,
@@ -33,6 +36,9 @@ export interface IElectronAPI {
   saveManualLinks: (manualLinks: string) => Promise<SaveManualLinksResult>;
 
   onAppSnapshotChanged: (callback: (snapshot: AppSnapshot) => void) => () => void;
+  onAppSnapshotPatch: (
+    callback: (patch: AppSnapshotRuntimePatch) => void,
+  ) => () => void;
   onConnectionMonitorEvent: (
     callback: (event: ConnectionMonitorEvent) => void,
   ) => () => void;

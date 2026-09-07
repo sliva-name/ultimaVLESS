@@ -55,3 +55,9 @@ export interface AppSnapshot {
   autoSwitchingEnabled: boolean;
   traffic: TrafficSnapshot | null;
 }
+
+/** Narrow runtime tick — traffic/process only, no catalog. */
+export interface AppSnapshotRuntimePatch {
+  traffic: TrafficSnapshot | null;
+  process: XrayHealthStatus;
+}

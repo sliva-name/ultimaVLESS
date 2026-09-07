@@ -1,7 +1,10 @@
 import type { VlessConfig } from '@/shared/types';
 import { logger } from '@/main/services/LoggerService';
 import { getAppStore } from '@/main/infrastructure/persistence/appStore';
-import type { ServerRepository } from '@/main/domain/server/ServerRepository';
+import type {
+  ServerPingOverlay,
+  ServerRepository,
+} from '@/main/domain/server/ServerRepository';
 import {
   catalogListFingerprint,
   getServerConfigFingerprint,
@@ -125,6 +128,19 @@ export function createServerRepository(): ServerRepository {
       lastPersistedFingerprint = fingerprint;
       logger.info('ServerRepository', 'saveAll', { count: servers.length });
       store.set('servers', catalog);
+      store.set('serverPings', overlay);
+    },
+    savePings(overlay: ServerPingOverlay) {
+      const catalog = store.get('servers') || [];
+      const fingerprint = `${catalogListFingerprint(catalog)}##${pingOverlayFingerprint(overlay)}`;
+      if (fingerprint === lastPersistedFingerprint) {
+        logger.debug('ServerRepository', 'savePings skipped (unchanged)');
+        return;
+      }
+      lastPersistedFingerprint = fingerprint;
+      logger.debug('ServerRepository', 'savePings', {
+        count: Object.keys(overlay).length,
+      });
       store.set('serverPings', overlay);
     },
   };
