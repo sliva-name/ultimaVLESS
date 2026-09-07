@@ -43,17 +43,11 @@ describe('ping-all coordinator', () => {
     vi.useFakeTimers();
     const store = createStore();
     const notifySnapshot = vi.fn();
-    const scheduled: Array<{ cb: () => void; ms: number }> = [];
     const coordinator = createPingAllCoordinator({
       store,
       notifySnapshot,
       isUnsafe: () => false,
       now: () => 1000,
-      schedule: (cb, ms) => {
-        scheduled.push({ cb, ms });
-        return setTimeout(cb, ms);
-      },
-      cancelSchedule: (handle) => clearTimeout(handle),
     });
 
     const run = coordinator.beginRun(store.catalog);
@@ -65,7 +59,6 @@ describe('ping-all coordinator', () => {
     expect(store.savePings).toHaveBeenCalledTimes(1);
     expect(store.saveAll).not.toHaveBeenCalled();
     expect(notifySnapshot).toHaveBeenCalledWith('ping', { immediate: false });
-    expect(scheduled[0]?.ms).toBe(PING_PARTIAL_DEBOUNCE_MS);
     vi.useRealTimers();
   });
 

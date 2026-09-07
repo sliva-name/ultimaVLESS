@@ -95,7 +95,7 @@ export class SnapshotPublisher {
     if (this.pendingReasons.size === 0) {
       return;
     }
-    const reasons = this.pendingReasons;
+    const reasons = new Set(this.pendingReasons);
     this.pendingReasons.clear();
 
     const win = this.options.getWindow();

@@ -22,8 +22,6 @@ export interface PingAllCoordinatorOptions {
   now?: () => number;
   debounceMs?: number;
   batchSize?: number;
-  schedule?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
-  cancelSchedule?: (handle: ReturnType<typeof setTimeout>) => void;
 }
 
 export function mergePingResults(
@@ -87,8 +85,6 @@ export function createPingAllCoordinator(
   const debounceMs = options.debounceMs ?? PING_PARTIAL_DEBOUNCE_MS;
   const batchSize = options.batchSize ?? PING_PARTIAL_BATCH_SIZE;
   const now = options.now ?? Date.now;
-  const schedule = options.schedule ?? setTimeout;
-  const cancelSchedule = options.cancelSchedule ?? clearTimeout;
 
   const persistResults = (
     runGeneration: number,
@@ -129,7 +125,7 @@ export function createPingAllCoordinator(
 
       const clearTimer = (): void => {
         if (persistTimer !== null) {
-          cancelSchedule(persistTimer);
+          clearTimeout(persistTimer);
           persistTimer = null;
         }
       };
@@ -152,7 +148,7 @@ export function createPingAllCoordinator(
         if (persistTimer !== null) {
           return;
         }
-        persistTimer = schedule(() => {
+        persistTimer = setTimeout(() => {
           persistTimer = null;
           persistIncremental(false);
         }, debounceMs);
