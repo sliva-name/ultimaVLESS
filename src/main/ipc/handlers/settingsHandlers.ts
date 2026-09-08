@@ -107,7 +107,9 @@ export function registerSettingsHandlers({
       const privilegeHint =
         process.platform === 'win32'
           ? 'TUN mode needs Administrator rights. Connect in TUN mode and approve the UAC prompt (or run UltimaVLESS as Administrator).'
-          : 'Run UltimaVLESS with root privileges for TUN mode.';
+          : process.platform === 'linux'
+            ? 'TUN mode needs elevated privileges. Install a PolicyKit agent (pkexec) so UltimaVLESS can request them when you connect, or run UltimaVLESS as root.'
+            : 'Run UltimaVLESS with root privileges for TUN mode.';
       const result: TunCapabilityStatus = {
         platform: process.platform,
         supported,

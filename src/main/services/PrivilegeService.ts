@@ -1,6 +1,9 @@
+import fs from 'fs';
+import path from 'path';
 import { app } from 'electron';
 import { runProcessWithOutput } from './platform/commandRunner';
 import { RELAUNCH_ARG } from '@/shared/constants';
+import type { ConnectionMode } from '@/shared/types';
 
 /**
  * Checks whether the current process has elevated rights on Windows.
@@ -63,31 +66,121 @@ export async function relaunchAsAdminOnWindows(): Promise<boolean> {
   }
 }
 
-async function isUnixRoot(): Promise<boolean> {
-  if (process.platform === 'win32') {
-    return false;
+/** True when the current process itself runs as uid 0 (Unix root). */
+export function isProcessRoot(): boolean {
+  return typeof process.getuid === 'function' && process.getuid() === 0;
+}
+
+/**
+ * Resolves an absolute, executable `pkexec` path or `null` when PolicyKit is
+ * not installed. `pkexec` is the graphical privilege-escalation front-end
+ * (PolicyKit) — the Linux analogue of the Windows UAC prompt. Resolving to an
+ * absolute path (instead of spawning the bare name) avoids executing a planted
+ * `pkexec` from a writable `$PATH` entry.
+ */
+export function findPkexecPath(): string | null {
+  if (process.platform !== 'linux') {
+    return null;
   }
-  if (typeof process.getuid === 'function') {
-    return process.getuid() === 0;
+  const candidates = ['/usr/bin/pkexec', '/bin/pkexec', '/usr/local/bin/pkexec'];
+  for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
+    if (dir) {
+      candidates.push(path.join(dir, 'pkexec'));
+    }
   }
-  return false;
+  for (const candidate of candidates) {
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      // Keep looking.
+    }
+  }
+  return null;
+}
+
+/** Whether TUN elevation via PolicyKit is possible on this Linux host. */
+export function isPkexecAvailable(): boolean {
+  return findPkexecPath() !== null;
+}
+
+export interface XrayElevationContext {
+  platform: NodeJS.Platform;
+  mode: ConnectionMode;
+  isRoot: boolean;
+  pkexecAvailable: boolean;
+}
+
+/**
+ * Decides whether the Xray process must be spawned with elevated privileges.
+ * Only Linux TUN mode needs this: Xray creates the TUN device and installs
+ * auto-routes, which require `CAP_NET_ADMIN`/root. When the app already runs as
+ * root nothing is needed; Windows handles elevation by relaunching the whole
+ * app under UAC instead (see {@link requestTunPrivilegesRelaunch}).
+ */
+export function shouldElevateXray(ctx: XrayElevationContext): boolean {
+  return (
+    ctx.platform === 'linux' &&
+    ctx.mode === 'tun' &&
+    !ctx.isRoot &&
+    ctx.pkexecAvailable
+  );
+}
+
+/**
+ * Builds the `pkexec` command that runs Xray as root while keeping the GUI
+ * unprivileged. A non-root parent cannot signal a root child, so the wrapper
+ * ties Xray's lifetime to this process's stdin: a normal disconnect closes the
+ * pipe explicitly and an app crash closes it via fd cleanup, and in both cases
+ * the root wrapper reacts to EOF by terminating Xray. This avoids orphaning the
+ * tunnel and avoids a second PolicyKit prompt on disconnect.
+ */
+export function buildElevatedXrayCommand(
+  pkexecPath: string,
+  binPath: string,
+  configPath: string,
+  assetPath: string,
+): { command: string; args: string[] } {
+  const wrapper = [
+    'export XRAY_LOCATION_ASSET="$2"',
+    '"$0" -c "$1" &',
+    'xray_pid=$!',
+    'terminate() { kill "$xray_pid" 2>/dev/null || true; }',
+    'trap terminate TERM INT EXIT',
+    // Block until the parent closes our stdin (disconnect or app exit), then
+    // tear Xray down as root.
+    'cat >/dev/null 2>&1 || true',
+    'terminate',
+    'wait "$xray_pid" 2>/dev/null || true',
+  ].join('\n');
+  return {
+    command: pkexecPath,
+    args: ['/bin/sh', '-c', wrapper, binPath, configPath, assetPath],
+  };
 }
 
 /**
  * Cross-platform privilege check for TUN mode setup.
- * - Windows: Administrator rights
- * - macOS/Linux: root privileges
+ * - Windows: Administrator rights.
+ * - Linux: already root, or PolicyKit (`pkexec`) is available so the Xray
+ *   process can be elevated on demand at connect time.
+ * - macOS/other Unix: root privileges.
  */
 export async function hasTunPrivileges(): Promise<boolean> {
   if (process.platform === 'win32') {
     return isElevatedOnWindows();
   }
-  return isUnixRoot();
+  if (process.platform === 'linux') {
+    return isProcessRoot() || isPkexecAvailable();
+  }
+  return isProcessRoot();
 }
 
 /**
- * Best-effort privilege escalation for TUN mode setup.
- * Currently supported only on Windows (UAC relaunch).
+ * Best-effort privilege escalation that relaunches the whole app elevated.
+ * Only Windows uses this (UAC). Linux does not relaunch the GUI as root;
+ * instead it elevates just the Xray process via `pkexec` at spawn time
+ * (see {@link shouldElevateXray} / {@link buildElevatedXrayCommand}).
  */
 export async function requestTunPrivilegesRelaunch(): Promise<boolean> {
   if (process.platform === 'win32') {

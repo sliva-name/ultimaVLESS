@@ -379,6 +379,14 @@ export class ConnectionManager extends EventEmitter {
       );
     }
 
+    // Linux elevates only the Xray process via pkexec (see XrayService), so
+    // reaching here means neither root nor PolicyKit is available.
+    if (process.platform === 'linux') {
+      throw new Error(
+        'TUN mode needs elevated privileges. Install a PolicyKit agent (pkexec) so UltimaVLESS can request them at connect time, or run UltimaVLESS as root.',
+      );
+    }
+
     throw new Error(
       'TUN mode requires root privileges on this operating system. Please run the app with elevated permissions.',
     );

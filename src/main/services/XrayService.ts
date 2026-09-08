@@ -13,6 +13,12 @@ import { logger } from './LoggerService';
 import { probeTcpPort } from './networkProbe';
 import { getBinResourcesPath } from '@/main/utils/runtimePaths';
 import { resolveSystemBinary } from './platform/systemBinaries';
+import {
+  buildElevatedXrayCommand,
+  findPkexecPath,
+  isProcessRoot,
+  shouldElevateXray,
+} from './PrivilegeService';
 
 export interface XrayUnexpectedExitEvent {
   config: VlessConfig;
@@ -45,6 +51,16 @@ export class XrayService extends EventEmitter {
   /** Short connect timeout so failed polls do not burn the readiness budget. */
   private static readonly READINESS_PROBE_TIMEOUT_MS = 200;
   private static readonly STOP_TIMEOUT_MS = 3000;
+  /**
+   * Elevated (pkexec) spawns may block on a graphical PolicyKit auth dialog, so
+   * they get a much longer readiness budget than a direct spawn.
+   */
+  private static readonly ELEVATED_READINESS_TIMEOUT_MS = 120000;
+  /** pkexec exit codes: authentication failed / prompt dismissed. */
+  private static readonly PKEXEC_NOT_AUTHORIZED = 126;
+  private static readonly PKEXEC_DISMISSED = 127;
+  /** Xray processes spawned as root via pkexec; stopped by closing stdin. */
+  private readonly elevatedProcesses = new WeakSet<ChildProcess>();
   private readonly expectedExitProcesses = new WeakSet<ChildProcess>();
   private readonly notifiedUnexpectedExitProcesses =
     new WeakSet<ChildProcess>();
@@ -190,17 +206,44 @@ export class XrayService extends EventEmitter {
       }
     }
 
+    const pkexecPath = findPkexecPath();
+    const elevate =
+      shouldElevateXray({
+        platform: process.platform,
+        mode: connectionMode,
+        isRoot: isProcessRoot(),
+        pkexecAvailable: pkexecPath !== null,
+      }) && pkexecPath !== null;
+
     let spawnedProcess: ChildProcess;
     try {
-      spawnedProcess = spawn(binPath, ['-c', configPath], {
-        env: {
-          ...process.env,
-          XRAY_LOCATION_ASSET: this.resourcesPath,
-        },
-      });
+      if (elevate && pkexecPath) {
+        const { command, args } = buildElevatedXrayCommand(
+          pkexecPath,
+          binPath,
+          configPath,
+          this.resourcesPath,
+        );
+        // stdin is the kill channel for the root wrapper — keep it a pipe.
+        spawnedProcess = spawn(command, args, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        this.elevatedProcesses.add(spawnedProcess);
+        logger.info('XrayService', 'Spawning Xray elevated via pkexec for TUN', {
+          pkexecPath,
+        });
+      } else {
+        spawnedProcess = spawn(binPath, ['-c', configPath], {
+          env: {
+            ...process.env,
+            XRAY_LOCATION_ASSET: this.resourcesPath,
+          },
+        });
+      }
       this.assignSlotProcess(slot, spawnedProcess);
       logger.info('XrayService', 'Process spawned', {
         pid: spawnedProcess.pid,
+        elevated: elevate,
       });
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -287,7 +330,16 @@ export class XrayService extends EventEmitter {
     });
 
     try {
-      const readiness = await this.awaitLocalProxyReadiness(spawnedProcess, ports);
+      const readiness = await this.awaitLocalProxyReadiness(
+        spawnedProcess,
+        ports,
+        {
+          timeoutMs: elevate
+            ? XrayService.ELEVATED_READINESS_TIMEOUT_MS
+            : XrayService.READINESS_TIMEOUT_MS,
+          elevated: elevate,
+        },
+      );
       if (!readiness.reachable) {
         const reason =
           readiness.reason ||
@@ -349,7 +401,7 @@ export class XrayService extends EventEmitter {
         }
       });
       try {
-        processToStop.kill();
+        this.terminateProcess(processToStop);
       } catch (error) {
         logger.warn('XrayService', 'Failed to stop Xray process cleanly', {
           error: error instanceof Error ? error.message : String(error),
@@ -415,7 +467,7 @@ export class XrayService extends EventEmitter {
     if (outgoing) {
       this.trackDyingProcess(outgoing);
       try {
-        outgoing.kill();
+        this.terminateProcess(outgoing);
       } catch {
         // Already gone.
       }
@@ -433,7 +485,7 @@ export class XrayService extends EventEmitter {
     }
     this.trackDyingProcess(staging);
     try {
-      staging.kill();
+      this.terminateProcess(staging);
     } catch {
       // Already gone.
     }
@@ -468,7 +520,7 @@ export class XrayService extends EventEmitter {
   ): void {
     this.trackDyingProcess(spawnedProcess);
     try {
-      spawnedProcess.kill();
+      this.terminateProcess(spawnedProcess);
     } catch {
       // Already gone.
     }
@@ -481,9 +533,45 @@ export class XrayService extends EventEmitter {
     }
   }
 
+  /**
+   * Requests termination of a spawned Xray. Elevated (pkexec) children run as
+   * root and cannot be signalled by this unprivileged process, so we close the
+   * stdin pipe and let the root wrapper SIGTERM Xray on EOF.
+   */
+  private terminateProcess(child: ChildProcess): void {
+    if (this.elevatedProcesses.has(child)) {
+      try {
+        child.stdin?.end();
+      } catch {
+        // Pipe already closed.
+      }
+      try {
+        child.stdin?.destroy();
+      } catch {
+        // Pipe already closed.
+      }
+      return;
+    }
+    child.kill();
+  }
+
   private killProcessSync(child: ChildProcess | null): void {
     if (!child?.pid) return;
     this.expectedExitProcesses.add(child);
+    if (this.elevatedProcesses.has(child)) {
+      // Root child: closing stdin is the only teardown lever we have.
+      try {
+        child.stdin?.end();
+      } catch {
+        // Pipe already closed.
+      }
+      try {
+        child.stdin?.destroy();
+      } catch {
+        // Pipe already closed.
+      }
+      return;
+    }
     try {
       if (process.platform === 'win32') {
         spawn(
@@ -567,7 +655,11 @@ export class XrayService extends EventEmitter {
   private async awaitLocalProxyReadiness(
     processRef: ChildProcess,
     ports: RuntimePorts,
+    options: { timeoutMs?: number; elevated?: boolean } = {},
   ): Promise<{ reachable: boolean; reason: string | null }> {
+    const readinessTimeoutMs =
+      options.timeoutMs ?? XrayService.READINESS_TIMEOUT_MS;
+    const elevated = options.elevated ?? false;
     type ProcessEventHandler = (...args: never[]) => void;
     let exitReject: ((error: Error) => void) | null = null;
     const exitPromise = new Promise<never>((_resolve, reject) => {
@@ -578,6 +670,18 @@ export class XrayService extends EventEmitter {
       code: number | null,
       signal: NodeJS.Signals | null,
     ) => {
+      if (
+        elevated &&
+        (code === XrayService.PKEXEC_NOT_AUTHORIZED ||
+          code === XrayService.PKEXEC_DISMISSED)
+      ) {
+        exitReject?.(
+          new Error(
+            'TUN mode requires elevated privileges, but the authorization request was declined or dismissed.',
+          ),
+        );
+        return;
+      }
       exitReject?.(
         new Error(
           `Xray exited during startup (code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
@@ -614,7 +718,7 @@ export class XrayService extends EventEmitter {
       reason: string | null;
     }> => {
       const startedAt = Date.now();
-      while (Date.now() - startedAt <= XrayService.READINESS_TIMEOUT_MS) {
+      while (Date.now() - startedAt <= readinessTimeoutMs) {
         if (this.process !== processRef && this.stagingProcess !== processRef) {
           throw new Error(
             'Xray process exited before local proxy listeners became ready',
