@@ -239,11 +239,34 @@ describe('session lifecycle', () => {
       expect(session.getPhase()).toBe('connecting');
     } else {
       await expect(session.connect(server.uuid)).rejects.toThrow(
-        /root privileges/,
+        process.platform === 'linux' ? /elevated privileges/ : /root privileges/,
       );
       expect(deps.configService.setPendingTunReconnect).not.toHaveBeenCalled();
       expect(deps.app.quit).not.toHaveBeenCalled();
     }
+  });
+
+  it('connects TUN without relaunch when privileges are already available', async () => {
+    const { session, deps, server, start } = createSession({
+      configService: {
+        getServers: vi.fn(() => [makeServer({ uuid: 'server-1' })]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'tun'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+      // On Linux this is true when pkexec is available (Xray is elevated at
+      // spawn time); on Windows it is true when already running elevated.
+      hasTunPrivileges: vi.fn(async () => true),
+      requestTunPrivilegesRelaunch: vi.fn(async () => false),
+    });
+
+    await session.connect(server.uuid);
+
+    expect(start).toHaveBeenCalled();
+    expect(deps.requestTunPrivilegesRelaunch).not.toHaveBeenCalled();
+    expect(deps.app.quit).not.toHaveBeenCalled();
+    expect(session.getPhase()).toBe('connected');
   });
 
   it('preserves pending TUN reconnect across shutdown disconnect', async () => {

@@ -108,7 +108,8 @@ const resources = {
             'TUN mode is currently supported only on Windows and Linux by the bundled Xray core.',
           tunElevated_win32:
             'TUN mode needs Administrator rights. Connect in TUN mode and approve the UAC prompt (or run UltimaVLESS as Administrator).',
-          tunElevated: 'Run UltimaVLESS with root privileges for TUN mode.',
+          tunElevated:
+            'TUN mode needs elevated privileges. Install a PolicyKit agent (pkexec) so UltimaVLESS can request them when you connect, or run UltimaVLESS as root.',
           tunDegradedLinux:
             'Linux TUN routing currently relies on Xray auto-route behavior rather than explicit OS-level route teardown.',
           routingMode: 'Routing mode: {{mode}}',
@@ -345,7 +346,7 @@ const resources = {
           tunElevated_win32:
             'Для работы режима TUN требуются права администратора. Подключитесь в режиме TUN и подтвердите запрос UAC (или запустите UltimaVLESS от имени администратора).',
           tunElevated:
-            'Запустите UltimaVLESS с правами root для использования режима TUN.',
+            'Для режима TUN нужны повышенные права. Установите агент PolicyKit (pkexec), чтобы UltimaVLESS запрашивал их при подключении, или запустите UltimaVLESS от имени root.',
           tunDegradedLinux:
             'Маршрутизация TUN в Linux сейчас полагается на поведение автомаршрутизации Xray, а не на явное удаление маршрутов на уровне ОС.',
           routingMode: 'Режим маршрутизации: {{mode}}',
