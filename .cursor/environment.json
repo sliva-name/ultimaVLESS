@@ -1,0 +1,17 @@
+{
+  "name": "UltimaVLESS",
+  "install": "npm ci && node node_modules/electron/install.js && npm --prefix website install --no-audit --no-fund",
+  "terminals": [
+    {
+      "name": "website",
+      "command": "npm run site:dev",
+      "description": "Nuxt marketing website dev server at http://localhost:3000/ultimaVLESS/. Launch the Electron desktop client on demand with `ELECTRON_DISABLE_SANDBOX=1 npm run dev`. Core checks: `npm run verify:ci` (typecheck + lint + tests)."
+    }
+  ],
+  "ports": [
+    {
+      "name": "website",
+      "port": 3000
+    }
+  ]
+}

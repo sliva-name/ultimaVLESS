@@ -9,7 +9,8 @@ release-portable
 .DS_Store
 .env
 .env.*.local
-.cursor
+.cursor/*
+!.cursor/environment.json
 
 # Xray binaries and runtime assets
 resources/bin/*
