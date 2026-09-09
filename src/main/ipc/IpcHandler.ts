@@ -29,8 +29,9 @@ function sendToRenderer(channel: IpcEventChannel, ...args: unknown[]): void {
 
 function notifySnapshot(
   reason: Parameters<SnapshotPublisher['push']>[0] = 'manual',
+  options?: Parameters<SnapshotPublisher['push']>[1],
 ): void {
-  snapshotPublisher?.push(reason);
+  snapshotPublisher?.push(reason, options);
 }
 
 function assertTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent): void {

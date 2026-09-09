@@ -1,5 +1,4 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
-import { VlessConfig } from '@/shared/types';
 import {
   allServersHaveFreshPing,
   filterServersNeedingPing,
@@ -11,11 +10,14 @@ import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { assertBoolean, assertValidServerPayload } from '@/main/ipc/validators';
 import { createSerialQueue } from '@/main/ipc/serialQueue';
-import { catalogListFingerprint } from '@/shared/serverIdentity';
+import { createPingAllCoordinator } from '@/main/ipc/pingAllCoordinator';
 
 interface RegisterPingHandlersParams {
   deps: IpcDependencies;
-  notifySnapshot: (reason?: SnapshotReason) => void;
+  notifySnapshot: (
+    reason?: SnapshotReason,
+    options?: { immediate?: boolean },
+  ) => void;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
   isConnectionBusy: () => boolean;
 }
@@ -23,26 +25,7 @@ interface RegisterPingHandlersParams {
 const INITIAL_TIMEOUT_MS = 1800;
 const RETRY_TIMEOUT_MS = 3500;
 const RETRY_DELAY_MS = 250;
-const PARTIAL_UPDATE_BATCH_SIZE = 8;
 const MIN_PING_INTERVAL_MS = 30_000;
-
-function mergePingResults(
-  servers: VlessConfig[],
-  results: Map<string, number | null>,
-  pingTime: number,
-): VlessConfig[] {
-  return servers.map((server) => {
-    if (!results.has(server.uuid)) {
-      return server;
-    }
-    return {
-      ...server,
-      ping: results.get(server.uuid) ?? null,
-      pingTime,
-      pingStale: false,
-    };
-  });
-}
 
 export function registerPingHandlers({
   deps,
@@ -63,6 +46,12 @@ export function registerPingHandlers({
       isConnectionBusy()
     );
   };
+
+  const coordinator = createPingAllCoordinator({
+    store: deps.serverRepository,
+    notifySnapshot,
+    isUnsafe: isUnsafePingState,
+  });
 
   ipcMain.handle(
     IPC_INVOKE_CHANNELS.pingServer,
@@ -140,48 +129,14 @@ export function registerPingHandlers({
       }));
     }
 
-    const startedCatalog = catalogListFingerprint(servers);
-    const incrementalResults = new Map<string, number | null>();
-    let resultsSinceLastPush = 0;
-
-    const persistPingResults = (
-      results: Map<string, number | null>,
-    ): VlessConfig[] => {
-      const latest = deps.serverRepository.list();
-      if (catalogListFingerprint(latest) !== startedCatalog) {
-        logger.debug(
-          'IPC',
-          'Dropping ping-all-servers result (catalog changed)',
-        );
-        return latest;
-      }
-      const merged = mergePingResults(latest, results, Date.now());
-      deps.serverRepository.saveAll(merged);
-      notifySnapshot('ping');
-      return merged;
-    };
-
-    const pushPartialUpdate = (): void => {
-      if (incrementalResults.size === 0) {
-        return;
-      }
-      if (isUnsafePingState()) {
-        return;
-      }
-      persistPingResults(incrementalResults);
-    };
+    const run = coordinator.beginRun(servers);
 
     const results = await deps.pingService.pingServers(
       targets,
       INITIAL_TIMEOUT_MS,
       {
         onResult: (uuid, latency) => {
-          incrementalResults.set(uuid, latency);
-          resultsSinceLastPush += 1;
-          if (resultsSinceLastPush >= PARTIAL_UPDATE_BATCH_SIZE) {
-            resultsSinceLastPush = 0;
-            pushPartialUpdate();
-          }
+          run.onResult(uuid, latency);
         },
       },
     );
@@ -191,7 +146,7 @@ export function registerPingHandlers({
     );
 
     const currentServers = deps.serverRepository.list();
-    if (isUnsafePingState()) {
+    if (isUnsafePingState() || !run.isCurrent()) {
       logger.debug(
         'IPC',
         'Dropping ping-all-servers result (network state changed)',
@@ -202,7 +157,7 @@ export function registerPingHandlers({
       }));
     }
 
-    const updatedServers = persistPingResults(results);
+    const updatedServers = run.persist(results, { immediate: true });
 
     timer.end({
       force,
@@ -211,35 +166,48 @@ export function registerPingHandlers({
     });
 
     if (failedServers.length > 0) {
-      void (async () => {
-        logger.debug('IPC', 'Retrying failed ping servers in background', {
-          total: targets.length,
-          failed: failedServers.length,
-          retryTimeoutMs: RETRY_TIMEOUT_MS,
-        });
-        await sleep(RETRY_DELAY_MS);
+      const retryGeneration = run.generation;
+      void pingAllQueue
+        .enqueue(async () => {
+          if (!run.isCurrent()) {
+            return;
+          }
+          logger.debug('IPC', 'Retrying failed ping servers in background', {
+            total: targets.length,
+            failed: failedServers.length,
+            retryTimeoutMs: RETRY_TIMEOUT_MS,
+            generation: retryGeneration,
+          });
+          await sleep(RETRY_DELAY_MS);
+          if (!run.isCurrent()) {
+            return;
+          }
 
-        const retryResults = await deps.pingService.pingServers(
-          failedServers,
-          RETRY_TIMEOUT_MS,
-        );
-        const hasRecovered = failedServers.some(
-          (server) => retryResults.get(server.uuid) != null,
-        );
-        if (!hasRecovered) return;
-
-        if (isUnsafePingState()) {
-          logger.debug(
-            'IPC',
-            'Dropping retry ping results (network state changed)',
+          const retryResults = await deps.pingService.pingServers(
+            failedServers,
+            RETRY_TIMEOUT_MS,
           );
-          return;
-        }
+          if (!run.isCurrent()) {
+            return;
+          }
+          const hasRecovered = failedServers.some(
+            (server) => retryResults.get(server.uuid) != null,
+          );
+          if (!hasRecovered) return;
 
-        persistPingResults(retryResults);
-      })().catch((error) => {
-        logger.error('IPC', 'Background retry ping failed', error);
-      });
+          if (isUnsafePingState()) {
+            logger.debug(
+              'IPC',
+              'Dropping retry ping results (network state changed)',
+            );
+            return;
+          }
+
+          run.persist(retryResults, { immediate: true });
+        })
+        .catch((error) => {
+          logger.error('IPC', 'Background retry ping failed', error);
+        });
     }
 
     return updatedServers.map((server) => ({

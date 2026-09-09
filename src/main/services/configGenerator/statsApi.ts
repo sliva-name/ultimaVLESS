@@ -14,7 +14,9 @@ export function applyStatsApi(
   apiPort: number = APP_CONSTANTS.PORTS.API,
 ): void {
   cfg.stats = cfg.stats ?? {};
-  cfg.api = cfg.api ?? { tag: 'api', services: ['StatsService'] };
+  // Always overwrite: a subscription-supplied api.services (e.g. HandlerService)
+  // would otherwise ride the client-owned loopback inbound on 127.0.0.1.
+  cfg.api = { tag: 'api', services: ['StatsService'] };
 
   const policy = (cfg.policy ?? {}) as Record<string, unknown>;
   const levels =

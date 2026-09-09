@@ -123,7 +123,6 @@ export function registerSubscriptionHandlers({
 
       logger.info('IPC', 'delete-subscription', { id });
       deps.subscriptionRepository.remove(id);
-      notifySnapshot('subscriptions');
 
       const existing = deps.serverRepository.list();
       const without = existing.filter((s) => s.subscriptionId !== id);

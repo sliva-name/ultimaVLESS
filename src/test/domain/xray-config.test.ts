@@ -724,4 +724,114 @@ describe('XrayConfigCompiler', () => {
 
     expect(config.version).toEqual({ min: '26.7.28', max: '99.0.0' });
   });
+
+  it('rejects raw outbound tag proxy when the protocol is not a tunnel', () => {
+    expect(() =>
+      XrayConfigCompiler.compile(
+        makeServer({
+          security: 'tls',
+          sni: 'example.com',
+          rawConfig: {
+            inbounds: [],
+            outbounds: [
+              { tag: 'proxy', protocol: 'freedom', settings: {} },
+              { tag: 'direct', protocol: 'freedom', settings: {} },
+              { tag: 'block', protocol: 'blackhole', settings: {} },
+            ],
+            routing: {
+              rules: [
+                { type: 'field', port: '0-65535', outboundTag: 'proxy' },
+              ],
+            },
+          } as XrayConfig,
+        }),
+        { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+      ),
+    ).toThrow(/outbound tag "proxy".*tunnel protocol/);
+  });
+
+  it('rejects raw block/direct tags with the wrong protocol', () => {
+    const tunneledProxy = {
+      tag: 'proxy',
+      protocol: 'vless',
+      settings: {
+        address: 'example.com',
+        port: 443,
+        id: '00000000-0000-0000-0000-000000000001',
+        encryption: 'none',
+      },
+      streamSettings: { network: 'tcp', security: 'tls' },
+    };
+
+    expect(() =>
+      XrayConfigCompiler.compile(
+        makeServer({
+          security: 'tls',
+          sni: 'example.com',
+          rawConfig: {
+            inbounds: [],
+            outbounds: [
+              tunneledProxy,
+              { tag: 'direct', protocol: 'vless', settings: {} },
+              { tag: 'block', protocol: 'blackhole', settings: {} },
+            ],
+          } as XrayConfig,
+        }),
+        { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+      ),
+    ).toThrow(/outbound tag "direct" must use protocol freedom/);
+
+    expect(() =>
+      XrayConfigCompiler.compile(
+        makeServer({
+          security: 'tls',
+          sni: 'example.com',
+          rawConfig: {
+            inbounds: [],
+            outbounds: [
+              tunneledProxy,
+              { tag: 'direct', protocol: 'freedom', settings: {} },
+              { tag: 'block', protocol: 'freedom', settings: {} },
+            ],
+          } as XrayConfig,
+        }),
+        { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+      ),
+    ).toThrow(/outbound tag "block" must use protocol blackhole/);
+  });
+
+  it('overwrites raw api.services so only StatsService remains', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        security: 'tls',
+        sni: 'example.com',
+        rawConfig: {
+          api: {
+            tag: 'api',
+            services: ['HandlerService', 'LoggerService', 'StatsService'],
+          },
+          inbounds: [],
+          outbounds: [
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                address: 'example.com',
+                port: 443,
+                id: '00000000-0000-0000-0000-000000000001',
+                encryption: 'none',
+              },
+              streamSettings: { network: 'tcp', security: 'tls' },
+            },
+          ],
+        } as XrayConfig,
+      }),
+      { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+    );
+
+    expect(config.api).toEqual({ tag: 'api', services: ['StatsService'] });
+    expect(config.api?.services).not.toContain('HandlerService');
+    const apiInbound = config.inbounds?.find((inbound) => inbound.tag === 'api');
+    expect(apiInbound?.listen).toBe('127.0.0.1');
+  });
 });

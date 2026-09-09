@@ -150,6 +150,7 @@ export class XrayConfigPipeline {
     // itself or from the ad/bittorrent blockers injected below). Xray refuses
     // to start with "outboundTag not found" otherwise.
     this.ensureAuxiliaryOutbounds(cfg);
+    this.assertAuxiliaryOutboundProtocols(cfg);
     this.applyPerfToOutbounds(cfg, perf);
     this.sanitizeRawRoutingRules(cfg);
     this.applyPerfToRouting(cfg, perf);
@@ -292,6 +293,49 @@ export class XrayConfigPipeline {
     }
     if (!hasTag('block')) {
       outbounds.push({ tag: 'block', protocol: 'blackhole', settings: {} });
+    }
+  }
+
+  /**
+   * Routing may target `proxy` / `block` / `direct`, so a hostile raw config
+   * must not disguise freedom as the tunnel (or blackhole as LAN bypass).
+   */
+  private static assertAuxiliaryOutboundProtocols(cfg: XrayConfig): void {
+    if (!Array.isArray(cfg.outbounds) || cfg.outbounds.length === 0) {
+      throw new Error(
+        'Raw config must include an outbound tagged "proxy" with a tunnel protocol.',
+      );
+    }
+
+    let hasProxy = false;
+    for (const outbound of cfg.outbounds as MutableOutbound[]) {
+      if (!outbound) continue;
+      const tag = outbound.tag;
+      const protocol = outbound.protocol;
+      if (tag === 'proxy') {
+        hasProxy = true;
+        if (!this.isTunableProxyProtocol(protocol)) {
+          throw new Error(
+            `Raw config outbound tag "proxy" must use a tunnel protocol (vless, vmess, trojan, shadowsocks, hysteria, or wireguard), got ${String(protocol ?? 'unknown')}.`,
+          );
+        }
+      }
+      if (tag === 'block' && protocol !== 'blackhole') {
+        throw new Error(
+          `Raw config outbound tag "block" must use protocol blackhole, got ${String(protocol ?? 'unknown')}.`,
+        );
+      }
+      if (tag === 'direct' && protocol !== 'freedom') {
+        throw new Error(
+          `Raw config outbound tag "direct" must use protocol freedom, got ${String(protocol ?? 'unknown')}.`,
+        );
+      }
+    }
+
+    if (!hasProxy) {
+      throw new Error(
+        'Raw config must include an outbound tagged "proxy" with a tunnel protocol.',
+      );
     }
   }
 

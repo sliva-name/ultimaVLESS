@@ -35,19 +35,29 @@ export function buildHealthSnapshot(deps: IpcDependencies): AppHealthSnapshot {
   };
 }
 
-export function buildAppSnapshot(deps: IpcDependencies): AppSnapshot {
+export interface AppSnapshotCatalogSlices {
+  servers?: AppSnapshot['servers'];
+  subscriptions?: AppSnapshot['subscriptions'];
+}
+
+export function buildAppSnapshot(
+  deps: IpcDependencies,
+  catalog?: AppSnapshotCatalogSlices,
+): AppSnapshot {
   const connectionState = deps.connectionManager.getConnectionState();
   const activeServerId = activeServerIdFromState(connectionState);
   const selectedServerId =
     deps.configService.getSelectedServerId() ?? activeServerId;
   const session = buildSessionSnapshot(deps);
   return {
-    servers: toSafeServerList(deps.serverRepository.list(), (server, safe) =>
-      isServerPublicOutboundCompatible(server)
-        ? safe
-        : { ...safe, outboundCompatible: false },
-    ),
-    subscriptions: deps.subscriptionRepository.list(),
+    servers:
+      catalog?.servers ??
+      toSafeServerList(deps.serverRepository.list(), (server, safe) =>
+        isServerPublicOutboundCompatible(server)
+          ? safe
+          : { ...safe, outboundCompatible: false },
+      ),
+    subscriptions: catalog?.subscriptions ?? deps.subscriptionRepository.list(),
     selectedServerId,
     connectionMode: deps.configService.getConnectionMode(),
     session,

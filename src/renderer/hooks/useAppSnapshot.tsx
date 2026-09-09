@@ -12,6 +12,7 @@ import {
   isSessionPhaseInFlight,
   isSessionPhaseSelectable,
   type AppSnapshot,
+  type AppSnapshotRuntimePatch,
 } from '@/shared/ipc';
 import type { VlessConfig } from '@/shared/types';
 import {
@@ -112,7 +113,10 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
   const isConnectionBusy = isSessionPhaseInFlight(phase);
   const connectionError = clientError ?? snapshot.session.lastError;
 
+  const snapshotEpochRef = useRef(0);
+
   const applySnapshot = useCallback((nextSnapshot: AppSnapshot) => {
+    snapshotEpochRef.current += 1;
     const pendingSelection = pendingSelectionRef.current;
     setSnapshot({
       ...nextSnapshot,
@@ -151,6 +155,14 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const applyRuntimePatch = useCallback((patch: AppSnapshotRuntimePatch) => {
+    setSnapshot((current) => ({
+      ...current,
+      traffic: patch.traffic,
+      process: patch.process,
+    }));
+  }, []);
+
   const refreshSnapshot = useCallback(async () => {
     const seq = ++refreshSeqRef.current;
     const nextSnapshot = await window.electronAPI.getAppSnapshot();
@@ -185,12 +197,18 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
         applySnapshot(nextSnapshot);
       },
     );
+    const removePatchListener = window.electronAPI.onAppSnapshotPatch(
+      (patch) => {
+        applyRuntimePatch(patch);
+      },
+    );
 
     return () => {
       disposed = true;
       removeSnapshotListener();
+      removePatchListener();
     };
-  }, [applySnapshot]);
+  }, [applySnapshot, applyRuntimePatch]);
 
   const toggleConnection = useConnectionActions({
     selectedServer,
@@ -206,8 +224,12 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
     pingRefreshInFlightRef.current = true;
     setIsRefreshingPings(true);
     try {
+      const epoch = snapshotEpochRef.current;
       await window.electronAPI.pingAllServers(true);
-      await refreshSnapshot();
+      // Final ping persist already pushed a snapshot; skip a redundant pull.
+      if (snapshotEpochRef.current === epoch) {
+        await refreshSnapshot();
+      }
     } catch (error) {
       console.error('Failed to ping all servers', error);
       setClientError('Failed to refresh server latency');

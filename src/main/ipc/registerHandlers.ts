@@ -12,7 +12,10 @@ import { registerUpdateHandlers } from './handlers/updateHandlers';
 interface RegisterHandlersParams {
   deps: IpcDependencies;
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
-  notifySnapshot: (reason?: SnapshotReason) => void;
+  notifySnapshot: (
+    reason?: SnapshotReason,
+    options?: { immediate?: boolean },
+  ) => void;
   queueRefreshAllSubscriptions: (
     manualLinks: string,
   ) => Promise<{ configCount: number; reason?: string }>;

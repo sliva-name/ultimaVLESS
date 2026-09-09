@@ -348,4 +348,86 @@ describe('renderer session view', () => {
     expect(electronApi.setSelectedServerId).not.toHaveBeenCalled();
     expect(result.current.selectedServer?.uuid).toBe(serverA.uuid);
   });
+
+  it('applies a runtime snapshot patch without replacing the server list', async () => {
+    const server = makeServer({ uuid: 'live' });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [server],
+        selectedServerId: server.uuid,
+      }),
+    );
+    installElectronApiMock(electronApi);
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.selectedServer?.uuid).toBe(server.uuid),
+    );
+
+    act(() => {
+      electronApi.emitAppSnapshotPatch({
+        traffic: {
+          uploadBytes: 8,
+          downloadBytes: 16,
+          uploadBps: 1,
+          downloadBps: 2,
+          sessionDurationMs: 1000,
+          connectedAt: 1,
+          sampledAt: 2,
+        },
+        process: {
+          state: 'running',
+          ready: true,
+          xrayRunning: true,
+          lastStartAt: 1,
+          lastReadyAt: 2,
+          lastReadinessCheckAt: 3,
+          localProxyReachable: true,
+          lastFailureAt: null,
+          lastFailureReason: null,
+          lastReadinessError: null,
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.snapshot.traffic?.downloadBytes).toBe(16);
+    });
+    expect(result.current.snapshot.servers[0]?.uuid).toBe(server.uuid);
+    expect(result.current.snapshot.process.state).toBe('running');
+  });
+
+  it('skips a redundant getAppSnapshot after ping-all if a push already landed', async () => {
+    const server = makeServer({ uuid: 'ping-1', ping: null });
+    const electronApi = createElectronApiMock();
+    const initial = makeAppSnapshot({
+      servers: [server],
+      selectedServerId: server.uuid,
+    });
+    electronApi.getAppSnapshot.mockResolvedValue(initial);
+    electronApi.pingAllServers.mockImplementation(async () => {
+      electronApi.emitAppSnapshotChanged(
+        makeAppSnapshot({
+          servers: [{ ...server, ping: 42, pingTime: 9 }],
+          selectedServerId: server.uuid,
+        }),
+      );
+      return [{ uuid: server.uuid, latency: 42 }];
+    });
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.selectedServer?.uuid).toBe(server.uuid),
+    );
+    const callsAfterHydrate = electronApi.getAppSnapshot.mock.calls.length;
+
+    await act(async () => {
+      await result.current.pingAllServers();
+    });
+
+    expect(electronApi.pingAllServers).toHaveBeenCalledWith(true);
+    expect(electronApi.getAppSnapshot.mock.calls.length).toBe(callsAfterHydrate);
+    expect(result.current.snapshot.servers[0]?.ping).toBe(42);
+  });
 });
