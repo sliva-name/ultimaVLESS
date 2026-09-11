@@ -38,7 +38,11 @@ export async function probeTlsHandshake(
   port: number,
   sni: string,
   timeoutMs: number = 4000,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) {
+    return false;
+  }
   return new Promise((resolve) => {
     let settled = false;
     const normalizedSni = sni.trim();
@@ -52,9 +56,12 @@ export async function probeTlsHandshake(
       connectOptions.servername = normalizedSni;
     }
 
+    const onAbort = () => finish(false);
+
     const finish = (result: boolean) => {
       if (settled) return;
       settled = true;
+      signal?.removeEventListener('abort', onAbort);
       try {
         socket.destroy();
       } catch {
@@ -65,6 +72,7 @@ export async function probeTlsHandshake(
 
     const socket = tls.connect(connectOptions);
 
+    signal?.addEventListener('abort', onAbort, { once: true });
     socket.setTimeout(timeoutMs);
     socket.once('secureConnect', () => finish(true));
     socket.once('error', () => finish(false));

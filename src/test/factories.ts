@@ -52,6 +52,7 @@ export function makeAppSnapshot(
     recovery: makeAppRecoveryStatus(),
     autoSwitchingEnabled: true,
     traffic: null,
+    pingRefreshInProgress: false,
     ...overrides,
   };
 }

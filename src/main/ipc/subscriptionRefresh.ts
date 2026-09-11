@@ -45,6 +45,8 @@ interface SubscriptionRefreshManagerDeps {
     ) => string | null;
   };
   notifyStateChanged?: () => void;
+  /** Fired after a refresh wrote a new catalog to the repository. */
+  onCatalogRefreshed?: () => void;
 }
 
 const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
@@ -260,6 +262,7 @@ export function createSubscriptionRefreshManager(
       }
     }
     notifyStateChanged();
+    deps.onCatalogRefreshed?.();
 
     refreshTimer.end({
       configCount: effectiveConfigs.length,

@@ -317,4 +317,30 @@ describe('ping overlay', () => {
     expect(unique[1]).toMatchObject({ name: 'Netherlands', ping: 41 });
     expect(unique[1]?.uuid).not.toBe(unique[0]?.uuid);
   });
+
+  it('keeps a fresh measurement fresh when the same uuid survives a refresh', () => {
+    const stored = [
+      makeServer({ uuid: 'same', ping: 18, pingTime: 50, pingStale: false }),
+      makeServer({ uuid: 'carried', ping: 25, pingTime: 40, pingStale: true }),
+    ];
+    const refreshed = [
+      makeServer({ uuid: 'same' }),
+      makeServer({ uuid: 'carried' }),
+    ];
+
+    const merged = applyPingOverlay(refreshed, collectPingOverlay(stored));
+
+    // Same uuid = same endpoint and transport: the figure is as good as it was.
+    expect(merged[0]).toMatchObject({
+      ping: 18,
+      pingTime: 50,
+      pingStale: false,
+    });
+    // A last-known value stays last-known until a pass confirms it.
+    expect(merged[1]).toMatchObject({
+      ping: 25,
+      pingTime: 40,
+      pingStale: true,
+    });
+  });
 });

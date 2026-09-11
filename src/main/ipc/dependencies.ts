@@ -24,6 +24,11 @@ import { appUpdaterService } from '@/main/services/AppUpdaterService';
 import { logExportService } from '@/main/services/LogExportService';
 import { mainLocaleService } from '@/main/services/MainLocaleService';
 import { trafficStatsService } from '@/main/services/TrafficStatsService';
+import {
+  createPingRefreshRunner,
+  isPingUnsafePhase,
+  type PingRefreshRunner,
+} from '@/main/runtime/pingRefresh';
 
 export interface IpcDependencies {
   app: {
@@ -52,11 +57,32 @@ export interface IpcDependencies {
   tunRouteService: typeof tunRouteService;
   xrayService: typeof xrayService;
   pingService: typeof pingService;
+  /** Ping-all owner: toolbar runs, unattended runs, in-progress state. */
+  pingRefresh: PingRefreshRunner;
   appRecoveryService: typeof appRecoveryService;
   appUpdaterService: typeof appUpdaterService;
   logExportService: typeof logExportService;
   mainLocaleService: typeof mainLocaleService;
   trafficStatsService: typeof trafficStatsService;
+}
+
+let pingRefreshSingleton: PingRefreshRunner | null = null;
+
+/**
+ * One runner per process: it owns the serial queue and the background retry,
+ * so a window re-creation must not spawn a second, competing instance.
+ */
+export function getPingRefreshRunner(): PingRefreshRunner {
+  pingRefreshSingleton ??= createPingRefreshRunner({
+    store: getServerRepository(),
+    pingService,
+    isUnsafe: () =>
+      isPingUnsafePhase(
+        connectionManager.getPhase(),
+        connectionManager.isBusy(),
+      ),
+  });
+  return pingRefreshSingleton;
 }
 
 export function createIpcDependencies(): IpcDependencies {
@@ -83,6 +109,7 @@ export function createIpcDependencies(): IpcDependencies {
     tunRouteService,
     xrayService,
     pingService,
+    pingRefresh: getPingRefreshRunner(),
     appRecoveryService,
     appUpdaterService,
     logExportService,

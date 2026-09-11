@@ -4,6 +4,7 @@ import { getServerConfigFingerprint } from './serverIdentity';
 export type StoredPing = {
   ping: number | null;
   pingTime: number | undefined;
+  pingStale: boolean | undefined;
 };
 
 export function collectPingOverlay(servers: VlessConfig[]): {
@@ -20,6 +21,7 @@ export function collectPingOverlay(servers: VlessConfig[]): {
     const stored: StoredPing = {
       ping: server.ping ?? null,
       pingTime: server.pingTime,
+      pingStale: server.pingStale,
     };
     byUuid.set(server.uuid, stored);
     const fingerprint = getServerConfigFingerprint(server);
@@ -35,31 +37,44 @@ export function collectPingOverlay(servers: VlessConfig[]): {
 export function lookupStoredPing(
   overlay: ReturnType<typeof collectPingOverlay>,
   server: VlessConfig,
-): StoredPing | undefined {
-  return (
-    overlay.byUuid.get(server.uuid) ??
-    overlay.byFingerprint.get(getServerConfigFingerprint(server))
+): { stored: StoredPing; matchedByUuid: boolean } | undefined {
+  const byUuid = overlay.byUuid.get(server.uuid);
+  if (byUuid) {
+    return { stored: byUuid, matchedByUuid: true };
+  }
+  const byFingerprint = overlay.byFingerprint.get(
+    getServerConfigFingerprint(server),
   );
+  return byFingerprint
+    ? { stored: byFingerprint, matchedByUuid: false }
+    : undefined;
 }
 
 /**
  * Re-applies stored latency onto a refreshed catalog.
  * Identity is uuid, then the full persisted-parameter fingerprint.
+ *
+ * A uuid is a hash of the endpoint and transport parameters, so a uuid match
+ * means the very same server was measured: the figure keeps whatever
+ * freshness it had. A fingerprint-only match survived a uuid rotation and is
+ * flagged as last-known until a pass confirms it.
  */
 export function applyPingOverlay(
   servers: VlessConfig[],
   overlay: ReturnType<typeof collectPingOverlay>,
 ): VlessConfig[] {
   return servers.map((server) => {
-    const stored = lookupStoredPing(overlay, server);
-    if (!stored) {
+    const match = lookupStoredPing(overlay, server);
+    if (!match) {
       return { ...server, ping: null, pingStale: false };
     }
+    const { stored, matchedByUuid } = match;
+    const hasLatency = stored.ping != null;
     return {
       ...server,
       ping: stored.ping,
       pingTime: stored.pingTime,
-      pingStale: stored.ping != null,
+      pingStale: hasLatency && (!matchedByUuid || stored.pingStale === true),
     };
   });
 }

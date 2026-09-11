@@ -54,6 +54,8 @@ export interface AppSnapshot {
   recovery: AppRecoveryStatus;
   autoSwitchingEnabled: boolean;
   traffic: TrafficSnapshot | null;
+  /** A foreground ping-all pass (user or unattended) is probing right now. */
+  pingRefreshInProgress: boolean;
 }
 
 /** Narrow runtime tick — traffic/process only, no catalog. */

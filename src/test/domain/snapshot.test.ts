@@ -50,6 +50,9 @@ function createDeps(overrides: Partial<any> = {}) {
     trafficStatsService: {
       getLastSnapshot: vi.fn(() => null),
     },
+    pingRefresh: {
+      isRunning: vi.fn(() => false),
+    },
     ...overrides,
   };
 }

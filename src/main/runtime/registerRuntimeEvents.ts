@@ -108,6 +108,14 @@ export function registerRuntimeEvents({
   deps.connectionManager.on('phase-changed', (phase: SessionPhase) => {
     snapshotPublisher.push('connection');
     syncTrayAndTrafficForPhase(deps, phase);
+    // Latencies are not probed while a session holds the stack; once it is
+    // released the figures shown are whatever the session started with.
+    deps.pingRefresh.handleSessionPhase(phase);
+  });
+
+  deps.pingRefresh.removeAllListeners('changed');
+  deps.pingRefresh.on('changed', ({ immediate }) => {
+    snapshotPublisher.push('ping', { immediate });
   });
 
   deps.trafficStatsService.removeAllListeners('snapshot');

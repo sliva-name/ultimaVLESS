@@ -8,7 +8,11 @@ import { subscriptionService } from '@/main/services/SubscriptionService';
 import { SnapshotPublisher } from '@/main/runtime/SnapshotPublisher';
 import { createConnectionRecovery } from '@/main/runtime/ConnectionRecovery';
 import { registerRuntimeEvents } from '@/main/runtime/registerRuntimeEvents';
-import { createIpcDependencies, IpcDependencies } from './dependencies';
+import {
+  createIpcDependencies,
+  getPingRefreshRunner,
+  IpcDependencies,
+} from './dependencies';
 import { loadInitialState as loadInitialStateRuntime } from './initialState';
 import { createSubscriptionRefreshManager } from './subscriptionRefresh';
 import { registerHandlers } from './registerHandlers';
@@ -49,6 +53,10 @@ const subscriptionRefreshManager = createSubscriptionRefreshManager({
   subscriptionService,
   connectionManager,
   notifyStateChanged: () => snapshotPublisher?.push('subscriptions'),
+  // Rows added or rotated by a refresh carry no latency yet; measure them
+  // without waiting for the user to press the button.
+  onCatalogRefreshed: () =>
+    getPingRefreshRunner().requestAuto('catalog-changed'),
 });
 
 const {
@@ -109,6 +117,8 @@ export async function loadInitialState(window: BrowserWindow): Promise<void> {
       restartAutoRefreshTimer,
       attemptPendingTunReconnect: () =>
         sessionRecovery.attemptPendingTunReconnect(),
+      requestPingRefresh: (trigger) =>
+        getPingRefreshRunner().requestAuto(trigger),
     },
     {
       configService,

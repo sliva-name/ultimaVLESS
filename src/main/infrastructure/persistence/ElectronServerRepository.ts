@@ -102,18 +102,41 @@ export function createServerRepository(): ServerRepository {
    */
   let cachedCatalog: VlessConfig[] | null = null;
   let cachedList: VlessConfig[] | null = null;
+  /**
+   * Whatever is on disk when this process starts was measured by a previous
+   * session, possibly hours ago and on another network. Surface it as
+   * last-known until a pass of this session confirms it. Later reads follow
+   * this repository's own writes and are left untouched.
+   */
+  let overlayIsFromPreviousSession = true;
 
   const readCatalog = (): VlessConfig[] => {
     cachedCatalog ??= store.get('servers') || [];
     return cachedCatalog;
   };
 
+  const markCarriedOver = (
+    overlay: Record<string, StoredPing>,
+  ): Record<string, StoredPing> => {
+    const marked: Record<string, StoredPing> = {};
+    for (const [uuid, stored] of Object.entries(overlay)) {
+      marked[uuid] =
+        stored.ping != null ? { ...stored, pingStale: true } : stored;
+    }
+    return marked;
+  };
+
   const readOverlay = (): Record<string, StoredPing> => {
     const stored = store.get('serverPings') ?? {};
-    if (Object.keys(stored).length > 0) {
-      return stored;
+    const overlay =
+      Object.keys(stored).length > 0
+        ? stored
+        : extractPingOverlay(readCatalog());
+    if (!overlayIsFromPreviousSession) {
+      return overlay;
     }
-    return extractPingOverlay(readCatalog());
+    overlayIsFromPreviousSession = false;
+    return markCarriedOver(overlay);
   };
 
   const readList = (): VlessConfig[] => {
@@ -154,6 +177,7 @@ export function createServerRepository(): ServerRepository {
       logger.info('ServerRepository', 'saveAll', { count: servers.length });
       store.set('servers', catalog);
       store.set('serverPings', overlay);
+      overlayIsFromPreviousSession = false;
       invalidate();
     },
     savePings(overlay: ServerPingOverlay) {
@@ -168,6 +192,7 @@ export function createServerRepository(): ServerRepository {
         count: Object.keys(overlay).length,
       });
       store.set('serverPings', overlay);
+      overlayIsFromPreviousSession = false;
       // Catalog rows are untouched; only the hydrated projection is stale.
       cachedList = null;
     },

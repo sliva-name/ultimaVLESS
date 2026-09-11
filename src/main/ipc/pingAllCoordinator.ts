@@ -1,5 +1,4 @@
 import type { VlessConfig } from '@/shared/types';
-import { catalogListFingerprint } from '@/shared/serverIdentity';
 import type { ServerPingOverlay } from '@/main/domain/server/ServerRepository';
 import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 
@@ -24,13 +23,25 @@ export interface PingAllCoordinatorOptions {
   batchSize?: number;
 }
 
+/**
+ * Applies measured latencies onto the *current* catalog by uuid. A uuid is a
+ * stable hash of the endpoint and its transport parameters, so a result stays
+ * valid even if the catalog was refreshed mid-run; rows that vanished are
+ * simply skipped. With `onlyMissing` a row keeps a latency it already has —
+ * used by background retries so a slow late answer never overwrites a fresher
+ * measurement.
+ */
 export function mergePingResults(
   servers: VlessConfig[],
   results: Map<string, number | null>,
   pingTime: number,
+  options: { onlyMissing?: boolean } = {},
 ): VlessConfig[] {
   return servers.map((server) => {
     if (!results.has(server.uuid)) {
+      return server;
+    }
+    if (options.onlyMissing && server.ping != null) {
       return server;
     }
     return {
@@ -61,20 +72,26 @@ export function extractPingOverlay(servers: VlessConfig[]): ServerPingOverlay {
   return overlay;
 }
 
-export interface PingAllRun {
-  readonly generation: number;
-  readonly startedCatalog: string;
+/** Incremental sink: batches results, debounces persist, flushes on demand. */
+export interface PingResultSink {
   onResult(uuid: string, latency: number | null): void;
   persist(
     results: Map<string, number | null>,
     options?: { immediate?: boolean },
   ): VlessConfig[];
   flushPartials(): void;
+}
+
+export interface PingAllRun extends PingResultSink {
+  readonly generation: number;
   isCurrent(): boolean;
 }
 
 export interface PingAllCoordinator {
-  beginRun(servers: VlessConfig[]): PingAllRun;
+  /** A first pass over the catalog; supersedes any earlier run. */
+  beginRun(): PingAllRun;
+  /** A background fill that only writes rows still lacking a latency. */
+  beginFill(): PingResultSink;
   get generation(): number;
 }
 
@@ -87,22 +104,20 @@ export function createPingAllCoordinator(
   const now = options.now ?? Date.now;
 
   const persistResults = (
-    runGeneration: number,
-    startedCatalog: string,
     results: Map<string, number | null>,
     immediate: boolean,
+    guard: { isCurrent: () => boolean; onlyMissing: boolean },
   ): VlessConfig[] => {
     const latest = options.store.list();
-    if (runGeneration !== generation) {
-      return latest;
-    }
-    if (catalogListFingerprint(latest) !== startedCatalog) {
+    if (!guard.isCurrent()) {
       return latest;
     }
     if (options.isUnsafe()) {
       return latest;
     }
-    const merged = mergePingResults(latest, results, now());
+    const merged = mergePingResults(latest, results, now(), {
+      onlyMissing: guard.onlyMissing,
+    });
     if (options.store.savePings) {
       options.store.savePings(extractPingOverlay(merged));
     } else {
@@ -112,81 +127,86 @@ export function createPingAllCoordinator(
     return merged;
   };
 
+  const createSink = (guard: {
+    isCurrent: () => boolean;
+    onlyMissing: boolean;
+  }): PingResultSink => {
+    const incrementalResults = new Map<string, number | null>();
+    let resultsSinceSchedule = 0;
+    let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearTimer = (): void => {
+      if (persistTimer !== null) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
+    };
+
+    const persistIncremental = (immediate: boolean): VlessConfig[] => {
+      clearTimer();
+      resultsSinceSchedule = 0;
+      if (incrementalResults.size === 0) {
+        return options.store.list();
+      }
+      return persistResults(incrementalResults, immediate, guard);
+    };
+
+    const schedulePartial = (): void => {
+      if (persistTimer !== null) {
+        return;
+      }
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        persistIncremental(false);
+      }, debounceMs);
+    };
+
+    return {
+      onResult(uuid, latency) {
+        if (!guard.isCurrent()) {
+          return;
+        }
+        incrementalResults.set(uuid, latency);
+        resultsSinceSchedule += 1;
+        if (resultsSinceSchedule >= batchSize) {
+          persistIncremental(false);
+          return;
+        }
+        schedulePartial();
+      },
+      persist(results, persistOptions) {
+        clearTimer();
+        resultsSinceSchedule = 0;
+        for (const [uuid, latency] of results) {
+          incrementalResults.set(uuid, latency);
+        }
+        return persistResults(
+          incrementalResults,
+          persistOptions?.immediate ?? true,
+          guard,
+        );
+      },
+      flushPartials() {
+        persistIncremental(false);
+      },
+    };
+  };
+
   return {
     get generation() {
       return generation;
     },
-    beginRun(servers: VlessConfig[]): PingAllRun {
+    beginRun(): PingAllRun {
       const runGeneration = ++generation;
-      const startedCatalog = catalogListFingerprint(servers);
-      const incrementalResults = new Map<string, number | null>();
-      let resultsSinceSchedule = 0;
-      let persistTimer: ReturnType<typeof setTimeout> | null = null;
-
-      const clearTimer = (): void => {
-        if (persistTimer !== null) {
-          clearTimeout(persistTimer);
-          persistTimer = null;
-        }
-      };
-
-      const persistIncremental = (immediate: boolean): VlessConfig[] => {
-        clearTimer();
-        resultsSinceSchedule = 0;
-        if (incrementalResults.size === 0) {
-          return options.store.list();
-        }
-        return persistResults(
-          runGeneration,
-          startedCatalog,
-          incrementalResults,
-          immediate,
-        );
-      };
-
-      const schedulePartial = (): void => {
-        if (persistTimer !== null) {
-          return;
-        }
-        persistTimer = setTimeout(() => {
-          persistTimer = null;
-          persistIncremental(false);
-        }, debounceMs);
-      };
-
+      const isCurrent = () => runGeneration === generation;
       return {
         generation: runGeneration,
-        startedCatalog,
-        isCurrent: () => runGeneration === generation,
-        onResult(uuid: string, latency: number | null) {
-          if (runGeneration !== generation) {
-            return;
-          }
-          incrementalResults.set(uuid, latency);
-          resultsSinceSchedule += 1;
-          if (resultsSinceSchedule >= batchSize) {
-            persistIncremental(false);
-            return;
-          }
-          schedulePartial();
-        },
-        persist(results, persistOptions) {
-          clearTimer();
-          resultsSinceSchedule = 0;
-          for (const [uuid, latency] of results) {
-            incrementalResults.set(uuid, latency);
-          }
-          return persistResults(
-            runGeneration,
-            startedCatalog,
-            incrementalResults,
-            persistOptions?.immediate ?? true,
-          );
-        },
-        flushPartials() {
-          persistIncremental(false);
-        },
+        isCurrent,
+        ...createSink({ isCurrent, onlyMissing: false }),
       };
+    },
+    beginFill(): PingResultSink {
+      return createSink({ isCurrent: () => true, onlyMissing: true });
     },
   };
 }

@@ -2,11 +2,18 @@ import { BrowserWindow } from 'electron';
 import { logger } from '@/main/services/LoggerService';
 import { PerfTimer } from '@/shared/perfMetrics';
 import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
+import type { PingAutoTrigger } from '@/main/runtime/pingRefresh';
 import { isElevatedRelaunch } from '@/main/runtime/launchArgs';
 import { IpcDependencies } from './dependencies';
 
 /** Defer subscription refresh slightly so first paint is not blocked. */
 const SUBSCRIPTION_REFRESH_DEFER_MS = 800;
+/**
+ * The startup ping follows the initial catalog refresh so new rows are
+ * measured once, not twice. A slow or hung refresh must not leave the list
+ * showing last-session figures indefinitely, hence the cap.
+ */
+export const STARTUP_PING_MAX_WAIT_MS = 6000;
 
 interface InitialStateDeps {
   configService: IpcDependencies['configService'];
@@ -26,6 +33,7 @@ interface InitialStateActions {
   reportSubscriptionRefreshIssue: (reason: string) => void;
   restartAutoRefreshTimer: () => void;
   attemptPendingTunReconnect: () => Promise<boolean>;
+  requestPingRefresh: (trigger: PingAutoTrigger) => void;
 }
 
 type RefreshResult = {
@@ -77,10 +85,20 @@ export async function loadInitialState(
     logger.error('IPC', 'Pending TUN reconnect failed', error);
   });
 
+  // A resumed session owns the network stack, so the startup measurement is
+  // pointless; the runner re-measures when that session ends.
+  let startupPingRequested = pendingTunReconnect;
+  const requestStartupPing = (): void => {
+    if (startupPingRequested) return;
+    startupPingRequested = true;
+    actions.requestPingRefresh('startup');
+  };
+
   const hasInput = subscriptions.some((s) => s.enabled) || !!manualLinks.trim();
   if (!hasInput) {
     logger.info('IPC', 'No enabled subscriptions or manual links saved');
     deps.stopAutoRefreshTimer();
+    setTimeout(requestStartupPing, SUBSCRIPTION_REFRESH_DEFER_MS);
     return;
   }
 
@@ -107,6 +125,8 @@ export async function loadInitialState(
       actions.reportSubscriptionRefreshIssue(
         error instanceof Error ? error.message : String(error),
       );
+    } finally {
+      requestStartupPing();
     }
   };
 
@@ -115,5 +135,6 @@ export async function loadInitialState(
   setTimeout(() => {
     void runRefresh();
   }, SUBSCRIPTION_REFRESH_DEFER_MS);
+  setTimeout(requestStartupPing, STARTUP_PING_MAX_WAIT_MS);
   actions.restartAutoRefreshTimer();
 }

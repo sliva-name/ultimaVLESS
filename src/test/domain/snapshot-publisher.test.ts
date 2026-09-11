@@ -56,6 +56,9 @@ function createPublisherDeps(overrides: Partial<any> = {}) {
         sampledAt: 2,
       })),
     },
+    pingRefresh: {
+      isRunning: vi.fn(() => false),
+    },
     ...overrides,
   };
 }

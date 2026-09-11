@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadInitialState } from '@/main/ipc/initialState';
+import {
+  loadInitialState,
+  STARTUP_PING_MAX_WAIT_MS,
+} from '@/main/ipc/initialState';
 import { makeSubscription } from '@/test/factories';
 
 function createHarness(
@@ -30,6 +33,9 @@ function createHarness(
     attemptPendingTunReconnect: vi.fn(async () => {
       calls.push('reconnect');
       return true;
+    }),
+    requestPingRefresh: vi.fn(() => {
+      calls.push('ping');
     }),
   };
   const deps = {
@@ -120,5 +126,80 @@ describe('loadInitialState', () => {
       loadInitialState({} as any, actions, deps as any),
     ).resolves.toBeUndefined();
     await vi.advanceTimersByTimeAsync(0);
+  });
+
+  describe('startup ping', () => {
+    it('measures the catalog once the initial refresh has settled', async () => {
+      const { actions, deps, calls, finishRefresh } = createHarness();
+
+      await loadInitialState({} as any, actions, deps as any);
+      await vi.advanceTimersByTimeAsync(800);
+      expect(actions.requestPingRefresh).not.toHaveBeenCalled();
+
+      finishRefresh();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(actions.requestPingRefresh).toHaveBeenCalledWith('startup');
+      expect(calls).toEqual(['reconnect', 'refresh', 'ping']);
+
+      // The cap must not request a second pass later.
+      await vi.advanceTimersByTimeAsync(STARTUP_PING_MAX_WAIT_MS);
+      expect(actions.requestPingRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('still measures when the refresh fails', async () => {
+      const { actions, deps } = createHarness();
+      actions.queueRefreshAllSubscriptions.mockRejectedValue(
+        new Error('offline'),
+      );
+
+      await loadInitialState({} as any, actions, deps as any);
+      await vi.advanceTimersByTimeAsync(800);
+
+      expect(actions.reportSubscriptionRefreshIssue).toHaveBeenCalledWith(
+        'offline',
+      );
+      expect(actions.requestPingRefresh).toHaveBeenCalledWith('startup');
+    });
+
+    it('does not wait forever for a hung refresh', async () => {
+      const { actions, deps, finishRefresh } = createHarness();
+
+      await loadInitialState({} as any, actions, deps as any);
+      await vi.advanceTimersByTimeAsync(STARTUP_PING_MAX_WAIT_MS - 1);
+      expect(actions.requestPingRefresh).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(actions.requestPingRefresh).toHaveBeenCalledTimes(1);
+
+      // Late settle: the catalog-changed hook handles new rows, not this path.
+      finishRefresh();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(actions.requestPingRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('measures shortly after load when there is nothing to refresh', async () => {
+      const { actions, deps } = createHarness({
+        subscriptions: [makeSubscription({ enabled: false })],
+      });
+
+      await loadInitialState({} as any, actions, deps as any);
+      expect(actions.requestPingRefresh).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(800);
+      expect(actions.requestPingRefresh).toHaveBeenCalledWith('startup');
+    });
+
+    it('leaves a resumed TUN session alone', async () => {
+      const { actions, deps, finishRefresh } = createHarness({
+        pendingTunReconnect: true,
+      });
+
+      await loadInitialState({} as any, actions, deps as any);
+      await vi.advanceTimersByTimeAsync(800);
+      finishRefresh();
+      await vi.advanceTimersByTimeAsync(STARTUP_PING_MAX_WAIT_MS);
+
+      expect(actions.requestPingRefresh).not.toHaveBeenCalled();
+    });
   });
 });

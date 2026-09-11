@@ -55,9 +55,7 @@ export function registerHandlers({
 
   registerPingHandlers({
     deps,
-    notifySnapshot,
     assertTrustedSender,
-    isConnectionBusy: () => deps.connectionManager.isBusy(),
   });
 
   registerDiagnosticsHandlers({

@@ -63,6 +63,7 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   },
   autoSwitchingEnabled: true,
   traffic: null,
+  pingRefreshInProgress: false,
 };
 
 interface AppSnapshotContextValue {
@@ -83,7 +84,11 @@ const AppSnapshotContext = createContext<AppSnapshotContextValue | null>(null);
 export function AppSnapshotProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(EMPTY_SNAPSHOT);
   const [clientError, setClientError] = useState<string | null>(null);
-  const [isRefreshingPings, setIsRefreshingPings] = useState(false);
+  // Local flag covers the IPC round trip of a button press; main reports
+  // unattended passes (startup, catalog refresh, disconnect) via the snapshot.
+  const [isPingRequestInFlight, setIsPingRequestInFlight] = useState(false);
+  const isRefreshingPings =
+    isPingRequestInFlight || snapshot.pingRefreshInProgress;
   const pingRefreshInFlightRef = useRef(false);
   // Optimistic server selection that hasn't been confirmed by main yet.
   // Incoming snapshots (ping/traffic pushes, refreshes) may still carry the
@@ -222,7 +227,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       return;
     }
     pingRefreshInFlightRef.current = true;
-    setIsRefreshingPings(true);
+    setIsPingRequestInFlight(true);
     try {
       const epoch = snapshotEpochRef.current;
       await window.electronAPI.pingAllServers(true);
@@ -235,7 +240,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       setClientError('Failed to refresh server latency');
     } finally {
       pingRefreshInFlightRef.current = false;
-      setIsRefreshingPings(false);
+      setIsPingRequestInFlight(false);
     }
   }, [isConnected, isConnectionBusy, refreshSnapshot]);
 
