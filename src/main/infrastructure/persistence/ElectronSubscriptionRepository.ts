@@ -6,13 +6,25 @@ import type { SubscriptionRepository } from '@/main/domain/subscription/Subscrip
 
 export function createSubscriptionRepository(): SubscriptionRepository {
   const store = getAppStore();
+  // `electron-store` re-reads the whole file per `get()`; this repository is
+  // the only in-process writer of these keys, so a write-through cache is safe.
+  let cachedSubscriptions: Subscription[] | null = null;
+  let cachedManualLinks: string | null = null;
 
-  const list = (): Subscription[] => store.get('subscriptions') || [];
+  const list = (): Subscription[] => {
+    cachedSubscriptions ??= store.get('subscriptions') || [];
+    return [...cachedSubscriptions];
+  };
+
+  const persist = (subscriptions: Subscription[]): void => {
+    store.set('subscriptions', subscriptions);
+    cachedSubscriptions = subscriptions;
+  };
 
   return {
     list,
     saveAll(subscriptions: Subscription[]) {
-      store.set('subscriptions', subscriptions);
+      persist([...subscriptions]);
     },
     add(data) {
       const sub: Subscription = {
@@ -21,7 +33,7 @@ export function createSubscriptionRepository(): SubscriptionRepository {
         url: data.url,
         enabled: data.enabled ?? true,
       };
-      store.set('subscriptions', [...list(), sub]);
+      persist([...list(), sub]);
       logger.info('SubscriptionRepository', 'add', {
         id: sub.id,
         name: sub.name,
@@ -32,7 +44,7 @@ export function createSubscriptionRepository(): SubscriptionRepository {
       const existing = list();
       const filtered = existing.filter((sub) => sub.id !== id);
       if (filtered.length === existing.length) return false;
-      store.set('subscriptions', filtered);
+      persist(filtered);
       logger.info('SubscriptionRepository', 'remove', { id });
       return true;
     },
@@ -43,15 +55,17 @@ export function createSubscriptionRepository(): SubscriptionRepository {
       const updated: Subscription = { ...existing[index], ...patch };
       const next = [...existing];
       next[index] = updated;
-      store.set('subscriptions', next);
+      persist(next);
       logger.info('SubscriptionRepository', 'update', { id });
       return updated;
     },
     getManualLinks() {
-      return store.get('manualLinksInput') || '';
+      cachedManualLinks ??= store.get('manualLinksInput') || '';
+      return cachedManualLinks;
     },
     setManualLinks(value: string) {
       store.set('manualLinksInput', value);
+      cachedManualLinks = value;
     },
   };
 }

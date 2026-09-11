@@ -1,5 +1,6 @@
 import { decode, isValid } from 'js-base64';
 import dns from 'dns';
+import { APP_CONSTANTS } from '@/shared/constants';
 import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { parseJsonConfigs } from './subscription/jsonParsing';
@@ -74,7 +75,8 @@ function isPrivateOrLoopbackHost(hostname: string): boolean {
 
 export class SubscriptionService {
   private static readonly MAX_RESPONSE_BODY_LENGTH = 5_000_000;
-  private static readonly FETCH_TIMEOUT_MS = 30_000;
+  private static readonly FETCH_TIMEOUT_MS =
+    APP_CONSTANTS.TIMEOUTS.SUBSCRIPTION_FETCH;
   private static readonly MAX_REDIRECTS = 5;
 
   public extractSupportedLinksFromText(input: string): string[] {

@@ -23,6 +23,8 @@ export class LogExportService {
    * @returns {Promise<string>} Combined log content.
    */
   public async getExportableLogs(): Promise<string> {
+    // Make sure everything logged so far is on disk before reading it back.
+    await logger.flush();
     const appLogPath = logger.getLogPath();
     const userDataPath = app.getPath('userData');
     const xrayLogPath = path.join(userDataPath, 'xray.log');

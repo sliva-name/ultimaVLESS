@@ -8,7 +8,7 @@ import {
 } from '@/shared/tunRouting';
 import { logger } from './LoggerService';
 import { configService } from './ConfigService';
-import { getServerRepository } from '@/main/infrastructure/persistence/ElectronServerRepository';
+import { isElevatedOnWindows } from './PrivilegeService';
 import {
   DefaultRouteInfo,
   DEFAULT_ROUTE_ADD_RETRIES,
@@ -20,19 +20,13 @@ import {
   ENABLE_TIMEOUT,
   SYSTEM_DNS_TIMEOUT,
   STALE_ROUTE_CLEANUP_TIMEOUT,
-  TUN_IPV6_NEXTHOP,
-  TUN_NEXTHOP,
   TUN_ROUTE_METRIC,
   TUN_WAIT_TIMEOUT,
 } from './tunRoute/constants';
 import {
-  deleteHostRoutesByPrefixesAndMetricScript,
-  deleteRouteByPrefixAndMetricScript,
-  deleteRouteScript,
-  deleteTunDefaultRoutesByNextHopScript,
+  cleanupTunRoutesScript,
   enableTunRoutingScript,
   getDefaultRouteScript,
-  getTunInterfaceIndexScript,
   reapplyHostRoutesScript,
   waitForTunInterfaceScript,
 } from './tunRoute/windowsScripts';
@@ -48,6 +42,12 @@ import {
   createPlatformTunAdapter,
   PlatformTunAdapter,
 } from './tunRoute/platformAdapter';
+import {
+  createFileTunRouteStateStore,
+  createMemoryTunRouteStateStore,
+  type TunRouteState,
+  type TunRouteStateStore,
+} from './tunRoute/routeStateStore';
 
 export interface TunRoutingPlan {
   defaultRoute: DefaultRouteInfo;
@@ -63,6 +63,13 @@ export interface PrepareRoutingPlanOptions {
   awaitStableDefaultRoute?: boolean;
 }
 
+export interface TunRouteServiceOptions {
+  /** Where the current session's route bookkeeping is persisted for crash recovery. */
+  stateStore?: TunRouteStateStore;
+  /** Route mutation needs Administrator rights on Windows. */
+  isElevated?: () => Promise<boolean>;
+}
+
 interface AddedRoute {
   destination: string;
   mask: string;
@@ -70,23 +77,54 @@ interface AddedRoute {
   prefix?: string;
 }
 
-interface StaleRouteCleanupOptions {
-  includeKnownServerHostRoutes?: boolean;
+export interface DisableOptions {
+  /**
+   * Extra proxy host prefixes to sweep even though no `HOST_CREATED` marker was
+   * recorded for them — the rollback path after an enable that failed before
+   * its bookkeeping came back.
+   */
+  sweepHostPrefixes?: string[];
+  /** Also sweep the TUN default routes even if none were recorded (rollback). */
+  sweepDefaultRoutes?: boolean;
 }
+
+interface RemoveTunRoutesParams {
+  hostPrefixes: string[];
+  removeDefaultRoutes: boolean;
+  tunInterfaceIndex: number | null;
+  timeoutMs?: number;
+}
+
+const HOST_ROUTE_METRIC = 1;
 
 /**
  * Coordinates TUN-mode routing. Windows performs explicit OS-level route
  * manipulation through PowerShell; Linux/macOS defer to Xray's auto-route
  * behaviour and only probe the current default route for diagnostics.
+ *
+ * Every Windows route we create is recorded in memory (for teardown) and
+ * persisted through {@link TunRouteStateStore} (for recovery after a crash).
+ * Teardown and recovery both run a single PowerShell process.
  */
 export class TunRouteService {
   private addedRoutes: AddedRoute[] = [];
   /** Default route used by the last successful enable; lets resume recovery detect gateway changes. */
   private lastDefaultRoute: DefaultRouteInfo | null = null;
   private readonly platformAdapter: PlatformTunAdapter;
+  private readonly stateStore: TunRouteStateStore;
+  private readonly isElevated: () => Promise<boolean>;
 
-  constructor(private readonly platform: NodeJS.Platform = process.platform) {
+  constructor(
+    private readonly platform: NodeJS.Platform = process.platform,
+    options: TunRouteServiceOptions = {},
+  ) {
     this.platformAdapter = createPlatformTunAdapter(platform);
+    this.stateStore =
+      options.stateStore ??
+      (platform === 'win32'
+        ? createFileTunRouteStateStore()
+        : createMemoryTunRouteStateStore());
+    this.isElevated = options.isElevated ?? isElevatedOnWindows;
   }
 
   public isSupported(): boolean {
@@ -163,7 +201,7 @@ export class TunRouteService {
         defaultRouteInterfaceIndex: defaultRoute.interfaceIndex,
         gateway: defaultRoute.gateway,
         proxyHostPrefixes: prefixes,
-        hostRouteMetric: 1,
+        hostRouteMetric: HOST_ROUTE_METRIC,
       }),
     );
     const hostFailures: string[] = [];
@@ -182,6 +220,7 @@ export class TunRouteService {
       }
     }
     this.lastDefaultRoute = defaultRoute;
+    this.persistState();
     if (hostFailures.length > 0) {
       throw new Error(
         `Failed to pin proxy host route(s) to the physical gateway: ${hostFailures.join('; ')}`,
@@ -211,12 +250,14 @@ export class TunRouteService {
 
     const startedAt = Date.now();
     const deadline = startedAt + ENABLE_TIMEOUT;
+    let plannedHostPrefixes: string[] = [];
     try {
       const [routingPlan, tunInterfaceIndex] = await Promise.all([
         plan ? Promise.resolve(plan) : this.prepareRoutingPlan(config),
         this.waitForTunInterface(),
       ]);
       const { defaultRoute, proxyIps } = routingPlan;
+      plannedHostPrefixes = proxyIps.map((ip) => this.hostPrefixForIp(ip));
       this.ensureWithinDeadline(deadline, 'initial discovery');
       logger.info('TunRouteService', 'Discovery completed', {
         hasDefaultRoute: true,
@@ -234,7 +275,11 @@ export class TunRouteService {
       // All Windows route mutations (stale cleanup, TUN address/DNS, proxy host
       // routes, and the TUN default route) run in a single PowerShell process
       // to avoid paying the per-spawn startup cost for each step.
-      await this.applyWindowsTunRouting(defaultRoute, proxyIps, tunInterfaceIndex);
+      await this.applyWindowsTunRouting(
+        defaultRoute,
+        plannedHostPrefixes,
+        tunInterfaceIndex,
+      );
 
       logger.info('TunRouteService', 'TUN routing enabled', {
         proxyIps,
@@ -243,17 +288,24 @@ export class TunRouteService {
         setupDurationMs: Date.now() - startedAt,
       });
     } catch (error) {
-      // Full rollback: the enable script may have created host routes before
-      // failing (DEFAULT_FAIL / HOST_FAIL exits without bookkeeping), so the
-      // cleanup must also sweep known-server /32 host routes.
-      await this.disable({ includeKnownServerHostRoutes: true });
+      // Full rollback. The enable script may have created host routes or the
+      // default routes before failing without returning its bookkeeping (a
+      // terminating PowerShell error loses stdout), so the sweep covers every
+      // prefix we *planned* to add — no need to guess from DNS.
+      await this.disable({
+        sweepHostPrefixes: plannedHostPrefixes,
+        sweepDefaultRoutes: true,
+      });
       throw error;
     }
   }
 
-  public async disable(
-    cleanupOptions: StaleRouteCleanupOptions = {},
-  ): Promise<void> {
+  /**
+   * Removes every route this session created. Runs at most one PowerShell
+   * process, and none when nothing was created (a clean first connect used to
+   * pay for three).
+   */
+  public async disable(options: DisableOptions = {}): Promise<void> {
     if (this.platform !== 'win32') {
       logger.info(
         'TunRouteService',
@@ -266,78 +318,91 @@ export class TunRouteService {
       return;
     }
 
-    // Host routes are pinned for both PowerShell and Xray auto-route modes.
-    // Prefer one PowerShell batch over N sequential deletes.
-    const hostPrefixes = this.addedRoutes
+    const trackedHostPrefixes = this.addedRoutes
       .map((route) => route.prefix)
-      .filter((prefix): prefix is string => Boolean(prefix));
-    if (hostPrefixes.length > 0) {
-      try {
-        await this.deleteHostRoutesByPrefixesAndMetric(hostPrefixes, 1);
-      } catch (error) {
-        logger.warn('TunRouteService', 'Batch host-route removal failed', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        for (const route of [...this.addedRoutes].reverse()) {
-          try {
-            await this.deleteRoute(route);
-          } catch (deleteError) {
-            logger.warn('TunRouteService', 'Failed to remove route', {
-              destination: route.destination,
-              error:
-                deleteError instanceof Error
-                  ? deleteError.message
-                  : String(deleteError),
-            });
-          }
-        }
-      }
-    } else {
-      for (const route of [...this.addedRoutes].reverse()) {
-        try {
-          await this.deleteRoute(route);
-        } catch (error) {
-          logger.warn('TunRouteService', 'Failed to remove route', {
-            destination: route.destination,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    }
+      .filter(
+        (prefix): prefix is string => Boolean(prefix) && prefix !== '::/0',
+      );
+    const hostPrefixes = [
+      ...new Set([
+        ...trackedHostPrefixes,
+        ...(options.sweepHostPrefixes ?? []),
+      ]),
+    ];
+    const trackedDefaultRoute = this.addedRoutes.find(
+      (route) => route.destination === '0.0.0.0' || route.prefix === '::/0',
+    );
+    const removeDefaultRoutes =
+      trackedDefaultRoute !== undefined ||
+      (options.sweepDefaultRoutes === true &&
+        this.usesWindowsPowerShellRouting());
+
     this.addedRoutes = [];
     this.lastDefaultRoute = null;
 
-    if (!this.usesWindowsPowerShellRouting()) {
-      // Tracked host routes already removed above. Skip the full stale sweep —
-      // it costs another PowerShell process and is not needed for a clean
-      // disconnect (next connect re-pins the same /32s if anything lingered).
-      logger.info('TunRouteService', 'TUN host routes cleared (Xray auto-route)');
+    if (hostPrefixes.length === 0 && !removeDefaultRoutes) {
+      this.stateStore.clear();
+      logger.info('TunRouteService', 'No TUN routes to remove');
       return;
     }
 
     try {
-      await this.cleanupStaleTunRoutes(cleanupOptions);
+      await this.removeTunRoutes({
+        hostPrefixes,
+        removeDefaultRoutes,
+        tunInterfaceIndex: trackedDefaultRoute?.interfaceIndex ?? null,
+      });
+      this.stateStore.clear();
+      logger.info('TunRouteService', 'TUN routing disabled', {
+        hostPrefixes,
+        removedDefaultRoutes: removeDefaultRoutes,
+      });
     } catch (error) {
-      logger.warn('TunRouteService', 'Stale route cleanup failed', {
+      // Keep the persisted state: the next elevated start retries the removal.
+      logger.warn('TunRouteService', 'TUN route removal failed', {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    logger.info('TunRouteService', 'TUN routing disabled');
   }
 
   /**
-   * Removes orphaned TUN default/host routes left behind by a previous
-   * crashed or hard-killed session. Intended to be called once at app
-   * startup. Always runs on Windows: host /32 pins are created in both
-   * PowerShell and Xray auto-route modes, so gating recovery on the current
-   * routing preference would leave stale gateway pins after a crash.
+   * Undoes routes left behind by a previous crashed or hard-killed session,
+   * using the bookkeeping that session persisted. Intended to run once at app
+   * startup, after the window is up. No-op when nothing was persisted; skipped
+   * (and left for the elevated instance) when this process lacks the rights to
+   * remove routes, because `Remove-NetRoute` silently fails without them.
    */
   public async recoverOrphanedRoutes(): Promise<void> {
     if (this.platform !== 'win32') {
       return;
     }
+    const state = this.stateStore.read();
+    if (!state) {
+      return;
+    }
+    if (!(await this.isElevated())) {
+      logger.info(
+        'TunRouteService',
+        'Orphaned TUN routes found; removal deferred to an elevated instance',
+        {
+          hostPrefixCount: state.hostPrefixes.length,
+          defaultRoutes: state.defaultRoutes,
+        },
+      );
+      return;
+    }
     try {
-      await this.cleanupStaleTunRoutes({ includeKnownServerHostRoutes: true });
+      await this.removeTunRoutes({
+        hostPrefixes: state.hostPrefixes,
+        removeDefaultRoutes: state.defaultRoutes,
+        tunInterfaceIndex: state.tunInterfaceIndex,
+        timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT,
+      });
+      this.stateStore.clear();
+      logger.info('TunRouteService', 'Recovered orphaned TUN routes', {
+        hostPrefixes: state.hostPrefixes,
+        defaultRoutes: state.defaultRoutes,
+      });
     } catch (error) {
       logger.warn('TunRouteService', 'Orphaned route recovery failed', {
         error: error instanceof Error ? error.message : String(error),
@@ -383,7 +448,7 @@ export class TunRouteService {
           defaultRouteInterfaceIndex: currentRoute.interfaceIndex,
           gateway: currentRoute.gateway,
           proxyHostPrefixes: prefixes,
-          hostRouteMetric: 1,
+          hostRouteMetric: HOST_ROUTE_METRIC,
         }),
       );
       for (const line of output.split(/\r?\n/)) {
@@ -400,6 +465,7 @@ export class TunRouteService {
         route.interfaceIndex = currentRoute.interfaceIndex;
       }
       this.lastDefaultRoute = currentRoute;
+      this.persistState();
       logger.info('TunRouteService', 'Re-pinned host routes after resume', {
         gateway: currentRoute.gateway,
         interfaceIndex: currentRoute.interfaceIndex,
@@ -513,17 +579,6 @@ export class TunRouteService {
     return idx;
   }
 
-  private async getTunInterfaceIndex(
-    options: RunPowerShellOptions = {},
-  ): Promise<number | null> {
-    const out = await this.runPowerShell(getTunInterfaceIndexScript(), {
-      allowNonZeroExit: true,
-      ...options,
-    });
-    const n = parseInt(out.trim(), 10);
-    return Number.isNaN(n) ? null : n;
-  }
-
   // ---- DNS / route arithmetic ----------------------------------------------
 
   private async resolveProxyAddresses(address: string): Promise<string[]> {
@@ -546,36 +601,23 @@ export class TunRouteService {
       // Fall through to public resolvers.
     }
 
-    let timeoutHandle: NodeJS.Timeout | null = null;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutHandle = setTimeout(
-        () => reject(new Error('DNS lookup timeout')),
-        DNS_TIMEOUT,
-      );
-    });
-    try {
-      const resolver = new dns.promises.Resolver();
-      resolver.setServers(['1.1.1.1', '8.8.8.8']);
-      const ipv4 = await Promise.race<string[]>([
-        resolver.resolve4(address).catch(() => []),
-        timeoutPromise,
-      ]);
-      if (ipv4.length > 0) {
-        return [...new Set(ipv4)];
-      }
-      // IPv6-only hosts have no A records; fall back to AAAA.
-      const ipv6 = await Promise.race<string[]>([
-        resolver.resolve6(address).catch(() => []),
-        timeoutPromise,
-      ]);
-      return [...new Set(ipv6)];
-    } catch {
-      return [];
-    } finally {
-      if (timeoutHandle !== null) {
-        clearTimeout(timeoutHandle);
-      }
+    // Each lookup gets its own budget; a shared timer would leave the AAAA
+    // fallback with whatever the A query did not use.
+    const resolver = new dns.promises.Resolver();
+    resolver.setServers(['1.1.1.1', '8.8.8.8']);
+    const ipv4 = await this.withTimeout(
+      resolver.resolve4(address),
+      DNS_TIMEOUT,
+    ).catch((): string[] => []);
+    if (ipv4.length > 0) {
+      return [...new Set(ipv4)];
     }
+    // IPv6-only hosts have no A records; fall back to AAAA.
+    const ipv6 = await this.withTimeout(
+      resolver.resolve6(address),
+      DNS_TIMEOUT,
+    ).catch((): string[] => []);
+    return [...new Set(ipv6)];
   }
 
   private async withTimeout<T>(
@@ -617,12 +659,10 @@ export class TunRouteService {
    */
   private async applyWindowsTunRouting(
     defaultRoute: DefaultRouteInfo,
-    proxyIps: string[],
+    proxyHostPrefixes: string[],
     tunInterfaceIndex: number,
   ): Promise<void> {
-    const proxyHostPrefixes = proxyIps.map((ip) => this.hostPrefixForIp(ip));
-    const dnsServers =
-      configService.getPerformanceSettings().remoteDnsServers;
+    const dnsServers = configService.getPerformanceSettings().remoteDnsServers;
     const output = await this.runPowerShell(
       enableTunRoutingScript({
         tunInterfaceIndex,
@@ -631,27 +671,30 @@ export class TunRouteService {
         proxyHostPrefixes,
         // Proxy host routes keep the original metric 1 so they outrank the TUN
         // default route and let tunnel traffic reach the server via the gateway.
-        hostRouteMetric: 1,
+        hostRouteMetric: HOST_ROUTE_METRIC,
         defaultRouteRetries: DEFAULT_ROUTE_ADD_RETRIES,
         defaultRouteRetryDelayMs: DEFAULT_ROUTE_ADD_RETRY_DELAY_MS,
-        dnsServers:
-          dnsServers.length > 0 ? dnsServers : undefined,
+        dnsServers: dnsServers.length > 0 ? dnsServers : undefined,
       }),
     );
-    this.recordEnabledRoutes(output, defaultRoute.interfaceIndex, tunInterfaceIndex);
+    const markers = this.recordEnabledRoutes(
+      output,
+      defaultRoute.interfaceIndex,
+      tunInterfaceIndex,
+    );
     this.lastDefaultRoute = defaultRoute;
+    this.persistState();
+    if (markers.defaultFailure !== null) {
+      throw new Error(
+        `Failed to add the default route via the TUN interface: ${markers.defaultFailure}`,
+      );
+    }
     // A missing host route means traffic to the VPN server itself would be
     // swallowed by the TUN default route — the tunnel can never connect, so
     // treat HOST_FAIL as fatal (the caller rolls back everything we created).
-    const hostFailures = output
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith('HOST_FAIL|'));
-    if (hostFailures.length > 0) {
+    if (markers.hostFailures.length > 0) {
       throw new Error(
-        `Failed to pin proxy host route(s) to the physical gateway: ${hostFailures
-          .map((line) => line.slice('HOST_FAIL|'.length))
-          .join('; ')}`,
+        `Failed to pin proxy host route(s) to the physical gateway: ${markers.hostFailures.join('; ')}`,
       );
     }
   }
@@ -661,7 +704,9 @@ export class TunRouteService {
     output: string,
     defaultRouteInterfaceIndex: number,
     tunInterfaceIndex: number,
-  ): void {
+  ): { hostFailures: string[]; defaultFailure: string | null } {
+    const hostFailures: string[] = [];
+    let defaultFailure: string | null = null;
     const lines = output
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -696,171 +741,73 @@ export class TunRouteService {
           { error: line.slice('TUN_ADDR_WARN|'.length) },
         );
       } else if (line.startsWith('HOST_FAIL|')) {
+        const detail = line.slice('HOST_FAIL|'.length);
+        hostFailures.push(detail);
         logger.warn('TunRouteService', 'Failed to add proxy host route', {
-          detail: line.slice('HOST_FAIL|'.length),
+          detail,
         });
+      } else if (line.startsWith('DEFAULT_FAIL|')) {
+        defaultFailure = line.slice('DEFAULT_FAIL|'.length) || 'unknown error';
       }
     }
+    return { hostFailures, defaultFailure };
   }
 
-  private async deleteRoute(route: AddedRoute): Promise<void> {
-    const prefix =
-      route.prefix ??
-      (route.destination === '0.0.0.0'
-        ? '0.0.0.0/0'
-        : `${route.destination}/32`);
-    await this.runPowerShell(deleteRouteScript(prefix, route.interfaceIndex), {
-      allowNonZeroExit: true,
-    });
-  }
-
-  private async cleanupStaleTunRoutes(
-    options: StaleRouteCleanupOptions = {},
-  ): Promise<void> {
-    const { includeKnownServerHostRoutes = false } = options;
-    const tunIndex = await this.getTunInterfaceIndex({
-      timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT,
-    });
-    if (tunIndex != null) {
-      await this.deleteRouteByPrefixAndMetric(
-        '0.0.0.0/0',
-        TUN_ROUTE_METRIC,
-        tunIndex,
-        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
-      ).catch((error) => {
-        logger.warn(
-          'TunRouteService',
-          'Failed to cleanup stale TUN default route',
-          {
-            interfaceIndex: tunIndex,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        );
-      });
-      await this.deleteRouteByPrefixAndMetric(
-        '::/0',
-        TUN_ROUTE_METRIC,
-        tunIndex,
-        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
-      ).catch((error) => {
-        logger.warn(
-          'TunRouteService',
-          'Failed to cleanup stale TUN IPv6 default route',
-          {
-            interfaceIndex: tunIndex,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        );
-      });
-    } else {
-      // Fallback: remove stale default route candidates by next hop/metric even if
-      // interface alias changed (e.g. "ultima0 #2") and exact index is unknown.
-      await this.deleteTunDefaultRoutesByNextHop(
-        TUN_NEXTHOP,
-        TUN_ROUTE_METRIC,
-        '0.0.0.0/0',
-        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
-      ).catch((error) => {
-        logger.warn(
-          'TunRouteService',
-          'Failed to cleanup stale TUN default routes by next hop',
-          {
-            nextHop: TUN_NEXTHOP,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        );
-      });
-      await this.deleteTunDefaultRoutesByNextHop(
-        TUN_IPV6_NEXTHOP,
-        TUN_ROUTE_METRIC,
-        '::/0',
-        { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
-      ).catch((error) => {
-        logger.warn(
-          'TunRouteService',
-          'Failed to cleanup stale TUN IPv6 default routes by next hop',
-          {
-            nextHop: TUN_IPV6_NEXTHOP,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        );
+  /** One PowerShell process for every route removal (teardown and recovery). */
+  private async removeTunRoutes(params: RemoveTunRoutesParams): Promise<void> {
+    const output = await this.runPowerShell(
+      cleanupTunRoutesScript({
+        hostPrefixes: params.hostPrefixes,
+        hostRouteMetric: HOST_ROUTE_METRIC,
+        removeDefaultRoutes: params.removeDefaultRoutes,
+        tunRouteMetric: TUN_ROUTE_METRIC,
+        tunInterfaceIndex: params.tunInterfaceIndex,
+      }),
+      {
+        allowNonZeroExit: true,
+        ...(params.timeoutMs !== undefined
+          ? { timeoutMs: params.timeoutMs }
+          : {}),
+      },
+    );
+    const summary = output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.startsWith('REMOVED|'));
+    if (summary) {
+      const [, hosts, defaults] = summary.split('|');
+      logger.info('TunRouteService', 'Removed TUN routes', {
+        hostRoutes: Number(hosts) || 0,
+        defaultRoutes: Number(defaults) || 0,
+        requestedHostPrefixes: params.hostPrefixes.length,
       });
     }
+  }
 
-    let knownServerIps: string[] = [];
-    let removedHostRoutes = 0;
-    if (includeKnownServerHostRoutes) {
-      knownServerIps = await this.getKnownServerIps();
-      try {
-        removedHostRoutes = await this.deleteHostRoutesByPrefixesAndMetric(
-          knownServerIps.map((ip) => this.hostPrefixForIp(ip)),
-          1,
-          { timeoutMs: STALE_ROUTE_CLEANUP_TIMEOUT },
-        );
-      } catch (error) {
-        logger.warn('TunRouteService', 'Failed to cleanup stale host routes', {
-          count: knownServerIps.length,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+  /** Mirrors the in-memory bookkeeping to disk for crash recovery. */
+  private persistState(): void {
+    if (this.platform !== 'win32') return;
+    const hostPrefixes = this.addedRoutes
+      .map((route) => route.prefix)
+      .filter(
+        (prefix): prefix is string => Boolean(prefix) && prefix !== '::/0',
+      );
+    const defaultRoute = this.addedRoutes.find(
+      (route) => route.destination === '0.0.0.0' || route.prefix === '::/0',
+    );
+    if (hostPrefixes.length === 0 && !defaultRoute) {
+      this.stateStore.clear();
+      return;
     }
-
-    logger.info('TunRouteService', 'Stale route cleanup finished', {
-      removedHostRouteCandidates: knownServerIps.length,
-      removedHostRoutes,
-      checkedTunDefaultRoute: tunIndex != null,
-      checkedKnownServerHostRoutes: includeKnownServerHostRoutes,
-    });
-  }
-
-  private async getKnownServerIps(): Promise<string[]> {
-    const servers = getServerRepository().list();
-    const resolved = await Promise.all(
-      servers.map((server) => this.resolveProxyAddresses(server.address)),
-    );
-    return [...new Set(resolved.flat())];
-  }
-
-  private async deleteRouteByPrefixAndMetric(
-    destinationPrefix: string,
-    metric: number,
-    interfaceIndex?: number,
-    options: RunPowerShellOptions = {},
-  ): Promise<void> {
-    await this.runPowerShell(
-      deleteRouteByPrefixAndMetricScript(
-        destinationPrefix,
-        metric,
-        interfaceIndex,
-      ),
-      { allowNonZeroExit: true, ...options },
-    );
-  }
-
-  private async deleteTunDefaultRoutesByNextHop(
-    nextHop: string,
-    metric: number,
-    destinationPrefix: string = '0.0.0.0/0',
-    options: RunPowerShellOptions = {},
-  ): Promise<void> {
-    await this.runPowerShell(
-      deleteTunDefaultRoutesByNextHopScript(nextHop, metric, destinationPrefix),
-      { allowNonZeroExit: true, ...options },
-    );
-  }
-
-  private async deleteHostRoutesByPrefixesAndMetric(
-    destinationPrefixes: string[],
-    metric: number,
-    options: RunPowerShellOptions = {},
-  ): Promise<number> {
-    if (destinationPrefixes.length === 0) return 0;
-    const out = await this.runPowerShell(
-      deleteHostRoutesByPrefixesAndMetricScript(destinationPrefixes, metric),
-      { allowNonZeroExit: true, ...options },
-    );
-    const parsed = parseInt(out.trim(), 10);
-    return Number.isNaN(parsed) ? 0 : parsed;
+    const state: TunRouteState = {
+      version: 1,
+      hostPrefixes: [...new Set(hostPrefixes)],
+      hostRouteMetric: HOST_ROUTE_METRIC,
+      defaultRoutes: defaultRoute !== undefined,
+      tunInterfaceIndex: defaultRoute?.interfaceIndex ?? null,
+      updatedAt: Date.now(),
+    };
+    this.stateStore.write(state);
   }
 
   // ---- PowerShell runner ---------------------------------------------------

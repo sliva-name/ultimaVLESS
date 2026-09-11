@@ -1,5 +1,4 @@
 import { EventEmitter } from 'events';
-import { app } from 'electron';
 import { APP_CONSTANTS, PRIMARY_RUNTIME_PORTS } from '@/shared/constants';
 import type { SessionPhase } from '@/shared/ipc';
 import { VlessConfig } from '@/shared/types';
@@ -24,6 +23,11 @@ import {
 import { xrayService, XrayService } from '@/main/services/XrayService';
 import { logger } from '@/main/services/LoggerService';
 import { CONNECTION_MONITOR_TIMING } from '@/main/services/connectionMonitor/timing';
+import { appLifecycle } from '@/main/runtime/appLifecycle';
+import {
+  startupRecovery,
+  type NetworkRecoveryGate,
+} from '@/main/runtime/startupRecovery';
 import type { ConnectionSpec } from './ConnectionSpec';
 import {
   createConnectionRuntime,
@@ -57,8 +61,12 @@ import {
 
 interface ConnectionManagerDeps {
   app: {
-    releaseSingleInstanceLock: () => void;
-    quit: () => void;
+    /**
+     * Quit this process because an elevated replacement has been started.
+     * Lock hand-over, window hiding and log ownership are app-lifecycle
+     * concerns handled by the listener, not by the session owner.
+     */
+    quitForElevatedRelaunch: () => void;
   };
   constants: { ports: typeof PRIMARY_RUNTIME_PORTS };
   configService: ConfigService;
@@ -68,6 +76,11 @@ interface ConnectionManagerDeps {
   proxyService: SystemProxyService;
   routeService: TunRouteService;
   coreService: XrayService;
+  /**
+   * Startup recovery may still be undoing routes/proxy state of a crashed
+   * session; the stack must not be mutated underneath it.
+   */
+  recoveryGate?: NetworkRecoveryGate;
   runtime?: ConnectionRuntime;
   serverRepository?: ServerRepository;
   policy?: ConnectionPolicy;
@@ -119,7 +132,10 @@ export class ConnectionManager extends EventEmitter {
 
   constructor(
     private readonly deps: ConnectionManagerDeps = {
-      app,
+      app: {
+        quitForElevatedRelaunch: () =>
+          appLifecycle.requestQuit('elevated-relaunch'),
+      },
       constants: {
         ports: {
           http: APP_CONSTANTS.PORTS.HTTP,
@@ -134,6 +150,7 @@ export class ConnectionManager extends EventEmitter {
       proxyService: systemProxyService,
       routeService: tunRouteService,
       coreService: xrayService,
+      recoveryGate: startupRecovery,
     },
   ) {
     super();
@@ -369,8 +386,7 @@ export class ConnectionManager extends EventEmitter {
       this.deps.configService.setPendingTunReconnect(server.uuid);
       const relaunched = await this.deps.requestTunPrivilegesRelaunch();
       if (relaunched) {
-        this.deps.app.releaseSingleInstanceLock();
-        this.deps.app.quit();
+        this.deps.app.quitForElevatedRelaunch();
         throw new ConnectionManagerRelaunchError();
       }
       this.deps.configService.clearPendingTunReconnect();
@@ -392,6 +408,16 @@ export class ConnectionManager extends EventEmitter {
     );
   }
 
+  /**
+   * Startup recovery (undoing a crashed session's routes / system proxy) runs
+   * in the background after the first window; wait for it before touching the
+   * stack so it cannot delete a route this connect has just pinned.
+   */
+  private async awaitNetworkRecovery(signal: AbortSignal): Promise<void> {
+    await this.deps.recoveryGate?.awaitNetworkRecovery();
+    throwIfAborted(signal);
+  }
+
   private async connectUnsafe(
     serverId: string,
     signal: AbortSignal,
@@ -404,6 +430,7 @@ export class ConnectionManager extends EventEmitter {
     }
 
     throwIfAborted(signal);
+    await this.awaitNetworkRecovery(signal);
     await this.runtime.start(spec, signal);
     this.deps.configService.clearPendingTunReconnect();
     this.deps.configService.setSelectedServerId(server.uuid);
@@ -507,6 +534,7 @@ export class ConnectionManager extends EventEmitter {
       async (signal) => {
         const server = this.getServer(serverId);
         await this.ensureTunReady(server);
+        await this.awaitNetworkRecovery(signal);
         await this.runtime.start(this.buildSpec(server), signal);
         this.deps.configService.setSelectedServerId(server.uuid);
         this.deps.connectionMonitorService.startMonitoring(server);

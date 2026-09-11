@@ -39,8 +39,7 @@ function createSession(overrides: Partial<any> = {}) {
   const switchRuntime = vi.fn(async () => undefined);
   const deps = {
     app: {
-      releaseSingleInstanceLock: vi.fn(),
-      quit: vi.fn(),
+      quitForElevatedRelaunch: vi.fn(),
     },
     constants: { ports: { http: 10809, socks: 10808, api: 10810 } },
     configService: {
@@ -234,15 +233,17 @@ describe('session lifecycle', () => {
       expect(deps.configService.setPendingTunReconnect).toHaveBeenCalledWith(
         server.uuid,
       );
-      expect(deps.app.quit).toHaveBeenCalledTimes(1);
+      expect(deps.app.quitForElevatedRelaunch).toHaveBeenCalledTimes(1);
       expect(start).not.toHaveBeenCalled();
       expect(session.getPhase()).toBe('connecting');
     } else {
       await expect(session.connect(server.uuid)).rejects.toThrow(
-        process.platform === 'linux' ? /elevated privileges/ : /root privileges/,
+        process.platform === 'linux'
+          ? /elevated privileges/
+          : /root privileges/,
       );
       expect(deps.configService.setPendingTunReconnect).not.toHaveBeenCalled();
-      expect(deps.app.quit).not.toHaveBeenCalled();
+      expect(deps.app.quitForElevatedRelaunch).not.toHaveBeenCalled();
     }
   });
 
@@ -265,7 +266,29 @@ describe('session lifecycle', () => {
 
     expect(start).toHaveBeenCalled();
     expect(deps.requestTunPrivilegesRelaunch).not.toHaveBeenCalled();
-    expect(deps.app.quit).not.toHaveBeenCalled();
+    expect(deps.app.quitForElevatedRelaunch).not.toHaveBeenCalled();
+    expect(session.getPhase()).toBe('connected');
+  });
+
+  it('waits for startup network recovery before touching the stack', async () => {
+    let releaseRecovery: () => void = () => undefined;
+    const recovery = new Promise<void>((resolve) => {
+      releaseRecovery = resolve;
+    });
+    const { session, server, start } = createSession({
+      recoveryGate: { awaitNetworkRecovery: () => recovery },
+    });
+
+    const connecting = session.connect(server.uuid);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(start).not.toHaveBeenCalled();
+    expect(session.getPhase()).toBe('connecting');
+
+    releaseRecovery();
+    await connecting;
+
+    expect(start).toHaveBeenCalledTimes(1);
     expect(session.getPhase()).toBe('connected');
   });
 

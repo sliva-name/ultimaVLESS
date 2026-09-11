@@ -27,8 +27,6 @@ import { trafficStatsService } from '@/main/services/TrafficStatsService';
 
 export interface IpcDependencies {
   app: {
-    releaseSingleInstanceLock: () => void;
-    quit: () => void;
     getVersion: () => string;
   };
   shell: {

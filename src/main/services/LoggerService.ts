@@ -1,20 +1,31 @@
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
+import { rotateFileSync } from '@/main/utils/logRotation';
 
 /**
  * Service for file-based logging.
  * Writes logs to the application's dedicated log directory to ensure write permissions.
+ *
+ * Entries are buffered in memory until {@link beginSession} (or {@link flush})
+ * decides how this process relates to the log file: the primary instance
+ * rotates the previous session out first, while a duplicate launch that only
+ * hands over activation appends to the running instance's file without
+ * touching its history.
  */
 export class LoggerService {
   private static readonly MAX_LOG_SIZE_BYTES = 5 * 1024 * 1024;
   private static readonly MAX_LOG_BACKUPS = 3;
   /** Check log file size every N append operations instead of every write. */
   private static readonly ROTATE_CHECK_EVERY_WRITES = 50;
+  /** Import-time logging is small; this only guards a process that never commits. */
+  private static readonly MAX_BUFFERED_ENTRIES = 2000;
   private logPath: string;
   private readonly debugEnabled: boolean;
   private writeQueue: Promise<void> = Promise.resolve();
   private writesSinceRotateCheck = 0;
+  private sessionCommitted = false;
+  private bufferedEntries: string[] = [];
 
   /**
    * @param {string} filename - The log file name (default: 'app.log').
@@ -58,6 +69,17 @@ export class LoggerService {
         data,
       }) + '\n';
 
+    if (!this.sessionCommitted) {
+      if (this.bufferedEntries.length >= LoggerService.MAX_BUFFERED_ENTRIES) {
+        this.bufferedEntries.shift();
+      }
+      this.bufferedEntries.push(logEntry);
+      return;
+    }
+    this.enqueueWrite(logEntry);
+  }
+
+  private enqueueWrite(logEntry: string): void {
     this.writeQueue = this.writeQueue.then(async () => {
       try {
         this.ensureLogDirExists();
@@ -81,44 +103,52 @@ export class LoggerService {
     });
   }
 
+  /**
+   * Commits buffered entries and waits for every pending write. A process that
+   * never called {@link beginSession} (a duplicate launch exiting after the
+   * activation hand-over) appends to the current file without rotating it.
+   */
   public flush(): Promise<void> {
+    this.commitSession(false);
     return this.writeQueue;
   }
 
-  public clear(): Promise<void> {
-    this.writeQueue = this.writeQueue.then(async () => {
+  /**
+   * Declares this process the owner of a new log session: the previous
+   * session's file is kept as `app.log.1` (older ones shift down) and this
+   * session starts on a fresh file, buffered import-time entries first.
+   *
+   * Replaces the old "truncate on shutdown" step, which destroyed exactly the
+   * log needed for a post-mortem — and, during an elevated relaunch, wiped the
+   * file the replacement process was already writing to.
+   */
+  public beginSession(): void {
+    this.commitSession(true);
+  }
+
+  private commitSession(rotate: boolean): void {
+    if (this.sessionCommitted) {
+      return;
+    }
+    this.sessionCommitted = true;
+    if (rotate) {
       try {
         this.ensureLogDirExists();
-        const backupPaths = Array.from(
-          { length: LoggerService.MAX_LOG_BACKUPS },
-          (_, index) => `${this.logPath}.${index + 1}`,
-        );
-
-        await Promise.all(
-          backupPaths.map(async (backupPath) => {
-            try {
-              await fs.promises.unlink(backupPath);
-            } catch (error) {
-              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-                throw error;
-              }
-            }
-          }),
-        );
-        await fs.promises.writeFile(this.logPath, '');
+        rotateFileSync(this.logPath, LoggerService.MAX_LOG_BACKUPS);
       } catch (e) {
-        console.error('Failed to clear log file', e);
+        console.error('Failed to rotate log file for the new session', e);
       }
-    });
-
-    return this.writeQueue;
+    }
+    const pending = this.bufferedEntries;
+    this.bufferedEntries = [];
+    if (pending.length > 0) {
+      this.enqueueWrite(pending.join(''));
+    }
   }
 
   private maybeRotate(): void {
     this.writesSinceRotateCheck += 1;
-    if (
-      this.writesSinceRotateCheck < LoggerService.ROTATE_CHECK_EVERY_WRITES
-    ) {
+    if (this.writesSinceRotateCheck < LoggerService.ROTATE_CHECK_EVERY_WRITES) {
       return;
     }
     this.writesSinceRotateCheck = 0;
@@ -135,17 +165,7 @@ export class LoggerService {
       return;
     }
 
-    for (let index = LoggerService.MAX_LOG_BACKUPS; index >= 1; index -= 1) {
-      const from = index === 1 ? this.logPath : `${this.logPath}.${index - 1}`;
-      const to = `${this.logPath}.${index}`;
-      if (!fs.existsSync(from)) {
-        continue;
-      }
-      if (fs.existsSync(to)) {
-        fs.unlinkSync(to);
-      }
-      fs.renameSync(from, to);
-    }
+    rotateFileSync(this.logPath, LoggerService.MAX_LOG_BACKUPS);
   }
 
   private ensureLogDirExists(): void {

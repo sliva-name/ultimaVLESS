@@ -100,6 +100,14 @@ export class SystemProxyService {
 
   public disable(): Promise<void> {
     return this.runSerialized(async () => {
+      if (!this.hasStateToRestore()) {
+        // Nothing was enabled by this process and no snapshot survived from a
+        // previous one: there is nothing to undo. Skipping here saves the
+        // PowerShell + `reg` + `schtasks` round trip that every clean connect
+        // and every quit used to pay for.
+        logger.info('SystemProxyService', 'No system proxy state to restore');
+        return;
+      }
       if (this.darwin) {
         await this.restoreSnapshotOrFallback(() => this.darwin!.disable());
         return;
@@ -117,7 +125,24 @@ export class SystemProxyService {
         );
         return;
       }
+    }).then(() => {
+      // The system is back at its pre-enable state; a further disable() has
+      // nothing to do until the next enable().
+      this.lastEnabledPorts = null;
     });
+  }
+
+  /**
+   * True when a restore can actually change something: a snapshot is held in
+   * memory or on disk, or `enable()` ran in this process (the fallback path
+   * then clears whatever it left even if the snapshot write failed).
+   */
+  private hasStateToRestore(): boolean {
+    return (
+      this.activeSnapshot !== null ||
+      this.lastEnabledPorts !== null ||
+      fs.existsSync(this.snapshotPath)
+    );
   }
 
   private runSerialized<T>(operation: () => Promise<T>): Promise<T> {

@@ -6,15 +6,30 @@ import { RELAUNCH_ARG } from '@/shared/constants';
 import type { ConnectionMode } from '@/shared/types';
 
 /**
- * Checks whether the current process has elevated rights on Windows.
- * TUN setup requires admin privileges to create the virtual adapter.
- * Uses async spawn to avoid blocking the main process.
+ * Integrity-level SIDs that only an elevated token carries. `whoami /groups`
+ * prints the mandatory label of the current token; the SID is locale-neutral
+ * while the label name is not.
  */
-export async function isElevatedOnWindows(): Promise<boolean> {
-  if (process.platform !== 'win32') {
-    return true;
-  }
+const ELEVATED_INTEGRITY_SIDS = /\bS-1-16-(12288|16384)\b/;
 
+let windowsElevationCheck: Promise<boolean> | null = null;
+
+async function detectWindowsElevationViaWhoami(): Promise<boolean | null> {
+  try {
+    const output = await runProcessWithOutput('whoami', ['/groups'], {
+      timeoutMs: 5000,
+      windowsHide: true,
+    });
+    if (output.code !== 0) {
+      return null;
+    }
+    return ELEVATED_INTEGRITY_SIDS.test(output.stdout);
+  } catch {
+    return null;
+  }
+}
+
+async function detectWindowsElevationViaPowerShell(): Promise<boolean> {
   try {
     const output = await runProcessWithOutput(
       'powershell',
@@ -33,6 +48,51 @@ export async function isElevatedOnWindows(): Promise<boolean> {
   }
 }
 
+async function detectWindowsElevation(): Promise<boolean> {
+  // `whoami` answers in ~50–100 ms; a fresh PowerShell host needs ~0.5–1.5 s.
+  const viaWhoami = await detectWindowsElevationViaWhoami();
+  if (viaWhoami !== null) {
+    return viaWhoami;
+  }
+  return detectWindowsElevationViaPowerShell();
+}
+
+/**
+ * Checks whether the current process has elevated rights on Windows.
+ * TUN setup requires admin privileges to create the virtual adapter.
+ *
+ * The token of a running process never changes, so the answer is computed
+ * once and memoised: connect, the settings dialog and the startup recovery
+ * all ask, and each used to pay for its own PowerShell spawn.
+ */
+export function isElevatedOnWindows(): Promise<boolean> {
+  if (process.platform !== 'win32') {
+    return Promise.resolve(true);
+  }
+  windowsElevationCheck ??= detectWindowsElevation().catch(() => false);
+  return windowsElevationCheck;
+}
+
+/** Test seam: forget the memoised elevation answer. */
+export function resetElevationCacheForTests(): void {
+  windowsElevationCheck = null;
+}
+
+/**
+ * Executable to start when the app has to re-launch itself. A portable build
+ * runs from a temp directory that the portable stub deletes as soon as the
+ * original instance exits, so the replacement must go through the stub
+ * (`PORTABLE_EXECUTABLE_FILE`) and get its own extraction — not reuse
+ * `process.execPath`, which would vanish underneath it.
+ */
+export function resolveRelaunchExecutable(
+  env: NodeJS.ProcessEnv = process.env,
+  execPath: string = process.execPath,
+): string {
+  const portableStub = env.PORTABLE_EXECUTABLE_FILE?.trim();
+  return portableStub ? portableStub : execPath;
+}
+
 /**
  * Tries to relaunch the current packaged app with Administrator rights.
  * Returns false if not supported or user cancels UAC.
@@ -42,7 +102,7 @@ export async function relaunchAsAdminOnWindows(): Promise<boolean> {
   if (!app.isPackaged) return false;
 
   try {
-    const escapedExePath = process.execPath.replace(/'/g, "''");
+    const escapedExePath = resolveRelaunchExecutable().replace(/'/g, "''");
     // A cancelled UAC prompt raises a non-terminating error, which PowerShell
     // still reports as exit code 0. Without the explicit try/catch the caller
     // would believe an elevated instance is starting and quit this one, leaving
@@ -82,7 +142,11 @@ export function findPkexecPath(): string | null {
   if (process.platform !== 'linux') {
     return null;
   }
-  const candidates = ['/usr/bin/pkexec', '/bin/pkexec', '/usr/local/bin/pkexec'];
+  const candidates = [
+    '/usr/bin/pkexec',
+    '/bin/pkexec',
+    '/usr/local/bin/pkexec',
+  ];
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
     if (dir) {
       candidates.push(path.join(dir, 'pkexec'));

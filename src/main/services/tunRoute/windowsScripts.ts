@@ -165,22 +165,6 @@ export const waitForTunInterfaceScript = (): string => `
       exit 1
     `;
 
-export const getTunInterfaceIndexScript = (): string => `
-      $adapter = Get-NetAdapter -Name "${TUN_INTERFACE_NAME}" -ErrorAction SilentlyContinue
-      if (-not $adapter) {
-        $adapter = Get-NetAdapter -ErrorAction SilentlyContinue |
-          Where-Object {
-            $_.Status -eq "Up" -and (
-              $_.Name -like "${TUN_INTERFACE_NAME}*" -or
-              $_.InterfaceDescription -like "*Wintun*"
-            )
-          } |
-          Sort-Object ifIndex |
-          Select-Object -First 1
-      }
-      if ($adapter) { Write-Output $adapter.ifIndex }
-    `;
-
 export interface EnableTunRoutingParams {
   tunInterfaceIndex: number;
   defaultRouteInterfaceIndex: number;
@@ -221,7 +205,11 @@ function validateRetryDelay(value: number): void {
  *   - `DEFAULT6_CREATED`        the IPv6 default route via TUN was added
  *   - `TUN_ADDR_WARN|<msg>`     setting the TUN address failed (non-fatal)
  *   - `HOST_FAIL|<prefix>|<msg>` a host route could not be added (non-fatal)
- *   - `DEFAULT_FAIL|<msg>` + exit 1 when the default route never succeeded
+ *   - `DEFAULT_FAIL|<msg>`      the default route never succeeded
+ *
+ * The script always exits 0: a non-zero exit would make the runner throw and
+ * discard stdout, losing the `HOST_CREATED` bookkeeping the rollback needs.
+ * The caller treats `DEFAULT_FAIL` / `HOST_FAIL` as the failure signal.
  */
 export const enableTunRoutingScript = (
   params: EnableTunRoutingParams,
@@ -331,7 +319,6 @@ export const enableTunRoutingScript = (
       }
       if (-not ($v4done -and $v6done)) {
         Write-Output ("DEFAULT_FAIL|" + $lastErr)
-        exit 1
       }
     `;
 };
@@ -382,79 +369,89 @@ export const reapplyHostRoutesScript = (
     `;
 };
 
-export const deleteRouteScript = (
-  prefix: string,
-  interfaceIndex?: number,
-): string => {
-  validateIpOrPrefix(prefix);
-  validateInterfaceIndex(interfaceIndex);
-  const ifPart =
-    interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
-  return `
-      Remove-NetRoute -DestinationPrefix "${prefix}"${ifPart} -ErrorAction SilentlyContinue
-    `;
-};
+export interface CleanupTunRoutesParams {
+  /** Proxy host prefixes (`203.0.113.10/32`) that were pinned to the gateway. */
+  hostPrefixes: string[];
+  hostRouteMetric: number;
+  /** Also remove the IPv4/IPv6 default routes that point into the TUN adapter. */
+  removeDefaultRoutes: boolean;
+  tunRouteMetric: number;
+  /**
+   * TUN adapter index recorded when the routes were created. The script also
+   * matches by adapter alias and by our fixed next hops, so a stale or unknown
+   * index (adapter re-created as "ultima0 #2") still cleans up.
+   */
+  tunInterfaceIndex?: number | null;
+}
 
-export const deleteRouteByPrefixAndMetricScript = (
-  destinationPrefix: string,
-  metric: number,
-  interfaceIndex?: number,
+/**
+ * Single-process teardown of everything TUN mode may have left in the routing
+ * table: the proxy host routes we pinned and the default routes via the TUN
+ * adapter. One spawn replaces the former chain of per-route PowerShell
+ * processes (and the DNS sweep over the whole catalog on startup).
+ *
+ * Every removal is scoped by `RouteMetric` and — for default routes — by TUN
+ * adapter alias, interface index or our fixed next hops, so unrelated user
+ * routes at the same prefix are left alone. Missing routes are not an error.
+ *
+ * Reports `REMOVED|<hostRoutes>|<defaultRoutes>` on stdout.
+ */
+export const cleanupTunRoutesScript = (
+  params: CleanupTunRoutesParams,
 ): string => {
-  validateIpOrPrefix(destinationPrefix);
-  validateMetric(metric);
-  validateInterfaceIndex(interfaceIndex);
-  const ifPart =
-    interfaceIndex != null ? ` -InterfaceIndex ${interfaceIndex}` : '';
-  return `
-      Get-NetRoute -DestinationPrefix "${destinationPrefix}"${ifPart} -ErrorAction SilentlyContinue |
-        Where-Object { $_.RouteMetric -eq ${metric} } |
-        Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
-    `;
-};
-
-export const deleteTunDefaultRoutesByNextHopScript = (
-  nextHop: string,
-  metric: number,
-  destinationPrefix: string = '0.0.0.0/0',
-): string => {
-  validateIpOrPrefix(nextHop);
-  validateIpOrPrefix(destinationPrefix);
-  validateMetric(metric);
-  return `
-      Get-NetRoute -DestinationPrefix "${destinationPrefix}" -ErrorAction SilentlyContinue |
-        Where-Object {
-          $_.RouteMetric -eq ${metric} -and $_.NextHop -eq "${nextHop}"
-        } |
-        Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
-    `;
-};
-
-export const deleteHostRoutesByPrefixesAndMetricScript = (
-  destinationPrefixes: string[],
-  metric: number,
-): string => {
-  destinationPrefixes.forEach(validateIpOrPrefix);
-  validateMetric(metric);
-  const prefixesLiteral = destinationPrefixes
+  const {
+    hostPrefixes,
+    hostRouteMetric,
+    removeDefaultRoutes,
+    tunRouteMetric,
+    tunInterfaceIndex,
+  } = params;
+  hostPrefixes.forEach(validateIpOrPrefix);
+  validateMetric(hostRouteMetric);
+  validateMetric(tunRouteMetric);
+  const tunIndex = tunInterfaceIndex ?? undefined;
+  validateInterfaceIndex(tunIndex);
+  const prefixesLiteral = hostPrefixes
     .map((prefix) => `'${prefix}'`)
     .join(', ');
+  const tunIndexLiteral = tunIndex != null ? String(tunIndex) : '$null';
+
   return `
-      $targets = @(${prefixesLiteral})
-      $targetSet = @{}
-      foreach ($target in $targets) {
-        $targetSet[$target] = $true
-      }
-      $removed = 0
-      foreach ($target in $targets) {
-        Get-NetRoute -DestinationPrefix $target -ErrorAction SilentlyContinue |
-          Where-Object {
-            $_.RouteMetric -eq ${metric} -and $targetSet.ContainsKey($_.DestinationPrefix)
-          } |
+      $removedHosts = 0
+      $removedDefaults = 0
+
+      $hostPrefixes = @(${prefixesLiteral})
+      foreach ($p in $hostPrefixes) {
+        Get-NetRoute -DestinationPrefix $p -ErrorAction SilentlyContinue |
+          Where-Object { $_.RouteMetric -eq ${hostRouteMetric} } |
           ForEach-Object {
             Remove-NetRoute -DestinationPrefix $_.DestinationPrefix -InterfaceIndex $_.InterfaceIndex -NextHop $_.NextHop -Confirm:$false -ErrorAction SilentlyContinue
-            $removed++
+            $removedHosts++
           }
       }
-      Write-Output $removed
+
+      if (${removeDefaultRoutes ? '$true' : '$false'}) {
+        $tunIdx = ${tunIndexLiteral}
+        $defaults = @(
+          @{ Prefix = "0.0.0.0/0"; NextHop = "${TUN_NEXTHOP}" },
+          @{ Prefix = "::/0"; NextHop = "${TUN_IPV6_NEXTHOP}" }
+        )
+        foreach ($d in $defaults) {
+          Get-NetRoute -DestinationPrefix $d.Prefix -ErrorAction SilentlyContinue |
+            Where-Object {
+              $_.RouteMetric -eq ${tunRouteMetric} -and (
+                ($null -ne $tunIdx -and $_.InterfaceIndex -eq $tunIdx) -or
+                $_.InterfaceAlias -like "${TUN_INTERFACE_NAME}*" -or
+                $_.NextHop -eq $d.NextHop
+              )
+            } |
+            ForEach-Object {
+              Remove-NetRoute -DestinationPrefix $_.DestinationPrefix -InterfaceIndex $_.InterfaceIndex -NextHop $_.NextHop -Confirm:$false -ErrorAction SilentlyContinue
+              $removedDefaults++
+            }
+        }
+      }
+
+      Write-Output "REMOVED|$removedHosts|$removedDefaults"
     `;
 };

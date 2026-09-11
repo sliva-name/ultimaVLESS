@@ -57,16 +57,31 @@ export function createConnectionRuntime(deps: {
 }): ConnectionRuntime {
   let activeMode: ConnectionMode | null = null;
   let activePorts: RuntimePorts = { ...PRIMARY_RUNTIME_PORTS };
+  /**
+   * Network paths this process has touched. `prepare()` may already mutate the
+   * OS (TUN pins host routes before Xray starts), so a path counts as engaged
+   * from its first `prepare()`/`activate()` until `deactivate()` succeeds.
+   * Paths never engaged are never deactivated: a clean first connect must not
+   * pay for tearing down state that only a previous *process* could have left
+   * behind — that is the startup recovery's job.
+   */
+  const engaged: Record<ConnectionMode, boolean> = { proxy: false, tun: false };
 
   const xray = deps.xray as XrayRuntime;
 
   const networkFor = (mode: ConnectionMode): NetworkModeRuntime =>
     mode === 'tun' ? deps.tun : deps.proxy;
 
+  async function deactivate(mode: ConnectionMode): Promise<void> {
+    if (!engaged[mode]) return;
+    await networkFor(mode).deactivate();
+    engaged[mode] = false;
+  }
+
   async function deactivateNetwork(keepProxy: boolean): Promise<void> {
-    await deps.tun.deactivate();
+    await deactivate('tun');
     if (!keepProxy) {
-      await deps.proxy.deactivate();
+      await deactivate('proxy');
     }
   }
 
@@ -84,6 +99,7 @@ export function createConnectionRuntime(deps: {
   ): Promise<void> {
     throwIfAborted(signal);
     const network = networkFor(spec.mode);
+    engaged[spec.mode] = true;
     const prepared = await network.prepare(spec);
     throwIfAborted(signal);
     await xray.start(prepared.server, spec.mode, {
@@ -111,6 +127,7 @@ export function createConnectionRuntime(deps: {
     const nextPorts = otherRuntimePorts(activePorts);
     const nextSpec: ConnectionSpec = { ...spec, ports: nextPorts };
     throwIfAborted(signal);
+    engaged.proxy = true;
     const prepared = await deps.proxy.prepare(nextSpec);
     throwIfAborted(signal);
     let proxyRetargetAttempted = false;

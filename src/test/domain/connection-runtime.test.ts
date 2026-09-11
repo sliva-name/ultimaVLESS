@@ -53,12 +53,13 @@ describe('ConnectionRuntime', () => {
 
     await expect(runtime.start(spec('proxy'))).rejects.toThrow('spawn failed');
     expect(proxy.activate).not.toHaveBeenCalled();
+    // The proxy path was engaged by prepare(); TUN was never touched.
     expect(proxy.deactivate).toHaveBeenCalled();
-    expect(tun.deactivate).toHaveBeenCalled();
+    expect(tun.deactivate).not.toHaveBeenCalled();
     expect(xrayStop).toHaveBeenCalled();
   });
 
-  it('start fully tears down then prepares, starts Xray, and activates', async () => {
+  it('a clean first start prepares, starts Xray and activates without tearing anything down', async () => {
     const proxy = fakeNetwork('proxy');
     const tun = fakeNetwork('tun');
     const xrayStart = vi.fn(async () => undefined);
@@ -72,8 +73,10 @@ describe('ConnectionRuntime', () => {
 
     await runtime.start(connection);
 
-    expect(tun.deactivate).toHaveBeenCalled();
-    expect(proxy.deactivate).toHaveBeenCalled();
+    // Nothing was engaged in this process yet, so no OS state is restored —
+    // orphaned state of a previous process is the startup recovery's job.
+    expect(tun.deactivate).not.toHaveBeenCalled();
+    expect(proxy.deactivate).not.toHaveBeenCalled();
     expect(xrayStop).toHaveBeenCalled();
     expect(proxy.prepare).toHaveBeenCalledWith(connection);
     expect(xrayStart).toHaveBeenCalledWith(
@@ -85,7 +88,7 @@ describe('ConnectionRuntime', () => {
     expect(tun.prepare).not.toHaveBeenCalled();
   });
 
-  it('stop restores both network paths', async () => {
+  it('stop on a pristine runtime touches no network path', async () => {
     const proxy = fakeNetwork('proxy');
     const tun = fakeNetwork('tun');
     const runtime = createConnectionRuntime({
@@ -96,8 +99,52 @@ describe('ConnectionRuntime', () => {
 
     await runtime.stop();
 
-    expect(tun.deactivate).toHaveBeenCalled();
-    expect(proxy.deactivate).toHaveBeenCalled();
+    expect(tun.deactivate).not.toHaveBeenCalled();
+    expect(proxy.deactivate).not.toHaveBeenCalled();
+  });
+
+  it('stop restores the path that was engaged, exactly once', async () => {
+    const proxy = fakeNetwork('proxy');
+    const tun = fakeNetwork('tun');
+    const runtime = createConnectionRuntime({
+      xray: {
+        start: vi.fn(async () => undefined),
+        stop: vi.fn(),
+        isRunning: () => false,
+      },
+      proxy,
+      tun,
+    });
+
+    await runtime.start(spec('tun'));
+    await runtime.stop();
+    await runtime.stop();
+
+    expect(tun.prepare).toHaveBeenCalledTimes(1);
+    expect(tun.deactivate).toHaveBeenCalledTimes(1);
+    expect(proxy.deactivate).not.toHaveBeenCalled();
+  });
+
+  it('tears TUN down even when only prepare() ran before Xray failed', async () => {
+    const proxy = fakeNetwork('proxy');
+    const tun = fakeNetwork('tun');
+    const runtime = createConnectionRuntime({
+      xray: {
+        start: vi.fn(async () => {
+          throw new Error('spawn failed');
+        }),
+        stop: vi.fn(),
+        isRunning: () => false,
+      },
+      proxy,
+      tun,
+    });
+
+    await expect(runtime.start(spec('tun'))).rejects.toThrow('spawn failed');
+
+    // prepare() pins host routes on Windows before Xray starts; they must go.
+    expect(tun.activate).not.toHaveBeenCalled();
+    expect(tun.deactivate).toHaveBeenCalledTimes(1);
   });
 
   it('keeps system proxy during a proxy-to-proxy switch and validates before commit', async () => {
@@ -120,7 +167,8 @@ describe('ConnectionRuntime', () => {
     tun.deactivate.mockClear();
     await runtime.switch(spec('proxy', 'b'));
 
-    expect(tun.deactivate).toHaveBeenCalled();
+    // TUN was never engaged in this process; the system proxy stays as-is.
+    expect(tun.deactivate).not.toHaveBeenCalled();
     expect(proxy.deactivate).not.toHaveBeenCalled();
     expect(validate).toHaveBeenCalled();
   });

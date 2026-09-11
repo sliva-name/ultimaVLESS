@@ -39,6 +39,7 @@ const WINDOWS_SYSTEM_BINARIES: Record<string, () => string> = {
   route: () => system32('route.exe'),
   schtasks: () => system32('schtasks.exe'),
   taskkill: () => system32('taskkill.exe'),
+  whoami: () => system32('whoami.exe'),
   wscript: () => system32('wscript.exe'),
 };
 

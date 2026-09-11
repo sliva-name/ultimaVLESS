@@ -1,5 +1,4 @@
 import { app, BrowserWindow, powerMonitor } from 'electron';
-import fs from 'fs/promises';
 import { performance } from 'perf_hooks';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -10,12 +9,15 @@ import { initMainSentry } from './services/SentryService';
 import { trayService } from './services/TrayService';
 import { appUpdaterService } from './services/AppUpdaterService';
 import { getAppIconPath } from './utils/runtimePaths';
+import { rotateFileSync } from './utils/logRotation';
 import {
   activateRunningInstance,
   startInstanceActivationService,
   stopInstanceActivationService,
 } from './runtime/instanceActivation';
-import { RELAUNCH_ARG } from '@/shared/constants';
+import { appLifecycle, type QuitReason } from './runtime/appLifecycle';
+import { isElevatedRelaunch } from './runtime/launchArgs';
+import { startupRecovery } from './runtime/startupRecovery';
 import type { AppRecoveryTrigger } from '@/shared/ipc';
 
 if (!process.versions.electron) {
@@ -31,6 +33,79 @@ if (!process.versions.electron) {
   process.exit(1);
 }
 
+/**
+ * Must match build.appId — Windows taskbar, jump lists, toasts.
+ * Only for packaged builds: dev runs of electron.exe under the production
+ * AUMID poison the shell icon cache (taskbar / Action Center) with the
+ * default Electron icon. @see https://www.electron.build/nsis
+ */
+if (process.platform === 'win32' && app.isPackaged) {
+  app.setAppUserModelId('com.ultima.vless');
+}
+
+// ---------------------------------------------------------------------------
+// Process-wide state
+// ---------------------------------------------------------------------------
+
+let mainWindow: BrowserWindow | null = null;
+/** In-flight window creation; makes `createWindow()` idempotent. */
+let windowCreation: Promise<BrowserWindow> | null = null;
+let isQuitting = false;
+let isShuttingDown = false;
+/** Set when electron-updater is driving the quit; before-quit must not intercept it. */
+let isQuittingForUpdate = false;
+/** Full initial load (subscription refresh, timers) must run once per app session. */
+let initialStateLoadedOnce = false;
+/**
+ * True for the process that runs the app (owns the single-instance lock, or is
+ * the elevated replacement of an instance that is quitting). Duplicate
+ * launches stay `false` and must never touch the shared network state.
+ */
+let isPrimaryInstance = false;
+const startupPerfOriginMs = performance.now();
+const SHUTDOWN_TIMEOUT_MS = 15000;
+/** Delay non-critical background work until after the first window paint. */
+const DEFERRED_STARTUP_WORK_MS = 1500;
+/**
+ * The instance we replace releases its single-instance lock right after the
+ * UAC prompt returns; an elevated replacement that boots faster must wait for
+ * that instead of treating the predecessor as "the running app".
+ */
+const RELAUNCH_LOCK_WAIT_MS = 8000;
+const RELAUNCH_LOCK_RETRY_MS = 250;
+const DID_FAIL_LOAD_ABORTED = -3;
+const UNRESPONSIVE_RECOVERY_DELAY_MS = 4000;
+const FATAL_EXIT_DELAY_MS = 1500;
+let unresponsiveRecoveryTimer: NodeJS.Timeout | null = null;
+let deferredStartupWorkScheduled = false;
+let deferredStartupWorkTimer: NodeJS.Timeout | null = null;
+let fatalExitTimer: NodeJS.Timeout | null = null;
+
+const userDataDir = app.getPath('userData');
+const relaunchedElevated = isElevatedRelaunch();
+
+function logStartupStep(step: string, data?: Record<string, unknown>) {
+  logger.info('Startup', step, {
+    elapsedMs: Math.round(performance.now() - startupPerfOriginMs),
+    ...data,
+  });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatUnknownError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.stack || error.message;
+  }
+  return String(error);
+}
+
+// ---------------------------------------------------------------------------
+// Network stack helpers
+// ---------------------------------------------------------------------------
+
 async function stopNetworkStack(): Promise<void> {
   const { connectionManager } =
     await import('./domain/connection/ConnectionManager');
@@ -39,6 +114,42 @@ async function stopNetworkStack(): Promise<void> {
   await connectionManager.disconnect({
     preservePendingTunReconnect: true,
   });
+}
+
+/**
+ * Undoes what a crashed or killed session left behind (system proxy on, TUN
+ * routes pinned). Runs in the background once the window is up; anything that
+ * mutates the network stack waits on `startupRecovery` before proceeding.
+ */
+async function recoverOrphanedNetworkState(): Promise<void> {
+  const recoveryTimer = new PerfTimer('Startup', 'recoverOrphanedNetworkState');
+  try {
+    const { systemProxyService } =
+      await import('./services/SystemProxyService');
+    if (await systemProxyService.recoverOrphanedState()) {
+      logStartupStep('Recovered orphaned system proxy from previous session');
+    }
+  } catch (error) {
+    logger.error(
+      'Main',
+      'Failed to recover orphaned system proxy on startup',
+      error,
+    );
+  }
+  try {
+    const { tunRouteService } = await import('./services/TunRouteService');
+    await tunRouteService.recoverOrphanedRoutes();
+  } catch (error) {
+    logger.error(
+      'Main',
+      'Failed to recover orphaned TUN routes on startup',
+      error,
+    );
+  } finally {
+    logStartupStep('Orphaned network state recovery finished', {
+      durationMs: recoveryTimer.end(),
+    });
+  }
 }
 
 let powerMonitorRegistered = false;
@@ -85,35 +196,6 @@ function registerPowerMonitor(): void {
   powerMonitor.on('unlock-screen', () => onWake('unlock-screen'));
 }
 
-async function recoverOrphanedNetworkState(): Promise<void> {
-  const recoveryTimer = new PerfTimer('Startup', 'recoverOrphanedNetworkState');
-  try {
-    const { systemProxyService } =
-      await import('./services/SystemProxyService');
-    if (await systemProxyService.recoverOrphanedState()) {
-      logStartupStep('Recovered orphaned system proxy from previous session');
-    }
-  } catch (error) {
-    logger.error(
-      'Main',
-      'Failed to recover orphaned system proxy on startup',
-      error,
-    );
-  }
-  try {
-    const { tunRouteService } = await import('./services/TunRouteService');
-    await tunRouteService.recoverOrphanedRoutes();
-  } catch (error) {
-    logger.error(
-      'Main',
-      'Failed to recover orphaned TUN routes on startup',
-      error,
-    );
-  } finally {
-    recoveryTimer.end();
-  }
-}
-
 function scheduleDeferredStartupWork(): void {
   if (deferredStartupWorkScheduled) {
     return;
@@ -128,125 +210,59 @@ function scheduleDeferredStartupWork(): void {
   }, DEFERRED_STARTUP_WORK_MS);
 }
 
-async function truncateFileIfExists(filePath: string): Promise<void> {
+/**
+ * Opens this session's log files: the previous `app.log` / `xray.log` become
+ * `.1` backups instead of being truncated at shutdown, so a post-mortem of the
+ * last session is always possible and an elevated relaunch never wipes the
+ * file its replacement is already writing to.
+ */
+function beginSessionLogs(): void {
+  logger.beginSession();
   try {
-    await fs.truncate(filePath, 0);
+    rotateFileSync(path.join(userDataDir, 'xray.log'), 1);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
-    }
+    logger.warn('Main', 'Failed to rotate xray.log for the new session', error);
   }
 }
 
-async function clearShutdownLogs(): Promise<void> {
-  const xrayLogPath = path.join(app.getPath('userData'), 'xray.log');
-  await Promise.all([truncateFileIfExists(xrayLogPath), logger.clear()]);
-}
-
-/**
- * Must match build.appId — Windows taskbar, jump lists, toasts.
- * Only for packaged builds: dev runs of electron.exe under the production
- * AUMID poison the shell icon cache (taskbar / Action Center) with the
- * default Electron icon. @see https://www.electron.build/nsis
- */
-if (process.platform === 'win32' && app.isPackaged) {
-  app.setAppUserModelId('com.ultima.vless');
-}
-
-let mainWindow: BrowserWindow | null = null;
-let isQuitting = false;
-let isShuttingDown = false;
-/** Set when electron-updater is driving the quit; before-quit must not intercept it. */
-let isQuittingForUpdate = false;
-/** Full initial load (subscription refresh, timers) must run once per app session. */
-let initialStateLoadedOnce = false;
-const startupPerfOriginMs = performance.now();
-const SHUTDOWN_TIMEOUT_MS = 15000;
-/** Delay non-critical background work until after the first window paint. */
-const DEFERRED_STARTUP_WORK_MS = 1500;
-const DID_FAIL_LOAD_ABORTED = -3;
-const UNRESPONSIVE_RECOVERY_DELAY_MS = 4000;
-const FATAL_EXIT_DELAY_MS = 1500;
-let unresponsiveRecoveryTimer: NodeJS.Timeout | null = null;
-let deferredStartupWorkScheduled = false;
-let deferredStartupWorkTimer: NodeJS.Timeout | null = null;
-
-function logStartupStep(step: string, data?: Record<string, unknown>) {
-  logger.info('Startup', step, {
-    elapsedMs: Math.round(performance.now() - startupPerfOriginMs),
-    ...data,
-  });
-}
-
-const userDataDir = app.getPath('userData');
-
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
-if (!gotSingleInstanceLock) {
-  // Desktop shortcut / Start Menu launches land here while the tray instance
-  // is already running. Electron is supposed to emit `second-instance` on the
-  // primary, but on Windows that IPC is unreliable (and UIPI blocks it entirely
-  // when the primary is elevated for TUN). Ask the primary over the filesystem
-  // handshake instead.
-  //
-  // Use app.exit — never app.quit. `before-quit` on THIS process would tear
-  // down the primary's system proxy / TUN routes.
-  void (async () => {
-    try {
-      await activateRunningInstance(userDataDir);
-    } catch (error) {
-      try {
-        logger.error('Main', 'Failed to activate the running instance', error);
-      } catch {
-        // Logger may not be writable during this short-lived launch.
-      }
-    }
-    app.exit(0);
-  })();
-} else {
-  app.on('second-instance', async () => {
-    try {
-      await ensureTray();
-      await showMainWindow('second-instance');
-    } catch (error) {
-      logger.error('Main', 'Failed to handle second-instance', error);
-    }
-  });
-}
+// ---------------------------------------------------------------------------
+// Window management
+// ---------------------------------------------------------------------------
 
 async function showMainWindow(reason: string = 'unspecified') {
-  logStartupStep('showMainWindow called', { reason });
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    logStartupStep('showMainWindow creating missing window', { reason });
-    await createWindow();
+  if (isShuttingDown) {
+    logStartupStep('showMainWindow ignored during shutdown', { reason });
+    return;
   }
+  logStartupStep('showMainWindow called', { reason });
+  const window = await createWindow();
+  if (window.isDestroyed()) return;
 
-  if (!mainWindow) return;
-
-  mainWindow.setSkipTaskbar(false);
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
+  window.setSkipTaskbar(false);
+  if (window.isMinimized()) window.restore();
+  window.show();
   // Raise above other windows even when Windows denies foreground focus.
-  mainWindow.moveTop();
-  mainWindow.focus();
+  window.moveTop();
+  window.focus();
 
   // Windows refuses foreground activation to a process that does not own the
   // current foreground window, so a tray/shortcut click can leave the window
   // visible but buried. A brief always-on-top bump is the documented way out.
   if (process.platform === 'win32') {
-    mainWindow.setAlwaysOnTop(true);
-    mainWindow.setAlwaysOnTop(false);
-    mainWindow.focus();
-    if (!mainWindow.isFocused()) {
-      mainWindow.flashFrame(true);
+    window.setAlwaysOnTop(true);
+    window.setAlwaysOnTop(false);
+    window.focus();
+    if (!window.isFocused()) {
+      window.flashFrame(true);
     }
   }
 }
 
-function formatUnknownError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.stack || error.message;
-  }
-  return String(error);
+function hideMainWindow(reason: string = 'unspecified') {
+  logStartupStep('hideMainWindow called', { reason });
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.hide();
+  mainWindow.setSkipTaskbar(true);
 }
 
 function clearUnresponsiveRecoveryTimer(): void {
@@ -256,8 +272,6 @@ function clearUnresponsiveRecoveryTimer(): void {
   clearTimeout(unresponsiveRecoveryTimer);
   unresponsiveRecoveryTimer = null;
 }
-
-let fatalExitTimer: NodeJS.Timeout | null = null;
 
 function scheduleFatalExit(trigger: AppRecoveryTrigger, error: unknown): void {
   if (isShuttingDown) {
@@ -271,10 +285,10 @@ function scheduleFatalExit(trigger: AppRecoveryTrigger, error: unknown): void {
     reason,
     recoveryAttemptCount: recoveryStatus.recoveryAttemptCount,
   });
+  void logger.flush().catch(() => undefined);
 
   // Guard against overlapping timers that would otherwise call
-  // app.exit(1) more than once (e.g. an uncaughtException followed by
-  // an unhandledRejection in the same tick).
+  // app.exit(1) more than once.
   if (fatalExitTimer) {
     return;
   }
@@ -366,13 +380,6 @@ async function attemptWindowRecovery(
   }
 }
 
-function hideMainWindow(reason: string = 'unspecified') {
-  logStartupStep('hideMainWindow called', { reason });
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.hide();
-  mainWindow.setSkipTaskbar(true);
-}
-
 async function ensureTray() {
   trayService.init(
     {
@@ -380,10 +387,7 @@ async function ensureTray() {
         void showMainWindow('tray-menu-show');
       },
       onHide: () => hideMainWindow('tray-menu-hide'),
-      onQuit: () => {
-        isQuitting = true;
-        app.quit();
-      },
+      onQuit: () => appLifecycle.requestQuit('user'),
       isWindowVisible: () =>
         !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible(),
       isWindowFocused: () =>
@@ -401,11 +405,26 @@ async function resendStateToRenderer(window: BrowserWindow): Promise<void> {
   }
 }
 
-async function createWindow() {
+/**
+ * Returns the live main window, creating it when needed. Concurrent callers
+ * (startup, a tray click, an activation request from a second launch) share
+ * one creation, so the app can never end up with two windows.
+ */
+function createWindow(): Promise<BrowserWindow> {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return Promise.resolve(mainWindow);
+  }
+  windowCreation ??= buildWindow().finally(() => {
+    windowCreation = null;
+  });
+  return windowCreation;
+}
+
+async function buildWindow(): Promise<BrowserWindow> {
   const windowCreateStartedAt = performance.now();
   logger.info('Main', 'createWindow called');
 
-  mainWindow = new BrowserWindow({
+  const windowInstance = new BrowserWindow({
     width: 900,
     height: 700,
     show: false,
@@ -427,7 +446,7 @@ async function createWindow() {
       symbolColor: '#ffffff',
     },
   });
-  const windowInstance = mainWindow;
+  mainWindow = windowInstance;
   const wc = windowInstance.webContents;
   const rendererDebugEnabled =
     !!process.env.VITE_DEV_SERVER_URL ||
@@ -522,30 +541,34 @@ async function createWindow() {
     clearUnresponsiveRecoveryTimer();
   });
 
-  mainWindow.on('show', () => {
+  windowInstance.on('show', () => {
     logStartupStep('Main window show event');
   });
-  mainWindow.on('hide', () => {
+  windowInstance.on('hide', () => {
     logStartupStep('Main window hide event');
   });
-  mainWindow.on('focus', () => {
+  windowInstance.on('focus', () => {
     logStartupStep('Main window focus event');
   });
-  mainWindow.on('closed', () => {
+  windowInstance.on('closed', () => {
     if (mainWindow === windowInstance) {
       mainWindow = null;
     }
   });
 
-  mainWindow.once('ready-to-show', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
+  windowInstance.once('ready-to-show', () => {
+    if (mainWindow === windowInstance && !windowInstance.isDestroyed()) {
+      // A quit that started before first paint (e.g. an elevated relaunch)
+      // must keep the window hidden.
+      if (!isShuttingDown) {
+        windowInstance.show();
+      }
       logStartupStep('Main window ready-to-show');
       scheduleDeferredStartupWork();
     }
   });
 
-  mainWindow.on('close', (event) => {
+  windowInstance.on('close', (event) => {
     // On Windows/Linux we keep running in tray instead of quitting.
     if (isQuitting) return;
     event.preventDefault();
@@ -553,10 +576,10 @@ async function createWindow() {
   });
 
   // Deny all popup windows from renderer content.
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   // Prevent navigation away from trusted app content.
-  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+  wc.on('will-navigate', (event, navigationUrl) => {
     const devServerUrl = process.env.VITE_DEV_SERVER_URL;
     const isAllowed = (() => {
       if (devServerUrl) {
@@ -592,9 +615,9 @@ async function createWindow() {
 
   const { registerIpcHandlers, loadInitialState } =
     await import('./ipc/IpcHandler');
-  registerIpcHandlers(mainWindow);
+  registerIpcHandlers(windowInstance);
 
-  mainWindow.webContents.on('did-finish-load', async () => {
+  wc.on('did-finish-load', async () => {
     if (mainWindow === windowInstance && !windowInstance.isDestroyed()) {
       logStartupStep('Renderer did-finish-load');
       try {
@@ -632,21 +655,100 @@ async function createWindow() {
   logStartupStep('BrowserWindow created', {
     createWindowMs: Math.round(performance.now() - windowCreateStartedAt),
   });
+  return windowInstance;
 }
 
-void app.whenReady().then(async () => {
-  if (!gotSingleInstanceLock) {
-    // A second instance must not initialize window/tray/IPC; app.quit()
-    // has already been requested above.
+// ---------------------------------------------------------------------------
+// Startup
+// ---------------------------------------------------------------------------
+
+/**
+ * Electron's single-instance lock is exclusive per user-data directory. The
+ * process we replace during an elevated relaunch gives its lock up as soon as
+ * the UAC prompt returns, but the replacement may reach this point first —
+ * poll briefly instead of mistaking the dying predecessor for the primary.
+ */
+async function acquireSingleInstanceLock(): Promise<boolean> {
+  if (app.requestSingleInstanceLock()) {
+    return true;
+  }
+  if (!relaunchedElevated) {
+    return false;
+  }
+  const deadline = Date.now() + RELAUNCH_LOCK_WAIT_MS;
+  while (Date.now() < deadline) {
+    await delay(RELAUNCH_LOCK_RETRY_MS);
+    if (app.requestSingleInstanceLock()) {
+      logStartupStep('Acquired single-instance lock from the predecessor');
+      return true;
+    }
+  }
+  // The predecessor started us and is on its way out; it cannot be "the
+  // running app" to hand over to. Boot anyway — the filesystem activation
+  // handshake keeps later launches reaching this instance even without the
+  // Electron lock.
+  logger.warn(
+    'Main',
+    'Predecessor did not release the single-instance lock in time; booting as primary',
+    { waitedMs: RELAUNCH_LOCK_WAIT_MS },
+  );
+  return true;
+}
+
+/**
+ * A desktop-shortcut / Start-Menu launch while the tray instance is running.
+ * Electron is supposed to emit `second-instance` on the primary, but on
+ * Windows that IPC is unreliable (and UIPI blocks it entirely when the primary
+ * is elevated for TUN). Ask the primary over the filesystem handshake instead.
+ *
+ * Uses app.exit — never app.quit. `before-quit` on THIS process would tear
+ * down the primary's system proxy / TUN routes.
+ */
+async function exitAsDuplicateLaunch(): Promise<void> {
+  try {
+    await activateRunningInstance(userDataDir);
+  } catch (error) {
+    logger.error('Main', 'Failed to activate the running instance', error);
+  }
+  await logger.flush().catch(() => undefined);
+  app.exit(0);
+}
+
+async function handleActivationRequest(reason: string): Promise<void> {
+  if (isShuttingDown || appLifecycle.quitReason !== null) {
+    logStartupStep('Activation request ignored during shutdown', { reason });
     return;
   }
+  if (!app.isReady()) {
+    // Tray and window cannot exist yet; bootstrap creates both in a moment.
+    logStartupStep('Activation request ignored before ready', { reason });
+    return;
+  }
+  try {
+    await ensureTray();
+    await showMainWindow(reason);
+  } catch (error) {
+    logger.error('Main', `Failed to handle ${reason}`, error);
+  }
+}
+
+async function bootstrap(): Promise<void> {
+  isPrimaryInstance = await acquireSingleInstanceLock();
+  if (!isPrimaryInstance) {
+    await exitAsDuplicateLaunch();
+    return;
+  }
+
+  app.on('second-instance', () => {
+    void handleActivationRequest('second-instance');
+  });
+
+  await app.whenReady();
+
   // Holding the lock does not prove we are alone: UIPI hides an elevated
   // instance (TUN mode runs elevated) from this process, so ask over the
   // filesystem handshake before booting a duplicate app.
-  if (
-    !process.argv.includes(RELAUNCH_ARG) &&
-    (await activateRunningInstance(userDataDir))
-  ) {
+  if (!relaunchedElevated && (await activateRunningInstance(userDataDir))) {
     logStartupStep('Handed activation to the running instance');
     // Exit instead of quit: `before-quit` would tear down the *shared* network
     // state (system proxy, TUN routes) that the other instance still owns.
@@ -654,13 +756,24 @@ void app.whenReady().then(async () => {
     app.exit(0);
     return;
   }
+
+  // From here on this process is the app.
   startInstanceActivationService(userDataDir, () => {
-    void showMainWindow('activation-request');
+    void handleActivationRequest('activation-request');
   });
+  beginSessionLogs();
   initMainSentry();
-  logStartupStep('App ready event');
+  logStartupStep('App ready event', { relaunchedElevated });
   registerPowerMonitor();
-  await recoverOrphanedNetworkState();
+
+  // Recovery of a crashed session's network state runs in the background and
+  // never delays the window. It is started before the window so the gate is
+  // armed by the time the renderer's did-finish-load kicks off a pending TUN
+  // resume; connect paths wait on `startupRecovery` before touching the stack.
+  void startupRecovery.run(recoverOrphanedNetworkState);
+
+  // Window and tray next: the user gets feedback immediately, and a second
+  // launch during startup finds a window to raise instead of creating one.
   await createWindow();
   logStartupStep('createWindow finished');
   await ensureTray();
@@ -668,14 +781,28 @@ void app.whenReady().then(async () => {
   // loadInitialState runs from did-finish-load so the renderer has subscribed to
   // app snapshots; calling it here as well duplicated refresh/ping work and
   // caused overlapping ping-all-servers requests to be discarded as stale.
+}
+
+void bootstrap().catch((error) => {
+  logger.error('Main', 'Bootstrap failed', error);
+  scheduleFatalExit('uncaught-exception', error);
 });
+
+// ---------------------------------------------------------------------------
+// Fault handling
+// ---------------------------------------------------------------------------
 
 process.on('uncaughtException', (error) => {
   scheduleFatalExit('uncaught-exception', error);
 });
 
 process.on('unhandledRejection', (reason) => {
-  scheduleFatalExit('unhandled-rejection', reason);
+  // A rejected promise in async glue is a bug to report, not a reason to take
+  // the user's VPN down: the network stack is still consistent. Sentry's
+  // main-process integration captures these as well.
+  logger.error('Main', 'Unhandled promise rejection', {
+    reason: formatUnknownError(reason),
+  });
 });
 
 // Last-resort sync kill if the process is exiting without going through
@@ -722,28 +849,31 @@ app.on('child-process-gone', (_event, details) => {
 });
 
 app.on('window-all-closed', () => {
-  // Keep the app running in the tray on Windows/Linux.
-  if (process.platform !== 'darwin') {
-    if (isQuitting) {
-      app.quit();
-    }
-  } else {
-    app.quit();
+  // Keep the app running in the tray on Windows/Linux. A close during an
+  // in-flight shutdown must not short-circuit it — `before-quit` below keeps
+  // blocking until performShutdown() has finished.
+  if (process.platform === 'darwin') {
+    appLifecycle.requestQuit('user');
   }
 });
 
 app.on('activate', async () => {
   try {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      await createWindow();
-    }
+    await createWindow();
     await ensureTray();
   } catch (error) {
     logger.error('Main', 'Failed to handle activate', error);
   }
 });
 
-async function performShutdown(): Promise<void> {
+// ---------------------------------------------------------------------------
+// Shutdown
+// ---------------------------------------------------------------------------
+
+async function performShutdown(reason: QuitReason): Promise<void> {
+  // The window must not stay interactive (or closable) while PowerShell is
+  // restoring the network stack.
+  hideMainWindow(`shutdown:${reason}`);
   try {
     await stopNetworkStack();
   } catch (error) {
@@ -767,28 +897,18 @@ async function performShutdown(): Promise<void> {
   }
   appUpdaterService.dispose();
   trayService.dispose();
-  stopInstanceActivationService(userDataDir);
+  // During an elevated relaunch the replacement already publishes its own
+  // heartbeat; deleting the owner record would hide it from later launches.
+  stopInstanceActivationService(userDataDir, {
+    removeOwnerRecord: reason !== 'elevated-relaunch',
+  });
   await logger.flush();
-  try {
-    await clearShutdownLogs();
-  } catch (error) {
-    console.error('Failed to clear shutdown logs', error);
-  }
 }
 
-app.on('before-quit', (event) => {
-  // A duplicate launch that lost the single-instance race must not tear down
-  // the primary's VPN (system proxy / TUN routes are process-global).
-  if (!gotSingleInstanceLock) return;
-  // When electron-updater drives the quit (quitAndInstall), our shutdown has
-  // already run via the prepare-for-quit hook; do not intercept the quit or
-  // the downloaded update would never be installed.
-  if (isQuittingForUpdate) return;
-  if (isShuttingDown) return;
-
-  event.preventDefault();
+function beginShutdown(reason: QuitReason): void {
   isQuitting = true;
   isShuttingDown = true;
+  logStartupStep('Shutdown started', { reason });
 
   const forceExitTimeout = setTimeout(() => {
     logger.warn('Main', 'Forced exit after shutdown timeout', {
@@ -799,15 +919,18 @@ app.on('before-quit', (event) => {
 
   void (async () => {
     try {
-      await performShutdown();
+      await performShutdown(reason);
     } catch (error) {
       logger.error('Main', 'Shutdown failed; exiting anyway', error);
     }
     clearTimeout(forceExitTimeout);
-    if (appUpdaterService.hasDownloadedUpdate()) {
-      // Mirror autoInstallOnAppQuit: app.exit() would skip the updater's
-      // quit hook, so explicitly install the downloaded update. Its
-      // internal app.quit() passes straight through (flag above).
+    // Mirror autoInstallOnAppQuit: app.exit() would skip the updater's quit
+    // hook, so explicitly install the downloaded update. Not during a relaunch
+    // — the installer would fight the elevated instance that just started.
+    if (
+      reason !== 'elevated-relaunch' &&
+      appUpdaterService.hasDownloadedUpdate()
+    ) {
       isQuittingForUpdate = true;
       if (appUpdaterService.installDownloadedUpdate()) {
         return;
@@ -815,6 +938,42 @@ app.on('before-quit', (event) => {
     }
     app.exit(0);
   })();
+}
+
+appLifecycle.on('quit-requested', (reason) => {
+  if (reason !== 'elevated-relaunch') {
+    return;
+  }
+  logStartupStep('Handing over to the elevated instance');
+  // The replacement is already starting: get out of its way at once. The
+  // window disappears instead of sitting on screen with a stale "connecting"
+  // state, the heartbeat stops so a late tick cannot overwrite the new owner
+  // record, and the single-instance lock is released for the new process.
+  hideMainWindow('elevated-relaunch');
+  stopInstanceActivationService(userDataDir, { removeOwnerRecord: false });
+  app.releaseSingleInstanceLock();
+});
+
+app.on('before-quit', (event) => {
+  // A duplicate launch that lost the single-instance race must not tear down
+  // the primary's VPN (system proxy / TUN routes are process-global).
+  if (!isPrimaryInstance) return;
+  // When electron-updater drives the quit (quitAndInstall), our shutdown has
+  // already run via the prepare-for-quit hook; do not intercept the quit or
+  // the downloaded update would never be installed.
+  if (isQuittingForUpdate) return;
+  if (isShuttingDown) {
+    // Another quit signal (closing the window mid-shutdown, a second tray
+    // click) must not let Electron exit before the network stack is restored;
+    // performShutdown() ends the process itself.
+    event.preventDefault();
+    return;
+  }
+
+  event.preventDefault();
+  // OS session end or a direct app.quit() arrives without a recorded reason.
+  appLifecycle.noteExternalQuit('user');
+  beginShutdown(appLifecycle.quitReason ?? 'user');
 });
 
 // IPC install-update: gracefully tear down the network stack with the same
@@ -824,5 +983,6 @@ appUpdaterService.setPrepareForQuit(async () => {
   isQuitting = true;
   isShuttingDown = true;
   isQuittingForUpdate = true;
-  await performShutdown();
+  appLifecycle.noteExternalQuit('update');
+  await performShutdown('update');
 });

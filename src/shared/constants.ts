@@ -23,7 +23,12 @@ export const APP_CONSTANTS = {
     STAGING_API: 10820,
   },
   TIMEOUTS: {
-    SUBSCRIPTION_FETCH: 10000,
+    /**
+     * Per-request budget for a subscription fetch (each redirect hop gets its
+     * own). Generous because translate.yandex.ru pages are slow to render, and
+     * nothing user-facing waits on the refresh anymore.
+     */
+    SUBSCRIPTION_FETCH: 30_000,
   },
 };
 

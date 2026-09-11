@@ -94,21 +94,46 @@ function hydratePingOverlay(
 export function createServerRepository(): ServerRepository {
   const store = getAppStore();
   let lastPersistedFingerprint: string | null = null;
+  /**
+   * `electron-store` re-reads and re-parses the whole JSON file on every
+   * `get()`. The catalog is read on every snapshot, every `get(id)` and every
+   * partial ping persist, so keep the hydrated list in memory and drop it only
+   * when this repository (the sole in-process writer of these keys) writes.
+   */
+  let cachedCatalog: VlessConfig[] | null = null;
+  let cachedList: VlessConfig[] | null = null;
+
+  const readCatalog = (): VlessConfig[] => {
+    cachedCatalog ??= store.get('servers') || [];
+    return cachedCatalog;
+  };
 
   const readOverlay = (): Record<string, StoredPing> => {
     const stored = store.get('serverPings') ?? {};
     if (Object.keys(stored).length > 0) {
       return stored;
     }
-    return extractPingOverlay(store.get('servers') || []);
+    return extractPingOverlay(readCatalog());
+  };
+
+  const readList = (): VlessConfig[] => {
+    cachedList ??= hydratePingOverlay(readCatalog(), readOverlay());
+    return cachedList;
+  };
+
+  const invalidate = (): void => {
+    cachedCatalog = null;
+    cachedList = null;
   };
 
   return {
     get(id: string) {
-      return this.list().find((server) => server.uuid === id);
+      return readList().find((server) => server.uuid === id);
     },
     list() {
-      return hydratePingOverlay(store.get('servers') || [], readOverlay());
+      // Fresh array so callers can filter/sort without touching the cache;
+      // the row objects themselves are treated as immutable throughout.
+      return [...readList()];
     },
     saveAll(servers: VlessConfig[]) {
       const unique = uniqueCatalogServers(servers);
@@ -129,9 +154,10 @@ export function createServerRepository(): ServerRepository {
       logger.info('ServerRepository', 'saveAll', { count: servers.length });
       store.set('servers', catalog);
       store.set('serverPings', overlay);
+      invalidate();
     },
     savePings(overlay: ServerPingOverlay) {
-      const catalog = store.get('servers') || [];
+      const catalog = readCatalog();
       const fingerprint = `${catalogListFingerprint(catalog)}##${pingOverlayFingerprint(overlay)}`;
       if (fingerprint === lastPersistedFingerprint) {
         logger.debug('ServerRepository', 'savePings skipped (unchanged)');
@@ -142,6 +168,8 @@ export function createServerRepository(): ServerRepository {
         count: Object.keys(overlay).length,
       });
       store.set('serverPings', overlay);
+      // Catalog rows are untouched; only the hydrated projection is stale.
+      cachedList = null;
     },
   };
 }
