@@ -5,6 +5,7 @@ import {
   type TunRoutingPlan,
 } from '@/main/services/TunRouteService';
 import { createMemoryTunRouteStateStore } from '@/main/services/tunRoute/routeStateStore';
+import type { WindowsNativeRouting } from '@/main/services/tunRoute/windowsNativeRouting';
 import { configService } from '@/main/services/ConfigService';
 import { makeServer } from '@/test/factories';
 
@@ -35,13 +36,42 @@ const ENABLE_OUTPUT = [
   'DEFAULT6_CREATED',
 ].join('\n');
 
-function createService(options: { elevated?: boolean } = {}) {
+function createService(
+  options: { elevated?: boolean; native?: WindowsNativeRouting | null } = {},
+) {
   const stateStore = createMemoryTunRouteStateStore();
   const service = new TunRouteService('win32', {
     stateStore,
     isElevated: async () => options.elevated ?? true,
+    // These specs exercise the PowerShell path unless a native fake is given.
+    nativeRouting: options.native ?? null,
   });
   return { service, stateStore };
+}
+
+function createNativeFake(
+  overrides: Partial<WindowsNativeRouting> = {},
+): WindowsNativeRouting & {
+  discoverDefaultRoute: ReturnType<typeof vi.fn>;
+  addHostRoutes: ReturnType<typeof vi.fn>;
+  removeHostRoutes: ReturnType<typeof vi.fn>;
+} {
+  return {
+    discoverDefaultRoute: vi.fn(async () => null),
+    addHostRoutes: vi.fn(async ({ prefixes }: { prefixes: string[] }) => ({
+      created: prefixes,
+      failed: [],
+    })),
+    removeHostRoutes: vi.fn(async (prefixes: string[]) => ({
+      removed: prefixes.length,
+      remaining: [],
+    })),
+    ...overrides,
+  } as WindowsNativeRouting & {
+    discoverDefaultRoute: ReturnType<typeof vi.fn>;
+    addHostRoutes: ReturnType<typeof vi.fn>;
+    removeHostRoutes: ReturnType<typeof vi.fn>;
+  };
 }
 
 describe('TunRouteService Windows routing', () => {
@@ -259,6 +289,7 @@ describe('TunRouteService Windows routing', () => {
     const service = new TunRouteService('win32', {
       stateStore,
       isElevated: async () => false,
+      nativeRouting: null,
     });
     const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
 
@@ -284,6 +315,7 @@ describe('TunRouteService Windows routing', () => {
     const service = new TunRouteService('win32', {
       stateStore,
       isElevated: async () => true,
+      nativeRouting: null,
     });
     const runPowerShell = vi
       .spyOn(service as any, 'runPowerShell')
@@ -385,5 +417,206 @@ describe('TunRouteService Windows routing', () => {
 
     expect(prepare).not.toHaveBeenCalled();
     expect(runPowerShell).not.toHaveBeenCalled();
+  });
+});
+
+describe('TunRouteService native Windows fast path', () => {
+  const plan: TunRoutingPlan = {
+    defaultRoute: {
+      interfaceIndex: 10,
+      gateway: '192.168.0.1',
+      interfaceName: 'Wi-Fi',
+      localAddress: '192.168.0.124',
+    },
+    proxyIps: ['203.0.113.10'],
+  };
+
+  beforeEach(() => {
+    vi.mocked(configService.getPerformanceSettings).mockReturnValue({
+      ...DEFAULT_PERFORMANCE_SETTINGS,
+      windowsTunRouting: 'xray',
+    });
+  });
+
+  it('discovers the default route natively and never spawns PowerShell', async () => {
+    const native = createNativeFake({
+      discoverDefaultRoute: vi.fn(async () => plan.defaultRoute),
+    });
+    const { service } = createService({ native });
+    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
+
+    const routingPlan = await service.prepareRoutingPlan(
+      makeServer({ address: '203.0.113.10' }),
+      { awaitStableDefaultRoute: false },
+    );
+
+    expect(routingPlan).toEqual(plan);
+    expect(native.discoverDefaultRoute).toHaveBeenCalledTimes(1);
+    expect(runPowerShell).not.toHaveBeenCalled();
+  });
+
+  it('falls back to PowerShell discovery when the native tables yield nothing', async () => {
+    const native = createNativeFake();
+    const { service } = createService({ native });
+    const runPowerShell = vi
+      .spyOn(service as any, 'runPowerShell')
+      .mockResolvedValue('12|192.168.1.1|Ethernet|192.168.1.10');
+
+    const routingPlan = await service.prepareRoutingPlan(
+      makeServer({ address: '203.0.113.10' }),
+      { awaitStableDefaultRoute: false },
+    );
+
+    expect(routingPlan.defaultRoute).toEqual({
+      interfaceIndex: 12,
+      gateway: '192.168.1.1',
+      interfaceName: 'Ethernet',
+      localAddress: '192.168.1.10',
+    });
+    expect(runPowerShell).toHaveBeenCalledTimes(1);
+  });
+
+  it('pins host routes with route.exe and records them for teardown', async () => {
+    const native = createNativeFake();
+    const { service, stateStore } = createService({ native });
+    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
+
+    await service.pinProxyHostRoutes(plan);
+
+    expect(native.addHostRoutes).toHaveBeenCalledWith({
+      prefixes: ['203.0.113.10/32'],
+      gateway: '192.168.0.1',
+      interfaceIndex: 10,
+      metric: 1,
+    });
+    expect(runPowerShell).not.toHaveBeenCalled();
+    expect(stateStore.current).toMatchObject({
+      hostPrefixes: ['203.0.113.10/32'],
+      defaultRoutes: false,
+    });
+  });
+
+  it('reports a native pin failure with the same error as the PowerShell path', async () => {
+    const native = createNativeFake({
+      addHostRoutes: vi.fn(async () => ({
+        created: [],
+        failed: [{ prefix: '203.0.113.10/32', message: 'Access denied' }],
+      })),
+    });
+    const { service } = createService({ native });
+
+    await expect(service.pinProxyHostRoutes(plan)).rejects.toThrow(
+      /host route.*203\.0\.113\.10\/32\|Access denied/i,
+    );
+  });
+
+  it('uses PowerShell for IPv6 pins the native path cannot express', async () => {
+    const native = createNativeFake();
+    const { service } = createService({ native });
+    const runPowerShell = vi
+      .spyOn(service as any, 'runPowerShell')
+      .mockResolvedValue('HOST_CREATED|2001:db8::10/128');
+
+    await service.pinProxyHostRoutes({
+      ...plan,
+      proxyIps: ['2001:db8::10'],
+    });
+
+    expect(native.addHostRoutes).not.toHaveBeenCalled();
+    expect(runPowerShell).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes host pins natively on disable and clears the persisted state', async () => {
+    const native = createNativeFake();
+    const { service, stateStore } = createService({ native });
+    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
+    await service.pinProxyHostRoutes(plan);
+
+    await service.disable();
+
+    expect(native.removeHostRoutes).toHaveBeenCalledWith(['203.0.113.10/32']);
+    expect(runPowerShell).not.toHaveBeenCalled();
+    expect(stateStore.current).toBeNull();
+  });
+
+  it('keeps the state when a pin survives the native removal', async () => {
+    const native = createNativeFake({
+      removeHostRoutes: vi.fn(async () => ({
+        removed: 0,
+        remaining: ['203.0.113.10/32'],
+      })),
+    });
+    const { service, stateStore } = createService({ native });
+    await service.pinProxyHostRoutes(plan);
+
+    await service.disable();
+
+    expect(stateStore.current).not.toBeNull();
+  });
+
+  it('recovers orphaned host pins natively but leaves TUN default routes to PowerShell', async () => {
+    const native = createNativeFake();
+    const hostOnly = createMemoryTunRouteStateStore({
+      version: 1,
+      hostPrefixes: ['203.0.113.10/32'],
+      hostRouteMetric: 1,
+      defaultRoutes: false,
+      tunInterfaceIndex: null,
+      updatedAt: Date.now(),
+    });
+    const service = new TunRouteService('win32', {
+      stateStore: hostOnly,
+      isElevated: async () => true,
+      nativeRouting: native,
+    });
+    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
+
+    await service.recoverOrphanedRoutes();
+    expect(native.removeHostRoutes).toHaveBeenCalledWith(['203.0.113.10/32']);
+    expect(runPowerShell).not.toHaveBeenCalled();
+    expect(hostOnly.current).toBeNull();
+
+    const withDefaults = createMemoryTunRouteStateStore({
+      version: 1,
+      hostPrefixes: ['203.0.113.10/32'],
+      hostRouteMetric: 1,
+      defaultRoutes: true,
+      tunInterfaceIndex: 7,
+      updatedAt: Date.now(),
+    });
+    const legacy = new TunRouteService('win32', {
+      stateStore: withDefaults,
+      isElevated: async () => true,
+      nativeRouting: native,
+    });
+    const legacyPowerShell = vi
+      .spyOn(legacy as any, 'runPowerShell')
+      .mockResolvedValue('REMOVED|1|2');
+
+    await legacy.recoverOrphanedRoutes();
+    expect(native.removeHostRoutes).toHaveBeenCalledTimes(1);
+    expect(legacyPowerShell).toHaveBeenCalledTimes(1);
+    expect(withDefaults.current).toBeNull();
+  });
+
+  it('re-pins after resume through the native path', async () => {
+    const native = createNativeFake();
+    const { service } = createService({ native });
+    await service.pinProxyHostRoutes(plan);
+    vi.spyOn(service as any, 'waitForDefaultRoute').mockResolvedValue({
+      interfaceIndex: 21,
+      gateway: '10.0.0.1',
+      interfaceName: 'Ethernet',
+      localAddress: '10.0.0.5',
+    });
+
+    await service.reapplyRoutesAfterResume();
+
+    expect(native.addHostRoutes).toHaveBeenLastCalledWith({
+      prefixes: ['203.0.113.10/32'],
+      gateway: '10.0.0.1',
+      interfaceIndex: 21,
+      metric: 1,
+    });
   });
 });

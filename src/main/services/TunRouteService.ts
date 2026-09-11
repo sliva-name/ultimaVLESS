@@ -48,6 +48,11 @@ import {
   type TunRouteState,
   type TunRouteStateStore,
 } from './tunRoute/routeStateStore';
+import {
+  createWindowsNativeRouting,
+  supportsNativeHostRoutes,
+  type WindowsNativeRouting,
+} from './tunRoute/windowsNativeRouting';
 
 export interface TunRoutingPlan {
   defaultRoute: DefaultRouteInfo;
@@ -68,6 +73,16 @@ export interface TunRouteServiceOptions {
   stateStore?: TunRouteStateStore;
   /** Route mutation needs Administrator rights on Windows. */
   isElevated?: () => Promise<boolean>;
+  /**
+   * `route.exe`/`netsh` fast path for discovery and host pins. `null` forces
+   * every operation through PowerShell (tests of that path; diagnostics).
+   */
+  nativeRouting?: WindowsNativeRouting | null;
+}
+
+interface HostRouteOutcome {
+  created: string[];
+  failures: string[];
 }
 
 interface AddedRoute {
@@ -99,12 +114,17 @@ const HOST_ROUTE_METRIC = 1;
 
 /**
  * Coordinates TUN-mode routing. Windows performs explicit OS-level route
- * manipulation through PowerShell; Linux/macOS defer to Xray's auto-route
- * behaviour and only probe the current default route for diagnostics.
+ * manipulation; Linux/macOS defer to Xray's auto-route behaviour and only
+ * probe the current default route for diagnostics.
+ *
+ * On Windows the connect hot path (default-gateway discovery, proxy host pins
+ * and their removal) goes through `route.exe`/`netsh` — tens of milliseconds
+ * instead of the seconds a PowerShell host needs. PowerShell remains the
+ * fallback when those tables cannot be interpreted, and the implementation of
+ * the legacy "static routes" mode (TUN address, DNS and default routes).
  *
  * Every Windows route we create is recorded in memory (for teardown) and
  * persisted through {@link TunRouteStateStore} (for recovery after a crash).
- * Teardown and recovery both run a single PowerShell process.
  */
 export class TunRouteService {
   private addedRoutes: AddedRoute[] = [];
@@ -113,6 +133,7 @@ export class TunRouteService {
   private readonly platformAdapter: PlatformTunAdapter;
   private readonly stateStore: TunRouteStateStore;
   private readonly isElevated: () => Promise<boolean>;
+  private readonly nativeRouting: WindowsNativeRouting | null;
 
   constructor(
     private readonly platform: NodeJS.Platform = process.platform,
@@ -125,6 +146,12 @@ export class TunRouteService {
         ? createFileTunRouteStateStore()
         : createMemoryTunRouteStateStore());
     this.isElevated = options.isElevated ?? isElevatedOnWindows;
+    this.nativeRouting =
+      options.nativeRouting === undefined
+        ? platform === 'win32'
+          ? createWindowsNativeRouting()
+          : null
+        : options.nativeRouting;
   }
 
   public isSupported(): boolean {
@@ -196,6 +223,55 @@ export class TunRouteService {
       throw new Error('No proxy server IPs to pin for TUN host routes');
     }
     const prefixes = proxyIps.map((ip) => this.hostPrefixForIp(ip));
+    const startedAt = Date.now();
+    const outcome = await this.applyHostRoutes(defaultRoute, prefixes);
+    for (const prefix of outcome.created) {
+      this.addedRoutes.push({
+        destination: prefix,
+        mask: '',
+        prefix,
+        interfaceIndex: defaultRoute.interfaceIndex,
+      });
+    }
+    this.lastDefaultRoute = defaultRoute;
+    this.persistState();
+    if (outcome.failures.length > 0) {
+      throw new Error(
+        `Failed to pin proxy host route(s) to the physical gateway: ${outcome.failures.join('; ')}`,
+      );
+    }
+    logger.info('TunRouteService', 'Pinned proxy host routes for TUN', {
+      gateway: defaultRoute.gateway,
+      interfaceIndex: defaultRoute.interfaceIndex,
+      prefixes,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  /**
+   * Creates (or re-points) proxy host routes via the given gateway. Native
+   * `route.exe` for IPv4 pins; the PowerShell script otherwise. Both report the
+   * prefixes that now exist and a message per prefix that could not be pinned.
+   */
+  private async applyHostRoutes(
+    defaultRoute: DefaultRouteInfo,
+    prefixes: string[],
+  ): Promise<HostRouteOutcome> {
+    if (this.nativeRouting && supportsNativeHostRoutes(prefixes)) {
+      const result = await this.nativeRouting.addHostRoutes({
+        prefixes,
+        gateway: defaultRoute.gateway,
+        interfaceIndex: defaultRoute.interfaceIndex,
+        metric: HOST_ROUTE_METRIC,
+      });
+      return {
+        created: result.created,
+        failures: result.failed.map(
+          (failure) => `${failure.prefix}|${failure.message}`,
+        ),
+      };
+    }
+
     const output = await this.runPowerShell(
       reapplyHostRoutesScript({
         defaultRouteInterfaceIndex: defaultRoute.interfaceIndex,
@@ -204,33 +280,16 @@ export class TunRouteService {
         hostRouteMetric: HOST_ROUTE_METRIC,
       }),
     );
-    const hostFailures: string[] = [];
+    const outcome: HostRouteOutcome = { created: [], failures: [] };
     for (const line of output.split(/\r?\n/)) {
       const trimmed = line.trim();
       if (trimmed.startsWith('HOST_CREATED|')) {
-        const prefix = trimmed.slice('HOST_CREATED|'.length);
-        this.addedRoutes.push({
-          destination: prefix,
-          mask: '',
-          prefix,
-          interfaceIndex: defaultRoute.interfaceIndex,
-        });
+        outcome.created.push(trimmed.slice('HOST_CREATED|'.length));
       } else if (trimmed.startsWith('HOST_FAIL|')) {
-        hostFailures.push(trimmed.slice('HOST_FAIL|'.length));
+        outcome.failures.push(trimmed.slice('HOST_FAIL|'.length));
       }
     }
-    this.lastDefaultRoute = defaultRoute;
-    this.persistState();
-    if (hostFailures.length > 0) {
-      throw new Error(
-        `Failed to pin proxy host route(s) to the physical gateway: ${hostFailures.join('; ')}`,
-      );
-    }
-    logger.info('TunRouteService', 'Pinned proxy host routes for TUN', {
-      gateway: defaultRoute.gateway,
-      interfaceIndex: defaultRoute.interfaceIndex,
-      prefixes,
-    });
+    return outcome;
   }
 
   public async enable(
@@ -443,23 +502,13 @@ export class TunRouteService {
         return;
       }
       const prefixes = hostRoutes.map((route) => route.prefix as string);
-      const output = await this.runPowerShell(
-        reapplyHostRoutesScript({
-          defaultRouteInterfaceIndex: currentRoute.interfaceIndex,
-          gateway: currentRoute.gateway,
-          proxyHostPrefixes: prefixes,
-          hostRouteMetric: HOST_ROUTE_METRIC,
-        }),
-      );
-      for (const line of output.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('HOST_FAIL|')) {
-          logger.warn(
-            'TunRouteService',
-            'Failed to re-pin proxy host route after resume',
-            { detail: trimmed.slice('HOST_FAIL|'.length) },
-          );
-        }
+      const outcome = await this.applyHostRoutes(currentRoute, prefixes);
+      for (const detail of outcome.failures) {
+        logger.warn(
+          'TunRouteService',
+          'Failed to re-pin proxy host route after resume',
+          { detail },
+        );
       }
       for (const route of hostRoutes) {
         route.interfaceIndex = currentRoute.interfaceIndex;
@@ -507,6 +556,16 @@ export class TunRouteService {
   // ---- Windows route discovery ---------------------------------------------
 
   private async getDefaultRoute(): Promise<DefaultRouteInfo | null> {
+    if (this.nativeRouting) {
+      const native = await this.nativeRouting.discoverDefaultRoute();
+      if (native) {
+        return native;
+      }
+      logger.info(
+        'TunRouteService',
+        'Falling back to PowerShell for default route discovery',
+      );
+    }
     const out = await this.runPowerShell(getDefaultRouteScript(), {
       allowNonZeroExit: true,
     });
@@ -753,8 +812,33 @@ export class TunRouteService {
     return { hostFailures, defaultFailure };
   }
 
-  /** One PowerShell process for every route removal (teardown and recovery). */
+  /**
+   * Removes the routes of a session (teardown and crash recovery). Host pins
+   * alone go through `route.exe`; the legacy static-routes mode also has to
+   * drop the TUN default routes, whose alias/metric scoping stays in PowerShell.
+   */
   private async removeTunRoutes(params: RemoveTunRoutesParams): Promise<void> {
+    if (
+      this.nativeRouting &&
+      !params.removeDefaultRoutes &&
+      supportsNativeHostRoutes(params.hostPrefixes)
+    ) {
+      const result = await this.nativeRouting.removeHostRoutes(
+        params.hostPrefixes,
+      );
+      if (result.remaining.length > 0) {
+        throw new Error(
+          `Host route(s) still present after removal: ${result.remaining.join(', ')}`,
+        );
+      }
+      logger.info('TunRouteService', 'Removed TUN routes', {
+        hostRoutes: result.removed,
+        defaultRoutes: 0,
+        requestedHostPrefixes: params.hostPrefixes.length,
+      });
+      return;
+    }
+
     const output = await this.runPowerShell(
       cleanupTunRoutesScript({
         hostPrefixes: params.hostPrefixes,
