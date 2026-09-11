@@ -4,11 +4,14 @@ import electron from 'vite-plugin-electron';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const configDir = path.dirname(fileURLToPath(import.meta.url));
 
 /** Dev server port — must match connect-src / ws: in dev CSP below. */
 const DEV_SERVER_PORT = 5173;
 const packageJson = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'),
+  fs.readFileSync(path.resolve(configDir, 'package.json'), 'utf8'),
 ) as { version: string };
 
 /**
