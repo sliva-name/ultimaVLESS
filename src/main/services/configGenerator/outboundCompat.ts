@@ -1,5 +1,6 @@
 import net from 'net';
 import { BUNDLED_XRAY_VERSION } from '@/shared/constants';
+import { isPrivateOrReservedHost } from '@/shared/networkAddresses';
 import type { VlessConfig } from '@/shared/types';
 import type { XrayOutbound } from '@/shared/xray-types';
 
@@ -22,22 +23,16 @@ const PRIVATE_DOMAIN_SUFFIXES = [
 export function isPrivateOrLocalEndpoint(hostname: string): boolean {
   const normalized = hostname.trim().toLowerCase().replace(/\.$/, '');
   if (!normalized) return false;
-  if (normalized === 'localhost' || normalized.endsWith('.localhost'))
-    return true;
-  if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true;
-  if (PRIVATE_DOMAIN_SUFFIXES.some((suffix) => normalized === suffix))
-    return true;
-  if (
-    PRIVATE_DOMAIN_SUFFIXES.some((suffix) => normalized.endsWith(`.${suffix}`))
-  ) {
-    return true;
-  }
-  // Xray also treats single-label (dotless) names as private.
-  if (!normalized.includes('.')) return true;
+  const host =
+    normalized.startsWith('[') && normalized.endsWith(']')
+      ? normalized.slice(1, -1)
+      : normalized;
 
-  const ipVersion = net.isIP(normalized);
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+
+  const ipVersion = net.isIP(host);
   if (ipVersion === 4) {
-    const octets = normalized.split('.').map(Number);
+    const octets = host.split('.').map(Number);
     if (octets.length !== 4 || octets.some((value) => Number.isNaN(value))) {
       return false;
     }
@@ -57,16 +52,18 @@ export function isPrivateOrLocalEndpoint(hostname: string): boolean {
   }
 
   if (ipVersion === 6) {
-    return (
-      normalized === '::' ||
-      normalized.startsWith('fc') ||
-      normalized.startsWith('fd') ||
-      normalized.startsWith('fe80:') ||
-      normalized.startsWith('ff')
-    );
+    // Mapped IPv4, loopback, ULA and link-local share the SSRF helper.
+    if (isPrivateOrReservedHost(host)) return true;
+    // Xray also treats multicast (ff00::/8) as non-public.
+    return host === '::' || host.startsWith('ff');
   }
 
-  return false;
+  if (PRIVATE_DOMAIN_SUFFIXES.some((suffix) => host === suffix)) return true;
+  if (PRIVATE_DOMAIN_SUFFIXES.some((suffix) => host.endsWith(`.${suffix}`))) {
+    return true;
+  }
+  // Xray also treats single-label (dotless) names as private.
+  return !host.includes('.');
 }
 
 export function normalizeVmessSecurity(security: string | undefined): string {

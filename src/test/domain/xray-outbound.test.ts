@@ -21,6 +21,12 @@ describe('outboundCompat', () => {
     expect(isPrivateOrLocalEndpoint('intranet')).toBe(true);
     expect(isPrivateOrLocalEndpoint('example.com')).toBe(false);
     expect(isPrivateOrLocalEndpoint('1.1.1.1')).toBe(false);
+    expect(isPrivateOrLocalEndpoint('2001:db8::1')).toBe(false);
+    expect(isPrivateOrLocalEndpoint('[2001:db8::1]')).toBe(false);
+    expect(isPrivateOrLocalEndpoint('::1')).toBe(true);
+    expect(isPrivateOrLocalEndpoint('[::1]')).toBe(true);
+    expect(isPrivateOrLocalEndpoint('::ffff:192.168.0.1')).toBe(true);
+    expect(isPrivateOrLocalEndpoint('::ffff:1.1.1.1')).toBe(false);
   });
 
   it('coerces removed VMess security values to auto', () => {
@@ -72,6 +78,22 @@ describe('outboundCompat', () => {
         streamSecurity: 'none',
       }),
     ).not.toThrow();
+
+    expect(() =>
+      assertEncryptedPublicOutbound({
+        protocol: 'vless',
+        address: '2001:db8::1',
+        streamSecurity: 'none',
+      }),
+    ).toThrow(/TLS\/REALITY/);
+
+    expect(() =>
+      assertEncryptedPublicOutbound({
+        protocol: 'vless',
+        address: '[2001:db8::1]',
+        streamSecurity: 'reality',
+      }),
+    ).not.toThrow();
   });
 
   it('requires TLS for public Hysteria outbounds', () => {
@@ -121,6 +143,15 @@ describe('outboundCompat', () => {
         }),
       ),
     ).toBe(true);
+    expect(
+      isServerPublicOutboundCompatible(
+        makeServer({
+          protocol: 'vless',
+          address: '2001:db8::1',
+          security: 'none',
+        }),
+      ),
+    ).toBe(false);
     expect(
       isServerPublicOutboundCompatible(
         makeServer({
