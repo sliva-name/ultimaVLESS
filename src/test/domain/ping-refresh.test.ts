@@ -232,6 +232,22 @@ describe('ping refresh runner', () => {
     expect(changes).toEqual([]);
   });
 
+  it('re-probes a row whose last measurement was null even if pingTime is recent', async () => {
+    const now = 1_000_000;
+    const { ping, runner } = createHarness(
+      [makeServer({ uuid: 'dead', ping: null, pingTime: now - 100 })],
+      { now: () => now },
+    );
+
+    const job = runner.run({ force: false, trigger: 'startup' });
+    await waitFor(() => ping.calls.length === 1);
+    expect(ping.calls[0]!.servers.map((server) => server.uuid)).toEqual([
+      'dead',
+    ]);
+    ping.complete(0, { dead: 18 });
+    await job;
+  });
+
   it('drops the pass when a session takes the stack mid-probe', async () => {
     let unsafe = false;
     const { ping, runner, store } = createHarness([makeServer({ uuid: 'a' })], {

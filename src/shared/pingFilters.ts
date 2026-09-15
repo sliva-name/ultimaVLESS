@@ -24,6 +24,11 @@ export function filterServersNeedingPing(
   }
 
   return servers.filter((server) => {
+    if (server.ping == null) {
+      // A failed probe still stamps pingTime, but null is not a usable
+      // latency — treating it as fresh hid dead rows from the next pass.
+      return true;
+    }
     if (!server.pingTime || server.pingTime <= 0) {
       return true;
     }
@@ -43,6 +48,9 @@ export function allServersHaveFreshPing(
     return true;
   }
   return servers.every((server) => {
+    if (server.ping == null) {
+      return false;
+    }
     if (!server.pingTime || server.pingTime <= 0) {
       return false;
     }
