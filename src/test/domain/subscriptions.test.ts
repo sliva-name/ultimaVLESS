@@ -101,6 +101,17 @@ describe('subscription parsing', () => {
     });
   });
 
+  it('keeps the same catalog uuid when a link is reordered in the list', () => {
+    const first = 'vless://user-id@example.com:443?security=tls#One';
+    const second = 'vless://other-id@example.com:443?security=tls#Two';
+    const [a] = parseDirectLinksFromText(`${first}\n${second}`);
+    const [b] = parseDirectLinksFromText(`${second}\n${first}`).filter(
+      (config) => config.name === 'One',
+    );
+
+    expect(a?.uuid).toBe(b?.uuid);
+  });
+
   it('parses hysteria and wireguard JSON outbounds', () => {
     const [hy] = parseJsonConfigs([
       {

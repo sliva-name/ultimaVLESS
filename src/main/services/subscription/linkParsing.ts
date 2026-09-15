@@ -245,13 +245,9 @@ function parseVlessLink(
       noGRPCHeader,
       allowInsecure,
       pinnedPeerCertSha256:
-        params.get('pinnedPeerCertSha256') ??
-        params.get('pcs') ??
-        undefined,
+        params.get('pinnedPeerCertSha256') ?? params.get('pcs') ?? undefined,
       verifyPeerCertByName:
-        params.get('verifyPeerCertByName') ??
-        params.get('vcn') ??
-        undefined,
+        params.get('verifyPeerCertByName') ?? params.get('vcn') ?? undefined,
       mldsa65Verify:
         params.get('mldsa65Verify') ?? params.get('pqv') ?? undefined,
       echConfigList: params.get('ech') ?? undefined,
@@ -332,13 +328,9 @@ function parseTrojanLink(link: string): VlessConfig | null {
         isTruthyQueryParam(params.get('insecure')) ||
         isTruthyQueryParam(params.get('allowInsecure')),
       pinnedPeerCertSha256:
-        params.get('pinnedPeerCertSha256') ??
-        params.get('pcs') ??
-        undefined,
+        params.get('pinnedPeerCertSha256') ?? params.get('pcs') ?? undefined,
       verifyPeerCertByName:
-        params.get('verifyPeerCertByName') ??
-        params.get('vcn') ??
-        undefined,
+        params.get('verifyPeerCertByName') ?? params.get('vcn') ?? undefined,
       mldsa65Verify:
         params.get('mldsa65Verify') ?? params.get('pqv') ?? undefined,
       echConfigList: params.get('ech') ?? undefined,
@@ -423,9 +415,7 @@ function parseHysteria2Link(link: string): VlessConfig | null {
       allowInsecure,
       pinnedPeerCertSha256,
       verifyPeerCertByName:
-        params.get('verifyPeerCertByName') ??
-        params.get('vcn') ??
-        undefined,
+        params.get('verifyPeerCertByName') ?? params.get('vcn') ?? undefined,
       echConfigList,
       hysteriaObfs:
         obfs || obfsPassword
@@ -602,8 +592,8 @@ export function parseDirectLinksFromText(input: string): VlessConfig[] {
   }
 
   const configs: VlessConfig[] = [];
-  for (const [index, line] of candidates.entries()) {
-    const config = parseLink(line, `${index}:${line}`);
+  for (const line of candidates) {
+    const config = parseLink(line);
     if (config) configs.push(config);
   }
   return configs;
