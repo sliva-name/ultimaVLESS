@@ -614,6 +614,54 @@ describe('session lifecycle', () => {
     expect(session.getLastError()).toBe('endpoint blocked');
   });
 
+  it('lets connect replace an in-flight switch without an illegal transition', async () => {
+    const next = makeServer({ uuid: 'server-2', security: 'tls' });
+    const start = vi.fn(async () => undefined);
+    const switchRuntime = vi.fn(
+      (_spec: unknown, signal: AbortSignal) =>
+        new Promise<void>((_resolve, reject) => {
+          const onAbort = () => {
+            reject(new ConnectionOperationAbortedError());
+          };
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
+          signal.addEventListener('abort', onAbort, { once: true });
+        }),
+    );
+    const { session, server } = createSession({
+      configService: {
+        getServers: vi.fn(() => [server, next]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+      runtime: {
+        start,
+        stop: vi.fn(async () => undefined),
+        switch: switchRuntime,
+        status: vi.fn(() => ({ xrayRunning: false })),
+      },
+    });
+
+    await session.connect(server.uuid);
+    start.mockClear();
+    const switching = session.switchToServer(next);
+    await Promise.resolve();
+    expect(session.getPhase()).toBe('switching');
+
+    const reconnecting = session.connect(server.uuid);
+    await expect(switching).rejects.toBeInstanceOf(
+      ConnectionOperationAbortedError,
+    );
+    await reconnecting;
+
+    expect(session.getPhase()).toBe('connected');
+    expect(start).toHaveBeenCalled();
+  });
+
   it('does not treat a later disconnect as a connect failure', async () => {
     let releaseStart: (() => void) | undefined;
     const start = vi.fn(

@@ -99,10 +99,10 @@ export class ConnectionManagerRelaunchError extends Error {
 
 const ALLOWED_TRANSITIONS: Record<SessionPhase, readonly SessionPhase[]> = {
   idle: ['connecting', 'disconnecting', 'failed'],
-  connecting: ['connected', 'failed', 'disconnecting'],
+  connecting: ['connected', 'failed', 'disconnecting', 'switching'],
   connected: ['disconnecting', 'switching', 'connecting', 'failed'],
-  switching: ['connected', 'failed', 'disconnecting'],
-  disconnecting: ['idle', 'failed'],
+  switching: ['connected', 'failed', 'disconnecting', 'connecting'],
+  disconnecting: ['idle', 'failed', 'connecting', 'switching'],
   failed: ['idle', 'connecting', 'disconnecting', 'switching'],
 };
 
