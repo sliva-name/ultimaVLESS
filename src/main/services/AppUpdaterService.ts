@@ -4,6 +4,11 @@ import type { UpdateStatus } from '@/shared/ipc';
 import { logger } from './LoggerService';
 import { mainLocaleService } from './MainLocaleService';
 import { trayService } from './TrayService';
+import {
+  clipUpdateErrorMessage,
+  isIncompleteReleaseError,
+  isTransientUpdateError,
+} from './updater/errorClassification';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 /** Initial delay after `start()` before the first check fires. */
@@ -24,30 +29,6 @@ const TRANSIENT_ERROR_THRESHOLD = 3;
  *  the regular interval so we don't dwarf it. */
 const TRANSIENT_RETRY_BACKOFF_MS = [30_000, 60_000, 120_000, 240_000] as const;
 let electronUpdaterDep0190FilterInstalled = false;
-
-const TRANSIENT_ERROR_PATTERNS = [
-  /ERR_ADDRESS_UNREACHABLE/i,
-  /ERR_INTERNET_DISCONNECTED/i,
-  /ERR_NAME_NOT_RESOLVED/i,
-  /ERR_NETWORK_CHANGED/i,
-  /ERR_PROXY_CONNECTION_FAILED/i,
-  /ERR_CONNECTION_RESET/i,
-  /ERR_CONNECTION_REFUSED/i,
-  /ERR_CONNECTION_TIMED_OUT/i,
-  /\bENETUNREACH\b/,
-  /\bENOTFOUND\b/,
-  /\bETIMEDOUT\b/,
-  /\bECONNRESET\b/,
-  /\bECONNREFUSED\b/,
-  /\bEHOSTUNREACH\b/,
-  /\bEAI_AGAIN\b/,
-  /getaddrinfo/i,
-  /network is unreachable/i,
-];
-
-function isTransientNetworkError(message: string): boolean {
-  return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
-}
 
 function getWarningCode(
   warning: string | Error,
@@ -210,8 +191,7 @@ export class AppUpdaterService extends EventEmitter {
       installElectronUpdaterDep0190Filter();
       const mod = await import('electron-updater');
       const updater = (mod.autoUpdater ?? mod.default?.autoUpdater) as
-        | AutoUpdaterLike
-        | undefined;
+        AutoUpdaterLike | undefined;
       if (!updater) {
         logger.warn(
           'AppUpdaterService',
@@ -273,18 +253,28 @@ export class AppUpdaterService extends EventEmitter {
    * Returns false when nothing was installed so the caller can exit normally.
    */
   public installDownloadedUpdate(): boolean {
-    if (!this.updater) return false;
+    if (!this.updater || this.status.stage !== 'downloaded') return false;
     try {
       this.updater.quitAndInstall(true, false);
       return true;
     } catch (error) {
-      logger.error('AppUpdaterService', 'installDownloadedUpdate failed', error);
+      logger.error(
+        'AppUpdaterService',
+        'installDownloadedUpdate failed',
+        error,
+      );
       return false;
     }
   }
 
   public async quitAndInstall(): Promise<void> {
-    if (!this.updater) return;
+    if (!this.updater || this.status.stage !== 'downloaded') {
+      logger.warn(
+        'AppUpdaterService',
+        'quitAndInstall ignored: no downloaded update',
+      );
+      return;
+    }
     if (this.prepareForQuit) {
       try {
         await this.prepareForQuit();
@@ -388,7 +378,19 @@ export class AppUpdaterService extends EventEmitter {
    * the user almost certainly triggered them by (dis)connecting the VPN.
    */
   private handleCheckFailure(message: string, source: string): void {
-    const transient = isTransientNetworkError(message);
+    if (isIncompleteReleaseError(message)) {
+      logger.warn(
+        'AppUpdaterService',
+        'Update assets are not published yet; retrying silently',
+        { source, error: clipUpdateErrorMessage(message) },
+      );
+      this.scheduleTransientRetry(TRANSIENT_RETRY_BACKOFF_MS[0]);
+      if (this.status.stage === 'checking' || this.status.stage === 'error') {
+        this.setStatus({ stage: 'not-available', error: null });
+      }
+      return;
+    }
+    const transient = isTransientUpdateError(message);
     if (transient) {
       this.transientFailureCount += 1;
       logger.warn(
@@ -422,7 +424,7 @@ export class AppUpdaterService extends EventEmitter {
         error: message,
       });
     }
-    this.setStatus({ stage: 'error', error: message });
+    this.setStatus({ stage: 'error', error: clipUpdateErrorMessage(message) });
   }
 
   private clearDeferTimer(): void {

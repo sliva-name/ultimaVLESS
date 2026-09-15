@@ -34,6 +34,9 @@ export function registerUpdateHandlers({
       assertTrustedSender(event);
       // Performs a graceful network-stack shutdown first, then hands the quit
       // over to electron-updater so the downloaded update gets installed.
+      if (!deps.appUpdaterService.hasDownloadedUpdate()) {
+        return false;
+      }
       await deps.appUpdaterService.quitAndInstall();
       return true;
     },
