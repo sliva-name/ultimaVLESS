@@ -152,7 +152,13 @@ export class LoggerService {
       return;
     }
     this.writesSinceRotateCheck = 0;
-    this.rotateIfNeeded();
+    try {
+      this.rotateIfNeeded();
+    } catch (e) {
+      // Rotation is best-effort: EBUSY on Windows must not drop the line
+      // that triggered the check.
+      console.error('Failed to rotate log file', e);
+    }
   }
 
   private rotateIfNeeded(): void {

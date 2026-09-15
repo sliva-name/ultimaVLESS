@@ -107,4 +107,36 @@ describe('LoggerService sessions', () => {
     expect(content.startsWith('{"message":"primary instance"}\n')).toBe(true);
     expect(content).toContain('handing over');
   });
+
+  it('still writes the line when size-based rotation throws', async () => {
+    const logger = new LoggerService('rotate-busy.log');
+    logger.beginSession();
+    const logPath = logger.getLogPath();
+    const realStatSync = fs.statSync.bind(fs);
+    const statSpy = vi.spyOn(fs, 'statSync').mockImplementation(((
+      target: fs.PathLike,
+      options?: fs.StatSyncOptions,
+    ) => {
+      if (path.resolve(String(target)) === path.resolve(logPath)) {
+        const error = new Error(
+          'EBUSY: resource busy',
+        ) as NodeJS.ErrnoException;
+        error.code = 'EBUSY';
+        throw error;
+      }
+      return realStatSync(target, options as any);
+    }) as typeof fs.statSync);
+
+    try {
+      for (let i = 0; i < 50; i += 1) {
+        logger.info('Test', `line-${i}`);
+      }
+      await logger.flush();
+    } finally {
+      statSpy.mockRestore();
+    }
+
+    const content = fs.readFileSync(logPath, 'utf8');
+    expect(content).toContain('line-49');
+  });
 });
