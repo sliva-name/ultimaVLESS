@@ -3,6 +3,7 @@ import { IPC_INVOKE_CHANNELS } from '@/shared/ipc';
 import { logger } from '@/main/services/LoggerService';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { assertBoolean, assertValidServerPayload } from '@/main/ipc/validators';
+import { isPingUnsafePhase } from '@/main/runtime/pingRefresh';
 
 interface RegisterPingHandlersParams {
   deps: IpcDependencies;
@@ -29,6 +30,18 @@ export function registerPingHandlers({
             new Error('Server not found'),
           );
           return { uuid: requestedServer.uuid, latency: null };
+        }
+
+        if (
+          isPingUnsafePhase(
+            deps.connectionManager.getPhase(),
+            deps.connectionManager.isBusy(),
+          )
+        ) {
+          return {
+            uuid: storedServer.uuid,
+            latency: storedServer.ping ?? null,
+          };
         }
 
         const latency = await deps.pingService.pingServer(storedServer);
