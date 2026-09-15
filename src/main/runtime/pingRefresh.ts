@@ -302,12 +302,9 @@ export function createPingRefreshRunner(
       return toResults(servers);
     }
 
-    if (force) {
-      // The user asked for a complete fresh pass: whatever an older retry is
-      // still probing is re-measured here, so stop it instead of doubling
-      // the sockets to the slowest hosts.
-      supersedeRetries();
-    }
+    // A new pass re-measures the same hosts; drop the background retry so
+    // we do not open a second batch of sockets alongside it.
+    supersedeRetries();
     const run = coordinator.beginRun();
     activeRuns += 1;
     emitChanged(true);

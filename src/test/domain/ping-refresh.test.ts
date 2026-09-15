@@ -167,6 +167,33 @@ describe('ping refresh runner', () => {
     expect(overlay.b.ping).toBe(33);
   });
 
+  it('aborts a background retry when a new unattended pass starts', async () => {
+    const now = 1_000_000;
+    const { ping, runner } = createHarness(
+      [
+        makeServer({ uuid: 'a', ping: 10, pingTime: now - 60_000 }),
+        makeServer({ uuid: 'b', ping: 11, pingTime: now - 60_000 }),
+      ],
+      { now: () => now },
+    );
+
+    const first = runner.run({ force: true, trigger: 'user' });
+    await waitFor(() => ping.calls.length === 1);
+    ping.complete(0, { a: 20, b: null });
+    await first;
+
+    await waitFor(() => ping.calls.length === 2);
+    const retry = ping.calls[1]!;
+
+    const second = runner.run({ force: false, trigger: 'catalog-changed' });
+    await waitFor(() => ping.calls.length === 3);
+    expect(retry.signal?.aborted).toBe(true);
+
+    ping.complete(2, { b: 33 });
+    ping.complete(1, { b: 999 });
+    await second;
+  });
+
   it('lets a retry fill a row that is still empty', async () => {
     const { ping, runner, store } = createHarness([
       makeServer({ uuid: 'a' }),
