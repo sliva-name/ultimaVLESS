@@ -24,6 +24,11 @@ export function isSessionPhaseInFlight(phase: SessionPhase): boolean {
   );
 }
 
+/** Connect/switch can still be cancelled by disconnect; disconnecting cannot. */
+export function isSessionPhaseCancellable(phase: SessionPhase): boolean {
+  return phase === 'connecting' || phase === 'switching';
+}
+
 /** Server list picks are allowed while idle or after a failed connect. */
 export function isSessionPhaseSelectable(phase: SessionPhase): boolean {
   return phase === 'idle' || phase === 'failed';

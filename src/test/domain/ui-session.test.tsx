@@ -101,6 +101,66 @@ describe('renderer session view', () => {
     expect(electronApi.connect).toHaveBeenCalledWith(server.uuid);
   });
 
+  it('disconnects when the user cancels an in-flight switch', async () => {
+    const server = makeServer({ uuid: 'switch-target' });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [server],
+        selectedServerId: server.uuid,
+        session: {
+          phase: 'switching',
+          activeServerId: server.uuid,
+          lastError: null,
+          blockedServerIds: [],
+        },
+      }),
+    );
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.snapshot.session.phase).toBe('switching'),
+    );
+
+    await act(async () => {
+      await result.current.toggleConnection();
+    });
+
+    expect(electronApi.disconnect).toHaveBeenCalled();
+    expect(electronApi.connect).not.toHaveBeenCalled();
+  });
+
+  it('does not toggle connection while disconnecting', async () => {
+    const server = makeServer({ uuid: 'live' });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [server],
+        selectedServerId: server.uuid,
+        session: {
+          phase: 'disconnecting',
+          activeServerId: server.uuid,
+          lastError: null,
+          blockedServerIds: [],
+        },
+      }),
+    );
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.snapshot.session.phase).toBe('disconnecting'),
+    );
+
+    await act(async () => {
+      await result.current.toggleConnection();
+    });
+
+    expect(electronApi.disconnect).not.toHaveBeenCalled();
+    expect(electronApi.connect).not.toHaveBeenCalled();
+  });
+
   it('keeps optimistic selection until the snapshot confirms the new id', async () => {
     const serverA = makeServer({ uuid: 'server-a' });
     const serverB = makeServer({ uuid: 'server-b' });
@@ -264,7 +324,9 @@ describe('renderer session view', () => {
 
     expect(result.current.selectedServer?.uuid).toBe(serverB.uuid);
     await waitFor(() =>
-      expect(electronApi.setSelectedServerId).toHaveBeenCalledWith(serverB.uuid),
+      expect(electronApi.setSelectedServerId).toHaveBeenCalledWith(
+        serverB.uuid,
+      ),
     );
   });
 
@@ -427,7 +489,9 @@ describe('renderer session view', () => {
     });
 
     expect(electronApi.pingAllServers).toHaveBeenCalledWith(true);
-    expect(electronApi.getAppSnapshot.mock.calls.length).toBe(callsAfterHydrate);
+    expect(electronApi.getAppSnapshot.mock.calls.length).toBe(
+      callsAfterHydrate,
+    );
     expect(result.current.snapshot.servers[0]?.ping).toBe(42);
   });
 });

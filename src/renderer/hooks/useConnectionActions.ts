@@ -1,25 +1,32 @@
 import { Dispatch, SetStateAction, useCallback } from 'react';
+import {
+  isSessionPhaseCancellable,
+  isSessionPhaseInFlight,
+  type SessionPhase,
+} from '@/shared/ipc';
 import type { VlessConfig } from '@/shared/types';
 
 interface UseConnectionActionsParams {
   selectedServer: VlessConfig | null;
-  isConnected: boolean;
-  isConnectionBusy: boolean;
+  phase: SessionPhase;
   setConnectionError: Dispatch<SetStateAction<string | null>>;
 }
 
 export function useConnectionActions({
   selectedServer,
-  isConnected,
-  isConnectionBusy,
+  phase,
   setConnectionError,
 }: UseConnectionActionsParams) {
   return useCallback(async () => {
-    if (!selectedServer || isConnectionBusy) {
+    if (!selectedServer) {
+      return;
+    }
+    const canCancel = isSessionPhaseCancellable(phase);
+    if (isSessionPhaseInFlight(phase) && !canCancel) {
       return;
     }
     try {
-      if (isConnected) {
+      if (phase === 'connected' || canCancel) {
         const result = await window.electronAPI.disconnect();
         if (!result.ok) {
           setConnectionError('Failed to disconnect cleanly');
@@ -44,5 +51,5 @@ export function useConnectionActions({
         error instanceof Error ? error.message : 'Connection operation failed',
       );
     }
-  }, [selectedServer, isConnected, isConnectionBusy, setConnectionError]);
+  }, [selectedServer, phase, setConnectionError]);
 }

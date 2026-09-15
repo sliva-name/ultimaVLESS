@@ -217,8 +217,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
 
   const toggleConnection = useConnectionActions({
     selectedServer,
-    isConnected,
-    isConnectionBusy,
+    phase,
     setConnectionError: setClientError,
   });
 

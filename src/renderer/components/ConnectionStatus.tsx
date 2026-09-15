@@ -1,6 +1,7 @@
 import React from 'react';
 import { VlessConfig } from '@/shared/types';
 import {
+  isSessionPhaseCancellable,
   isSessionPhaseInFlight,
   type SessionPhase,
   type TrafficSnapshot,
@@ -59,6 +60,8 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
   const isDisconnecting = phase === 'disconnecting';
   const isConnecting = phase === 'connecting';
   const inFlight = isSessionPhaseInFlight(phase);
+  const canCancel = isSessionPhaseCancellable(phase);
+  const buttonDisabled = !selectedServer || (inFlight && !canCancel);
   const showSecure = phase === 'connected';
   const busyLabel = isDisconnecting
     ? t('status.disconnecting')
@@ -67,7 +70,9 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
       : t('status.connecting');
   const busyHint = isDisconnecting
     ? t('status.disconnectingHint')
-    : t('status.connectingHint');
+    : isSwitching
+      ? t('status.cancelSwitchHint')
+      : t('status.connectingHint');
   const sessionActive = showSecure && !!trafficSnapshot;
 
   useRenderPerf('ConnectionStatus', [
@@ -170,19 +175,18 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
 
             <button
               onClick={onToggleConnection}
-              disabled={!selectedServer || inFlight}
+              disabled={buttonDisabled}
               className={clsx(
                 'relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 rounded-full border-[6px] sm:border-8 flex items-center justify-center transition-all duration-500 shadow-2xl transform',
-                !(!selectedServer || inFlight) &&
-                  'hover:scale-105 active:scale-95',
+                !buttonDisabled && 'hover:scale-105 active:scale-95',
                 showSecure
                   ? 'bg-linear-to-br from-green-500/20 to-green-600/10 border-green-500 shadow-green-500/30'
                   : 'bg-linear-to-br from-gray-800/50 to-gray-800/30 border-gray-700 shadow-black/30',
-                !(!selectedServer || inFlight) &&
+                !buttonDisabled &&
                   (showSecure
                     ? 'hover:shadow-green-500/40'
                     : 'hover:border-gray-600 hover:from-gray-700/60 hover:to-gray-700/40 hover:shadow-black/40'),
-                (!selectedServer || inFlight) && 'opacity-50 cursor-not-allowed',
+                buttonDisabled && 'opacity-50 cursor-not-allowed',
               )}
             >
               <div
@@ -215,7 +219,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           {/* Reserved slot for busy hint so the layout stays stable when
             transitioning between connecting/connected/disconnected. */}
           <div className="mb-4 sm:mb-6 min-h-[2.25rem] sm:min-h-[2.5rem] flex items-center justify-center">
-            {inFlight && !isSwitching && (
+            {inFlight && (
               <div className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full bg-primary/10 border border-primary/30 animate-[fadeIn_0.3s_ease-out] max-w-md text-center justify-center">
                 <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
                 <span className="text-xs sm:text-sm text-primary font-medium leading-snug">

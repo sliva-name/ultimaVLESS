@@ -13,6 +13,7 @@ import { createAutoSwitchPolicy } from '@/main/domain/connection/ConnectionPolic
 import { SessionPolicyState } from '@/main/domain/connection/SessionPolicyState';
 import type { ConnectionMode } from '@/shared/types';
 import {
+  isSessionPhaseCancellable,
   isSessionPhaseInFlight,
   isSessionPhaseSelectable,
   type SessionPhase,
@@ -987,6 +988,10 @@ describe('session state projection', () => {
     expect(isSessionPhaseSelectable('connected')).toBe(false);
     expect(isSessionPhaseSelectable('switching')).toBe(false);
     expect(isSessionPhaseSelectable('disconnecting')).toBe(false);
+    expect(isSessionPhaseCancellable('switching')).toBe(true);
+    expect(isSessionPhaseCancellable('connecting')).toBe(true);
+    expect(isSessionPhaseCancellable('disconnecting')).toBe(false);
+    expect(isSessionPhaseCancellable('connected')).toBe(false);
     expect(isSessionPhaseInFlight('failed')).toBe(false);
     expect(isSessionPhaseInFlight('idle')).toBe(false);
   });

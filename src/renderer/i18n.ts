@@ -36,6 +36,8 @@ const resources = {
         selectServer: 'Select a server to connect',
         connectingHint: 'Applying TUN/proxy settings and network routes…',
         disconnectingHint: 'Applying disconnect sequence and cleaning routes.',
+        cancelSwitchHint:
+          'Click the button to cancel switching and disconnect.',
         country: 'Country',
         ipAddress: 'IP Address',
         protocol: 'Protocol',
@@ -271,6 +273,8 @@ const resources = {
         connectingHint: 'Применение настроек TUN/proxy и маршрутизации…',
         disconnectingHint:
           'Применение последовательности отключения и очистка маршрутов.',
+        cancelSwitchHint:
+          'Нажмите кнопку, чтобы отменить переключение и отключиться.',
         country: 'Страна',
         ipAddress: 'IP Адрес',
         protocol: 'Протокол',
