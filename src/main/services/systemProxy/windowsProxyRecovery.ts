@@ -108,7 +108,14 @@ $reg = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
 try {
   $json = Get-Content -LiteralPath $snapshotPath -Raw -Encoding UTF8
   $state = $json | ConvertFrom-Json
-  Set-ItemProperty -Path $reg -Name ProxyEnable -Value ([int]$state.proxyEnable)
+  if ($state.platform -ne 'win32') { throw 'Snapshot platform is not win32' }
+  $enable = [int]$state.proxyEnable
+  if ($enable -ne 0 -and $enable -ne 1) { throw 'Invalid proxyEnable' }
+  $server = [string]$state.proxyServer
+  if ($server -ne '' -and $server -notmatch '^[A-Za-z0-9.:\[\]=;_-]+$') { throw 'Invalid proxyServer' }
+  $pac = [string]$state.autoConfigUrl
+  if ($pac -ne '' -and $pac -notmatch '^https?://') { throw 'Invalid autoConfigUrl' }
+  Set-ItemProperty -Path $reg -Name ProxyEnable -Value $enable
   if ($null -eq $state.proxyServer -or $state.proxyServer -eq '') {
     Remove-ItemProperty -Path $reg -Name ProxyServer -ErrorAction SilentlyContinue
   } else {

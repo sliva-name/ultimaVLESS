@@ -7,6 +7,7 @@ import { WindowsProxyAdapter } from './systemProxy/windowsProxy';
 import { DarwinProxyAdapter } from './systemProxy/darwinProxy';
 import { LinuxProxyAdapter } from './systemProxy/linuxProxy';
 import { ProxySnapshot } from './systemProxy/types';
+import { parseProxySnapshotJson } from './systemProxy/parseSnapshot';
 import {
   installLogonRecovery,
   uninstallLogonRecovery,
@@ -216,9 +217,14 @@ export class SystemProxyService {
   private loadSnapshot(): ProxySnapshot | null {
     try {
       if (!fs.existsSync(this.snapshotPath)) return null;
-      return JSON.parse(
+      const parsed = parseProxySnapshotJson(
         fs.readFileSync(this.snapshotPath, 'utf8'),
-      ) as ProxySnapshot;
+      );
+      if (!parsed) {
+        logger.warn('SystemProxyService', 'Rejected invalid proxy snapshot');
+        return null;
+      }
+      return parsed;
     } catch (error) {
       logger.warn('SystemProxyService', 'Failed to load proxy snapshot', {
         error: error instanceof Error ? error.message : String(error),
