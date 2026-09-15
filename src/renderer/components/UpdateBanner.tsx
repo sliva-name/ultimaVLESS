@@ -83,10 +83,10 @@ export const UpdateBanner: React.FC = () => {
 
   return (
     <div
-      className={`z-20 mx-3 mt-2 rounded-xl border ${toneClass} px-3 py-2 flex items-center gap-2.5 animate-[fadeIn_0.3s_ease-out]`}
+      className={`z-20 shrink-0 mx-3 mt-2 rounded-xl border ${toneClass} px-3 py-2 flex items-start gap-2.5 max-h-24 overflow-hidden animate-[fadeIn_0.3s_ease-out]`}
     >
-      <span className="shrink-0">{icon}</span>
-      <span className="text-xs flex-1 min-w-0 leading-snug break-words">
+      <span className="shrink-0 mt-0.5">{icon}</span>
+      <span className="text-xs flex-1 min-w-0 leading-snug line-clamp-3 break-words">
         {text}
       </span>
       {action}

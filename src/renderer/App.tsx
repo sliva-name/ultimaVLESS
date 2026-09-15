@@ -59,7 +59,9 @@ function AppShell() {
           style={dragRegionStyle}
         />
 
-        <div className={isSettingsOpen ? 'hidden' : 'contents'}>
+        <div
+          className={isSettingsOpen ? 'hidden' : 'flex flex-col flex-1 min-h-0'}
+        >
           <UpdateBanner />
           <ConnectionStatus
             phase={session.phase}
