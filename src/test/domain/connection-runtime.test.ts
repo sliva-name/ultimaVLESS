@@ -59,6 +59,32 @@ describe('ConnectionRuntime', () => {
     expect(xrayStop).toHaveBeenCalled();
   });
 
+  it('stops Xray before tearing TUN routes down', async () => {
+    const order: string[] = [];
+    const tun = fakeNetwork('tun');
+    tun.deactivate.mockImplementation(async () => {
+      order.push('tun');
+    });
+    const stop = vi.fn(() => {
+      order.push('xray');
+    });
+    const runtime = createConnectionRuntime({
+      xray: {
+        start: vi.fn(async () => undefined),
+        stop,
+        isRunning: () => true,
+      },
+      proxy: fakeNetwork('proxy'),
+      tun,
+    });
+
+    await runtime.start(spec('tun'));
+    order.length = 0;
+    await runtime.stop();
+
+    expect(order).toEqual(['xray', 'tun']);
+  });
+
   it('a clean first start prepares, starts Xray and activates without tearing anything down', async () => {
     const proxy = fakeNetwork('proxy');
     const tun = fakeNetwork('tun');

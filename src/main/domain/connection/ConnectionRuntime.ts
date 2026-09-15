@@ -86,8 +86,8 @@ export function createConnectionRuntime(deps: {
   }
 
   async function tearDown(): Promise<void> {
-    await deactivateNetwork(false);
     xray.stop();
+    await deactivateNetwork(false);
     activeMode = null;
     activePorts = { ...PRIMARY_RUNTIME_PORTS };
   }
@@ -219,8 +219,8 @@ export function createConnectionRuntime(deps: {
       }
 
       const keepProxy = activeMode === 'proxy' && spec.mode === 'proxy';
-      await deactivateNetwork(keepProxy);
       xray.stop();
+      await deactivateNetwork(keepProxy);
       try {
         await bringUp(spec, signal, { validate: true });
       } catch (error) {
