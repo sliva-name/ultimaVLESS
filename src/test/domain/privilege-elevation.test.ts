@@ -204,28 +204,35 @@ describe('findPkexecPath / isPkexecAvailable', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('resolves an executable pkexec found on PATH (Linux only)', () => {
+  it('does not resolve a pkexec planted on user PATH', () => {
+    const fake = path.join(tmpDir, 'pkexec');
+    fs.writeFileSync(fake, '#!/bin/sh\n');
+    try {
+      fs.chmodSync(fake, 0o755);
+    } catch {
+      // chmod is a no-op on Windows; the file still must not be chosen.
+    }
+    process.env.PATH = tmpDir;
+
+    expect(findPkexecPath()).not.toBe(fake);
+  });
+
+  it('returns null when no pkexec is present in system directories', () => {
+    process.env.PATH = tmpDir;
     if (process.platform !== 'linux') {
       expect(findPkexecPath()).toBeNull();
       return;
     }
-    const fake = path.join(tmpDir, 'pkexec');
-    fs.writeFileSync(fake, '#!/bin/sh\n');
-    fs.chmodSync(fake, 0o755);
-    process.env.PATH = tmpDir;
-
-    expect(findPkexecPath()).toBe(fake);
-    expect(isPkexecAvailable()).toBe(true);
-  });
-
-  it('returns null when no pkexec is present on PATH', () => {
-    process.env.PATH = tmpDir; // empty dir, no pkexec
-    // Note: assumes the standard system paths have no pkexec in this env.
-    if (process.platform === 'linux') {
-      expect(findPkexecPath()).toBeNull();
-      expect(isPkexecAvailable()).toBe(false);
+    const systemCopy =
+      fs.existsSync('/usr/bin/pkexec') ||
+      fs.existsSync('/bin/pkexec') ||
+      fs.existsSync('/usr/local/bin/pkexec');
+    if (systemCopy) {
+      expect(findPkexecPath()).toMatch(/pkexec$/);
+      expect(isPkexecAvailable()).toBe(true);
     } else {
       expect(findPkexecPath()).toBeNull();
+      expect(isPkexecAvailable()).toBe(false);
     }
   });
 });

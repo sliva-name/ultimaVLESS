@@ -1,5 +1,4 @@
 import fs from 'fs';
-import path from 'path';
 import { app } from 'electron';
 import { runProcessWithOutput } from './platform/commandRunner';
 import { RELAUNCH_ARG } from '@/shared/constants';
@@ -134,9 +133,9 @@ export function isProcessRoot(): boolean {
 /**
  * Resolves an absolute, executable `pkexec` path or `null` when PolicyKit is
  * not installed. `pkexec` is the graphical privilege-escalation front-end
- * (PolicyKit) — the Linux analogue of the Windows UAC prompt. Resolving to an
- * absolute path (instead of spawning the bare name) avoids executing a planted
- * `pkexec` from a writable `$PATH` entry.
+ * (PolicyKit) — the Linux analogue of the Windows UAC prompt. Only well-known
+ * system locations are considered: a planted `pkexec` on `$PATH` (or in the
+ * current working directory) must never run as root.
  */
 export function findPkexecPath(): string | null {
   if (process.platform !== 'linux') {
@@ -147,11 +146,6 @@ export function findPkexecPath(): string | null {
     '/bin/pkexec',
     '/usr/local/bin/pkexec',
   ];
-  for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
-    if (dir) {
-      candidates.push(path.join(dir, 'pkexec'));
-    }
-  }
   for (const candidate of candidates) {
     try {
       fs.accessSync(candidate, fs.constants.X_OK);
