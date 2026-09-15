@@ -278,6 +278,13 @@ export class ConnectionManager extends EventEmitter {
     }
   }
 
+  private retargetSwitch(toId: string): void {
+    if (this.state.type !== 'switching' || this.state.to === toId) {
+      return;
+    }
+    this.transitionTo({ ...this.state, to: toId });
+  }
+
   private transitionTo(next: ConnectionState): void {
     const fromPhase = connectionStateToSessionPhase(this.state);
     const toPhase = connectionStateToSessionPhase(next);
@@ -670,6 +677,7 @@ export class ConnectionManager extends EventEmitter {
         async (signal) => {
           for (const candidate of candidates) {
             throwIfAborted(signal);
+            this.retargetSwitch(candidate.uuid);
             monitor.notifySwitching(candidate, from.name);
             try {
               await this.runtime.switch(this.buildSpec(candidate), signal);

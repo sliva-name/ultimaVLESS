@@ -455,6 +455,57 @@ describe('session lifecycle', () => {
     );
   });
 
+  it('auto-switch lands on the successful candidate, not the first one', async () => {
+    const first = makeServer({ uuid: 'server-2', ping: 10, security: 'tls' });
+    const second = makeServer({ uuid: 'server-3', ping: 20, security: 'tls' });
+    const { session, server, switchRuntime, deps } = createSession({
+      configService: {
+        getServers: vi.fn(() => [server, first, second]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+    });
+
+    switchRuntime.mockImplementation(
+      async (spec: { server: { uuid: string } }) => {
+        if (spec.server.uuid === first.uuid) {
+          throw new Error(
+            'Config generation failed: VLESS requires TLS/REALITY',
+          );
+        }
+      },
+    );
+
+    await session.connect(server.uuid);
+    vi.useFakeTimers();
+    try {
+      await session.handleHealthFailure({
+        server,
+        reason: 'endpoint blocked',
+        blocking: true,
+      });
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.runAllTimersAsync();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(switchRuntime).toHaveBeenCalledTimes(2);
+    expect(session.getConnectionState()).toEqual({
+      type: 'connected',
+      serverId: second.uuid,
+      mode: 'proxy',
+    });
+    expect(deps.configService.setSelectedServerId).toHaveBeenCalledWith(
+      second.uuid,
+    );
+    expect(deps.connectionMonitorService.startMonitoring).toHaveBeenCalledWith(
+      second,
+    );
+  });
+
   it('disconnects to failed when auto-switch is off', async () => {
     const { session, server, stop, deps } = createSession();
 
