@@ -106,13 +106,14 @@ function formatUnknownError(error: unknown): string {
 // Network stack helpers
 // ---------------------------------------------------------------------------
 
-async function stopNetworkStack(): Promise<void> {
+async function stopNetworkStack(reason: QuitReason): Promise<void> {
   const { connectionManager } =
     await import('./domain/connection/ConnectionManager');
-  // Preserve pending TUN reconnect across quit — required when we relaunch
-  // elevated after UAC so the new process can resume the connection.
+  // Keep the pending TUN reconnect only when this process is handing over
+  // to an elevated replacement after UAC. A normal quit or update must
+  // not leave a stale flag that the next launch would auto-resume.
   await connectionManager.disconnect({
-    preservePendingTunReconnect: true,
+    preservePendingTunReconnect: reason === 'elevated-relaunch',
   });
 }
 
@@ -875,7 +876,7 @@ async function performShutdown(reason: QuitReason): Promise<void> {
   // restoring the network stack.
   hideMainWindow(`shutdown:${reason}`);
   try {
-    await stopNetworkStack();
+    await stopNetworkStack(reason);
   } catch (error) {
     logger.error('Main', 'Failed to stop network stack on quit', error);
   }
