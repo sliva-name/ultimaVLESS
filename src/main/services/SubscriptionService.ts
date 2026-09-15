@@ -50,23 +50,26 @@ async function lookupPublicHostAddresses(
   hostname: string,
   timeoutMs = 1000,
 ): Promise<dns.LookupAddress[] | null> {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  const timeoutPromise = new Promise<null>((resolve) => {
-    timeout = setTimeout(() => resolve(null), timeoutMs);
-  });
-
-  try {
-    return await Promise.race([
-      dns.promises.lookup(hostname, { all: true }),
-      timeoutPromise,
-    ]);
-  } catch {
-    return null;
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
+  const attempt = async (): Promise<dns.LookupAddress[] | null> => {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<null>((resolve) => {
+      timeout = setTimeout(() => resolve(null), timeoutMs);
+    });
+    try {
+      return await Promise.race([
+        dns.promises.lookup(hostname, { all: true }),
+        timeoutPromise,
+      ]);
+    } catch {
+      return null;
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
     }
-  }
+  };
+
+  return (await attempt()) ?? (await attempt());
 }
 
 function isPrivateOrLoopbackHost(hostname: string): boolean {
