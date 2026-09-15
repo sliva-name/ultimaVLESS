@@ -294,6 +294,24 @@ describe('ping refresh runner', () => {
     expect(ping.calls).toHaveLength(1);
   });
 
+  it('clears the in-progress flag when persist throws', async () => {
+    const { ping, runner, store, changes } = createHarness([
+      makeServer({ uuid: 'a' }),
+    ]);
+    store.savePings.mockImplementation(() => {
+      throw new Error('disk full');
+    });
+
+    const job = runner.run({ force: true, trigger: 'user' });
+    await waitFor(() => ping.calls.length === 1);
+    ping.complete(0, { a: 4 });
+    await expect(job).rejects.toThrow('disk full');
+
+    expect(runner.isRunning()).toBe(false);
+    expect(changes).toHaveLength(2);
+    expect(changes.at(-1)).toEqual({ immediate: true });
+  });
+
   it('aborts in-flight probes when a session starts connecting', async () => {
     let unsafe = false;
     const { ping, runner, store } = createHarness([makeServer({ uuid: 'a' })], {

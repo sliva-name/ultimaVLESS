@@ -335,7 +335,15 @@ export function createPingRefreshRunner(
         return toResults(deps.store.list());
       }
 
-      const updated = run.persist(results, { immediate: true });
+      let updated: VlessConfig[];
+      try {
+        updated = run.persist(results, { immediate: true });
+      } catch (error) {
+        // finish() already cleared the flag; publish that so the spinner
+        // does not stay on after a failed write.
+        emitChanged(true);
+        throw error;
+      }
       const failed = targets.filter(
         (server) => results.get(server.uuid) == null,
       );
