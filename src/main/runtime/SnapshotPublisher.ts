@@ -33,7 +33,10 @@ interface SnapshotPublisherOptions {
   deps: IpcDependencies;
   getWindow: () => BrowserWindow | null;
   coalesceMs?: number;
-  schedule?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  schedule?: (
+    callback: () => void,
+    ms: number,
+  ) => ReturnType<typeof setTimeout>;
   cancelSchedule?: (handle: ReturnType<typeof setTimeout>) => void;
 }
 
@@ -96,10 +99,11 @@ export class SnapshotPublisher {
       return;
     }
     const reasons = new Set(this.pendingReasons);
-    this.pendingReasons.clear();
-
     const win = this.options.getWindow();
-    if (!win) return;
+    if (!win) {
+      return;
+    }
+    this.pendingReasons.clear();
 
     if (this.isRuntimeOnly(reasons)) {
       win.webContents.send(

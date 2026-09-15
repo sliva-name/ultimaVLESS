@@ -122,4 +122,24 @@ describe('SnapshotPublisher', () => {
     expect(deps.serverRepository.list).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[0][1].servers).toBe(send.mock.calls[1][1].servers);
   });
+
+  it('keeps pending reasons when the window is not ready yet', () => {
+    const deps = createPublisherDeps();
+    const send = vi.fn();
+    let win: { webContents: { send: typeof send } } | null = null;
+    const publisher = new SnapshotPublisher({
+      deps: deps as any,
+      getWindow: () => win as any,
+    });
+
+    publisher.push('ping', { immediate: true });
+    expect(send).not.toHaveBeenCalled();
+
+    win = { webContents: { send } };
+    publisher.push('traffic', { immediate: true });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toBe(IPC_EVENT_CHANNELS.appSnapshotChanged);
+    expect(send.mock.calls[0][1].servers).toHaveLength(1);
+  });
 });
