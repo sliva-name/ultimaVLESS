@@ -576,6 +576,24 @@ describe('TunRouteService native Windows fast path', () => {
     expect(stateStore.current).not.toBeNull();
   });
 
+  it('keeps in-memory host pins when removal throws so disable can retry', async () => {
+    const native = createNativeFake({
+      removeHostRoutes: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Access denied'))
+        .mockResolvedValue({ removed: 1, remaining: [] }),
+    });
+    const { service, stateStore } = createService({ native });
+    await service.pinProxyHostRoutes(plan);
+
+    await service.disable();
+    expect(stateStore.current).not.toBeNull();
+
+    await service.disable();
+    expect(native.removeHostRoutes).toHaveBeenCalledTimes(2);
+    expect(stateStore.current).toBeNull();
+  });
+
   it('recovers orphaned host pins natively but leaves TUN default routes to PowerShell', async () => {
     const native = createNativeFake();
     const hostOnly = createMemoryTunRouteStateStore({

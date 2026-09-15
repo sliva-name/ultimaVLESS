@@ -396,7 +396,6 @@ export class TunRouteService {
       (options.sweepDefaultRoutes === true &&
         this.usesWindowsPowerShellRouting());
 
-    this.addedRoutes = [];
     this.lastDefaultRoute = null;
 
     if (hostPrefixes.length === 0 && !removeDefaultRoutes) {
@@ -411,6 +410,7 @@ export class TunRouteService {
         removeDefaultRoutes,
         tunInterfaceIndex: trackedDefaultRoute?.interfaceIndex ?? null,
       });
+      this.addedRoutes = [];
       this.stateStore.clear();
       logger.info('TunRouteService', 'TUN routing disabled', {
         hostPrefixes,
