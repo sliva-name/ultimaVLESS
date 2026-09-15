@@ -506,6 +506,52 @@ describe('session lifecycle', () => {
     );
   });
 
+  it('stops auto-switch when the time budget is exhausted', async () => {
+    const candidates = Array.from({ length: 6 }, (_, index) =>
+      makeServer({
+        uuid: `candidate-${index}`,
+        ping: index + 1,
+        security: 'tls',
+      }),
+    );
+    const { session, server, switchRuntime, stop } = createSession({
+      configService: {
+        getServers: vi.fn(() => [server, ...candidates]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+    });
+
+    switchRuntime.mockImplementation(async () => {
+      vi.advanceTimersByTime(20_000);
+      throw new Error('Post-switch traffic validation failed');
+    });
+
+    await session.connect(server.uuid);
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_000_000);
+    try {
+      await session.handleHealthFailure({
+        server,
+        reason: 'endpoint blocked',
+        blocking: true,
+      });
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.runAllTimersAsync();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(switchRuntime).toHaveBeenCalledTimes(3);
+    expect(stop).toHaveBeenCalled();
+    expect(session.getPhase()).toBe('failed');
+    expect(session.getLastError()).toBe(
+      'Auto-switch stopped: time budget exhausted',
+    );
+  });
+
   it('disconnects to failed when auto-switch is off', async () => {
     const { session, server, stop, deps } = createSession();
 

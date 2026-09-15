@@ -675,8 +675,15 @@ export class ConnectionManager extends EventEmitter {
           generation: this.nextGeneration(),
         }),
         async (signal) => {
+          const startedAt = Date.now();
+          const budgetMs = CONNECTION_MONITOR_TIMING.autoSwitchBudgetMs;
+          let budgetExhausted = false;
           for (const candidate of candidates) {
             throwIfAborted(signal);
+            if (Date.now() - startedAt >= budgetMs) {
+              budgetExhausted = true;
+              break;
+            }
             this.retargetSwitch(candidate.uuid);
             monitor.notifySwitching(candidate, from.name);
             try {
@@ -707,7 +714,11 @@ export class ConnectionManager extends EventEmitter {
             preserveLastError: true,
           });
           await this.runtime.stop();
-          throw new Error('Auto-switch failed: no working servers found');
+          throw new Error(
+            budgetExhausted
+              ? 'Auto-switch stopped: time budget exhausted'
+              : 'Auto-switch failed: no working servers found',
+          );
         },
       );
     } catch (error) {

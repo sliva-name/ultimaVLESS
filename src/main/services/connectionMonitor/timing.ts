@@ -19,6 +19,12 @@ export const CONNECTION_MONITOR_TIMING = {
   localProxyStreakBeforeNotify: 2,
   /** Delay after a blocking error before ConnectionManager auto-switch. */
   autoSwitchDelayMs: 2_000,
+  /**
+   * Wall-clock budget for one auto-switch run. Without this, up to 30
+   * candidates each paying Xray restart + validation can leave the UI
+   * stuck in "switching" for minutes.
+   */
+  autoSwitchBudgetMs: 45_000,
   /** Faster tunnel probe during background health checks (not post-switch validation). */
   healthTunnelProbeTimeoutMs: 6_000,
   healthTunnelProbeAttempts: 2,
