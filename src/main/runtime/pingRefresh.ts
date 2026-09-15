@@ -188,6 +188,7 @@ export function createPingRefreshRunner(
   const runQueue = createSerialQueue();
   const retryQueue = createSerialQueue();
   let retryAbort = new AbortController();
+  let passAbort = new AbortController();
   let activeRuns = 0;
   let queuedAutoRun: Promise<PingResult[]> | null = null;
 
@@ -254,6 +255,12 @@ export function createPingRefreshRunner(
     retryAbort = new AbortController();
   };
 
+  const abortInFlightProbes = (): void => {
+    passAbort.abort();
+    passAbort = new AbortController();
+    supersedeRetries();
+  };
+
   const scheduleRetry = (failed: VlessConfig[]): void => {
     const signal = retryAbort.signal;
     void retryQueue
@@ -268,8 +275,9 @@ export function createPingRefreshRunner(
     trigger: PingRefreshTrigger,
   ): Promise<PingResult[]> => {
     const timer = new PerfTimer('PingRefresh', 'run');
+    const signal = passAbort.signal;
     const servers = deps.store.list();
-    if (deps.isUnsafe()) {
+    if (signal.aborted || deps.isUnsafe()) {
       logger.debug('PingRefresh', 'Skipping ping-all while session is active', {
         trigger,
       });
@@ -314,12 +322,12 @@ export function createPingRefreshRunner(
       const results = await deps.pingService.pingServers(
         targets,
         initialTimeoutMs,
-        { onResult: run.onResult },
+        { onResult: run.onResult, signal },
       );
       // Flip the in-progress flag before the final persist so one snapshot
       // carries both the figures and the idle button state.
       finish();
-      if (deps.isUnsafe() || !run.isCurrent()) {
+      if (signal.aborted || deps.isUnsafe() || !run.isCurrent()) {
         logger.debug(
           'PingRefresh',
           'Dropping ping-all results (network state changed)',
@@ -392,11 +400,14 @@ export function createPingRefreshRunner(
       scheduler.schedule(trigger, delayMs);
     },
     handleSessionPhase(phase: SessionPhase) {
+      if (isPingUnsafePhase(phase, false)) {
+        abortInFlightProbes();
+      }
       scheduler.handleSessionPhase(phase);
     },
     dispose() {
       scheduler.dispose();
-      supersedeRetries();
+      abortInFlightProbes();
       emitter.removeAllListeners();
     },
   }) as PingRefreshRunner;

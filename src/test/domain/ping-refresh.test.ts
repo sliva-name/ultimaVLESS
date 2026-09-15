@@ -251,6 +251,26 @@ describe('ping refresh runner', () => {
     expect(ping.calls).toHaveLength(1);
   });
 
+  it('aborts in-flight probes when a session starts connecting', async () => {
+    let unsafe = false;
+    const { ping, runner, store } = createHarness([makeServer({ uuid: 'a' })], {
+      unsafe: () => unsafe,
+    });
+
+    const job = runner.run({ force: true, trigger: 'user' });
+    await waitFor(() => ping.calls.length === 1);
+
+    unsafe = true;
+    runner.handleSessionPhase('connecting');
+    expect(ping.calls[0]!.signal?.aborted).toBe(true);
+
+    ping.complete(0, { a: 5 });
+    await job;
+
+    expect(store.savePings).not.toHaveBeenCalled();
+    expect(runner.isRunning()).toBe(false);
+  });
+
   it('coalesces overlapping unattended requests into one queued pass', async () => {
     const { ping, runner } = createHarness([makeServer({ uuid: 'a' })]);
 
