@@ -310,6 +310,9 @@ export class ConnectionManager extends EventEmitter {
       this.operationAbort = abort;
       const inFlight = createInFlight();
       this.transitionTo(inFlight);
+      if (inFlight.type === 'switching') {
+        this.deps.connectionMonitorService.pauseProbes();
+      }
       try {
         const result = await task(abort.signal);
         throwIfAborted(abort.signal);

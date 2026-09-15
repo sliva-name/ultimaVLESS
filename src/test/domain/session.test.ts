@@ -53,6 +53,7 @@ function createSession(overrides: Partial<any> = {}) {
     connectionMonitorService: {
       startMonitoring: vi.fn(),
       stopMonitoring: vi.fn(),
+      pauseProbes: vi.fn(),
       notifySwitching: vi.fn(),
       setProbeTarget: vi.fn(),
       noteFailure: vi.fn(),
@@ -361,6 +362,7 @@ describe('session lifecycle', () => {
       serverId: next.uuid,
       mode: 'proxy',
     });
+    expect(deps.connectionMonitorService.pauseProbes).toHaveBeenCalled();
     expect(deps.connectionMonitorService.startMonitoring).toHaveBeenCalledWith(
       next,
     );
@@ -400,6 +402,7 @@ describe('session lifecycle', () => {
       next,
       server.name,
     );
+    expect(deps.connectionMonitorService.pauseProbes).toHaveBeenCalled();
     expect(deps.connectionMonitorService.startMonitoring).toHaveBeenCalledWith(
       next,
     );

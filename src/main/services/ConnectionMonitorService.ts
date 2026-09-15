@@ -135,7 +135,23 @@ export class ConnectionMonitorService extends EventEmitter {
     } as ConnectionEvent);
   }
 
+  /**
+   * Drop in-flight and periodic probes without emitting `disconnected`.
+   * Session stays in `switching`; a later `startMonitoring` re-arms.
+   */
+  public pauseProbes(): void {
+    if (!this.status.probeArmed && !this.checkInterval && !this.sessionAbort) {
+      return;
+    }
+    this.replaceSession();
+    this.status.probeArmed = false;
+    this.tunnelProbeFailStreak = 0;
+    this.localProxyFailStreak = 0;
+  }
+
   public notifySwitching(server: VlessConfig, fromName?: string): void {
+    this.pauseProbes();
+    this.status.currentServer = server;
     this.emit('switching', {
       type: 'switching',
       server,
