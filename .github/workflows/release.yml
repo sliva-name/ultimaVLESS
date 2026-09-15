@@ -148,6 +148,13 @@ jobs:
             echo "$hash  $file" >> release/SHA256SUMS-linux.txt
           done
 
+      - name: Require AppImage before upload
+        run: |
+          if ! find release -type f -name "*.AppImage" | grep -q .; then
+            echo "No .AppImage artifact was produced"
+            exit 1
+          fi
+
       - name: Upload Linux artifacts to draft release
         uses: softprops/action-gh-release@v3
         with:
@@ -155,6 +162,7 @@ jobs:
           draft: true
           files: |
             release/**/*.deb
+            release/**/*.AppImage
             release/**/latest-linux*.yml
             release/**/*.AppImage.blockmap
             release/SHA256SUMS-linux.txt
@@ -257,6 +265,13 @@ jobs:
             echo "$hash  $file" >> release/SHA256SUMS-macos.txt
           done <<< "$files_found"
 
+      - name: Require DMG before upload
+        run: |
+          if ! find release -type f -name "*.dmg" | grep -q .; then
+            echo "No .dmg artifact was produced"
+            exit 1
+          fi
+
       - name: Upload macOS artifacts to draft release
         uses: softprops/action-gh-release@v3
         with:
@@ -264,6 +279,7 @@ jobs:
           draft: true
           files: |
             release/**/*.zip
+            release/**/*.dmg
             release/**/latest-mac*.yml
             release/**/*.dmg.blockmap
             release/**/*.zip.blockmap
@@ -342,12 +358,21 @@ jobs:
           }
           $output | Set-Content -Path "release/SHA256SUMS-windows.txt" -Encoding utf8
 
+      - name: Require NSIS installer before upload
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem -Path "release" -Recurse -File -Filter "UltimaVLESS-Setup-*.exe"
+          if (-not $setup) {
+            throw "NSIS installer (UltimaVLESS-Setup-*.exe) was not produced; refusing to publish latest.yml without it"
+          }
+
       - name: Upload Windows artifacts to draft release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           draft: true
           files: |
+            release/**/UltimaVLESS-Setup-*.exe
             release/**/UltimaVLESS-Portable-*.exe
             release/**/latest.yml
             release/**/*.exe.blockmap
