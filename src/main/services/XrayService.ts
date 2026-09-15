@@ -6,7 +6,11 @@ import { EventEmitter } from 'events';
 import { app } from 'electron';
 import { ConnectionMode, VlessConfig } from '@/shared/types';
 import { XrayHealthStatus } from '@/shared/ipc';
-import { APP_CONSTANTS, PRIMARY_RUNTIME_PORTS, type RuntimePorts } from '@/shared/constants';
+import {
+  APP_CONSTANTS,
+  PRIMARY_RUNTIME_PORTS,
+  type RuntimePorts,
+} from '@/shared/constants';
 import { XrayConfigCompiler } from './XrayConfigCompiler';
 import { configService } from './ConfigService';
 import { logger } from './LoggerService';
@@ -19,6 +23,7 @@ import {
   isProcessRoot,
   shouldElevateXray,
 } from './PrivilegeService';
+import { waitForProcessExit as awaitChildExit } from './xray/waitForProcessExit';
 
 export interface XrayUnexpectedExitEvent {
   config: VlessConfig;
@@ -51,6 +56,7 @@ export class XrayService extends EventEmitter {
   /** Short connect timeout so failed polls do not burn the readiness budget. */
   private static readonly READINESS_PROBE_TIMEOUT_MS = 200;
   private static readonly STOP_TIMEOUT_MS = 3000;
+  private static readonly KILL_GRACE_MS = 1_000;
   /**
    * Elevated (pkexec) spawns may block on a graphical PolicyKit auth dialog, so
    * they get a much longer readiness budget than a direct spawn.
@@ -229,9 +235,13 @@ export class XrayService extends EventEmitter {
           stdio: ['pipe', 'pipe', 'pipe'],
         });
         this.elevatedProcesses.add(spawnedProcess);
-        logger.info('XrayService', 'Spawning Xray elevated via pkexec for TUN', {
-          pkexecPath,
-        });
+        logger.info(
+          'XrayService',
+          'Spawning Xray elevated via pkexec for TUN',
+          {
+            pkexecPath,
+          },
+        );
       } else {
         spawnedProcess = spawn(binPath, ['-c', configPath], {
           env: {
@@ -814,10 +824,9 @@ export class XrayService extends EventEmitter {
   }
 
   private async awaitPendingStop(): Promise<void> {
-    const waits = [
-      this.stopWaitPromise,
-      ...this.pendingExitWaits,
-    ].filter((wait): wait is Promise<void> => wait != null);
+    const waits = [this.stopWaitPromise, ...this.pendingExitWaits].filter(
+      (wait): wait is Promise<void> => wait != null,
+    );
     if (waits.length === 0) {
       return;
     }
@@ -825,72 +834,15 @@ export class XrayService extends EventEmitter {
   }
 
   private waitForProcessExit(processRef: ChildProcess): Promise<void> {
-    return new Promise((resolve) => {
-      if (processRef.exitCode != null || processRef.signalCode != null) {
-        resolve();
-        return;
-      }
-      let settled = false;
-      let timeoutId: NodeJS.Timeout | null = null;
-      type ProcessEventHandler = () => void;
-
-      const cleanup = (
-        onClose: ProcessEventHandler,
-        onError: ProcessEventHandler,
-      ): void => {
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        const withOff = processRef as ChildProcess & {
-          off?: (event: string, listener: ProcessEventHandler) => ChildProcess;
-        };
-        if (typeof withOff.off === 'function') {
-          withOff.off('close', onClose);
-          withOff.off('error', onError);
-          return;
-        }
-        const withRemove = processRef as ChildProcess & {
-          removeListener?: (
-            event: string,
-            listener: ProcessEventHandler,
-          ) => ChildProcess;
-        };
-        if (typeof withRemove.removeListener === 'function') {
-          withRemove.removeListener('close', onClose);
-          withRemove.removeListener('error', onError);
-        }
-      };
-
-      const finish = (
-        onClose: ProcessEventHandler,
-        onError: ProcessEventHandler,
-      ): void => {
-        if (settled) return;
-        settled = true;
-        cleanup(onClose, onError);
-        resolve();
-      };
-
-      const onClose = () => finish(onClose, onError);
-      const onError = () => finish(onClose, onError);
-
-      processRef.once('close', onClose);
-      processRef.once('error', onError);
-      timeoutId = setTimeout(() => {
-        logger.warn(
-          'XrayService',
-          'Timed out waiting for Xray to exit, sending SIGKILL',
-          {
-            timeoutMs: XrayService.STOP_TIMEOUT_MS,
-            pid: processRef.pid ?? null,
-          },
-        );
-        this.killProcessSync(processRef);
-      }, XrayService.STOP_TIMEOUT_MS);
-    });
+    return awaitChildExit(
+      processRef,
+      (child) => this.killProcessSync(child as ChildProcess),
+      {
+        timeoutMs: XrayService.STOP_TIMEOUT_MS,
+        killGraceMs: XrayService.KILL_GRACE_MS,
+      },
+    );
   }
-
 }
 
 export const xrayService = new XrayService();
