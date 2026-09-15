@@ -113,7 +113,17 @@ function probeHttpThroughProxyOnce(
   }
   return new Promise((resolve) => {
     let settled = false;
-    let req: http.ClientRequest;
+    const req = http.request({
+      host: proxyHost,
+      port: proxyPort,
+      path: `http://${targetHost}${targetPath}`,
+      method: 'GET',
+      headers: {
+        Host: targetHost,
+        'User-Agent': 'Mozilla/5.0',
+        Connection: 'close',
+      },
+    });
 
     const onAbort = () => {
       req.destroy();
@@ -126,18 +136,6 @@ function probeHttpThroughProxyOnce(
       signal?.removeEventListener('abort', onAbort);
       resolve(result);
     };
-
-    req = http.request({
-      host: proxyHost,
-      port: proxyPort,
-      path: `http://${targetHost}${targetPath}`,
-      method: 'GET',
-      headers: {
-        Host: targetHost,
-        'User-Agent': 'Mozilla/5.0',
-        Connection: 'close',
-      },
-    });
 
     signal?.addEventListener('abort', onAbort, { once: true });
     req.setTimeout(timeoutMs, () => {
