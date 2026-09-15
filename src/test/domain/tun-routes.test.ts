@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import dns from 'dns';
 import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
 import {
   TunRouteService,
@@ -524,6 +525,27 @@ describe('TunRouteService native Windows fast path', () => {
 
     expect(native.addHostRoutes).not.toHaveBeenCalled();
     expect(runPowerShell).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers IPv4 when DNS returns mixed families so native pins stay on the hot path', async () => {
+    const lookup = vi.spyOn(dns.promises, 'lookup').mockResolvedValue([
+      { address: '2001:db8::10', family: 6 },
+      { address: '203.0.113.10', family: 4 },
+    ] as unknown as Awaited<ReturnType<typeof dns.promises.lookup>>);
+    const native = createNativeFake({
+      discoverDefaultRoute: vi.fn(async () => plan.defaultRoute),
+    });
+    const { service } = createService({ native });
+
+    try {
+      const routingPlan = await service.prepareRoutingPlan(
+        makeServer({ address: 'vpn.example.com' }),
+        { awaitStableDefaultRoute: false },
+      );
+      expect(routingPlan.proxyIps).toEqual(['203.0.113.10']);
+    } finally {
+      lookup.mockRestore();
+    }
   });
 
   it('removes host pins natively on disable and clears the persisted state', async () => {

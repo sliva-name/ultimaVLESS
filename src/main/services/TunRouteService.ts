@@ -653,6 +653,10 @@ export class TunRouteService {
       const systemIps = [
         ...new Set(system.map((entry) => entry.address).filter(Boolean)),
       ];
+      const systemIpv4 = systemIps.filter((ip) => net.isIP(ip) === 4);
+      if (systemIpv4.length > 0) {
+        return systemIpv4;
+      }
       if (systemIps.length > 0) {
         return systemIps;
       }
