@@ -1,6 +1,7 @@
 import * as net from 'net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PingService } from '@/main/services/PingService';
+import * as networkProbe from '@/main/services/networkProbe';
 import { makeServer } from '@/test/factories';
 
 let server: net.Server;
@@ -92,6 +93,26 @@ describe('PingService', () => {
         1000,
       ),
     ).toBeNull();
+  });
+
+  it('does not cache a failed TLS handshake for the next probe', async () => {
+    const handshake = vi
+      .spyOn(networkProbe, 'probeTlsHandshake')
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const service = new PingService();
+    const row = makeServer({
+      uuid: 'tls',
+      address: '127.0.0.1',
+      port,
+      security: 'tls',
+      sni: 'example.com',
+    });
+
+    expect(await service.pingServer(row, 1000)).toBeNull();
+    expect(await service.pingServer(row, 1000)).toEqual(expect.any(Number));
+    expect(handshake).toHaveBeenCalledTimes(2);
+    handshake.mockRestore();
   });
 
   it('stops dequeuing targets once the pass is aborted', async () => {

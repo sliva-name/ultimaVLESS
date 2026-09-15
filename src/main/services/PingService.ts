@@ -68,7 +68,6 @@ export class PingService {
   private readonly dnsTimeoutMs: number;
   private readonly lookup: HostLookup;
   private static readonly TLS_OK_TTL_MS = 5 * 60 * 1000;
-  private static readonly TLS_FAIL_TTL_MS = 60 * 1000;
   private static readonly DNS_TIMEOUT_MS = 3000;
   private static readonly MAX_CONCURRENT_PINGS = 20;
   private readonly tlsCache = new Map<string, TlsCacheEntry>();
@@ -212,12 +211,15 @@ export class PingService {
       // An aborted handshake says nothing about the server.
       return false;
     }
-    this.tlsCache.set(key, {
-      ok: tlsOk,
-      expiresAt:
-        Date.now() +
-        (tlsOk ? PingService.TLS_OK_TTL_MS : PingService.TLS_FAIL_TTL_MS),
-    });
+    // A timeout or handshake error is often transient (SNI blip, overloaded
+    // edge). Caching it for a minute made the next auto-switch rank the
+    // server dead and skip a live host.
+    if (tlsOk) {
+      this.tlsCache.set(key, {
+        ok: true,
+        expiresAt: Date.now() + PingService.TLS_OK_TTL_MS,
+      });
+    }
     return tlsOk;
   }
 
