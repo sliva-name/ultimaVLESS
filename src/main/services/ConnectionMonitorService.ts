@@ -322,6 +322,7 @@ export class ConnectionMonitorService extends EventEmitter {
           attempts: CONNECTION_MONITOR_TIMING.healthTunnelProbeAttempts,
           gapMs: CONNECTION_MONITOR_TIMING.healthTunnelProbeGapMs,
         },
+        signal,
       });
       if (isStale()) {
         return;

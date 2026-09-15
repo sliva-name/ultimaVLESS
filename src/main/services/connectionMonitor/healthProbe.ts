@@ -48,6 +48,7 @@ interface RunConnectionHealthProbeOptions {
   connectionMode: ConnectionMode;
   tunnelProbe?: TunnelProbeOptions;
   ports?: { socks: number; http: number };
+  signal?: AbortSignal;
 }
 
 /**
@@ -97,6 +98,7 @@ export async function runConnectionHealthProbe({
   connectionMode,
   tunnelProbe,
   ports,
+  signal,
 }: RunConnectionHealthProbeOptions): Promise<ConnectionHealthProbeResult> {
   const socksPort = ports?.socks ?? APP_CONSTANTS.PORTS.SOCKS;
   const httpPort = ports?.http ?? APP_CONSTANTS.PORTS.HTTP;
@@ -111,8 +113,8 @@ export async function runConnectionHealthProbe({
   }
 
   const [socksReady, httpReady] = await Promise.all([
-    probeTcpPort(socksPort),
-    probeTcpPort(httpPort),
+    probeTcpPort(socksPort, '127.0.0.1', 1500, signal),
+    probeTcpPort(httpPort, '127.0.0.1', 1500, signal),
   ]);
 
   if (!socksReady || !httpReady) {
@@ -132,6 +134,7 @@ export async function runConnectionHealthProbe({
     tunnelProbe?.timeoutMs ?? 10_000,
     tunnelProbe?.attempts ?? 3,
     tunnelProbe?.gapMs ?? 350,
+    signal,
   );
   if (!tunnelOk) {
     const hostOffline = await isHostInternetUnavailable(connectionMode);

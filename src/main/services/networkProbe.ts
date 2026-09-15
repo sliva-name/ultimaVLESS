@@ -6,20 +6,28 @@ export async function probeTcpPort(
   port: number,
   host: string = '127.0.0.1',
   timeoutMs: number = 1500,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) {
+    return false;
+  }
   return new Promise((resolve) => {
     const socket = net.createConnection({ host, port });
     let settled = false;
+
+    const onAbort = () => finish(false);
 
     const finish = (result: boolean) => {
       if (settled) {
         return;
       }
       settled = true;
+      signal?.removeEventListener('abort', onAbort);
       socket.destroy();
       resolve(result);
     };
 
+    signal?.addEventListener('abort', onAbort, { once: true });
     socket.setTimeout(timeoutMs);
     socket.once('connect', () => finish(true));
     socket.once('timeout', () => finish(false));
@@ -98,17 +106,28 @@ function probeHttpThroughProxyOnce(
   timeoutMs: number,
   targetHost: string,
   targetPath: string,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) {
+    return Promise.resolve(false);
+  }
   return new Promise((resolve) => {
     let settled = false;
+    let req: http.ClientRequest;
+
+    const onAbort = () => {
+      req.destroy();
+      finish(false);
+    };
 
     const finish = (result: boolean) => {
       if (settled) return;
       settled = true;
+      signal?.removeEventListener('abort', onAbort);
       resolve(result);
     };
 
-    const req = http.request({
+    req = http.request({
       host: proxyHost,
       port: proxyPort,
       path: `http://${targetHost}${targetPath}`,
@@ -120,6 +139,7 @@ function probeHttpThroughProxyOnce(
       },
     });
 
+    signal?.addEventListener('abort', onAbort, { once: true });
     req.setTimeout(timeoutMs, () => {
       req.destroy();
       finish(false);
@@ -140,10 +160,21 @@ function probeHttpThroughProxyAny(
   proxyPort: number,
   proxyHost: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) {
+    return Promise.resolve(false);
+  }
   return new Promise((resolve) => {
     let pending = CONNECTIVITY_TARGETS.length;
     let resolved = false;
+
+    const onAbort = () => {
+      if (resolved) return;
+      resolved = true;
+      resolve(false);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
 
     for (const target of CONNECTIVITY_TARGETS) {
       probeHttpThroughProxyOnce(
@@ -152,14 +183,19 @@ function probeHttpThroughProxyAny(
         timeoutMs,
         target.host,
         target.path,
+        signal,
       ).then((res) => {
         if (resolved) return;
         if (res) {
           resolved = true;
+          signal?.removeEventListener('abort', onAbort);
           resolve(true);
         } else {
           pending--;
-          if (pending === 0) resolve(false);
+          if (pending === 0) {
+            signal?.removeEventListener('abort', onAbort);
+            resolve(false);
+          }
         }
       });
     }
@@ -177,12 +213,21 @@ export async function probeHttpThroughProxy(
   timeoutMs: number = 10000,
   attempts: number = 3,
   gapMs: number = 350,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   for (let i = 0; i < attempts; i++) {
-    if (await probeHttpThroughProxyAny(proxyPort, proxyHost, timeoutMs)) {
+    if (signal?.aborted) {
+      return false;
+    }
+    if (
+      await probeHttpThroughProxyAny(proxyPort, proxyHost, timeoutMs, signal)
+    ) {
       return true;
     }
     if (i < attempts - 1) {
+      if (signal?.aborted) {
+        return false;
+      }
       await sleep(gapMs);
     }
   }
