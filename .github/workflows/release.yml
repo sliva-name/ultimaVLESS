@@ -76,7 +76,8 @@ jobs:
           tag_name: ${{ steps.release-version.outputs.tag_name }}
           name: ${{ steps.release-version.outputs.tag_name }}
           body_path: RELEASE_NOTES.md
-          make_latest: true
+          draft: true
+          make_latest: false
 
   build-linux:
     name: Build & Publish Linux
@@ -147,12 +148,12 @@ jobs:
             echo "$hash  $file" >> release/SHA256SUMS-linux.txt
           done
 
-      - name: Publish GitHub Release
+      - name: Upload Linux artifacts to draft release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: true
           files: |
-            release/**/*.AppImage
             release/**/*.deb
             release/**/latest-linux*.yml
             release/**/*.AppImage.blockmap
@@ -256,12 +257,12 @@ jobs:
             echo "$hash  $file" >> release/SHA256SUMS-macos.txt
           done <<< "$files_found"
 
-      - name: Publish GitHub Release
+      - name: Upload macOS artifacts to draft release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: true
           files: |
-            release/**/*.dmg
             release/**/*.zip
             release/**/latest-mac*.yml
             release/**/*.dmg.blockmap
@@ -341,13 +342,25 @@ jobs:
           }
           $output | Set-Content -Path "release/SHA256SUMS-windows.txt" -Encoding utf8
 
-      - name: Publish GitHub Release
+      - name: Upload Windows artifacts to draft release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: true
           files: |
-            release/**/UltimaVLESS-Setup-*.exe
             release/**/UltimaVLESS-Portable-*.exe
             release/**/latest.yml
             release/**/*.exe.blockmap
             release/SHA256SUMS-windows.txt
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [create-release, build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish draft as latest after all artifacts are uploaded
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: false
+          make_latest: true
