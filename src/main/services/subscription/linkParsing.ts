@@ -4,6 +4,7 @@ import {
   createStableServerId,
 } from '@/shared/serverIdentity';
 import { logger } from '@/main/services/LoggerService';
+import { redactUrl } from '@/main/utils/redactUrl';
 
 function safeDecodeComponent(value: string): string {
   try {
@@ -254,7 +255,7 @@ function parseVlessLink(
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing VLESS link', {
-      link: link.substring(0, 50) + '...',
+      link: redactUrl(link),
     });
     return null;
   }
@@ -337,7 +338,7 @@ function parseTrojanLink(link: string): VlessConfig | null {
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing Trojan link', {
-      link: link.substring(0, 50) + '...',
+      link: redactUrl(link),
     });
     return null;
   }
@@ -424,7 +425,7 @@ function parseHysteria2Link(link: string): VlessConfig | null {
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing Hysteria2 link', {
-      link: link.substring(0, 50) + '...',
+      link: redactUrl(link),
     });
     return null;
   }
@@ -559,7 +560,7 @@ function parseShadowsocksLink(link: string): VlessConfig | null {
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing Shadowsocks link', {
-      link: link.substring(0, 50) + '...',
+      link: redactUrl(link),
     });
     return null;
   }
