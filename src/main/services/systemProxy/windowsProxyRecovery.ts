@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '@/main/services/LoggerService';
+import { powerShellPath } from '@/main/services/platform/systemBinaries';
 import { runCommand } from './runCommand';
 
 export const WINDOWS_PROXY_RECOVERY_TASK_NAME = 'UltimaVLESS_ProxyRecovery';
@@ -194,13 +195,18 @@ function removeLegacyCmdLauncher(dir: string): void {
 /**
  * Builds the windowless .vbs launcher source. VBScript string literals escape
  * an embedded double quote by doubling it (`""`), so the quoted PowerShell
- * script path stays a single argument inside the `sh.Run` string literal.
+ * executable and script path stay single arguments inside the `sh.Run`
+ * string literal. The executable is the System32 copy — a bare
+ * `powershell.exe` would search cwd and user PATH first.
  * Exported for unit tests that verify the generated VBScript is syntactically
  * valid.
  */
-export function buildRecoveryVbsContent(scriptPath: string): string {
+export function buildRecoveryVbsContent(
+  scriptPath: string,
+  powershellExe: string = powerShellPath(),
+): string {
   const psCommand =
-    `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ` +
+    `""${powershellExe}"" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ` +
     `-File ""${scriptPath}""`;
   return [
     'Set sh = CreateObject("WScript.Shell")',

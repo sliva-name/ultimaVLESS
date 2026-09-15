@@ -34,9 +34,11 @@ function parseVbsStringLiteral(source: string): {
 
 describe('buildRecoveryVbsContent', () => {
   const scriptPath = 'C:\\ProgramData\\UltimaVLESS\\recover_system_proxy.ps1';
+  const powershellExe =
+    'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
 
   it('produces a syntactically valid sh.Run line', () => {
-    const vbs = buildRecoveryVbsContent(scriptPath);
+    const vbs = buildRecoveryVbsContent(scriptPath, powershellExe);
     const lines = vbs.split('\r\n');
     expect(lines[0]).toBe('Set sh = CreateObject("WScript.Shell")');
 
@@ -47,21 +49,22 @@ describe('buildRecoveryVbsContent', () => {
     );
     // The literal must end exactly before the window-style/wait arguments.
     expect(rest).toBe(', 0, False');
-    // The decoded command keeps the script path as one double-quoted argument.
+    // The decoded command keeps both the host and the script as quoted args.
     expect(value).toBe(
-      'powershell.exe -NoProfile -ExecutionPolicy Bypass ' +
+      `"${powershellExe}" -NoProfile -ExecutionPolicy Bypass ` +
         `-WindowStyle Hidden -File "${scriptPath}"`,
     );
   });
 
   it('escapes embedded quotes for paths with spaces', () => {
     const spacedPath = 'C:\\Program Files\\Ultima VLESS\\recover.ps1';
-    const vbs = buildRecoveryVbsContent(spacedPath);
+    const vbs = buildRecoveryVbsContent(spacedPath, powershellExe);
     const runLine = vbs.split('\r\n')[1];
     const { value, rest } = parseVbsStringLiteral(
       runLine.slice('sh.Run '.length),
     );
     expect(rest).toBe(', 0, False');
     expect(value).toContain(`-File "${spacedPath}"`);
+    expect(value.startsWith(`"${powershellExe}"`)).toBe(true);
   });
 });
