@@ -7,10 +7,7 @@ import {
   probeHttpThroughProxy,
   probeTcpPort,
 } from '../networkProbe';
-import {
-  TUN_ADDRESS,
-  TUN_INTERFACE_NAME,
-} from '../tunRoute/constants';
+import { TUN_ADDRESS, TUN_INTERFACE_NAME } from '../tunRoute/constants';
 
 export type ConnectionHealthProbeResult =
   | {
@@ -87,6 +84,14 @@ function getXrayFailureReason(xrayState: XrayHealthStatus): string {
   );
 }
 
+export async function isHostInternetUnavailable(
+  connectionMode: ConnectionMode,
+): Promise<boolean> {
+  return connectionMode === 'tun'
+    ? !hasUsableHostNetworkInterface()
+    : !(await probeDirectInternetConnectivity());
+}
+
 export async function runConnectionHealthProbe({
   getXrayHealthStatus,
   connectionMode,
@@ -129,10 +134,7 @@ export async function runConnectionHealthProbe({
     tunnelProbe?.gapMs ?? 350,
   );
   if (!tunnelOk) {
-    const hostOffline =
-      connectionMode === 'tun'
-        ? !hasUsableHostNetworkInterface()
-        : !(await probeDirectInternetConnectivity());
+    const hostOffline = await isHostInternetUnavailable(connectionMode);
     if (hostOffline) {
       return {
         type: 'host-offline',

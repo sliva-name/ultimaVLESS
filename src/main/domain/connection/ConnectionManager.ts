@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { APP_CONSTANTS, PRIMARY_RUNTIME_PORTS } from '@/shared/constants';
 import type { SessionPhase } from '@/shared/ipc';
-import { VlessConfig } from '@/shared/types';
+import { type ConnectionMode, VlessConfig } from '@/shared/types';
 import { configService, ConfigService } from '@/main/services/ConfigService';
 import {
   connectionMonitorService,
@@ -23,6 +23,7 @@ import {
 import { xrayService, XrayService } from '@/main/services/XrayService';
 import { logger } from '@/main/services/LoggerService';
 import { CONNECTION_MONITOR_TIMING } from '@/main/services/connectionMonitor/timing';
+import { isHostInternetUnavailable } from '@/main/services/connectionMonitor/healthProbe';
 import { appLifecycle } from '@/main/runtime/appLifecycle';
 import {
   startupRecovery,
@@ -84,6 +85,7 @@ interface ConnectionManagerDeps {
   runtime?: ConnectionRuntime;
   serverRepository?: ServerRepository;
   policy?: ConnectionPolicy;
+  isHostOffline?: (mode: ConnectionMode) => boolean | Promise<boolean>;
 }
 
 export class ConnectionManagerRelaunchError extends Error {
@@ -276,6 +278,14 @@ export class ConnectionManager extends EventEmitter {
         to: this.state.to === fromId ? toId : this.state.to,
       });
     }
+  }
+
+  private async hostIsOffline(): Promise<boolean> {
+    const mode = this.deps.configService.getConnectionMode();
+    if (this.deps.isHostOffline) {
+      return this.deps.isHostOffline(mode);
+    }
+    return isHostInternetUnavailable(mode);
   }
 
   private retargetSwitch(toId: string): void {
@@ -681,6 +691,7 @@ export class ConnectionManager extends EventEmitter {
           const startedAt = Date.now();
           const budgetMs = CONNECTION_MONITOR_TIMING.autoSwitchBudgetMs;
           let budgetExhausted = false;
+          let hostOffline = false;
           for (const candidate of candidates) {
             throwIfAborted(signal);
             if (Date.now() - startedAt >= budgetMs) {
@@ -704,6 +715,15 @@ export class ConnectionManager extends EventEmitter {
               }
               const reason =
                 error instanceof Error ? error.message : String(error);
+              if (await this.hostIsOffline()) {
+                hostOffline = true;
+                logger.warn(
+                  'ConnectionManager',
+                  'Auto-switch aborted: host internet unavailable',
+                  { server: candidate.name, reason },
+                );
+                break;
+              }
               this.policyState.markBlocked(candidate.uuid);
               this.emit('policy-changed');
               logger.warn('ConnectionManager', 'Auto-switch candidate failed', {
@@ -718,9 +738,11 @@ export class ConnectionManager extends EventEmitter {
           });
           await this.runtime.stop();
           throw new Error(
-            budgetExhausted
-              ? 'Auto-switch stopped: time budget exhausted'
-              : 'Auto-switch failed: no working servers found',
+            hostOffline
+              ? 'Auto-switch aborted: host internet unavailable'
+              : budgetExhausted
+                ? 'Auto-switch stopped: time budget exhausted'
+                : 'Auto-switch failed: no working servers found',
           );
         },
       );

@@ -68,6 +68,7 @@ function createSession(overrides: Partial<any> = {}) {
     coreService: {
       isRunning: vi.fn(() => false),
     },
+    isHostOffline: vi.fn(async () => false),
     runtime: {
       start,
       stop,
@@ -552,6 +553,47 @@ describe('session lifecycle', () => {
     expect(session.getPhase()).toBe('failed');
     expect(session.getLastError()).toBe(
       'Auto-switch stopped: time budget exhausted',
+    );
+  });
+
+  it('does not block auto-switch candidates when the host is offline', async () => {
+    const first = makeServer({ uuid: 'server-2', ping: 10, security: 'tls' });
+    const second = makeServer({ uuid: 'server-3', ping: 20, security: 'tls' });
+    const isHostOffline = vi.fn(async () => true);
+    const { session, server, switchRuntime } = createSession({
+      isHostOffline,
+      configService: {
+        getServers: vi.fn(() => [server, first, second]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+    });
+
+    switchRuntime.mockRejectedValue(
+      new Error('Post-switch traffic validation failed'),
+    );
+
+    await session.connect(server.uuid);
+    vi.useFakeTimers();
+    try {
+      await session.handleHealthFailure({
+        server,
+        reason: 'endpoint blocked',
+        blocking: true,
+      });
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.runAllTimersAsync();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(switchRuntime).toHaveBeenCalledTimes(1);
+    expect(session.getBlockedServerIds()).toEqual([server.uuid]);
+    expect(session.getPhase()).toBe('failed');
+    expect(session.getLastError()).toBe(
+      'Auto-switch aborted: host internet unavailable',
     );
   });
 
