@@ -52,11 +52,9 @@ export function createElectronApiMock(
   };
 
   const api: ElectronApiMock = {
-    connect: vi.fn(
-      async (_serverId: string): Promise<ConnectResult> => ({
-        ok: true,
-      }),
-    ),
+    connect: vi.fn(async (_serverId: string): Promise<ConnectResult> => ({
+      ok: true,
+    })),
     disconnect: vi.fn(async (): Promise<DisconnectResult> => ({ ok: true })),
 
     // Subscriptions CRUD
@@ -75,12 +73,10 @@ export function createElectronApiMock(
 
     // Manual links
     getManualLinks: vi.fn(async () => ''),
-    saveManualLinks: vi.fn(
-      async (): Promise<SaveManualLinksResult> => ({
-        ok: true,
-        configCount: 0,
-      }),
-    ),
+    saveManualLinks: vi.fn(async (): Promise<SaveManualLinksResult> => ({
+      ok: true,
+      configCount: 0,
+    })),
 
     // Events
     onAppSnapshotChanged: createListenerRegistration(
@@ -122,58 +118,55 @@ export function createElectronApiMock(
       uuid: _server.uuid,
       latency: null,
     })),
-    pingAllServers: vi.fn(async (_force?: boolean) => []),
-    getPerformanceSettings: vi.fn(
-      async (): Promise<PerformanceSettings> => ({
-        muxEnabled: false,
-        muxConcurrency: 8,
-        xudpConcurrency: 16,
-        xudpProxyUDP443: 'reject',
-        xhttpMaxConnections: 3,
-        remoteDnsPreset: 'cloudflare',
-        remoteDnsServers: ['1.1.1.1', '1.0.0.1'],
-        tcpFastOpen: true,
-        sniffingRouteOnly: true,
-        logLevel: 'warning',
-        fingerprint: 'chrome',
-        blockAds: false,
-        blockBittorrent: false,
-        domainStrategy: 'AsIs',
-        windowsTunRouting: 'xray',
-        tunMtu: 1400,
-        tunDnsQueryStrategy: 'UseIPv4',
-        bypassDomains: [],
-        bypassIps: [],
-      }),
+    pingAllServers: vi.fn(
+      async (_force?: boolean, _serverIds?: string[]) => [],
     ),
+    stopPingAllServers: vi.fn(async () => true),
+    getPerformanceSettings: vi.fn(async (): Promise<PerformanceSettings> => ({
+      muxEnabled: false,
+      muxConcurrency: 8,
+      xudpConcurrency: 16,
+      xudpProxyUDP443: 'reject',
+      xhttpMaxConnections: 3,
+      remoteDnsPreset: 'cloudflare',
+      remoteDnsServers: ['1.1.1.1', '1.0.0.1'],
+      tcpFastOpen: true,
+      sniffingRouteOnly: true,
+      logLevel: 'warning',
+      fingerprint: 'chrome',
+      blockAds: false,
+      blockBittorrent: false,
+      domainStrategy: 'AsIs',
+      windowsTunRouting: 'xray',
+      tunMtu: 1400,
+      tunDnsQueryStrategy: 'UseIPv4',
+      bypassDomains: [],
+      bypassIps: [],
+    })),
     setPerformanceSettings: vi.fn(
       async (_settings: PerformanceSettings) => true,
     ),
 
     getUiLanguage: vi.fn(async (): Promise<'en' | 'ru'> => 'en'),
     setUiLanguage: vi.fn(async (_language: 'en' | 'ru') => true),
-    getUpdateStatus: vi.fn(
-      async (): Promise<UpdateStatus> => ({
-        stage: 'disabled',
-        version: null,
-        releaseNotes: null,
-        percent: 0,
-        bytesPerSecond: 0,
-        error: null,
-        updatedAt: 0,
-      }),
-    ),
-    checkForUpdates: vi.fn(
-      async (): Promise<UpdateStatus> => ({
-        stage: 'disabled',
-        version: null,
-        releaseNotes: null,
-        percent: 0,
-        bytesPerSecond: 0,
-        error: null,
-        updatedAt: 0,
-      }),
-    ),
+    getUpdateStatus: vi.fn(async (): Promise<UpdateStatus> => ({
+      stage: 'disabled',
+      version: null,
+      releaseNotes: null,
+      percent: 0,
+      bytesPerSecond: 0,
+      error: null,
+      updatedAt: 0,
+    })),
+    checkForUpdates: vi.fn(async (): Promise<UpdateStatus> => ({
+      stage: 'disabled',
+      version: null,
+      releaseNotes: null,
+      percent: 0,
+      bytesPerSecond: 0,
+      error: null,
+      updatedAt: 0,
+    })),
     installUpdate: vi.fn(async () => true),
 
     emitAppSnapshotChanged: (snapshot: AppSnapshot) => {

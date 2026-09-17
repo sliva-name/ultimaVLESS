@@ -12,6 +12,7 @@ import { createSerialQueue } from '@/main/ipc/serialQueue';
 import {
   createPingAllCoordinator,
   type PingPersistStore,
+  type PingResultSink,
 } from '@/main/ipc/pingAllCoordinator';
 
 export type PingAutoTrigger = 'startup' | 'catalog-changed' | 'session-idle';
@@ -50,7 +51,11 @@ export interface PingRefreshRunner {
   run(options: {
     force: boolean;
     trigger: PingRefreshTrigger;
+    /** Stored server UUIDs to probe; omitted means all, empty means none. */
+    serverIds?: string[];
   }): Promise<PingResult[]>;
+  /** Cancels current and queued work, retaining measured partial results. */
+  stop(): void;
   /** True while a foreground pass is probing (background retries excluded). */
   isRunning(): boolean;
   /** Debounced, non-forced pass driven by app state rather than the user. */
@@ -165,8 +170,17 @@ export function createPingAutoScheduler(
   };
 }
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number, signal: AbortSignal): Promise<void> =>
+  new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const finish = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener('abort', finish, { once: true });
+  });
 
 /**
  * Owner of ping-all execution for both the toolbar button and unattended
@@ -196,13 +210,48 @@ export function createPingRefreshRunner(
     emitter.emit('changed', { immediate } satisfies PingRefreshChange);
   };
 
-  const coordinator = createPingAllCoordinator({
-    store: deps.store,
-    notifySnapshot: (_reason, options) =>
-      emitChanged(options?.immediate ?? false),
-    isUnsafe: deps.isUnsafe,
-    now,
-  });
+  let activeFinish: (() => void) | null = null;
+  const sinks = new Map<AbortSignal, (preserve: boolean) => void>();
+
+  // Each sink owns its cancellation guard, including its debounced writes.
+  const beginSink = (signal: AbortSignal, retry = false) => {
+    let closed = false;
+    let flushing = false;
+    const coordinator = createPingAllCoordinator({
+      store: deps.store,
+      notifySnapshot: (_reason, options) =>
+        emitChanged(options?.immediate ?? false),
+      isUnsafe: () =>
+        closed || (signal.aborted && !flushing) || deps.isUnsafe(),
+      now,
+    });
+    const sink: PingResultSink = retry
+      ? coordinator.beginFill()
+      : coordinator.beginRun();
+    const close = (preserve: boolean): void => {
+      if (closed) return;
+      closed = !preserve;
+      flushing = preserve;
+      try {
+        // Also clears the coordinator's pending partial-persist timer.
+        sink.flushPartials();
+      } finally {
+        closed = true;
+        flushing = false;
+        sinks.delete(signal);
+      }
+    };
+    sinks.set(signal, close);
+    return {
+      onResult(uuid: string, latency: number | null) {
+        if (!closed && !signal.aborted && !deps.isUnsafe()) {
+          sink.onResult(uuid, latency);
+        }
+      },
+      persist: sink.persist,
+      close,
+    };
+  };
 
   const toResults = (servers: VlessConfig[]): PingResult[] =>
     servers.map((server) => ({
@@ -215,50 +264,67 @@ export function createPingRefreshRunner(
     signal: AbortSignal,
   ): Promise<void> => {
     if (signal.aborted) return;
-    await sleep(retryDelayMs);
+    await sleep(retryDelayMs, signal);
     if (signal.aborted || deps.isUnsafe()) return;
 
     logger.debug('PingRefresh', 'Retrying failed servers in background', {
       failed: failed.length,
       retryTimeoutMs,
     });
-    const fill = coordinator.beginFill();
-    const results = await deps.pingService.pingServers(failed, retryTimeoutMs, {
-      signal,
-      onResult: (uuid, latency) => {
-        if (latency != null) {
-          fill.onResult(uuid, latency);
-        }
-      },
-    });
-    if (signal.aborted) return;
-
-    const recovered = new Map<string, number | null>();
-    for (const [uuid, latency] of results) {
-      if (latency != null) {
-        recovered.set(uuid, latency);
-      }
-    }
-    if (recovered.size === 0) return;
-    if (deps.isUnsafe()) {
-      logger.debug(
-        'PingRefresh',
-        'Dropping retry ping results (session became active)',
+    const fill = beginSink(signal, true);
+    try {
+      const results = await deps.pingService.pingServers(
+        failed,
+        retryTimeoutMs,
+        {
+          signal,
+          onResult: (uuid, latency) => {
+            if (latency != null) {
+              fill.onResult(uuid, latency);
+            }
+          },
+        },
       );
-      return;
+      if (signal.aborted) return;
+
+      const recovered = new Map<string, number | null>();
+      for (const [uuid, latency] of results) {
+        if (latency != null) {
+          recovered.set(uuid, latency);
+        }
+      }
+      if (recovered.size === 0) return;
+      if (deps.isUnsafe()) {
+        logger.debug(
+          'PingRefresh',
+          'Dropping retry ping results (session became active)',
+        );
+        return;
+      }
+      fill.persist(recovered, { immediate: true });
+    } finally {
+      fill.close(false);
     }
-    fill.persist(recovered, { immediate: true });
   };
 
-  const supersedeRetries = (): void => {
-    retryAbort.abort();
+  const supersedeRetries = (preserve = false): void => {
+    const previous = retryAbort;
     retryAbort = new AbortController();
+    previous.abort();
+    sinks.get(previous.signal)?.(preserve);
   };
 
-  const abortInFlightProbes = (): void => {
-    passAbort.abort();
+  const abortInFlightProbes = (preserve = false): void => {
+    const previous = passAbort;
     passAbort = new AbortController();
-    supersedeRetries();
+    queuedAutoRun = null;
+    previous.abort();
+    activeFinish?.();
+    try {
+      sinks.get(previous.signal)?.(preserve);
+    } finally {
+      supersedeRetries(preserve);
+    }
   };
 
   const scheduleRetry = (failed: VlessConfig[]): void => {
@@ -273,16 +339,21 @@ export function createPingRefreshRunner(
   const executeRun = async (
     force: boolean,
     trigger: PingRefreshTrigger,
+    signal: AbortSignal,
+    serverIds?: Set<string>,
   ): Promise<PingResult[]> => {
     const timer = new PerfTimer('PingRefresh', 'run');
-    const signal = passAbort.signal;
-    const servers = deps.store.list();
+    const catalog = deps.store.list();
+    const servers =
+      serverIds === undefined
+        ? catalog
+        : catalog.filter((server) => serverIds.has(server.uuid));
     if (signal.aborted || deps.isUnsafe()) {
       logger.debug('PingRefresh', 'Skipping ping-all while session is active', {
         trigger,
       });
       timer.end({ trigger, skipped: 'unsafe' });
-      return toResults(servers);
+      return toResults(catalog);
     }
     if (
       !force &&
@@ -290,7 +361,7 @@ export function createPingRefreshRunner(
       allServersHaveFreshPing(servers, minPingIntervalMs, now())
     ) {
       timer.end({ trigger, skipped: 'fresh', total: servers.length });
-      return toResults(servers);
+      return toResults(catalog);
     }
     const targets = filterServersNeedingPing(servers, {
       force,
@@ -299,23 +370,26 @@ export function createPingRefreshRunner(
     });
     if (targets.length === 0) {
       timer.end({ trigger, skipped: 'no-targets' });
-      return toResults(servers);
+      return toResults(catalog);
     }
 
     // A new pass re-measures the same hosts; drop the background retry so
     // we do not open a second batch of sockets alongside it.
     supersedeRetries();
-    const run = coordinator.beginRun();
+    const run = beginSink(signal);
     activeRuns += 1;
-    emitChanged(true);
     let finished = false;
     const finish = (): void => {
       if (finished) return;
       finished = true;
       activeRuns -= 1;
+      activeFinish = null;
     };
+    activeFinish = finish;
 
     try {
+      emitChanged(true);
+      if (signal.aborted) return toResults(deps.store.list());
       const results = await deps.pingService.pingServers(
         targets,
         initialTimeoutMs,
@@ -324,13 +398,13 @@ export function createPingRefreshRunner(
       // Flip the in-progress flag before the final persist so one snapshot
       // carries both the figures and the idle button state.
       finish();
-      if (signal.aborted || deps.isUnsafe() || !run.isCurrent()) {
+      if (signal.aborted || deps.isUnsafe()) {
         logger.debug(
           'PingRefresh',
           'Dropping ping-all results (network state changed)',
           { trigger },
         );
-        emitChanged(true);
+        if (!signal.aborted) emitChanged(true);
         timer.end({ trigger, dropped: true });
         return toResults(deps.store.list());
       }
@@ -362,11 +436,12 @@ export function createPingRefreshRunner(
         failed: failed.length,
         durationMs,
       });
-      if (failed.length > 0) {
+      if (failed.length > 0 && !signal.aborted) {
         scheduleRetry(failed);
       }
       return toResults(updated);
     } finally {
+      run.close(false);
       if (!finished) {
         finish();
         emitChanged(true);
@@ -382,9 +457,19 @@ export function createPingRefreshRunner(
   });
 
   const runner = Object.assign(emitter, {
-    run({ force, trigger }: { force: boolean; trigger: PingRefreshTrigger }) {
-      if (force) {
-        return runQueue.enqueue(() => executeRun(true, trigger));
+    run({
+      force,
+      trigger,
+      serverIds,
+    }: Parameters<PingRefreshRunner['run']>[0]) {
+      // Capture at enqueue time: a stopped job must not inherit a fresh signal.
+      const signal = passAbort.signal;
+      const selection =
+        serverIds === undefined ? undefined : new Set(serverIds);
+      if (force || trigger === 'user' || selection !== undefined) {
+        return runQueue.enqueue(() =>
+          executeRun(force, trigger, signal, selection),
+        );
       }
       // Unattended passes coalesce: a second request while one is still
       // waiting for the queue joins it instead of probing twice.
@@ -392,11 +477,19 @@ export function createPingRefreshRunner(
         return queuedAutoRun;
       }
       const job = runQueue.enqueue(() => {
-        queuedAutoRun = null;
-        return executeRun(false, trigger);
+        if (queuedAutoRun === job) queuedAutoRun = null;
+        return executeRun(false, trigger, signal);
       });
       queuedAutoRun = job;
       return job;
+    },
+    stop() {
+      scheduler.dispose();
+      try {
+        abortInFlightProbes(true);
+      } finally {
+        emitChanged(true);
+      }
     },
     isRunning() {
       return activeRuns > 0;

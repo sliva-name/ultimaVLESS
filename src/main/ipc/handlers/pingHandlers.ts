@@ -65,18 +65,46 @@ export function registerPingHandlers({
 
   ipcMain.handle(
     IPC_INVOKE_CHANNELS.pingAllServers,
-    async (_event: IpcMainInvokeEvent, force: boolean = false) => {
+    async (
+      _event: IpcMainInvokeEvent,
+      force: boolean = false,
+      serverIds?: unknown,
+    ) => {
       assertTrustedSender(_event);
       const forcePing =
         typeof force === 'undefined' ? false : assertBoolean(force, 'force');
+      if (
+        serverIds !== undefined &&
+        (!Array.isArray(serverIds) ||
+          !serverIds.every(
+            (id): id is string => typeof id === 'string' && id.length > 0,
+          ))
+      ) {
+        throw new Error('Invalid server IDs');
+      }
       try {
         return await deps.pingRefresh.run({
           force: forcePing,
           trigger: 'user',
+          serverIds: serverIds as string[] | undefined,
         });
       } catch (error) {
         logger.error('IPC', 'ping-all-servers failed', error);
         return [];
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.stopPingAllServers,
+    async (_event: IpcMainInvokeEvent): Promise<boolean> => {
+      assertTrustedSender(_event);
+      try {
+        deps.pingRefresh.stop();
+        return true;
+      } catch (error) {
+        logger.error('IPC', 'stop-ping-all-servers failed', error);
+        return false;
       }
     },
   );

@@ -459,6 +459,69 @@ describe('renderer session view', () => {
     expect(result.current.snapshot.process.state).toBe('running');
   });
 
+  it('pings only the selected server through the shared runner', async () => {
+    const server = makeServer({ uuid: 'selected-ping' });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [server, makeServer({ uuid: 'other' })],
+        selectedServerId: server.uuid,
+      }),
+    );
+    installElectronApiMock(electronApi);
+    const { result } = renderHook(() => useServers(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.selectedServer?.uuid).toBe(server.uuid),
+    );
+    await act(async () => {
+      await result.current.pingSelectedServer();
+    });
+    expect(electronApi.pingAllServers).toHaveBeenCalledWith(true, [
+      server.uuid,
+    ]);
+    expect(result.current.isRefreshingPings).toBe(false);
+  });
+
+  it('stops an automatic ping and allows a subsequent selected ping', async () => {
+    const server = makeServer({ uuid: 'selected-ping' });
+    const electronApi = createElectronApiMock();
+    const initial = makeAppSnapshot({
+      servers: [server],
+      selectedServerId: server.uuid,
+      pingRefreshInProgress: true,
+    });
+    electronApi.getAppSnapshot.mockResolvedValue(initial);
+    electronApi.stopPingAllServers.mockImplementation(async () => {
+      electronApi.emitAppSnapshotChanged({
+        ...initial,
+        pingRefreshInProgress: false,
+      });
+      return true;
+    });
+    installElectronApiMock(electronApi);
+    const { result } = renderHook(() => useServers(), { wrapper });
+    await waitFor(() => expect(result.current.isRefreshingPings).toBe(true));
+    await act(async () => {
+      await result.current.pingSelectedServer();
+    });
+    expect(electronApi.pingAllServers).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.stopPing();
+    });
+    expect(electronApi.stopPingAllServers).toHaveBeenCalledOnce();
+    expect(result.current.isRefreshingPings).toBe(false);
+    electronApi.getAppSnapshot.mockResolvedValue({
+      ...initial,
+      pingRefreshInProgress: false,
+    });
+    await act(async () => {
+      await result.current.pingSelectedServer();
+    });
+    expect(electronApi.pingAllServers).toHaveBeenCalledWith(true, [
+      server.uuid,
+    ]);
+  });
+
   it('skips a redundant getAppSnapshot after ping-all if a push already landed', async () => {
     const server = makeServer({ uuid: 'ping-1', ping: null });
     const electronApi = createElectronApiMock();

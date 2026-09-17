@@ -92,7 +92,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ) as Promise<boolean>,
 
   getAppSnapshot: () =>
-    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getAppSnapshot) as Promise<AppSnapshot>,
+    ipcRenderer.invoke(
+      IPC_INVOKE_CHANNELS.getAppSnapshot,
+    ) as Promise<AppSnapshot>,
   setSelectedServerId: (serverId: string | null) =>
     ipcRenderer.invoke(
       IPC_INVOKE_CHANNELS.setSelectedServerId,
@@ -132,10 +134,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       IPC_INVOKE_CHANNELS.pingServer,
       server,
     ) as Promise<PingResult>,
-  pingAllServers: (force?: boolean) =>
-    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.pingAllServers, force) as Promise<
-      PingResult[]
-    >,
+  pingAllServers: (force?: boolean, serverIds?: string[]) =>
+    ipcRenderer.invoke(
+      IPC_INVOKE_CHANNELS.pingAllServers,
+      force,
+      serverIds,
+    ) as Promise<PingResult[]>,
+  stopPingAllServers: () =>
+    ipcRenderer.invoke(
+      IPC_INVOKE_CHANNELS.stopPingAllServers,
+    ) as Promise<boolean>,
 
   getPerformanceSettings: () =>
     ipcRenderer.invoke(

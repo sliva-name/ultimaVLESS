@@ -76,6 +76,8 @@ interface AppSnapshotContextValue {
   selectServer: (server: VlessConfig) => void;
   toggleConnection: () => Promise<void>;
   pingAllServers: () => Promise<void>;
+  pingSelectedServer: () => Promise<void>;
+  stopPing: () => Promise<void>;
   refreshSnapshot: () => Promise<void>;
 }
 
@@ -90,6 +92,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
   const isRefreshingPings =
     isPingRequestInFlight || snapshot.pingRefreshInProgress;
   const pingRefreshInFlightRef = useRef(false);
+  const pingStopInFlightRef = useRef(false);
   // Optimistic server selection that hasn't been confirmed by main yet.
   // Incoming snapshots (ping/traffic pushes, refreshes) may still carry the
   // old selectedServerId, so the pending value is overlaid until confirmed.
@@ -221,27 +224,73 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
     setConnectionError: setClientError,
   });
 
-  const pingAllServers = useCallback(async () => {
-    if (isConnected || isConnectionBusy || pingRefreshInFlightRef.current) {
-      return;
+  const refreshPings = useCallback(
+    async (serverIds?: string[]) => {
+      if (
+        isConnected ||
+        isConnectionBusy ||
+        snapshot.pingRefreshInProgress ||
+        pingRefreshInFlightRef.current ||
+        pingStopInFlightRef.current
+      ) {
+        return;
+      }
+      pingRefreshInFlightRef.current = true;
+      setIsPingRequestInFlight(true);
+      setClientError(null);
+      try {
+        const epoch = snapshotEpochRef.current;
+        if (serverIds) {
+          await window.electronAPI.pingAllServers(true, serverIds);
+        } else {
+          await window.electronAPI.pingAllServers(true);
+        }
+        // Final ping persist already pushed a snapshot; skip a redundant pull.
+        if (snapshotEpochRef.current === epoch) {
+          await refreshSnapshot();
+        }
+      } catch (error) {
+        console.error('Failed to ping servers', error);
+        setClientError('Failed to refresh server latency');
+      } finally {
+        pingRefreshInFlightRef.current = false;
+        setIsPingRequestInFlight(false);
+      }
+    },
+    [
+      isConnected,
+      isConnectionBusy,
+      snapshot.pingRefreshInProgress,
+      refreshSnapshot,
+    ],
+  );
+
+  const pingAllServers = useCallback(() => refreshPings(), [refreshPings]);
+  const pingSelectedServer = useCallback(async () => {
+    if (selectedServer) {
+      await refreshPings([selectedServer.uuid]);
     }
-    pingRefreshInFlightRef.current = true;
-    setIsPingRequestInFlight(true);
+  }, [selectedServer, refreshPings]);
+
+  const stopPing = useCallback(async () => {
+    if (pingStopInFlightRef.current) return;
+    pingStopInFlightRef.current = true;
+    setClientError(null);
     try {
       const epoch = snapshotEpochRef.current;
-      await window.electronAPI.pingAllServers(true);
-      // Final ping persist already pushed a snapshot; skip a redundant pull.
+      if (!(await window.electronAPI.stopPingAllServers())) {
+        throw new Error('Ping cancellation failed');
+      }
       if (snapshotEpochRef.current === epoch) {
         await refreshSnapshot();
       }
     } catch (error) {
-      console.error('Failed to ping all servers', error);
-      setClientError('Failed to refresh server latency');
+      console.error('Failed to stop ping', error);
+      setClientError('Failed to stop server latency refresh');
     } finally {
-      pingRefreshInFlightRef.current = false;
-      setIsPingRequestInFlight(false);
+      pingStopInFlightRef.current = false;
     }
-  }, [isConnected, isConnectionBusy, refreshSnapshot]);
+  }, [refreshSnapshot]);
 
   const selectServer = useCallback(
     (server: VlessConfig) => {
@@ -298,6 +347,8 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       selectServer,
       toggleConnection,
       pingAllServers,
+      pingSelectedServer,
+      stopPing,
       refreshSnapshot,
     }),
     [
@@ -310,6 +361,8 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       selectServer,
       toggleConnection,
       pingAllServers,
+      pingSelectedServer,
+      stopPing,
       refreshSnapshot,
     ],
   );
@@ -342,6 +395,8 @@ export function useServers() {
     selectServer,
     isRefreshingPings,
     pingAllServers,
+    pingSelectedServer,
+    stopPing,
   } = useAppSnapshotContext();
   return {
     servers: snapshot.servers,
@@ -350,6 +405,8 @@ export function useServers() {
     isRefreshingPings,
     selectServer,
     pingAllServers,
+    pingSelectedServer,
+    stopPing,
   };
 }
 

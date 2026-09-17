@@ -96,7 +96,11 @@ describe('ping refresh runner', () => {
 
   function createHarness(
     servers: VlessConfig[],
-    options: { unsafe?: () => boolean; now?: () => number } = {},
+    options: {
+      unsafe?: () => boolean;
+      now?: () => number;
+      retryDelayMs?: number;
+    } = {},
   ) {
     const store = createStore(servers);
     const ping = createFakePingService();
@@ -106,7 +110,7 @@ describe('ping refresh runner', () => {
       pingService: ping,
       isUnsafe: options.unsafe ?? (() => false),
       now: options.now ?? (() => 1_000_000),
-      retryDelayMs: 0,
+      retryDelayMs: options.retryDelayMs ?? 0,
       autoDelays: { startup: 0, 'catalog-changed': 0, 'session-idle': 0 },
     });
     runner.on('changed', (change) => changes.push(change));
@@ -136,6 +140,210 @@ describe('ping refresh runner', () => {
     // The final persist both publishes the figures and clears the flag.
     expect(changes.at(-1)).toEqual({ immediate: true });
     expect(ping.calls).toHaveLength(1);
+  });
+
+  it.each([true, false])(
+    'restricts stored targets to selected IDs (force=%s)',
+    async (force) => {
+      const untouched = makeServer({ uuid: 'other', ping: 70, pingTime: 1 });
+      const { ping, runner, store } = createHarness([
+        makeServer({ uuid: 'a', ping: 10, pingTime: 999_999 }),
+        makeServer({ uuid: 'b' }),
+        untouched,
+      ]);
+      const job = runner.run({
+        force,
+        trigger: 'user',
+        serverIds: ['b', 'a', 'b', 'unknown'],
+      });
+      await waitFor(() => ping.calls.length === 1);
+      expect(ping.calls[0].servers.map((server) => server.uuid)).toEqual(
+        force ? ['a', 'b'] : ['b'],
+      );
+      ping.complete(0, { a: 21, b: 22 });
+      expect(await job).toEqual([
+        { uuid: 'a', latency: force ? 21 : 10 },
+        { uuid: 'b', latency: 22 },
+        { uuid: 'other', latency: 70 },
+      ]);
+      expect(store.list()[2]).toEqual(untouched);
+      runner.dispose();
+    },
+  );
+
+  it.each([true, false])(
+    'probes and persists nothing for an empty selection (force=%s)',
+    async (force) => {
+      const { ping, runner, store, changes } = createHarness([
+        makeServer({ uuid: 'a' }),
+      ]);
+      expect(
+        await runner.run({ force, trigger: 'user', serverIds: [] }),
+      ).toEqual([{ uuid: 'a', latency: null }]);
+      expect(ping.pingServers).not.toHaveBeenCalled();
+      expect(store.savePings).not.toHaveBeenCalled();
+      expect(changes).toEqual([]);
+      runner.dispose();
+    },
+  );
+
+  it('stop flushes measured partials only and ignores late callbacks and results', async () => {
+    vi.useFakeTimers();
+    const untouched = makeServer({
+      uuid: 'c',
+      ping: 80,
+      pingTime: 123,
+      pingStale: true,
+    });
+    const { ping, runner, store, changes } = createHarness([
+      makeServer({ uuid: 'a' }),
+      makeServer({ uuid: 'b' }),
+      untouched,
+    ]);
+    const job = runner.run({ force: true, trigger: 'user' });
+    await vi.advanceTimersByTimeAsync(0);
+    ping.calls[0].onResult?.('a', 12);
+    ping.calls[0].onResult?.('b', null);
+    expect(store.savePings).not.toHaveBeenCalled();
+    runner.stop();
+    expect(runner.isRunning()).toBe(false);
+    expect(ping.calls[0].signal?.aborted).toBe(true);
+    expect(store.list()).toEqual([
+      expect.objectContaining({ uuid: 'a', ping: 12, pingTime: 1_000_000 }),
+      expect.objectContaining({ uuid: 'b', ping: null, pingTime: 1_000_000 }),
+      untouched,
+    ]);
+    const writes = store.savePings.mock.calls.length;
+    const notifications = changes.length;
+    ping.complete(0, { a: 999, b: 999, c: null });
+    expect(await job).toEqual([
+      { uuid: 'a', latency: 12 },
+      { uuid: 'b', latency: null },
+      { uuid: 'c', latency: 80 },
+    ]);
+    await vi.runAllTimersAsync();
+    expect(store.savePings).toHaveBeenCalledTimes(writes);
+    expect(changes).toHaveLength(notifications);
+    expect(ping.calls).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+    runner.dispose();
+  });
+
+  it('stop cancels queued explicit and auto jobs and the scheduler, but permits new requests', async () => {
+    vi.useFakeTimers();
+    const { ping, runner, store } = createHarness([makeServer({ uuid: 'a' })]);
+    const active = runner.run({ force: true, trigger: 'user' });
+    await vi.advanceTimersByTimeAsync(0);
+    const queued = runner.run({ force: true, trigger: 'user' });
+    runner.requestAuto('startup');
+    await vi.advanceTimersByTimeAsync(0);
+    const queuedAuto = runner.run({ force: false, trigger: 'catalog-changed' });
+    runner.requestAuto('session-idle', 1000);
+    runner.stop();
+    expect(vi.getTimerCount()).toBe(0);
+    const newAuto = runner.run({ force: false, trigger: 'startup' });
+    expect(newAuto).not.toBe(queuedAuto);
+    ping.complete(0, { a: null });
+    await Promise.all([active, queued, queuedAuto]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ping.calls).toHaveLength(2);
+    expect(store.savePings).not.toHaveBeenCalled();
+    expect(ping.calls[1].signal?.aborted).toBe(false);
+    ping.complete(1, { a: 10 });
+    await newAuto;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(ping.calls).toHaveLength(2);
+    const explicit = runner.run({ force: true, trigger: 'user' });
+    await vi.advanceTimersByTimeAsync(0);
+    ping.complete(2, { a: 11 });
+    await explicit;
+    runner.stop();
+    // A later state-driven request is still allowed (no persistent disable).
+    store.saveAll([makeServer({ uuid: 'a' })]);
+    runner.requestAuto('catalog-changed');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ping.calls).toHaveLength(4);
+    ping.complete(3, { a: 12 });
+    await vi.runAllTimersAsync();
+    runner.dispose();
+  });
+
+  it('stop clears a pending retry delay', async () => {
+    vi.useFakeTimers();
+    const { ping, runner, store } = createHarness([makeServer({ uuid: 'a' })], {
+      retryDelayMs: 1000,
+    });
+    const job = runner.run({ force: true, trigger: 'user' });
+    await vi.advanceTimersByTimeAsync(0);
+    ping.complete(0, { a: null });
+    await job;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(1);
+    runner.stop();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.runAllTimersAsync();
+    expect(ping.calls).toHaveLength(1);
+    expect(store.savePings).toHaveBeenCalledTimes(1);
+    runner.dispose();
+  });
+
+  it('stop preserves retry recoveries and blocks late retry callbacks and queued retries', async () => {
+    vi.useFakeTimers();
+    const { ping, runner, store, changes } = createHarness([
+      makeServer({ uuid: 'a' }),
+      makeServer({ uuid: 'b' }),
+    ]);
+    const first = runner.run({ force: true, trigger: 'user' });
+    await vi.advanceTimersByTimeAsync(0);
+    ping.complete(0, { a: null, b: null });
+    await first;
+    await vi.advanceTimersByTimeAsync(1);
+    const retry = ping.calls[1];
+    retry.onResult?.('a', 25);
+    runner.stop();
+    expect(retry.signal?.aborted).toBe(true);
+    expect(store.list()[0].ping).toBe(25);
+    expect(vi.getTimerCount()).toBe(0);
+    const writes = store.savePings.mock.calls.length;
+    const notifications = changes.length;
+    retry.onResult?.('b', 999);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(store.savePings).toHaveBeenCalledTimes(writes);
+    expect(changes).toHaveLength(notifications);
+
+    // The old retry still holds the queue while a new pass queues its retry.
+    const second = runner.run({ force: true, trigger: 'user' });
+    await vi.advanceTimersByTimeAsync(0);
+    ping.complete(2, { a: 26, b: null });
+    await second;
+    runner.stop();
+    ping.complete(1, { a: 999, b: 999 });
+    await vi.runAllTimersAsync();
+    expect(ping.calls).toHaveLength(3);
+    expect(store.list().map((server) => server.ping)).toEqual([26, null]);
+    expect(store.savePings).toHaveBeenCalledTimes(writes + 1);
+    runner.dispose();
+  });
+
+  it('unsafe abort discards buffered partials even after returning to a safe phase', async () => {
+    vi.useFakeTimers();
+    let unsafe = false;
+    const { ping, runner, store } = createHarness([makeServer({ uuid: 'a' })], {
+      unsafe: () => unsafe,
+    });
+    const job = runner.run({ force: true, trigger: 'user' });
+    await vi.advanceTimersByTimeAsync(0);
+    ping.calls[0].onResult?.('a', 5);
+    unsafe = true;
+    runner.handleSessionPhase('connecting');
+    unsafe = false;
+    runner.stop();
+    ping.complete(0, { a: 6 });
+    await job;
+    await vi.runAllTimersAsync();
+    expect(store.savePings).not.toHaveBeenCalled();
+    expect(runner.isRunning()).toBe(false);
+    runner.dispose();
   });
 
   it('retries failed rows in the background without blocking the next pass', async () => {

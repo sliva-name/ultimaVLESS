@@ -35,7 +35,9 @@ export interface IElectronAPI {
   getManualLinks: () => Promise<string>;
   saveManualLinks: (manualLinks: string) => Promise<SaveManualLinksResult>;
 
-  onAppSnapshotChanged: (callback: (snapshot: AppSnapshot) => void) => () => void;
+  onAppSnapshotChanged: (
+    callback: (snapshot: AppSnapshot) => void,
+  ) => () => void;
   onAppSnapshotPatch: (
     callback: (patch: AppSnapshotRuntimePatch) => void,
   ) => () => void;
@@ -57,7 +59,11 @@ export interface IElectronAPI {
   importMobileWhiteListSubscription: () => Promise<ImportMobileWhiteListResult>;
   getAppVersion: () => Promise<string>;
   pingServer: (server: VlessConfig) => Promise<PingResult>;
-  pingAllServers: (force?: boolean) => Promise<PingResult[]>;
+  pingAllServers: (
+    force?: boolean,
+    serverIds?: string[],
+  ) => Promise<PingResult[]>;
+  stopPingAllServers: () => Promise<boolean>;
   getPerformanceSettings: () => Promise<PerformanceSettings>;
   setPerformanceSettings: (settings: PerformanceSettings) => Promise<boolean>;
 

@@ -6,7 +6,7 @@ import React, {
   useRef,
 } from 'react';
 import clsx from 'clsx';
-import { Settings, Server, RefreshCw } from 'lucide-react';
+import { Settings, Server, RefreshCw, Square, Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Subscription, VlessConfig } from '@/shared/types';
 import logoUrl from '@/renderer/assets/logo.svg';
@@ -30,6 +30,8 @@ interface SidebarProps {
   onSelectServer: (server: VlessConfig) => void;
   onOpenSettings: () => void;
   onPingAll?: () => Promise<void>;
+  onPingSelected?: () => Promise<void>;
+  onStopPing?: () => Promise<void>;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -42,6 +44,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectServer,
   onOpenSettings,
   onPingAll,
+  onPingSelected,
+  onStopPing,
 }) => {
   const { t } = useTranslation();
   const [appVersion, setAppVersion] = useState<string>('');
@@ -58,6 +62,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   useRenderPerf('Sidebar', [servers.length, subscriptions.length]);
   const pingInProgress = isPinging || isRefreshingPings;
+  const pingLocked = selectionLocked || isConnected;
+  const pingAllDisabled = pingInProgress ? !onStopPing : pingLocked;
+  const pingSelectedDisabled = !selectedServer || pingInProgress || pingLocked;
 
   useEffect(() => {
     window.electronAPI
@@ -100,15 +107,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [selectedServer, servers]);
 
-  const handlePingAll = useCallback(async () => {
-    if (!onPingAll || pingInProgress) return;
-    setIsPinging(true);
-    try {
-      await onPingAll();
-    } finally {
-      setIsPinging(false);
-    }
-  }, [onPingAll, pingInProgress]);
+  const handlePing = useCallback(
+    async (action?: () => Promise<void>) => {
+      if (!action || pingInProgress || pingLocked) return;
+      setIsPinging(true);
+      try {
+        await action();
+      } finally {
+        setIsPinging(false);
+      }
+    },
+    [pingInProgress, pingLocked],
+  );
 
   return (
     <div className="w-full md:w-72 md:shrink-0 max-h-[44vh] md:max-h-none min-h-0 bg-linear-to-b from-surface via-surface to-surface/95 border-b md:border-b-0 md:border-r border-gray-800/50 flex flex-col shadow-2xl shadow-black/30 relative overflow-hidden">
@@ -147,44 +157,59 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto p-3 space-y-2 relative z-10"
       >
-        {servers.length > 0 && (
+        {(servers.length > 0 || pingInProgress) && (
           <div className="px-2 mb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 <Server className="w-3 h-3" />
                 {t('sidebar.servers')} ({servers.length})
               </div>
-              {onPingAll && (
-                <button
-                  onClick={handlePingAll}
-                  disabled={pingInProgress || selectionLocked}
-                  aria-busy={pingInProgress}
-                  aria-label={t(
-                    pingInProgress
-                      ? 'sidebar.pingRefreshing'
-                      : 'sidebar.pingAll',
-                  )}
-                  className={clsx(
-                    'p-1.5 rounded-lg transition-all duration-200',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                    pingInProgress || selectionLocked
-                      ? 'text-gray-600 cursor-not-allowed'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50',
-                  )}
-                  title={t(
-                    pingInProgress
-                      ? 'sidebar.pingRefreshing'
-                      : 'sidebar.pingAll',
-                  )}
-                >
-                  <RefreshCw
+              <div className="flex items-center gap-1">
+                {onPingSelected && (
+                  <button
+                    onClick={() => handlePing(onPingSelected)}
+                    disabled={pingSelectedDisabled}
+                    aria-label={t('sidebar.pingSelected')}
+                    title={t('sidebar.pingSelected')}
                     className={clsx(
-                      'w-3.5 h-3.5',
-                      pingInProgress && 'animate-spin',
+                      'p-1.5 rounded-lg transition-all duration-200',
+                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      pingSelectedDisabled
+                        ? 'text-gray-600 cursor-not-allowed'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50',
                     )}
-                  />
-                </button>
-              )}
+                  >
+                    <Activity className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {(onPingAll || (pingInProgress && onStopPing)) && (
+                  <button
+                    onClick={
+                      pingInProgress ? onStopPing : () => handlePing(onPingAll)
+                    }
+                    disabled={pingAllDisabled}
+                    aria-label={t(
+                      pingInProgress ? 'sidebar.pingStop' : 'sidebar.pingAll',
+                    )}
+                    title={t(
+                      pingInProgress ? 'sidebar.pingStop' : 'sidebar.pingAll',
+                    )}
+                    className={clsx(
+                      'p-1.5 rounded-lg transition-all duration-200',
+                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      pingAllDisabled
+                        ? 'text-gray-600 cursor-not-allowed'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent hover:border-gray-700/50',
+                    )}
+                  >
+                    {pingInProgress ? (
+                      <Square className="w-3.5 h-3.5" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

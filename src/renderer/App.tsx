@@ -22,6 +22,8 @@ function AppShell() {
     isRefreshingPings,
     selectServer,
     pingAllServers,
+    pingSelectedServer,
+    stopPing,
   } = useServers();
   const {
     session,
@@ -51,6 +53,8 @@ function AppShell() {
         onSelectServer={selectServer}
         onOpenSettings={handleOpenSettings}
         onPingAll={pingAllServers}
+        onPingSelected={pingSelectedServer}
+        onStopPing={stopPing}
       />
 
       <div className="flex-1 flex flex-col min-h-0 min-w-0 relative">
