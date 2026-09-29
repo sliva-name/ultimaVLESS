@@ -6,6 +6,26 @@ import { TUN_MTU } from '@/main/services/tunRoute/constants';
 import { XrayConfigCompiler } from '@/main/services/XrayConfigCompiler';
 
 describe('XrayConfigCompiler', () => {
+  it('passes the gRPC authority from share links into grpcSettings', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        type: 'grpc',
+        security: 'reality',
+        sni: 'example.com',
+        pbk: 'public-key',
+        serviceName: 'grpc-tunnel',
+        authority: 'cdn.example.com',
+      }),
+      { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+    );
+    const proxy = config.outbounds.find((outbound) => outbound.tag === 'proxy');
+
+    expect(proxy?.streamSettings?.grpcSettings).toEqual({
+      serviceName: 'grpc-tunnel',
+      authority: 'cdn.example.com',
+    });
+  });
+
   it('compiles a structured server profile into a runnable Xray config', () => {
     const config = XrayConfigCompiler.compile(
       makeServer({
@@ -739,9 +759,7 @@ describe('XrayConfigCompiler', () => {
               { tag: 'block', protocol: 'blackhole', settings: {} },
             ],
             routing: {
-              rules: [
-                { type: 'field', port: '0-65535', outboundTag: 'proxy' },
-              ],
+              rules: [{ type: 'field', port: '0-65535', outboundTag: 'proxy' }],
             },
           } as XrayConfig,
         }),
@@ -831,7 +849,9 @@ describe('XrayConfigCompiler', () => {
 
     expect(config.api).toEqual({ tag: 'api', services: ['StatsService'] });
     expect(config.api?.services).not.toContain('HandlerService');
-    const apiInbound = config.inbounds?.find((inbound) => inbound.tag === 'api');
+    const apiInbound = config.inbounds?.find(
+      (inbound) => inbound.tag === 'api',
+    );
     expect(apiInbound?.listen).toBe('127.0.0.1');
   });
 });

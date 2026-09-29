@@ -195,6 +195,7 @@ function parseVlessLink(
     const path = params.get('path') ?? undefined;
     const host = params.get('host') ?? undefined;
     const serviceName = params.get('serviceName') ?? undefined;
+    const authority = params.get('authority') || undefined;
     const mode = params.get('mode') ?? undefined;
     const xhttpExtra = parseJsonObjectParam(params.get('extra'));
     const noGRPCHeader = parseOptionalBooleanQueryParam(
@@ -221,6 +222,8 @@ function parseVlessLink(
       params.get('extra') ?? undefined,
       noGRPCHeader === undefined ? undefined : String(noGRPCHeader),
       String(allowInsecure),
+      // Appended last and only when set so existing server ids stay stable.
+      ...(authority ? [authority] : []),
     ]);
 
     return {
@@ -241,6 +244,7 @@ function parseVlessLink(
       path,
       host,
       serviceName,
+      authority,
       mode,
       xhttpExtra,
       noGRPCHeader,
@@ -311,6 +315,8 @@ function parseTrojanLink(link: string): VlessConfig | null {
             isTruthyQueryParam(params.get('insecure')) ||
               isTruthyQueryParam(params.get('allowInsecure')),
           ),
+          // Appended last and only when set so existing server ids stay stable.
+          ...(params.get('authority') ? [params.get('authority')] : []),
         ],
       ),
       address,
@@ -325,6 +331,7 @@ function parseTrojanLink(link: string): VlessConfig | null {
       path: params.get('path') ?? undefined,
       host: params.get('host') ?? undefined,
       serviceName: params.get('serviceName') ?? undefined,
+      authority: params.get('authority') || undefined,
       allowInsecure:
         isTruthyQueryParam(params.get('insecure')) ||
         isTruthyQueryParam(params.get('allowInsecure')),
