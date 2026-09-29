@@ -172,6 +172,13 @@ const resources = {
           sniffingRouteOnly: 'Sniffing route-only',
           sniffingRouteOnlyHint:
             "Use sniffing results only for routing, don't override destination.",
+          pingMethod: 'Ping method',
+          pingMethodHint:
+            'Real delay starts a short-lived Xray for each server and times an HTTP request through it, like v2rayN. It catches servers that answer but pass no traffic, and is slower on large lists.',
+          pingMethodTcp: 'TCP ping',
+          pingMethodTcpDesc: 'Fast, reachability only',
+          pingMethodReal: 'Real delay',
+          pingMethodRealDesc: 'Through Xray, slower',
           logLevel: 'Log level',
           logLevelHint: "Xray core verbosity. Use 'debug' for troubleshooting.",
           fingerprint: 'TLS fingerprint',
@@ -416,6 +423,13 @@ const resources = {
           sniffingRouteOnly: 'Sniffing только для маршрутизации',
           sniffingRouteOnlyHint:
             'Использовать результаты sniffing только для роутинга, не менять адрес назначения.',
+          pingMethod: 'Способ пинга',
+          pingMethodHint:
+            'Реальная задержка запускает для каждого сервера временный Xray и замеряет HTTP-запрос через него, как в v2rayN. Так видно серверы, которые отвечают, но не пропускают трафик. На больших списках медленнее.',
+          pingMethodTcp: 'TCP-пинг',
+          pingMethodTcpDesc: 'Быстро, только доступность',
+          pingMethodReal: 'Реальная задержка',
+          pingMethodRealDesc: 'Через Xray, медленнее',
           logLevel: 'Уровень логирования',
           logLevelHint:
             "Детализация логов Xray. Используйте 'debug' для диагностики.",

@@ -18,7 +18,12 @@ import { connectionManager } from '@/main/domain/connection/ConnectionManager';
 import { systemProxyService } from '@/main/services/SystemProxyService';
 import { tunRouteService } from '@/main/services/TunRouteService';
 import { xrayService } from '@/main/services/XrayService';
-import { pingService } from '@/main/services/PingService';
+import { pingService as tcpPingService } from '@/main/services/PingService';
+import { RealDelayService } from '@/main/services/RealDelayService';
+import {
+  createServerLatencyProbe,
+  type ServerLatencyProbe,
+} from '@/main/services/serverLatencyProbe';
 import { appRecoveryService } from '@/main/services/AppRecoveryService';
 import { appUpdaterService } from '@/main/services/AppUpdaterService';
 import { logExportService } from '@/main/services/LogExportService';
@@ -56,7 +61,8 @@ export interface IpcDependencies {
   systemProxyService: typeof systemProxyService;
   tunRouteService: typeof tunRouteService;
   xrayService: typeof xrayService;
-  pingService: typeof pingService;
+  /** Latency probe for the configured ping method (TCP or real delay). */
+  pingService: ServerLatencyProbe;
   /** Ping-all owner: toolbar runs, unattended runs, in-progress state. */
   pingRefresh: PingRefreshRunner;
   appRecoveryService: typeof appRecoveryService;
@@ -65,6 +71,14 @@ export interface IpcDependencies {
   mainLocaleService: typeof mainLocaleService;
   trafficStatsService: typeof trafficStatsService;
 }
+
+const pingService = createServerLatencyProbe({
+  tcp: tcpPingService,
+  real: new RealDelayService({
+    getPerformanceSettings: () => configService.getPerformanceSettings(),
+  }),
+  getMethod: () => configService.getPerformanceSettings().pingMethod,
+});
 
 let pingRefreshSingleton: PingRefreshRunner | null = null;
 

@@ -6,6 +6,7 @@ import {
   ConnectionMode,
   DomainStrategy,
   LogLevel,
+  PingMethod,
   RemoteDnsPreset,
   REMOTE_DNS_PRESET_SERVERS,
   TlsFingerprint,
@@ -264,6 +265,27 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             networkLocked && 'opacity-60 pointer-events-none select-none',
           )}
         >
+          <PerfSelectRow
+            label={t('settings.network.pingMethod')}
+            hint={t('settings.network.pingMethodHint')}
+            value={perfSettings.pingMethod}
+            onChange={(v) => updatePerfField('pingMethod', v as PingMethod)}
+            options={[
+              {
+                value: 'tcp',
+                label: t('settings.network.pingMethodTcp'),
+                description: t('settings.network.pingMethodTcpDesc'),
+              },
+              {
+                value: 'real',
+                label: t('settings.network.pingMethodReal'),
+                description: t('settings.network.pingMethodRealDesc'),
+              },
+            ]}
+          />
+
+          <div className="border-t border-gray-700/40 my-1" />
+
           <PerfToggleRow
             label={t('settings.network.muxEnabled')}
             hint={t('settings.network.muxEnabledHint')}
