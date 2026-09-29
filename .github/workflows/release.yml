@@ -140,6 +140,12 @@ jobs:
           npm run build:electron
           npx electron-builder --linux AppImage deb --x64 --publish never
 
+      - name: Embed AppImage update information
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zsync
+          node scripts/embed-appimage-update-info.mjs release
+
       - name: Build SHA256 checksums
         run: |
           mapfile -t files < <(find release -type f \( -name "*.AppImage" -o -name "*.deb" \))
@@ -170,6 +176,7 @@ jobs:
             release/**/*.AppImage
             release/**/latest-linux*.yml
             release/**/*.AppImage.blockmap
+            release/**/*.AppImage.zsync
             release/SHA256SUMS-linux.txt
 
   build-macos:
