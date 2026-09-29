@@ -1,0 +1,32 @@
+name: Verify
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'website/**'
+      - '.github/workflows/deploy-site.yml'
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck, lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Verify CI gates
+        run: npm run verify:ci

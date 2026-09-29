@@ -14,8 +14,13 @@ permissions:
   contents: write
 
 jobs:
+  verify:
+    name: Verify before release
+    uses: ./.github/workflows/verify.yml
+
   create-release:
     name: Create GitHub Release
+    needs: verify
     runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.release-version.outputs.tag_name }}
