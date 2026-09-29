@@ -53,12 +53,7 @@ type MutableOutbound = MutableConfigNode & {
 };
 
 type StructuredOutboundProtocol =
-  | 'vless'
-  | 'vmess'
-  | 'trojan'
-  | 'shadowsocks'
-  | 'hysteria'
-  | 'wireguard';
+  'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'hysteria' | 'wireguard';
 
 function bundledVersionMin(): string {
   return BUNDLED_XRAY_VERSION.replace(/^v/i, '');
@@ -391,8 +386,7 @@ export class XrayConfigPipeline {
       const streamSecurity =
         typeof stream?.security === 'string' ? stream.security : undefined;
       const tlsSettings = stream?.tlsSettings as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       if (tlsSettings) {
         assertAllowInsecureNotUsed(tlsSettings.allowInsecure);
         delete tlsSettings.allowInsecure;
@@ -1048,6 +1042,7 @@ export class XrayConfigPipeline {
     if (transport === 'grpc') {
       streamSettings.grpcSettings = {
         serviceName: config.serviceName || '',
+        ...(config.authority ? { authority: config.authority } : {}),
       };
     }
 

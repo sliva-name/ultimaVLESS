@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseDirectLinksFromText } from '@/main/services/subscription/linkParsing';
 import { parseJsonConfigs } from '@/main/services/subscription/jsonParsing';
+import { uniqueCatalogServers } from '@/shared/serverIdentity';
 
 describe('subscription parsing', () => {
   it('extracts VLESS links from mixed clipboard text', () => {
@@ -28,6 +29,37 @@ describe('subscription parsing', () => {
       port: 443,
       name: 'NoPort',
     });
+  });
+
+  it('keeps VLESS gRPC links that differ only by authority as separate servers', () => {
+    const base =
+      'vless://user-id@example.com:443?type=grpc&security=reality&serviceName=grpc-tunnel&sni=dl.google.com&pbk=key&sid=aa&fp=chrome';
+    const configs = parseDirectLinksFromText(
+      [
+        `${base}&authority=%2F%3FA#Same`,
+        `${base}&authority=%2F%3FB#Same`,
+        `${base}#Same`,
+      ].join('\n'),
+    );
+
+    expect(configs.map((config) => config.authority)).toEqual([
+      '/?A',
+      '/?B',
+      undefined,
+    ]);
+    expect(new Set(configs.map((config) => config.uuid)).size).toBe(3);
+    expect(uniqueCatalogServers(configs)).toHaveLength(3);
+  });
+
+  it('keeps the server id unchanged for links without authority', () => {
+    const [withEmpty] = parseDirectLinksFromText(
+      'vless://user-id@example.com:443?type=grpc&serviceName=s&authority=#A',
+    );
+    const [without] = parseDirectLinksFromText(
+      'vless://user-id@example.com:443?type=grpc&serviceName=s#A',
+    );
+
+    expect(withEmpty?.uuid).toBe(without?.uuid);
   });
 
   it('maps type=splithttp transport from VLESS links', () => {

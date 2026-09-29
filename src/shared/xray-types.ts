@@ -177,6 +177,7 @@ export type XrayHttpUpgradeSettings = {
 
 export type XrayGrpcSettings = {
   serviceName?: string;
+  authority?: string;
   multiMode?: boolean;
 };
 

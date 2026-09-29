@@ -8,12 +8,7 @@ export interface Subscription {
 import type { XrayConfig } from './xray-types';
 
 export type ServerProtocol =
-  | 'vless'
-  | 'vmess'
-  | 'trojan'
-  | 'shadowsocks'
-  | 'hysteria'
-  | 'wireguard';
+  'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'hysteria' | 'wireguard';
 
 export type ServerTransport =
   | 'tcp'
@@ -73,11 +68,7 @@ export interface ServerConfig {
    * (removed in Xray 26.7+).
    */
   vmessSecurity?:
-    | 'aes-128-gcm'
-    | 'chacha20-poly1305'
-    | 'auto'
-    | 'none'
-    | 'zero';
+    'aes-128-gcm' | 'chacha20-poly1305' | 'auto' | 'none' | 'zero';
   flow?: string; // xtls-rprx-vision
   encryption?: string;
   type?: ServerTransport;
@@ -104,6 +95,7 @@ export interface ServerConfig {
 
   // gRPC specific
   serviceName?: string;
+  authority?: string;
 
   // Hysteria2
   hysteriaAuth?: string;

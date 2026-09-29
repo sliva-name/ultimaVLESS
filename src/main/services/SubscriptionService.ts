@@ -8,6 +8,12 @@ import {
   extractSupportedLinks,
   parseDirectLinksFromText,
 } from './subscription/linkParsing';
+import {
+  decodeHtmlEntities,
+  findBase64Candidates,
+  htmlToText,
+  looksLikeHtml,
+} from './subscription/htmlResponse';
 import { redactUrl } from '@/main/utils/redactUrl';
 import { isPrivateOrReservedHost } from '@/shared/networkAddresses';
 
@@ -21,15 +27,6 @@ const YANDEX_TRANSLATE_FETCH_HEADERS: Record<string, string> = {
 
 function isYandexTranslateHost(hostname: string): boolean {
   return hostname === 'translate.yandex.ru';
-}
-
-/** Unescape common HTML entities so proxy links and query separators survive inside markup. */
-function expandHtmlEntitiesForUrlExtraction(html: string): string {
-  return html
-    .replace(/&amp;/gi, '&')
-    .replace(/&colon;/gi, ':')
-    .replace(/&#58;/g, ':')
-    .replace(/&#x3a;/gi, ':');
 }
 
 async function fetchWithTimeout(
@@ -295,31 +292,42 @@ export class SubscriptionService {
     }
 
     // Reaching here means `body` was not array/object, so it is the raw text response.
-    let textBody = body.trim();
-    if (yandexHtml) {
-      textBody = expandHtmlEntitiesForUrlExtraction(textBody);
-      logger.info(
-        'SubscriptionService',
-        'Parsing Yandex Translate HTML for subscription links',
-        {
-          approxLength: textBody.length,
-        },
-      );
+    // Mirrors like raw.githack.com and translate.yandex.ru sometimes serve the
+    // subscription wrapped in HTML and/or with entity-escaped characters
+    // (`&amp;`, `&#61;`, `&amp;amp;`), so normalise before looking for links.
+    const rawBody = body.trim();
+    const isHtml = yandexHtml || looksLikeHtml(rawBody);
+    if (isHtml) {
+      logger.info('SubscriptionService', 'Parsing HTML response for links', {
+        approxLength: rawBody.length,
+        yandexHtml,
+      });
     }
-    const directLinksFromBody = this.extractSupportedLinksFromText(textBody);
-    if (directLinksFromBody.length > 0) {
-      logger.info(
-        'SubscriptionService',
-        'Detected direct links in response body',
-        {
-          count: directLinksFromBody.length,
-          yandexHtml,
-        },
-      );
-      return {
-        configs: this.parseDirectLinksFromText(textBody),
-        extractedLinks: directLinksFromBody,
-      };
+    const textBody = isHtml
+      ? htmlToText(rawBody).trim()
+      : decodeHtmlEntities(rawBody);
+    // Visible text first; for HTML also try the raw markup so links that only
+    // appear inside attributes (e.g. `href`) are still found.
+    const linkSources = isHtml
+      ? [textBody, decodeHtmlEntities(rawBody)]
+      : [textBody];
+    for (const source of linkSources) {
+      const directLinksFromBody = this.extractSupportedLinksFromText(source);
+      if (directLinksFromBody.length > 0) {
+        logger.info(
+          'SubscriptionService',
+          'Detected direct links in response body',
+          {
+            count: directLinksFromBody.length,
+            yandexHtml,
+            isHtml,
+          },
+        );
+        return {
+          configs: this.parseDirectLinksFromText(source),
+          extractedLinks: directLinksFromBody,
+        };
+      }
     }
 
     if (textBody.startsWith('[') || textBody.startsWith('{')) {
@@ -338,6 +346,10 @@ export class SubscriptionService {
       }
     }
 
+    if (isHtml) {
+      return this.parseBase64FromHtmlText(textBody);
+    }
+
     const cleanBase64 = textBody.replace(/\s/g, '');
     if (!isValid(cleanBase64)) {
       throw new Error('Invalid Base64 response');
@@ -347,6 +359,31 @@ export class SubscriptionService {
       configs: this.parseBase64(textBody),
       extractedLinks: this.extractSupportedLinksFromText(decoded),
     };
+  }
+
+  /** A Base64 subscription rendered inside an HTML page (e.g. in `<pre>`). */
+  private parseBase64FromHtmlText(text: string): {
+    configs: VlessConfig[];
+    extractedLinks: string[];
+  } {
+    const blocks = findBase64Candidates(text);
+    for (const block of blocks) {
+      if (!isValid(block)) continue;
+      const decoded = decode(block);
+      const extractedLinks = this.extractSupportedLinksFromText(decoded);
+      if (extractedLinks.length > 0) {
+        logger.info('SubscriptionService', 'Detected Base64 inside HTML', {
+          count: extractedLinks.length,
+        });
+        return {
+          configs: parseDirectLinksFromText(decoded),
+          extractedLinks,
+        };
+      }
+    }
+    throw new Error(
+      'Subscription URL returned an HTML page without proxy links',
+    );
   }
 
   public async fetchAndParse(url: string): Promise<VlessConfig[]> {
