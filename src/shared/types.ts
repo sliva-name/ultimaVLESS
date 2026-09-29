@@ -156,6 +156,12 @@ export type WindowsTunRouting = 'xray' | 'powershell';
 /** Xray `dns.queryStrategy`. Used for TUN; proxy mode stays IPv4-only. */
 export type TunDnsQueryStrategy = 'UseIPv4' | 'UseIPv6' | 'UseIP' | 'UseSystem';
 
+/**
+ * How server latency is measured: `tcp` times a TCP connect (plus a TLS
+ * handshake check), `real` times an HTTP request through a throwaway Xray.
+ */
+export type PingMethod = 'tcp' | 'real';
+
 export const VALID_XUDP_PROXY_UDP_443_VALUES: readonly XudpProxyUDP443[] = [
   'reject',
   'allow',
@@ -192,6 +198,10 @@ export const VALID_REMOTE_DNS_PRESETS: readonly RemoteDnsPreset[] = [
   'google',
   'quad9',
   'custom',
+] as const;
+export const VALID_PING_METHODS: readonly PingMethod[] = [
+  'tcp',
+  'real',
 ] as const;
 export const VALID_TUN_DNS_QUERY_STRATEGIES: readonly TunDnsQueryStrategy[] = [
   'UseIPv4',
@@ -254,6 +264,8 @@ export interface PerformanceSettings {
   bypassDomains: string[];
   /** Split tunneling by address: IPs, CIDR blocks, or `geoip:` tags. */
   bypassIps: string[];
+  /** Latency probe used by the ping buttons and unattended refreshes. */
+  pingMethod: PingMethod;
 }
 
 export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
@@ -278,4 +290,5 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   // out of the box; users can drop it in the network settings.
   bypassDomains: ['vk.com'],
   bypassIps: [],
+  pingMethod: 'tcp',
 };

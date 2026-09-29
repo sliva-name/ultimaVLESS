@@ -142,6 +142,7 @@ export function createElectronApiMock(
       tunDnsQueryStrategy: 'UseIPv4',
       bypassDomains: [],
       bypassIps: [],
+      pingMethod: 'tcp',
     })),
     setPerformanceSettings: vi.fn(
       async (_settings: PerformanceSettings) => true,

@@ -12,6 +12,8 @@ import {
   TUN_MTU_MAX,
   TUN_MTU_MIN,
   TunDnsQueryStrategy,
+  VALID_PING_METHODS,
+  PingMethod,
   WindowsTunRouting,
 } from './types';
 import { VALID_WINDOWS_TUN_ROUTING } from './tunRouting';
@@ -95,7 +97,8 @@ export function performanceSettingsEqual(
     left.tunMtu === right.tunMtu &&
     left.tunDnsQueryStrategy === right.tunDnsQueryStrategy &&
     sameStringList(left.bypassDomains, right.bypassDomains) &&
-    sameStringList(left.bypassIps, right.bypassIps)
+    sameStringList(left.bypassIps, right.bypassIps) &&
+    left.pingMethod === right.pingMethod
   );
 }
 
@@ -134,6 +137,9 @@ export function isUnmodifiedLegacyPerformanceSettings(value: unknown): boolean {
   }
 
   if ('bypassDomains' in value || 'bypassIps' in value) {
+    return false;
+  }
+  if ('pingMethod' in value && value.pingMethod !== 'tcp') {
     return false;
   }
   if ('remoteDnsPreset' in value && value.remoteDnsPreset !== 'cloudflare') {
@@ -277,5 +283,8 @@ export function normalizePerformanceSettings(
     bypassIps: Array.isArray(value.bypassIps)
       ? normalizeBypassIps(value.bypassIps)
       : [...DEFAULT_PERFORMANCE_SETTINGS.bypassIps],
+    pingMethod: VALID_PING_METHODS.includes(value.pingMethod as PingMethod)
+      ? (value.pingMethod as PingMethod)
+      : DEFAULT_PERFORMANCE_SETTINGS.pingMethod,
   };
 }
