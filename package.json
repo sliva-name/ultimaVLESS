@@ -143,10 +143,17 @@
     },
     "linux": {
       "maintainer": "UltimaVPN antyuhov2@gmail.com",
-      "icon": "resources/bin",
+      "icon": "resources/bin/logo-256x256.png",
+      "category": "Network",
       "target": [
         "AppImage",
         "deb"
+      ],
+      "extraFiles": [
+        {
+          "from": "build/linux/io.github.sliva_name.UltimaVLESS.metainfo.xml",
+          "to": "usr/share/metainfo/io.github.sliva_name.UltimaVLESS.metainfo.xml"
+        }
       ]
     }
   },
