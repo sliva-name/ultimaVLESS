@@ -7,6 +7,7 @@ import { registerDiagnosticsHandlers } from './handlers/diagnosticsHandlers';
 import { registerPingHandlers } from './handlers/pingHandlers';
 import { registerSettingsHandlers } from './handlers/settingsHandlers';
 import { registerSubscriptionHandlers } from './handlers/subscriptionHandlers';
+import { registerTunEnvironmentHandlers } from './handlers/tunEnvironmentHandlers';
 import { registerUpdateHandlers } from './handlers/updateHandlers';
 
 interface RegisterHandlersParams {
@@ -62,6 +63,11 @@ export function registerHandlers({
     deps,
     assertTrustedSender,
     notifySnapshot,
+  });
+
+  registerTunEnvironmentHandlers({
+    deps,
+    assertTrustedSender,
   });
 
   registerUpdateHandlers({

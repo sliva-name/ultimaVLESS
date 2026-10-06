@@ -423,6 +423,26 @@ describe('XrayConfigCompiler', () => {
     expect(config.outbounds[0].mux).toEqual({ enabled: false });
   });
 
+  it('binds the TUN outbound sockets to an explicit adapter when given one', () => {
+    for (const tunAutoRoute of [true, false]) {
+      const config = XrayConfigCompiler.compile(
+        makeServer({ security: 'tls', sni: 'example.com' }),
+        {
+          logPath: '/tmp/xray.log',
+          connectionMode: 'tun',
+          tunAutoRoute,
+          outboundInterface: 'Беспроводная сеть',
+        },
+      );
+      const tunInbound = config.inbounds?.find(
+        (inbound) => inbound.protocol === 'tun',
+      );
+      expect(tunInbound?.settings).toMatchObject({
+        autoOutboundsInterface: 'Беспроводная сеть',
+      });
+    }
+  });
+
   it('keeps sendThrough when tunAutoRoute is off (PowerShell fallback)', () => {
     const config = XrayConfigCompiler.compile(
       makeServer({ security: 'tls', sni: 'example.com' }),

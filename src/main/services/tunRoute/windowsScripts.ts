@@ -58,11 +58,26 @@ function validateMetric(value: number): void {
 }
 
 /**
+ * Adapter aliases are free text (quotes, `$`, backticks, Cyrillic). Instead of
+ * escaping them for a PowerShell string literal, the script decodes base64 —
+ * whose alphabet cannot break out of the quotes.
+ */
+function powerShellStringFromBase64(value: string): string {
+  const encoded = Buffer.from(value, 'utf8').toString('base64');
+  return `[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${encoded}'))`;
+}
+
+/**
  * Pure PowerShell script builders for the Windows TUN routing path.
  * Kept side-effect-free so they can be audited/tested independently.
  */
 
-export const getDefaultRouteScript = (): string => `
+/**
+ * Prints `index|gateway|alias|localAddress` for the best default route, or —
+ * with `preferredInterface` — for that adapter's default route only.
+ */
+export const getDefaultRouteScript = (preferredInterface?: string): string => `
+      $preferredAlias = ${preferredInterface ? powerShellStringFromBase64(preferredInterface) : "''"}
       $virtualPatterns = @(
         'vEthernet*',
         'Default Switch*',
@@ -88,6 +103,9 @@ export const getDefaultRouteScript = (): string => `
       function NewCandidate($routeObj) {
         $if = Get-NetAdapter -InterfaceIndex $routeObj.InterfaceIndex -ErrorAction SilentlyContinue
         if (-not $if -or $if.Name -eq "${TUN_INTERFACE_NAME}" -or $if.Status -ne "Up") {
+          return $null
+        }
+        if ($preferredAlias -and $if.Name -ne $preferredAlias) {
           return $null
         }
         if (-not (IsValidIPv4 $routeObj.NextHop) -or $routeObj.NextHop -eq "0.0.0.0") {

@@ -53,6 +53,9 @@ function createDeps(overrides: Partial<any> = {}) {
     pingRefresh: {
       isRunning: vi.fn(() => false),
     },
+    conflictingAppsService: {
+      getTunCheck: vi.fn(() => null),
+    },
     ...overrides,
   };
 }
@@ -67,6 +70,22 @@ describe('app snapshot owners', () => {
     expect(snapshot.health.lastHealthState).toBe('healthy');
     expect(snapshot.servers).toHaveLength(1);
     expect('rawConfig' in snapshot.servers[0]).toBe(false);
+    expect(snapshot.tunConflicts).toBeNull();
+  });
+
+  it('carries the TUN conflict check main ran for the last attempt', () => {
+    const check = {
+      id: 3,
+      scan: { supported: true, apps: [] },
+      resolved: false,
+    };
+    const snapshot = buildAppSnapshot(
+      createDeps({
+        conflictingAppsService: { getTunCheck: vi.fn(() => check) },
+      }) as any,
+    );
+
+    expect(snapshot.tunConflicts).toEqual(check);
   });
 
   it('marks public VLESS/none catalog rows as incompatible with bundled Xray', () => {

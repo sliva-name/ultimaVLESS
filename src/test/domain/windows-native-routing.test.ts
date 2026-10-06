@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CommandOutput } from '@/main/services/platform/commandRunner';
 import {
   createWindowsNativeRouting,
+  describeNetworkAdapters,
   hostAddressFromPrefix,
   listHostInterfaces,
   parseNetshDefaultRoutes,
@@ -271,6 +272,220 @@ describe('default route selection', () => {
         hostInterfaces: HOST_INTERFACES,
       }),
     ).toBeNull();
+  });
+});
+
+// The adapter set from the bug report: two wired NICs, Wi-Fi as the real
+// uplink, VirtualBox/Hyper-V host networks and an OpenVPN TAP. Xray's own
+// Windows heuristic (name contains "wi-fi", address 192.168.*) cannot pick
+// "Беспроводная сеть" here; the routing table can.
+const MULTI_ADAPTER_ROUTE_PRINT = `
+ 12...0a 00 27 00 00 0c ......VirtualBox Host-Only Ethernet Adapter
+ 10...98 fe 3e 3d f8 b0 ......Intel(R) Wi-Fi 6E AX210 160MHz
+ 17...30 56 0f 57 6f 8b ......Realtek PCIe GbE Family Controller
+ 19...30 56 0f 57 6f 8c ......Realtek USB GbE Family Controller
+ 21...00 ff 6a 1b 2c 3d ......TAP-Windows Adapter V9
+ 45...00 15 5d 08 e6 0d ......Hyper-V Virtual Ethernet Adapter
+          0.0.0.0          0.0.0.0      192.168.0.1    192.168.0.124     35
+          0.0.0.0          0.0.0.0       10.20.0.1       10.20.0.15     45
+`;
+
+const MULTI_ADAPTER_NETSH = [
+  { routeMetric: 0, interfaceIndex: 10, gateway: '192.168.0.1' },
+  { routeMetric: 0, interfaceIndex: 19, gateway: '10.20.0.1' },
+];
+
+const MULTI_ADAPTER_HOSTS = [
+  { name: 'ultima0', address: '172.19.0.1', mac: null, internal: false },
+  {
+    name: 'Loopback Pseudo-Interface 1',
+    address: '127.0.0.1',
+    mac: null,
+    internal: true,
+  },
+  {
+    name: 'Ethernet',
+    address: '169.254.10.20',
+    mac: '30:56:0f:57:6f:8b',
+    internal: false,
+  },
+  {
+    name: 'Ethernet 2',
+    address: '10.20.0.15',
+    mac: '30:56:0f:57:6f:8c',
+    internal: false,
+  },
+  {
+    name: 'Беспроводная сеть',
+    address: '192.168.0.124',
+    mac: '98:fe:3e:3d:f8:b0',
+    internal: false,
+  },
+  {
+    name: 'VirtualBox Host-Only Network',
+    address: '192.168.56.1',
+    mac: '0a:00:27:00:00:0c',
+    internal: false,
+  },
+  {
+    name: 'vEthernet (Default Switch)',
+    address: '172.21.176.1',
+    mac: '00:15:5d:08:e6:0d',
+    internal: false,
+  },
+  {
+    name: 'OpenVPN TAP',
+    address: '10.8.0.6',
+    mac: '00:ff:6a:1b:2c:3d',
+    internal: false,
+  },
+];
+
+const MULTI_ADAPTER_TABLES = {
+  routePrint: parseRoutePrint(MULTI_ADAPTER_ROUTE_PRINT),
+  netshRoutes: MULTI_ADAPTER_NETSH,
+  hostInterfaces: MULTI_ADAPTER_HOSTS,
+};
+
+describe('preferred TUN adapter', () => {
+  it('follows the routing table when nothing is selected', () => {
+    expect(selectDefaultRoute(MULTI_ADAPTER_TABLES)).toMatchObject({
+      interfaceIndex: 10,
+      interfaceName: 'Беспроводная сеть',
+    });
+  });
+
+  it('uses the selected adapter even when another one has a better metric', () => {
+    expect(
+      selectDefaultRoute({
+        ...MULTI_ADAPTER_TABLES,
+        preferredInterface: 'Ethernet 2',
+      }),
+    ).toEqual({
+      interfaceIndex: 19,
+      gateway: '10.20.0.1',
+      interfaceName: 'Ethernet 2',
+      localAddress: '10.20.0.15',
+    });
+  });
+
+  it('returns nothing for a selected adapter without a default route', () => {
+    for (const preferredInterface of [
+      'VirtualBox Host-Only Network',
+      'Ethernet',
+      'Ethernet 7',
+    ]) {
+      expect(
+        selectDefaultRoute({ ...MULTI_ADAPTER_TABLES, preferredInterface }),
+      ).toBeNull();
+    }
+  });
+});
+
+describe('network adapter listing', () => {
+  it('lists every adapter but our TUN, the automatic choice first', () => {
+    const adapters = describeNetworkAdapters(MULTI_ADAPTER_TABLES);
+
+    expect(adapters.map((adapter) => adapter.name)).toEqual([
+      'Беспроводная сеть',
+      'Ethernet 2',
+      'Ethernet',
+      'vEthernet (Default Switch)',
+      'VirtualBox Host-Only Network',
+      'OpenVPN TAP',
+    ]);
+    expect(adapters[0]).toEqual({
+      name: 'Беспроводная сеть',
+      description: 'Intel(R) Wi-Fi 6E AX210 160MHz',
+      ipv4: ['192.168.0.124'],
+      gateway: '192.168.0.1',
+      kind: 'physical',
+      isAutomaticChoice: true,
+    });
+    expect(
+      adapters.filter((adapter) => adapter.isAutomaticChoice),
+    ).toHaveLength(1);
+    expect(adapters.find((a) => a.name === 'Ethernet')).toMatchObject({
+      description: 'Realtek PCIe GbE Family Controller',
+      gateway: null,
+      kind: 'physical',
+    });
+    expect(
+      adapters.find((a) => a.name === 'VirtualBox Host-Only Network'),
+    ).toMatchObject({ gateway: null, kind: 'virtual' });
+    expect(adapters.find((a) => a.name === 'OpenVPN TAP')).toMatchObject({
+      description: 'TAP-Windows Adapter V9',
+      kind: 'vpn',
+    });
+  });
+
+  it('merges addresses per adapter and drops unreadable descriptions', () => {
+    const adapters = describeNetworkAdapters({
+      routePrint: parseRoutePrint(`
+ 10...98 fe 3e 3d f8 b0 ......\uFFFD\uFFFD\uFFFD\uFFFD Wi-Fi
+`),
+      netshRoutes: [],
+      hostInterfaces: [
+        {
+          name: 'Wi-Fi',
+          address: '192.168.0.124',
+          mac: '98:fe:3e:3d:f8:b0',
+          internal: false,
+        },
+        {
+          name: 'Wi-Fi',
+          address: '192.168.7.3',
+          mac: '98:fe:3e:3d:f8:b0',
+          internal: false,
+        },
+      ],
+    });
+
+    expect(adapters).toEqual([
+      {
+        name: 'Wi-Fi',
+        description: null,
+        ipv4: ['192.168.0.124', '192.168.7.3'],
+        gateway: null,
+        kind: 'physical',
+        isAutomaticChoice: false,
+      },
+    ]);
+  });
+
+  it('reads the tables through route.exe and netsh', async () => {
+    const run: CommandRunner = vi.fn(async (command: string) => ({
+      code: 0,
+      stdout:
+        command === 'route'
+          ? MULTI_ADAPTER_ROUTE_PRINT
+          : `Нет  Вручную  0  0.0.0.0/0  10  192.168.0.1`,
+      stderr: '',
+    }));
+    const routing = createWindowsNativeRouting(run, () => ({
+      'Беспроводная сеть': [
+        {
+          address: '192.168.0.124',
+          netmask: '255.255.255.0',
+          family: 'IPv4',
+          mac: '98:fe:3e:3d:f8:b0',
+          internal: false,
+          cidr: '192.168.0.124/24',
+        },
+      ],
+    }));
+
+    await expect(routing.listAdapters()).resolves.toEqual([
+      expect.objectContaining({
+        name: 'Беспроводная сеть',
+        gateway: '192.168.0.1',
+        isAutomaticChoice: true,
+      }),
+    ]);
+    await expect(
+      routing.discoverDefaultRoute('Беспроводная сеть'),
+    ).resolves.toMatchObject({ interfaceIndex: 10 });
+    await expect(routing.discoverDefaultRoute('Ethernet')).resolves.toBeNull();
   });
 });
 

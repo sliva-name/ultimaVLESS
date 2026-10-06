@@ -25,6 +25,7 @@ import {
   type ServerLatencyProbe,
 } from '@/main/services/serverLatencyProbe';
 import { appRecoveryService } from '@/main/services/AppRecoveryService';
+import { conflictingAppsService } from '@/main/services/ConflictingAppsService';
 import { appUpdaterService } from '@/main/services/AppUpdaterService';
 import { logExportService } from '@/main/services/LogExportService';
 import { mainLocaleService } from '@/main/services/MainLocaleService';
@@ -66,6 +67,7 @@ export interface IpcDependencies {
   /** Ping-all owner: toolbar runs, unattended runs, in-progress state. */
   pingRefresh: PingRefreshRunner;
   appRecoveryService: typeof appRecoveryService;
+  conflictingAppsService: typeof conflictingAppsService;
   appUpdaterService: typeof appUpdaterService;
   logExportService: typeof logExportService;
   mainLocaleService: typeof mainLocaleService;
@@ -125,6 +127,7 @@ export function createIpcDependencies(): IpcDependencies {
     pingService,
     pingRefresh: getPingRefreshRunner(),
     appRecoveryService,
+    conflictingAppsService,
     appUpdaterService,
     logExportService,
     mainLocaleService,

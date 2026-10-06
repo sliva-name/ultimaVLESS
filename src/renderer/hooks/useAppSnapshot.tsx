@@ -64,6 +64,7 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   autoSwitchingEnabled: true,
   traffic: null,
   pingRefreshInProgress: false,
+  tunConflicts: null,
 };
 
 interface AppSnapshotContextValue {
@@ -420,6 +421,8 @@ export function useSession() {
   } = useAppSnapshotContext();
   return {
     session: snapshot.session,
+    connectionMode: snapshot.connectionMode,
+    tunConflicts: snapshot.tunConflicts,
     isConnected,
     isConnectionBusy,
     connectionError,

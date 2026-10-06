@@ -13,6 +13,7 @@ import { getBinResourcesPath } from '@/main/utils/runtimePaths';
 import { XrayConfigCompiler } from './XrayConfigCompiler';
 import { logger } from './LoggerService';
 import { probeTcpPort } from './networkProbe';
+import { trackOwnedXrayProcess } from './xray/ownedProcesses';
 import type { PingServersOptions } from './PingService';
 
 /** Same probe v2rayN uses for its "real delay": tiny, cacheless, plain HTTP. */
@@ -216,6 +217,7 @@ function spawnBundledXray(config: XrayConfig): DelayTestProcess {
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   });
+  trackOwnedXrayProcess(child);
   const exited = new Promise<void>((resolve) => {
     child.once('exit', () => resolve());
     child.once('error', (error) => {

@@ -19,6 +19,11 @@ import type {
   TunCapabilityStatus,
 } from '@/shared/views/monitorStatus';
 import type { UpdateStatus } from '@/shared/views/update';
+import type {
+  CloseConflictingAppResult,
+  ConflictingAppsScan,
+  NetworkAdapterList,
+} from '@/shared/views/tunEnvironment';
 import type { PerformanceSettings } from '@/shared/types';
 
 export interface IElectronAPI {
@@ -53,6 +58,9 @@ export interface IElectronAPI {
   getConnectionMode: () => Promise<ConnectionMode>;
   setConnectionMode: (mode: ConnectionMode) => Promise<boolean>;
   getTunCapabilityStatus: () => Promise<TunCapabilityStatus>;
+  listNetworkAdapters: () => Promise<NetworkAdapterList>;
+  scanConflictingApps: () => Promise<ConflictingAppsScan>;
+  closeConflictingApp: (appId: string) => Promise<CloseConflictingAppResult>;
   getLogs: () => Promise<string>;
   openLogFolder: () => Promise<boolean>;
   openExternalUrl: (url: string) => Promise<boolean>;

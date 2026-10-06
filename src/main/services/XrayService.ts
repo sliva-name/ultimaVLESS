@@ -24,6 +24,7 @@ import {
   shouldElevateXray,
 } from './PrivilegeService';
 import { waitForProcessExit as awaitChildExit } from './xray/waitForProcessExit';
+import { trackOwnedXrayProcess } from './xray/ownedProcesses';
 
 export interface XrayUnexpectedExitEvent {
   config: VlessConfig;
@@ -35,6 +36,8 @@ export interface XrayUnexpectedExitEvent {
 export interface XrayStartOptions {
   sendThrough?: string;
   tunAutoRoute?: boolean;
+  /** TUN: adapter alias Xray binds its sockets to (`autoOutboundsInterface`). */
+  outboundInterface?: string;
   ports?: RuntimePorts;
   /** `staging` starts a second process without stopping the active one. */
   slot?: 'active' | 'staging';
@@ -148,6 +151,7 @@ export class XrayService extends EventEmitter {
       security: config.security || 'none',
       connectionMode,
       sendThrough: options.sendThrough || null,
+      outboundInterface: options.outboundInterface || null,
     });
 
     let xrayConfig;
@@ -157,6 +161,7 @@ export class XrayService extends EventEmitter {
         connectionMode,
         sendThrough: options.sendThrough,
         tunAutoRoute: options.tunAutoRoute,
+        outboundInterface: options.outboundInterface,
         ports,
         performanceSettings: configService.getPerformanceSettings(),
       });
@@ -251,6 +256,7 @@ export class XrayService extends EventEmitter {
         });
       }
       this.assignSlotProcess(slot, spawnedProcess);
+      trackOwnedXrayProcess(spawnedProcess);
       logger.info('XrayService', 'Process spawned', {
         pid: spawnedProcess.pid,
         elevated: elevate,

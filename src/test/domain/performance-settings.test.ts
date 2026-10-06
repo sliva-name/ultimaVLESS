@@ -104,6 +104,22 @@ describe('normalizePerformanceSettings', () => {
     expect(settings.bypassIps).toEqual(['10.0.0.0/8', 'geoip:private']);
   });
 
+  it('keeps a TUN adapter alias and falls back to automatic for junk', () => {
+    expect(normalizePerformanceSettings({}).tunOutboundInterface).toBe('');
+    for (const name of ['Ethernet 2', 'Беспроводная сеть', "Wi-Fi 'home' $x"]) {
+      expect(
+        normalizePerformanceSettings({ tunOutboundInterface: name })
+          .tunOutboundInterface,
+      ).toBe(name);
+    }
+    for (const junk of [42, null, '   ', 'Wi\nFi', 'x'.repeat(257)]) {
+      expect(
+        normalizePerformanceSettings({ tunOutboundInterface: junk })
+          .tunOutboundInterface,
+      ).toBe('');
+    }
+  });
+
   it('inherits the shipped exclusions when no list was ever saved', () => {
     expect(normalizePerformanceSettings({}).bypassDomains).toEqual(['vk.com']);
     expect(normalizePerformanceSettings({}).bypassIps).toEqual([]);
@@ -169,6 +185,12 @@ describe('legacy performance migration guard', () => {
         tunDnsQueryStrategy: 'UseSystem',
       }),
     ).toBe(false);
+    expect(
+      isUnmodifiedLegacyPerformanceSettings({
+        ...legacyCore,
+        tunOutboundInterface: 'Ethernet 2',
+      }),
+    ).toBe(false);
   });
 
   it('compares every performance field, including lists', () => {
@@ -182,6 +204,12 @@ describe('legacy performance migration guard', () => {
       performanceSettingsEqual(DEFAULT_PERFORMANCE_SETTINGS, {
         ...DEFAULT_PERFORMANCE_SETTINGS,
         bypassDomains: ['example.com'],
+      }),
+    ).toBe(false);
+    expect(
+      performanceSettingsEqual(DEFAULT_PERFORMANCE_SETTINGS, {
+        ...DEFAULT_PERFORMANCE_SETTINGS,
+        tunOutboundInterface: 'Ethernet 2',
       }),
     ).toBe(false);
   });

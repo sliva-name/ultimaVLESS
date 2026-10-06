@@ -50,6 +50,23 @@ function normalizeIpv4List(value: unknown): string[] {
   return out;
 }
 
+/** Windows caps adapter aliases at 256 UTF-16 units (IF_MAX_STRING_SIZE). */
+export const NETWORK_INTERFACE_NAME_MAX_LENGTH = 256;
+
+/**
+ * An adapter alias as Windows reports it, or '' (automatic). Anything that
+ * could not be an alias — control characters, oversized values — falls back to
+ * automatic rather than reaching Xray or a PowerShell script.
+ */
+export function normalizeNetworkInterfaceName(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  if (value.trim().length === 0) return '';
+  if (value.length > NETWORK_INTERFACE_NAME_MAX_LENGTH) return '';
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(value)) return '';
+  return value;
+}
+
 export function resolveRemoteDnsServers(
   preset: RemoteDnsPreset,
   customServers: unknown,
@@ -94,6 +111,7 @@ export function performanceSettingsEqual(
     left.blockBittorrent === right.blockBittorrent &&
     left.domainStrategy === right.domainStrategy &&
     left.windowsTunRouting === right.windowsTunRouting &&
+    left.tunOutboundInterface === right.tunOutboundInterface &&
     left.tunMtu === right.tunMtu &&
     left.tunDnsQueryStrategy === right.tunDnsQueryStrategy &&
     sameStringList(left.bypassDomains, right.bypassDomains) &&
@@ -163,6 +181,9 @@ export function isUnmodifiedLegacyPerformanceSettings(value: unknown): boolean {
     'windowsTunRouting' in value &&
     value.windowsTunRouting !== 'powershell'
   ) {
+    return false;
+  }
+  if ('tunOutboundInterface' in value && value.tunOutboundInterface !== '') {
     return false;
   }
   if (
@@ -263,6 +284,9 @@ export function normalizePerformanceSettings(
     )
       ? (value.windowsTunRouting as WindowsTunRouting)
       : DEFAULT_PERFORMANCE_SETTINGS.windowsTunRouting,
+    tunOutboundInterface: normalizeNetworkInterfaceName(
+      value.tunOutboundInterface,
+    ),
     tunMtu: clamp(
       value.tunMtu,
       TUN_MTU_MIN,

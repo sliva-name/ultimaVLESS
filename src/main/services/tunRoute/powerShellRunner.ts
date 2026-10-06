@@ -20,7 +20,13 @@ export async function runPowerShell(
   options: RunPowerShellOptions = {},
 ): Promise<string> {
   const timeoutMs = options.timeoutMs ?? POWERSHELL_TIMEOUT;
-  const normalizedScript = `$ProgressPreference = 'SilentlyContinue'\n${script}`;
+  // Node decodes the pipe as UTF-8, while PowerShell writes the OEM code page
+  // by default: adapter aliases like "Беспроводная сеть" came back garbled.
+  const normalizedScript = [
+    "$ProgressPreference = 'SilentlyContinue'",
+    'try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch {}',
+    script,
+  ].join('\n');
   const encodedScript = Buffer.from(normalizedScript, 'utf16le').toString(
     'base64',
   );

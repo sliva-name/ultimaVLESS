@@ -67,6 +67,7 @@ export function buildAppSnapshot(
     autoSwitchingEnabled: deps.connectionManager.getAutoSwitchingEnabled(),
     traffic: deps.trafficStatsService.getLastSnapshot(),
     pingRefreshInProgress: deps.pingRefresh.isRunning(),
+    tunConflicts: deps.conflictingAppsService.getTunCheck(),
   };
 }
 

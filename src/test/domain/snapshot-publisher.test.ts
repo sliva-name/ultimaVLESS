@@ -59,6 +59,9 @@ function createPublisherDeps(overrides: Partial<any> = {}) {
     pingRefresh: {
       isRunning: vi.fn(() => false),
     },
+    conflictingAppsService: {
+      getTunCheck: vi.fn(() => null),
+    },
     ...overrides,
   };
 }

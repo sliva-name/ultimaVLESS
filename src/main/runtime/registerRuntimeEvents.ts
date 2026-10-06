@@ -86,6 +86,11 @@ export function registerRuntimeEvents({
     snapshotPublisher.push('connection');
   });
 
+  deps.conflictingAppsService.removeAllListeners('tun-check-changed');
+  deps.conflictingAppsService.on('tun-check-changed', () => {
+    snapshotPublisher.push('conflicts');
+  });
+
   deps.appRecoveryService.removeAllListeners('changed');
   deps.appRecoveryService.on('changed', () => {
     snapshotPublisher.push('recovery');
@@ -108,6 +113,14 @@ export function registerRuntimeEvents({
   deps.connectionManager.on('phase-changed', (phase: SessionPhase) => {
     snapshotPublisher.push('connection');
     syncTrayAndTrafficForPhase(deps, phase);
+    // Other VPN software is the usual reason TUN connects to nothing; look
+    // for it on every TUN attempt and again when one fails.
+    if (
+      (phase === 'connecting' || phase === 'failed') &&
+      deps.configService.getConnectionMode() === 'tun'
+    ) {
+      deps.conflictingAppsService.startTunCheck();
+    }
     // Latencies are not probed while a session holds the stack; once it is
     // released the figures shown are whatever the session started with.
     deps.pingRefresh.handleSessionPhase(phase);

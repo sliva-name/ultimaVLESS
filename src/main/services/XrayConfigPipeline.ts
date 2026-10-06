@@ -77,6 +77,8 @@ const PRIVATE_IP_SELECTORS = new Set([
 export interface XrayConfigPipelineOptions {
   sendThrough?: string;
   tunAutoRoute?: boolean;
+  /** Adapter alias for the TUN inbound's `autoOutboundsInterface`. */
+  outboundInterface?: string;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
 }

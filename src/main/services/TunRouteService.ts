@@ -1,6 +1,8 @@
 import dns from 'dns';
 import net from 'net';
+import os from 'os';
 import { VlessConfig } from '@/shared/types';
+import type { NetworkAdapterList } from '@/shared/views/tunEnvironment';
 import {
   getWindowsTunRouteModeLabel,
   resolveWindowsTunRouting,
@@ -57,6 +59,11 @@ import {
 export interface TunRoutingPlan {
   defaultRoute: DefaultRouteInfo;
   proxyIps: string[];
+  /**
+   * Windows: adapter alias for Xray's `autoOutboundsInterface` — the adapter
+   * the server route is pinned through. Null leaves the choice to Xray.
+   */
+  outboundInterface?: string | null;
 }
 
 export interface PrepareRoutingPlanOptions {
@@ -78,6 +85,8 @@ export interface TunRouteServiceOptions {
    * every operation through PowerShell (tests of that path; diagnostics).
    */
   nativeRouting?: WindowsNativeRouting | null;
+  /** Adapter aliases as Node (and Xray) see them. */
+  listInterfaceNames?: () => string[];
 }
 
 interface HostRouteOutcome {
@@ -134,6 +143,7 @@ export class TunRouteService {
   private readonly stateStore: TunRouteStateStore;
   private readonly isElevated: () => Promise<boolean>;
   private readonly nativeRouting: WindowsNativeRouting | null;
+  private readonly listInterfaceNames: () => string[];
 
   constructor(
     private readonly platform: NodeJS.Platform = process.platform,
@@ -152,6 +162,8 @@ export class TunRouteService {
           ? createWindowsNativeRouting()
           : null
         : options.nativeRouting;
+    this.listInterfaceNames =
+      options.listInterfaceNames ?? (() => Object.keys(os.networkInterfaces()));
   }
 
   public isSupported(): boolean {
@@ -182,6 +194,26 @@ export class TunRouteService {
     return this.platformAdapter.getDegradedReason();
   }
 
+  /**
+   * Adapters the user can pin TUN to. Only Windows: elsewhere Xray already
+   * follows the routing table when picking its outbound interface.
+   */
+  public async listNetworkAdapters(): Promise<NetworkAdapterList> {
+    if (this.platform !== 'win32') {
+      return { supported: false, adapters: [] };
+    }
+    const adapters = this.nativeRouting
+      ? await this.nativeRouting.listAdapters()
+      : [];
+    return { supported: true, adapters };
+  }
+
+  /** User-selected TUN adapter (Windows), or null for automatic. */
+  private getPreferredInterface(): string | null {
+    if (this.platform !== 'win32') return null;
+    return configService.getPerformanceSettings().tunOutboundInterface || null;
+  }
+
   public async prepareRoutingPlan(
     config: VlessConfig,
     options: PrepareRoutingPlanOptions = {},
@@ -194,12 +226,22 @@ export class TunRouteService {
       return this.prepareUnixRoutingPlan(config);
     }
     const awaitStable = options.awaitStableDefaultRoute !== false;
+    const preferred = this.getPreferredInterface();
     const [defaultRoute, proxyIps] = await Promise.all([
-      awaitStable ? this.waitForDefaultRoute() : this.getDefaultRouteQuick(),
+      awaitStable
+        ? this.waitForDefaultRoute(preferred)
+        : this.getDefaultRouteQuick(preferred),
       this.resolveProxyAddresses(config.address),
     ]);
 
     if (!defaultRoute) {
+      if (preferred) {
+        throw new Error(
+          `Network adapter "${preferred}" selected for TUN has no IPv4 default gateway ` +
+            '(disconnected, or not an internet connection). Choose another adapter ' +
+            'in Settings → Network or set it to Automatic.',
+        );
+      }
       throw new Error('Could not get default route. Check network connection.');
     }
     if (proxyIps.length === 0) {
@@ -208,7 +250,37 @@ export class TunRouteService {
       );
     }
 
-    return { defaultRoute, proxyIps };
+    return {
+      defaultRoute,
+      proxyIps,
+      outboundInterface: this.resolveOutboundInterface(defaultRoute, preferred),
+    };
+  }
+
+  /**
+   * Xray's own Windows auto-detection ignores the routing table: it ranks
+   * adapters by "wlan"/"wi-fi" in the name and a 192.168.* address, then
+   * alphabetically — so "Ethernet" or a VirtualBox host-only adapter beats a
+   * Wi-Fi called "Беспроводная сеть", and every proxied dial goes nowhere.
+   * Hand it the adapter whose gateway the server route is pinned through
+   * instead, but only under a name Xray can resolve (Node and Xray both read
+   * the adapter FriendlyName); anything else keeps Xray's own choice.
+   */
+  private resolveOutboundInterface(
+    defaultRoute: DefaultRouteInfo,
+    preferred: string | null,
+  ): string | null {
+    if (preferred) return preferred;
+    const names = this.listInterfaceNames();
+    if (names.includes(defaultRoute.interfaceName)) {
+      return defaultRoute.interfaceName;
+    }
+    logger.warn(
+      'TunRouteService',
+      'Default route adapter has no resolvable name; Xray picks the TUN outbound adapter itself',
+      { interfaceName: defaultRoute.interfaceName },
+    );
+    return null;
   }
 
   /**
@@ -485,7 +557,9 @@ export class TunRouteService {
     );
     if (hostRoutes.length === 0) return;
     try {
-      const currentRoute = await this.waitForDefaultRoute();
+      const currentRoute = await this.waitForDefaultRoute(
+        this.getPreferredInterface(),
+      );
       if (!currentRoute) {
         logger.warn(
           'TunRouteService',
@@ -555,20 +629,26 @@ export class TunRouteService {
 
   // ---- Windows route discovery ---------------------------------------------
 
-  private async getDefaultRoute(): Promise<DefaultRouteInfo | null> {
+  private async getDefaultRoute(
+    preferredInterface: string | null = null,
+  ): Promise<DefaultRouteInfo | null> {
     if (this.nativeRouting) {
-      const native = await this.nativeRouting.discoverDefaultRoute();
+      const native = await this.nativeRouting.discoverDefaultRoute(
+        preferredInterface ?? undefined,
+      );
       if (native) {
         return native;
       }
       logger.info(
         'TunRouteService',
         'Falling back to PowerShell for default route discovery',
+        { preferredInterface },
       );
     }
-    const out = await this.runPowerShell(getDefaultRouteScript(), {
-      allowNonZeroExit: true,
-    });
+    const out = await this.runPowerShell(
+      getDefaultRouteScript(preferredInterface ?? undefined),
+      { allowNonZeroExit: true },
+    );
     const match = out.trim().match(/^(\d+)\|([^\s|]+)\|([^|]+)(?:\|(.*))?$/);
     if (!match) return null;
     const localAddress = match[4]?.trim() || '';
@@ -580,14 +660,16 @@ export class TunRouteService {
     };
   }
 
-  private async waitForDefaultRoute(): Promise<DefaultRouteInfo | null> {
+  private async waitForDefaultRoute(
+    preferredInterface: string | null = null,
+  ): Promise<DefaultRouteInfo | null> {
     const startedAt = Date.now();
     let previousRouteKey: string | null = null;
     let stableHits = 0;
     let lastObservedRoute: DefaultRouteInfo | null = null;
 
     while (Date.now() - startedAt <= DEFAULT_ROUTE_WAIT_TIMEOUT) {
-      const route = await this.getDefaultRoute();
+      const route = await this.getDefaultRoute(preferredInterface);
       if (route) {
         lastObservedRoute = route;
         const routeKey = `${route.interfaceIndex}|${route.gateway}`;
@@ -610,11 +692,13 @@ export class TunRouteService {
   }
 
   /** One PowerShell probe (+ one quick retry) for the host-pin connect path. */
-  private async getDefaultRouteQuick(): Promise<DefaultRouteInfo | null> {
-    const first = await this.getDefaultRoute();
+  private async getDefaultRouteQuick(
+    preferredInterface: string | null = null,
+  ): Promise<DefaultRouteInfo | null> {
+    const first = await this.getDefaultRoute(preferredInterface);
     if (first) return first;
     await this.sleep(150);
-    return this.getDefaultRoute();
+    return this.getDefaultRoute(preferredInterface);
   }
 
   private async waitForTunInterface(): Promise<number> {
