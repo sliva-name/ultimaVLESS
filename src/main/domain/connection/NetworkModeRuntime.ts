@@ -84,6 +84,7 @@ export function createTunNetworkRuntime(
             ? undefined
             : routingPlan?.defaultRoute.localAddress || undefined,
           tunAutoRoute,
+          outboundInterface: routingPlan?.outboundInterface || undefined,
         },
       };
     },

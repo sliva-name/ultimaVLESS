@@ -5,12 +5,15 @@ import {
   AddSubscriptionResult,
   AppSnapshot,
   AppSnapshotRuntimePatch,
+  CloseConflictingAppResult,
+  ConflictingAppsScan,
   ConnectResult,
   ConnectionMonitorEvent,
   DisconnectResult,
   IPC_EVENT_CHANNELS,
   IPC_INVOKE_CHANNELS,
   ImportMobileWhiteListResult,
+  NetworkAdapterList,
   PerformanceSettings,
   PingResult,
   RefreshSubscriptionsResult,
@@ -113,6 +116,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(
       IPC_INVOKE_CHANNELS.getTunCapabilityStatus,
     ) as Promise<TunCapabilityStatus>,
+  listNetworkAdapters: () =>
+    ipcRenderer.invoke(
+      IPC_INVOKE_CHANNELS.listNetworkAdapters,
+    ) as Promise<NetworkAdapterList>,
+  scanConflictingApps: () =>
+    ipcRenderer.invoke(
+      IPC_INVOKE_CHANNELS.scanConflictingApps,
+    ) as Promise<ConflictingAppsScan>,
+  closeConflictingApp: (appId: string) =>
+    ipcRenderer.invoke(
+      IPC_INVOKE_CHANNELS.closeConflictingApp,
+      appId,
+    ) as Promise<CloseConflictingAppResult>,
   getLogs: () =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getLogs) as Promise<string>,
   openLogFolder: () =>

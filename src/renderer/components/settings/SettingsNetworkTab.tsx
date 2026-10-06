@@ -1,7 +1,16 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { Shield, Activity, AlertTriangle, Loader2, Check } from 'lucide-react';
+import {
+  Shield,
+  Activity,
+  AlertTriangle,
+  Loader2,
+  Check,
+  RefreshCw,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import type { NetworkAdapterView } from '@/shared/ipc';
 import {
   ConnectionMode,
   DomainStrategy,
@@ -45,7 +54,21 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
     updatePerfField,
     savePerfSettings,
     resetPerfDefaults,
+    adapterList,
+    adaptersLoading,
+    adaptersError,
+    refreshAdapters,
   } = useNetworkSettings(isOpen);
+
+  const selectedAdapterName = perfSettings.tunOutboundInterface;
+  const adapters = useMemo(() => adapterList?.adapters ?? [], [adapterList]);
+  const selectedAdapter = adapters.find(
+    (adapter) => adapter.name === selectedAdapterName,
+  );
+  const adapterOptions = useMemo(
+    () => buildAdapterOptions(adapters, selectedAdapterName, t),
+    [adapters, selectedAdapterName, t],
+  );
 
   const handleConnectionModeChange = useCallback(
     async (mode: ConnectionMode) => {
@@ -220,6 +243,54 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
               },
             ]}
           />
+          <div className="border-t border-gray-700/40 my-1" />
+          <div className="flex items-center justify-between gap-3">
+            <PerfLabel
+              label={t('settings.network.tunAdapter')}
+              hint={t('settings.network.tunAdapterHint')}
+            />
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Select
+                value={selectedAdapterName}
+                onChange={(v) => updatePerfField('tunOutboundInterface', v)}
+                options={adapterOptions}
+                ariaLabel={t('settings.network.tunAdapter')}
+              />
+              <button
+                type="button"
+                onClick={() => void refreshAdapters()}
+                disabled={adaptersLoading}
+                aria-label={t('settings.network.tunAdapterRefresh')}
+                title={t('settings.network.tunAdapterRefresh')}
+                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-white/5 hover:text-gray-200 disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={clsx('w-4 h-4', adaptersLoading && 'animate-spin')}
+                />
+              </button>
+            </div>
+          </div>
+          {selectedAdapterName && adapterList && !selectedAdapter && (
+            <p className="text-xs text-orange-400 leading-relaxed">
+              {t('settings.network.tunAdapterMissingWarning', {
+                name: selectedAdapterName,
+              })}
+            </p>
+          )}
+          {selectedAdapter && selectedAdapter.gateway === null && (
+            <p className="text-xs text-orange-400 leading-relaxed">
+              {t('settings.network.tunAdapterNoGatewayWarning', {
+                name: selectedAdapter.name,
+              })}
+            </p>
+          )}
+          {adaptersError && (
+            <p className="text-xs text-orange-400 leading-relaxed">
+              {t('settings.network.tunAdapterLoadFailed', {
+                error: adaptersError,
+              })}
+            </p>
+          )}
           <p className="text-xs text-gray-500 leading-relaxed">
             {t('settings.network.windowsTunRoutingApplyHint')}
           </p>
@@ -618,6 +689,54 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
     </div>
   );
 };
+
+function describeAdapter(adapter: NetworkAdapterView, t: TFunction): string {
+  return [
+    adapter.description,
+    adapter.ipv4.join(', '),
+    adapter.gateway
+      ? t('settings.network.tunAdapterGateway', { gateway: adapter.gateway })
+      : t('settings.network.tunAdapterNoGateway'),
+    adapter.kind === 'vpn'
+      ? t('settings.network.tunAdapterKindVpn')
+      : adapter.kind === 'virtual'
+        ? t('settings.network.tunAdapterKindVirtual')
+        : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** "Automatic" first, then live adapters, then a stale saved choice. */
+function buildAdapterOptions(
+  adapters: NetworkAdapterView[],
+  selectedName: string,
+  t: TFunction,
+): SelectOption[] {
+  const automatic = adapters.find((adapter) => adapter.isAutomaticChoice);
+  const options: SelectOption[] = [
+    {
+      value: '',
+      label: t('settings.network.tunAdapterAuto'),
+      description: automatic
+        ? t('settings.network.tunAdapterAutoDesc', { name: automatic.name })
+        : t('settings.network.tunAdapterAutoNone'),
+    },
+    ...adapters.map((adapter) => ({
+      value: adapter.name,
+      label: adapter.name,
+      description: describeAdapter(adapter, t),
+    })),
+  ];
+  if (selectedName && !adapters.some((a) => a.name === selectedName)) {
+    options.push({
+      value: selectedName,
+      label: selectedName,
+      description: t('settings.network.tunAdapterMissing'),
+    });
+  }
+  return options;
+}
 
 // ---------------------------------------------------------------------------
 // Local row primitives — colocated because they are only relevant here.

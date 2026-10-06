@@ -1,5 +1,6 @@
 import type { ConnectionMode, Subscription } from '@/shared/types';
 import type { TrafficSnapshot } from './traffic';
+import type { TunConflictCheck } from './tunEnvironment';
 import type { SafeServerConfig } from '@/shared/serverView';
 import type {
   AppRecoveryStatus,
@@ -61,6 +62,8 @@ export interface AppSnapshot {
   traffic: TrafficSnapshot | null;
   /** A foreground ping-all pass (user or unattended) is probing right now. */
   pingRefreshInProgress: boolean;
+  /** Windows: other VPN/proxy software found around the last TUN connect. */
+  tunConflicts: TunConflictCheck | null;
 }
 
 /** Narrow runtime tick — traffic/process only, no catalog. */

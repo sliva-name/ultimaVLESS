@@ -13,6 +13,7 @@ export interface XrayRuntimeContext {
   connectionMode: ConnectionMode;
   sendThrough?: string;
   tunAutoRoute?: boolean;
+  outboundInterface?: string;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
 }
@@ -46,6 +47,7 @@ export class XrayConfigCompiler {
       {
         sendThrough: runtime.sendThrough,
         tunAutoRoute: runtime.tunAutoRoute,
+        outboundInterface: runtime.outboundInterface,
         performanceSettings: runtime.performanceSettings,
         ports: runtime.ports,
       },

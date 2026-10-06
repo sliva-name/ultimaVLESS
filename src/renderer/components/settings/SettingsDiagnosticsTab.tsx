@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   RefreshCw,
   AlertTriangle,
@@ -7,11 +7,14 @@ import {
   Copy,
   FolderOpen,
   Check,
+  ShieldAlert,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { VlessConfig } from '@/shared/types';
 import { ConnectionMonitorEvent, type AppSnapshot } from '@/shared/ipc';
 import { Toggle } from '@/renderer/components/ui';
+import { ConflictingAppsPanel } from '@/renderer/components/ConflictingAppsPanel';
+import { useConflictingApps } from '@/renderer/hooks/useConflictingApps';
 
 interface SettingsDiagnosticsTabProps {
   servers: VlessConfig[];
@@ -33,7 +36,15 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const conflicts = useConflictingApps();
+  const { runScan: scanConflicts } = conflicts;
   const { session, health, process, recovery, autoSwitchingEnabled } = snapshot;
+
+  // One `tasklist` per visit: cheap, and the answer is what this tab is for
+  // when TUN misbehaves. Non-Windows hosts report `supported: false`.
+  useEffect(() => {
+    void scanConflicts();
+  }, [scanConflicts]);
   const activeServer = servers.find(
     (server) => server.uuid === session.activeServerId,
   );
@@ -291,6 +302,27 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {conflicts.scan?.supported && (
+        <div>
+          <div className="flex items-center gap-2.5 mb-3">
+            <ShieldAlert className="w-4 h-4 text-gray-400 shrink-0" />
+            <h3 className="text-sm font-semibold text-gray-200">
+              {t('settings.diagnostics.conflicts')}
+            </h3>
+          </div>
+          <ConflictingAppsPanel
+            scan={conflicts.scan}
+            scanning={conflicts.scanning}
+            error={conflicts.error}
+            closingIds={conflicts.closingIds}
+            failedIds={conflicts.failedIds}
+            onCloseApp={(appId) => void conflicts.closeApp(appId)}
+            onRescan={() => void scanConflicts()}
+            showEmptyState
+          />
         </div>
       )}
 

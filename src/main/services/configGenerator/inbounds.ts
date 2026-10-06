@@ -17,6 +17,8 @@ interface TunInboundOptions {
   sniffingRouteOnly?: boolean;
   /** Advertised TUN MTU; falls back to TUN_MTU when omitted. */
   mtu?: number;
+  /** Adapter alias Xray binds its own sockets to; `auto` when omitted. */
+  outboundInterface?: string;
 }
 
 /**
@@ -156,8 +158,9 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
       dns: dnsServers,
       // Always bind Xray-originated packets (proxy + freedom/direct) to a
       // physical NIC. Without this, PowerShell TUN mode loops: geoip:private →
-      // direct → default route back into TUN (NetBIOS storms).
-      autoOutboundsInterface: 'auto',
+      // direct → default route back into TUN (NetBIOS storms). An explicit
+      // adapter (Windows) overrides Xray's name-based guess.
+      autoOutboundsInterface: options.outboundInterface || 'auto',
     },
   };
   if (options.tunAutoRoute) {

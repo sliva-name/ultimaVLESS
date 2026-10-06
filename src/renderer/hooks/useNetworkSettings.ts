@@ -4,7 +4,7 @@ import {
   DEFAULT_PERFORMANCE_SETTINGS,
   PerformanceSettings,
 } from '@/shared/types';
-import type { TunCapabilityStatus } from '@/shared/ipc';
+import type { NetworkAdapterList, TunCapabilityStatus } from '@/shared/ipc';
 import { useAppSnapshotContext } from './useAppSnapshot';
 
 export function useNetworkSettings(isOpen: boolean) {
@@ -26,6 +26,40 @@ export function useNetworkSettings(isOpen: boolean) {
   );
   const [perfDirty, setPerfDirty] = useState(false);
   const [perfSaving, setPerfSaving] = useState(false);
+  const [adapterList, setAdapterList] = useState<NetworkAdapterList | null>(
+    null,
+  );
+  const [adaptersLoading, setAdaptersLoading] = useState(false);
+  const [adaptersError, setAdaptersError] = useState<string | null>(null);
+
+  const loadAdapters = useCallback(
+    () =>
+      window.electronAPI.listNetworkAdapters().then(
+        (list) => {
+          setAdapterList(list);
+          setAdaptersError(null);
+        },
+        (err) => {
+          console.error('Failed to list network adapters:', err);
+          setAdaptersError(err instanceof Error ? err.message : String(err));
+        },
+      ),
+    [],
+  );
+
+  const refreshAdapters = useCallback(async () => {
+    setAdaptersLoading(true);
+    try {
+      await loadAdapters();
+    } finally {
+      setAdaptersLoading(false);
+    }
+  }, [loadAdapters]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void loadAdapters();
+  }, [isOpen, loadAdapters]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -115,6 +149,10 @@ export function useNetworkSettings(isOpen: boolean) {
     updatePerfField,
     savePerfSettings,
     resetPerfDefaults,
+    adapterList,
+    adaptersLoading,
+    adaptersError,
+    refreshAdapters,
     session: snapshot.session,
   };
 }

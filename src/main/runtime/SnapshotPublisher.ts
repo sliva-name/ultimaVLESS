@@ -19,6 +19,7 @@ export type SnapshotReason =
   | 'recovery'
   | 'health'
   | 'process'
+  | 'conflicts'
   | 'manual';
 
 export const SNAPSHOT_COALESCE_MS = 75;

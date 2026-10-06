@@ -38,7 +38,11 @@ const ENABLE_OUTPUT = [
 ].join('\n');
 
 function createService(
-  options: { elevated?: boolean; native?: WindowsNativeRouting | null } = {},
+  options: {
+    elevated?: boolean;
+    native?: WindowsNativeRouting | null;
+    interfaceNames?: string[];
+  } = {},
 ) {
   const stateStore = createMemoryTunRouteStateStore();
   const service = new TunRouteService('win32', {
@@ -46,6 +50,7 @@ function createService(
     isElevated: async () => options.elevated ?? true,
     // These specs exercise the PowerShell path unless a native fake is given.
     nativeRouting: options.native ?? null,
+    listInterfaceNames: () => options.interfaceNames ?? ['Wi-Fi', 'Ethernet'],
   });
   return { service, stateStore };
 }
@@ -59,6 +64,7 @@ function createNativeFake(
 } {
   return {
     discoverDefaultRoute: vi.fn(async () => null),
+    listAdapters: vi.fn(async () => []),
     addHostRoutes: vi.fn(async ({ prefixes }: { prefixes: string[] }) => ({
       created: prefixes,
       failed: [],
@@ -451,9 +457,117 @@ describe('TunRouteService native Windows fast path', () => {
       { awaitStableDefaultRoute: false },
     );
 
-    expect(routingPlan).toEqual(plan);
+    // The adapter the server is pinned through is the one Xray binds to.
+    expect(routingPlan).toEqual({ ...plan, outboundInterface: 'Wi-Fi' });
     expect(native.discoverDefaultRoute).toHaveBeenCalledTimes(1);
+    expect(native.discoverDefaultRoute).toHaveBeenCalledWith(undefined);
     expect(runPowerShell).not.toHaveBeenCalled();
+  });
+
+  it('leaves the TUN outbound adapter to Xray when the route has no real adapter name', async () => {
+    const native = createNativeFake({
+      discoverDefaultRoute: vi.fn(async () => ({
+        ...plan.defaultRoute,
+        // `route print` description fallback: not an alias Xray can resolve.
+        interfaceName: 'Intel(R) Wi-Fi 6E AX210 160MHz',
+      })),
+    });
+    const { service } = createService({ native });
+
+    const routingPlan = await service.prepareRoutingPlan(
+      makeServer({ address: '203.0.113.10' }),
+      { awaitStableDefaultRoute: false },
+    );
+
+    expect(routingPlan.outboundInterface).toBeNull();
+  });
+
+  it('discovers and binds through the adapter selected in settings', async () => {
+    vi.mocked(configService.getPerformanceSettings).mockReturnValue({
+      ...DEFAULT_PERFORMANCE_SETTINGS,
+      tunOutboundInterface: 'Беспроводная сеть',
+    });
+    const wifi = {
+      interfaceIndex: 11,
+      gateway: '192.168.0.1',
+      interfaceName: 'Беспроводная сеть',
+      localAddress: '192.168.0.124',
+    };
+    const native = createNativeFake({
+      discoverDefaultRoute: vi.fn(async () => wifi),
+    });
+    // The selected name is trusted as-is; it need not match Node's list.
+    const { service } = createService({ native, interfaceNames: [] });
+
+    const routingPlan = await service.prepareRoutingPlan(
+      makeServer({ address: '203.0.113.10' }),
+      { awaitStableDefaultRoute: false },
+    );
+    await service.pinProxyHostRoutes(routingPlan);
+
+    expect(native.discoverDefaultRoute).toHaveBeenCalledWith(
+      'Беспроводная сеть',
+    );
+    expect(routingPlan.defaultRoute).toEqual(wifi);
+    expect(routingPlan.outboundInterface).toBe('Беспроводная сеть');
+    expect(native.addHostRoutes).toHaveBeenCalledWith(
+      expect.objectContaining({ gateway: '192.168.0.1', interfaceIndex: 11 }),
+    );
+  });
+
+  it('names the selected adapter when it has no default gateway', async () => {
+    vi.mocked(configService.getPerformanceSettings).mockReturnValue({
+      ...DEFAULT_PERFORMANCE_SETTINGS,
+      tunOutboundInterface: 'Ethernet 2',
+    });
+    const native = createNativeFake();
+    const { service } = createService({ native });
+    const runPowerShell = vi
+      .spyOn(service as any, 'runPowerShell')
+      .mockResolvedValue('');
+    vi.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
+
+    await expect(
+      service.prepareRoutingPlan(makeServer({ address: '203.0.113.10' }), {
+        awaitStableDefaultRoute: false,
+      }),
+    ).rejects.toThrow(
+      /"Ethernet 2" selected for TUN has no IPv4 default gateway/,
+    );
+    expect(native.discoverDefaultRoute).toHaveBeenCalledWith('Ethernet 2');
+    // The PowerShell fallback filters by the same alias, passed as base64.
+    const script = runPowerShell.mock.calls[0][0] as string;
+    expect(script).toContain(
+      Buffer.from('Ethernet 2', 'utf8').toString('base64'),
+    );
+    expect(script).not.toContain("'Ethernet 2'");
+  });
+
+  it('lists network adapters through the native tables on Windows only', async () => {
+    const adapters = [
+      {
+        name: 'Wi-Fi',
+        description: 'Intel(R) Wi-Fi 6E AX210 160MHz',
+        ipv4: ['192.168.0.124'],
+        gateway: '192.168.0.1',
+        kind: 'physical' as const,
+        isAutomaticChoice: true,
+      },
+    ];
+    const native = createNativeFake({
+      listAdapters: vi.fn(async () => adapters),
+    });
+    const { service } = createService({ native });
+
+    await expect(service.listNetworkAdapters()).resolves.toEqual({
+      supported: true,
+      adapters,
+    });
+    await expect(
+      new TunRouteService('linux', {
+        stateStore: createMemoryTunRouteStateStore(),
+      }).listNetworkAdapters(),
+    ).resolves.toEqual({ supported: false, adapters: [] });
   });
 
   it('falls back to PowerShell discovery when the native tables yield nothing', async () => {

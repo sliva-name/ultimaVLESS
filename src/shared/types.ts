@@ -239,6 +239,12 @@ export interface PerformanceSettings {
   /** Windows TUN only. Default `xray` for testing; use `powershell` to roll back. */
   windowsTunRouting: WindowsTunRouting;
   /**
+   * Windows TUN only: adapter (its Windows name, e.g. `Ethernet 2`) that Xray
+   * binds its own sockets to and the server route is pinned through. Empty
+   * picks the adapter carrying the system default route.
+   */
+  tunOutboundInterface: string;
+  /**
    * Advertised TUN MTU. 1400 leaves room for VLESS/REALITY/TLS on a 1500 path;
    * drop toward 1280 on slow/lossy nodes, raise to 1500 if the path is clean.
    */
@@ -276,6 +282,7 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   blockBittorrent: false,
   domainStrategy: 'AsIs',
   windowsTunRouting: 'xray',
+  tunOutboundInterface: '',
   tunMtu: TUN_MTU_DEFAULT,
   tunDnsQueryStrategy: 'UseIPv4',
   // VK blocks or throttles traffic from many VPN exit IPs, so it is excluded

@@ -6,6 +6,10 @@ import {
   runProcessWithOutput,
   type CommandOutput,
 } from '@/main/services/platform/commandRunner';
+import type {
+  NetworkAdapterKind,
+  NetworkAdapterView,
+} from '@/shared/views/tunEnvironment';
 import { TUN_INTERFACE_NAME, type DefaultRouteInfo } from './constants';
 
 /**
@@ -80,8 +84,16 @@ export interface HostRouteRemoveResult {
 }
 
 export interface WindowsNativeRouting {
-  /** Best physical default gateway, or null when the tables could not be read. */
-  discoverDefaultRoute(): Promise<DefaultRouteInfo | null>;
+  /**
+   * Best physical default gateway, or null when the tables could not be read.
+   * With `preferredInterface`, the default route of that adapter only — null
+   * when it has none (disconnected, no gateway, unknown name).
+   */
+  discoverDefaultRoute(
+    preferredInterface?: string,
+  ): Promise<DefaultRouteInfo | null>;
+  /** Every non-loopback IPv4 adapter except our own TUN, best choice first. */
+  listAdapters(): Promise<NetworkAdapterView[]>;
   /** Pin IPv4 `/32` prefixes to the gateway; stale pins for the same prefix are replaced. */
   addHostRoutes(params: {
     prefixes: string[];
@@ -116,6 +128,34 @@ const VIRTUAL_ADAPTER_PATTERNS = [
   /Loopback/i,
   /Teredo/i,
   /isatap/i,
+];
+
+/**
+ * Tunnel adapters of other VPN products. They can carry a default route while
+ * connected, but binding Xray to one chains our tunnel through theirs.
+ */
+const VPN_ADAPTER_PATTERNS = [
+  /\bTAP-/i,
+  /OpenVPN/i,
+  /WireGuard/i,
+  /Wintun/i,
+  /NordLynx/i,
+  /Mullvad/i,
+  /ProtonVPN/i,
+  /Windscribe/i,
+  /Cloudflare WARP/i,
+  /Tailscale/i,
+  /ZeroTier/i,
+  /Hamachi/i,
+  /Radmin VPN/i,
+  /AnyConnect/i,
+  /PANGP/i,
+  /Fortinet/i,
+  /Amnezia/i,
+  /sing-box/i,
+  /Hiddify/i,
+  /AdGuard/i,
+  /Outline/i,
 ];
 
 const ZERO_MAC = '00:00:00:00:00:00';
@@ -199,6 +239,18 @@ function isVirtualLike(name: string, description: string): boolean {
   );
 }
 
+function isVpnLike(name: string, description: string): boolean {
+  return VPN_ADAPTER_PATTERNS.some(
+    (pattern) => pattern.test(name) || pattern.test(description),
+  );
+}
+
+function isOwnTunAdapter(name: string): boolean {
+  return (
+    name === TUN_INTERFACE_NAME || name.startsWith(`${TUN_INTERFACE_NAME} `)
+  );
+}
+
 function isTunAdapter(name: string, description: string): boolean {
   return (
     name === TUN_INTERFACE_NAME ||
@@ -237,21 +289,27 @@ function resolveInterfaceIndex(
   return null;
 }
 
-/**
- * Picks the default route Windows itself would use for a fresh connection:
- * lowest effective metric, physical adapters before virtual switches, never
- * our own TUN adapter or a link-local/loopback address.
- */
-export function selectDefaultRoute(input: {
+export interface RoutingTables {
   routePrint: ParsedRoutePrint;
   netshRoutes: NetshDefaultRoute[];
   hostInterfaces: HostInterface[];
-}): DefaultRouteInfo | null {
-  const candidates: Array<{
-    info: DefaultRouteInfo;
-    metric: number;
-    virtual: boolean;
-  }> = [];
+}
+
+interface DefaultRouteCandidate {
+  info: DefaultRouteInfo;
+  metric: number;
+  virtual: boolean;
+}
+
+/**
+ * Every usable IPv4 default route, best first: physical adapters before
+ * virtual switches, then the effective metric Windows ranks them by. Our own
+ * TUN adapter and link-local/loopback addresses never qualify.
+ */
+function collectDefaultRouteCandidates(
+  input: RoutingTables,
+): DefaultRouteCandidate[] {
+  const candidates: DefaultRouteCandidate[] = [];
 
   for (const route of input.routePrint.activeRoutes) {
     if (route.destination !== '0.0.0.0' || route.netmask !== '0.0.0.0') {
@@ -299,7 +357,98 @@ export function selectDefaultRoute(input: {
       Number(left.virtual) - Number(right.virtual) ||
       left.metric - right.metric,
   );
+  return candidates;
+}
+
+/**
+ * Picks the default route Windows itself would use for a fresh connection,
+ * or — with `preferredInterface` — the default route of that adapter (null
+ * when it has none).
+ */
+export function selectDefaultRoute(
+  input: RoutingTables & { preferredInterface?: string },
+): DefaultRouteInfo | null {
+  const candidates = collectDefaultRouteCandidates(input);
+  if (input.preferredInterface) {
+    return (
+      candidates.find(
+        (candidate) =>
+          candidate.info.interfaceName === input.preferredInterface,
+      )?.info ?? null
+    );
+  }
   return candidates[0]?.info ?? null;
+}
+
+/** Driver descriptions arrive in the OEM code page; drop the mojibake ones. */
+function readableDescription(description: string | undefined): string | null {
+  if (!description || description.includes('\uFFFD')) return null;
+  return description;
+}
+
+function adapterKind(name: string, description: string): NetworkAdapterKind {
+  if (isVpnLike(name, description)) return 'vpn';
+  if (isVirtualLike(name, description)) return 'virtual';
+  return 'physical';
+}
+
+const ADAPTER_KIND_ORDER: Record<NetworkAdapterKind, number> = {
+  physical: 0,
+  virtual: 1,
+  vpn: 2,
+};
+
+/**
+ * The adapters a user can bind TUN to, as Node names them — the same alias
+ * Xray's `autoOutboundsInterface` resolves. Descriptions come from
+ * `route print` through the adapter MAC; gateways from the default routes.
+ */
+export function describeNetworkAdapters(
+  input: RoutingTables,
+): NetworkAdapterView[] {
+  const candidates = collectDefaultRouteCandidates(input);
+  const automatic = candidates[0]?.info.interfaceName ?? null;
+  const byName = new Map<string, NetworkAdapterView>();
+
+  for (const host of input.hostInterfaces) {
+    if (host.internal || isOwnTunAdapter(host.name)) continue;
+    const existing = byName.get(host.name);
+    if (existing) {
+      if (!existing.ipv4.includes(host.address)) {
+        existing.ipv4.push(host.address);
+      }
+      continue;
+    }
+    const route = candidates.find(
+      (candidate) => candidate.info.interfaceName === host.name,
+    );
+    const byMac = host.mac
+      ? input.routePrint.interfaces.filter((iface) => iface.mac === host.mac)
+      : [];
+    const listed =
+      (route &&
+        input.routePrint.interfaces.find(
+          (iface) => iface.index === route.info.interfaceIndex,
+        )) ??
+      (byMac.length === 1 ? byMac[0] : undefined);
+    const description = readableDescription(listed?.description);
+    byName.set(host.name, {
+      name: host.name,
+      description,
+      ipv4: [host.address],
+      gateway: route?.info.gateway ?? null,
+      kind: adapterKind(host.name, description ?? ''),
+      isAutomaticChoice: host.name === automatic,
+    });
+  }
+
+  return [...byName.values()].sort(
+    (left, right) =>
+      Number(right.isAutomaticChoice) - Number(left.isAutomaticChoice) ||
+      Number(right.gateway !== null) - Number(left.gateway !== null) ||
+      ADAPTER_KIND_ORDER[left.kind] - ADAPTER_KIND_ORDER[right.kind] ||
+      left.name.localeCompare(right.name),
+  );
 }
 
 /** `203.0.113.10/32` → `203.0.113.10`; null unless it is an IPv4 host prefix. */
@@ -336,22 +485,30 @@ export function createWindowsNativeRouting(
     );
   };
 
+  const readRoutingTables = async (): Promise<RoutingTables> => {
+    const [routePrint, netsh] = await Promise.all([
+      run('route', ['print', '-4']),
+      run('netsh', ['interface', 'ipv4', 'show', 'route']),
+    ]);
+    return {
+      routePrint: parseRoutePrint(routePrint.stdout),
+      netshRoutes: parseNetshDefaultRoutes(netsh.stdout),
+      hostInterfaces: listHostInterfaces(networkInterfaces),
+    };
+  };
+
   return {
-    async discoverDefaultRoute() {
+    async discoverDefaultRoute(preferredInterface) {
       try {
-        const [routePrint, netsh] = await Promise.all([
-          run('route', ['print', '-4']),
-          run('netsh', ['interface', 'ipv4', 'show', 'route']),
-        ]);
         const selected = selectDefaultRoute({
-          routePrint: parseRoutePrint(routePrint.stdout),
-          netshRoutes: parseNetshDefaultRoutes(netsh.stdout),
-          hostInterfaces: listHostInterfaces(networkInterfaces),
+          ...(await readRoutingTables()),
+          preferredInterface,
         });
         if (!selected) {
           logger.debug(
             'TunRouteService',
             'Native default route discovery found no candidate',
+            { preferredInterface: preferredInterface || null },
           );
         }
         return selected;
@@ -365,6 +522,10 @@ export function createWindowsNativeRouting(
         );
         return null;
       }
+    },
+
+    async listAdapters() {
+      return describeNetworkAdapters(await readRoutingTables());
     },
 
     async addHostRoutes({ prefixes, gateway, interfaceIndex, metric }) {

@@ -60,6 +60,30 @@ const resources = {
           dismiss: 'Dismiss',
         },
       },
+      conflicts: {
+        title: 'Other VPN or proxy apps are running',
+        hint: "They take over routes, the system proxy or Xray's own traffic, so TUN may not connect or may pass no traffic. Close them and reconnect.",
+        category: {
+          vpn: 'VPN',
+          proxy: 'Proxy client',
+          dpi: 'DPI bypass',
+          core: 'Proxy core',
+        },
+        close: 'Close',
+        closing: 'Closing…',
+        closeFailed: 'Could not close it — quit the app yourself.',
+        serviceKeepsRunning:
+          'Its background service keeps running — if TUN still fails, disconnect the VPN in that app.',
+        serviceOnly:
+          'Runs as a background service — disconnect or turn it off in that app.',
+        reconnectHint: 'Reconnect after closing them.',
+        rescan: 'Check again',
+        dismiss: 'Hide',
+        scanning: 'Looking for other VPN apps…',
+        none: 'No other VPN or proxy apps found.',
+        resolved: 'Done — reconnect to bring TUN up.',
+        scanFailed: 'Could not check running apps: {{error}}',
+      },
       settings: {
         title: 'Settings',
         subtitle: 'Sources, routing, and connection health',
@@ -124,6 +148,23 @@ const resources = {
           windowsTunRoutingPowershell: 'PowerShell (rollback)',
           windowsTunRoutingApplyHint:
             'Save performance settings and reconnect in TUN mode for the change to take effect.',
+          tunAdapter: 'Network adapter for TUN',
+          tunAdapterHint:
+            'The adapter Xray sends tunnel traffic through. Automatic follows the Windows default route; pick one by hand if TUN only worked after you disabled other adapters.',
+          tunAdapterAuto: 'Automatic',
+          tunAdapterAutoDesc: 'Now: {{name}}',
+          tunAdapterAutoNone: 'By the default route',
+          tunAdapterRefresh: 'Refresh adapter list',
+          tunAdapterGateway: 'gateway {{gateway}}',
+          tunAdapterNoGateway: 'no gateway',
+          tunAdapterKindVirtual: 'virtual',
+          tunAdapterKindVpn: 'VPN',
+          tunAdapterMissing: 'Not found — disconnected?',
+          tunAdapterMissingWarning:
+            'Adapter "{{name}}" is not connected right now. TUN will not connect until it is back — or switch to Automatic.',
+          tunAdapterNoGatewayWarning:
+            'Adapter "{{name}}" has no default gateway, so TUN cannot reach the server through it.',
+          tunAdapterLoadFailed: 'Could not read network adapters: {{error}}',
           performance: 'Performance tuning',
           performanceHint: 'Changes take effect on the next connection.',
           performanceLocked:
@@ -237,6 +278,7 @@ const resources = {
             blocked: 'Blocked',
             switching: 'Switching server',
           },
+          conflicts: 'Other VPN and proxy apps',
           troubleshooting: 'Troubleshooting',
           copyLogs: 'Copy logs',
           copyLogsFailed: 'Failed to copy logs to clipboard.',
@@ -306,6 +348,30 @@ const resources = {
           dismiss: 'Скрыть',
         },
       },
+      conflicts: {
+        title: 'Запущены другие VPN или прокси-программы',
+        hint: 'Они перехватывают маршруты, системный прокси или трафик самого Xray — TUN может не подключиться или не пропускать трафик. Закройте их и переподключитесь.',
+        category: {
+          vpn: 'VPN',
+          proxy: 'Прокси-клиент',
+          dpi: 'Обход DPI',
+          core: 'Ядро прокси',
+        },
+        close: 'Закрыть',
+        closing: 'Закрываем…',
+        closeFailed: 'Не удалось закрыть — завершите программу вручную.',
+        serviceKeepsRunning:
+          'Её фоновая служба продолжит работать — если TUN всё равно не работает, отключите VPN в самой программе.',
+        serviceOnly:
+          'Работает как фоновая служба — отключите VPN или выключите её в самой программе.',
+        reconnectHint: 'После закрытия переподключитесь.',
+        rescan: 'Проверить снова',
+        dismiss: 'Скрыть',
+        scanning: 'Ищем другие VPN-программы…',
+        none: 'Других VPN и прокси-программ не найдено.',
+        resolved: 'Готово — переподключитесь, чтобы поднять TUN.',
+        scanFailed: 'Не удалось проверить запущенные программы: {{error}}',
+      },
       settings: {
         title: 'Настройки',
         subtitle: 'Источники, маршрутизация и состояние подключения',
@@ -372,6 +438,24 @@ const resources = {
           windowsTunRoutingPowershell: 'PowerShell (откат)',
           windowsTunRoutingApplyHint:
             'Сохраните настройки производительности и переподключитесь в режиме TUN.',
+          tunAdapter: 'Сетевой адаптер для TUN',
+          tunAdapterHint:
+            'Через какой адаптер Xray отправляет трафик туннеля. «Автоматически» — по основному маршруту Windows; выберите вручную, если TUN заработал только после отключения других адаптеров.',
+          tunAdapterAuto: 'Автоматически',
+          tunAdapterAutoDesc: 'Сейчас: {{name}}',
+          tunAdapterAutoNone: 'По основному маршруту',
+          tunAdapterRefresh: 'Обновить список адаптеров',
+          tunAdapterGateway: 'шлюз {{gateway}}',
+          tunAdapterNoGateway: 'нет шлюза',
+          tunAdapterKindVirtual: 'виртуальный',
+          tunAdapterKindVpn: 'VPN',
+          tunAdapterMissing: 'Не найден — отключён?',
+          tunAdapterMissingWarning:
+            'Адаптер «{{name}}» сейчас не подключён. TUN не подключится, пока он не появится, — или выберите «Автоматически».',
+          tunAdapterNoGatewayWarning:
+            'У адаптера «{{name}}» нет шлюза по умолчанию — TUN не сможет достучаться через него до сервера.',
+          tunAdapterLoadFailed:
+            'Не удалось получить список адаптеров: {{error}}',
           performance: 'Настройки производительности',
           performanceHint: 'Изменения применяются при следующем подключении.',
           performanceLocked:
@@ -491,6 +575,7 @@ const resources = {
             blocked: 'Заблокирован',
             switching: 'Переключение сервера',
           },
+          conflicts: 'Другие VPN и прокси',
           troubleshooting: 'Решение проблем',
           copyLogs: 'Скопировать логи',
           copyLogsFailed: 'Не удалось скопировать логи в буфер обмена.',

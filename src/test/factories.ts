@@ -53,6 +53,7 @@ export function makeAppSnapshot(
     autoSwitchingEnabled: true,
     traffic: null,
     pingRefreshInProgress: false,
+    tunConflicts: null,
     ...overrides,
   };
 }

@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { UpdateBanner } from './components/UpdateBanner';
+import { TunConflictNotice } from './components/TunConflictNotice';
 import {
   AppSnapshotProvider,
   useServers,
@@ -27,6 +28,8 @@ function AppShell() {
   } = useServers();
   const {
     session,
+    connectionMode,
+    tunConflicts,
     isConnected,
     isConnectionBusy,
     connectionError,
@@ -67,6 +70,10 @@ function AppShell() {
           className={isSettingsOpen ? 'hidden' : 'flex flex-col flex-1 min-h-0'}
         >
           <UpdateBanner />
+          <TunConflictNotice
+            check={tunConflicts}
+            connectionMode={connectionMode}
+          />
           <ConnectionStatus
             phase={session.phase}
             selectedServer={selectedServer}
