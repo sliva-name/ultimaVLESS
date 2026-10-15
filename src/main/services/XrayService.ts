@@ -25,6 +25,7 @@ import {
 } from './PrivilegeService';
 import { waitForProcessExit as awaitChildExit } from './xray/waitForProcessExit';
 import { trackOwnedXrayProcess } from './xray/ownedProcesses';
+import { sendConsoleBreak } from './xray/windowsConsoleBreak';
 
 export interface XrayUnexpectedExitEvent {
   config: VlessConfig;
@@ -55,10 +56,23 @@ export class XrayService extends EventEmitter {
   private resourcesPath: string;
   /** Max wait for SOCKS/HTTP listeners (also covers early-crash detection). */
   private static readonly READINESS_TIMEOUT_MS = 3000;
+  /**
+   * Windows TUN: Xray creates the Wintun adapter synchronously while its
+   * inbound manager starts the inbounds in Go map (random) order, so SOCKS/HTTP
+   * may only start listening once the adapter exists. That takes seconds on
+   * machines with many stale Wintun devices (issue #58). An early Xray exit is
+   * still reported at once.
+   */
+  private static readonly WINDOWS_TUN_READINESS_TIMEOUT_MS = 20_000;
   private static readonly READINESS_RETRY_MS = 50;
   /** Short connect timeout so failed polls do not burn the readiness budget. */
   private static readonly READINESS_PROBE_TIMEOUT_MS = 200;
   private static readonly STOP_TIMEOUT_MS = 3000;
+  /**
+   * Windows TUN stop: the Ctrl+Break helper (PowerShell + Add-Type) plus Xray
+   * closing the Wintun adapter, before the forced kill.
+   */
+  private static readonly WINDOWS_TUN_STOP_TIMEOUT_MS = 5_000;
   private static readonly KILL_GRACE_MS = 1_000;
   /**
    * Elevated (pkexec) spawns may block on a graphical PolicyKit auth dialog, so
@@ -70,6 +84,9 @@ export class XrayService extends EventEmitter {
   private static readonly PKEXEC_DISMISSED = 127;
   /** Xray processes spawned as root via pkexec; stopped by closing stdin. */
   private readonly elevatedProcesses = new WeakSet<ChildProcess>();
+  /** Windows TUN Xray processes; stopped with Ctrl+Break (see below). */
+  private readonly consoleBreakProcesses = new WeakSet<ChildProcess>();
+  private readonly consoleBreakRequested = new WeakSet<ChildProcess>();
   private readonly expectedExitProcesses = new WeakSet<ChildProcess>();
   private readonly notifiedUnexpectedExitProcesses =
     new WeakSet<ChildProcess>();
@@ -253,7 +270,13 @@ export class XrayService extends EventEmitter {
             ...process.env,
             XRAY_LOCATION_ASSET: this.resourcesPath,
           },
+          // Windows: a console of its own (and no window), so a Ctrl+Break
+          // raised in it for a graceful stop reaches Xray and nothing else.
+          windowsHide: true,
         });
+        if (process.platform === 'win32' && connectionMode === 'tun') {
+          this.consoleBreakProcesses.add(spawnedProcess);
+        }
       }
       this.assignSlotProcess(slot, spawnedProcess);
       trackOwnedXrayProcess(spawnedProcess);
@@ -345,14 +368,17 @@ export class XrayService extends EventEmitter {
       });
     });
 
+    const readinessTimeoutMs = XrayService.readinessTimeoutMs(
+      connectionMode,
+      elevate,
+    );
+    const readinessStartedAt = Date.now();
     try {
       const readiness = await this.awaitLocalProxyReadiness(
         spawnedProcess,
         ports,
         {
-          timeoutMs: elevate
-            ? XrayService.ELEVATED_READINESS_TIMEOUT_MS
-            : XrayService.READINESS_TIMEOUT_MS,
+          timeoutMs: readinessTimeoutMs,
           elevated: elevate,
         },
       );
@@ -360,12 +386,23 @@ export class XrayService extends EventEmitter {
         const reason =
           readiness.reason ||
           'Xray started but local proxy listeners did not become reachable in time';
+        logger.warn('XrayService', 'Local proxy listeners not ready', {
+          pid: spawnedProcess.pid,
+          connectionMode,
+          timeoutMs: readinessTimeoutMs,
+        });
         this.dropSpawnedProcess(spawnedProcess, slot);
         if (slot === 'active') {
           this.markFailed(reason);
         }
         throw new Error(reason);
       }
+      logger.info('XrayService', 'Local proxy listeners ready', {
+        pid: spawnedProcess.pid,
+        connectionMode,
+        readyAfterMs: Date.now() - readinessStartedAt,
+        timeoutMs: readinessTimeoutMs,
+      });
       if (slot === 'active' && this.process === spawnedProcess) {
         this.setHealthStatus({
           state: 'running',
@@ -427,7 +464,8 @@ export class XrayService extends EventEmitter {
       // `start()`. Until then, `isRunning()` still reports `true` thanks to
       // `stopWaitPromise`, so callers cannot race a half-stopped process.
       // SIGKILL is sent by `waitForProcessExit` if the child does not exit
-      // within `STOP_TIMEOUT_MS`.
+      // within `STOP_TIMEOUT_MS` (`WINDOWS_TUN_STOP_TIMEOUT_MS` for Windows
+      // TUN, which is stopped with Ctrl+Break first).
     }
   }
 
@@ -568,7 +606,42 @@ export class XrayService extends EventEmitter {
       }
       return;
     }
+    if (this.consoleBreakProcesses.has(child)) {
+      this.requestConsoleBreak(child);
+      return;
+    }
     child.kill();
+  }
+
+  /**
+   * Windows TUN: `child.kill()` is TerminateProcess, which skips Xray's
+   * `WintunCloseAdapter`. Ctrl+Break lets Xray close its inbounds first. When
+   * the event cannot be delivered we kill at once; when Xray does not exit in
+   * time, {@link waitForProcessExit} force-kills it.
+   */
+  private requestConsoleBreak(child: ChildProcess): void {
+    if (this.consoleBreakRequested.has(child)) return;
+    this.consoleBreakRequested.add(child);
+    const pid = child.pid;
+    if (pid == null || XrayService.hasExited(child)) {
+      child.kill();
+      return;
+    }
+    void sendConsoleBreak(pid).then((delivered) => {
+      if (delivered || XrayService.hasExited(child)) return;
+      logger.warn('XrayService', 'Graceful Xray stop failed, terminating', {
+        pid,
+      });
+      try {
+        child.kill();
+      } catch {
+        // Already gone.
+      }
+    });
+  }
+
+  private static hasExited(child: ChildProcess): boolean {
+    return child.exitCode != null || child.signalCode != null;
   }
 
   private killProcessSync(child: ChildProcess | null): void {
@@ -666,6 +739,19 @@ export class XrayService extends EventEmitter {
     if (changed) {
       this.emit('health-changed', this.getHealthStatus());
     }
+  }
+
+  private static readinessTimeoutMs(
+    connectionMode: ConnectionMode,
+    elevated: boolean,
+  ): number {
+    if (elevated) {
+      return XrayService.ELEVATED_READINESS_TIMEOUT_MS;
+    }
+    if (process.platform === 'win32' && connectionMode === 'tun') {
+      return XrayService.WINDOWS_TUN_READINESS_TIMEOUT_MS;
+    }
+    return XrayService.READINESS_TIMEOUT_MS;
   }
 
   private async awaitLocalProxyReadiness(
@@ -844,7 +930,9 @@ export class XrayService extends EventEmitter {
       processRef,
       (child) => this.killProcessSync(child as ChildProcess),
       {
-        timeoutMs: XrayService.STOP_TIMEOUT_MS,
+        timeoutMs: this.consoleBreakProcesses.has(processRef)
+          ? XrayService.WINDOWS_TUN_STOP_TIMEOUT_MS
+          : XrayService.STOP_TIMEOUT_MS,
         killGraceMs: XrayService.KILL_GRACE_MS,
       },
     );
