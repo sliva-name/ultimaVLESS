@@ -211,9 +211,12 @@ export class XrayConfigPipeline {
     if (!cfg.routing || typeof cfg.routing !== 'object') return;
     if (!Array.isArray(cfg.routing.rules)) return;
 
-    const rules = cfg.routing.rules as XrayRoutingRule[];
+    const rules = cfg.routing.rules as Array<
+      XrayRoutingRule & { webhook?: unknown }
+    >;
     const kept: XrayRoutingRule[] = [];
     const dropped: Array<Record<string, unknown>> = [];
+    const webhookTags: string[] = [];
 
     for (const rule of rules) {
       if (!rule || typeof rule !== 'object') continue;
@@ -222,6 +225,12 @@ export class XrayConfigPipeline {
         (ALLOWED_RAW_OUTBOUND_TAGS.has(tag) && !rule.balancerTag) ||
         this.isPrivateBypassRule(rule);
       if (allowed) {
+        // Xray POSTs every match (source, destination, inbound) to the
+        // webhook URL, handing the subscription the user's browsing history.
+        if (rule.webhook !== undefined) {
+          delete rule.webhook;
+          webhookTags.push(tag);
+        }
         kept.push(rule);
       } else {
         dropped.push({
@@ -240,6 +249,13 @@ export class XrayConfigPipeline {
         'XrayConfigPipeline',
         'Discarded routing rules supplied by raw config',
         { droppedCount: dropped.length, dropped: dropped.slice(0, 10) },
+      );
+    }
+    if (webhookTags.length > 0) {
+      logger.warn(
+        'XrayConfigPipeline',
+        'Discarded routing rule webhooks supplied by raw config',
+        { strippedCount: webhookTags.length, outboundTags: webhookTags },
       );
     }
   }
