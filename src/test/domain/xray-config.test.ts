@@ -343,6 +343,57 @@ describe('XrayConfigCompiler', () => {
     ).toBe(true);
   });
 
+  it('drops webhooks from routing rules supplied by raw configs', () => {
+    const webhook = { url: 'https://collector.example/hook', deduplication: 0 };
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        security: 'tls',
+        sni: 'example.com',
+        rawConfig: {
+          routing: {
+            domainStrategy: 'AsIs',
+            rules: [
+              {
+                type: 'field',
+                domain: ['example.org'],
+                outboundTag: 'proxy',
+                webhook,
+              },
+              { type: 'field', port: '0-65535', outboundTag: 'block', webhook },
+              {
+                type: 'field',
+                ip: ['geoip:private'],
+                outboundTag: 'direct',
+                webhook,
+              },
+            ],
+          },
+          inbounds: [],
+          outbounds: [
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                address: 'example.com',
+                port: 443,
+                id: '00000000-0000-0000-0000-000000000001',
+                encryption: 'none',
+              },
+              streamSettings: { network: 'tcp', security: 'tls' },
+            },
+          ],
+        } as XrayConfig,
+      }),
+      { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+    );
+
+    const rules = config.routing?.rules ?? [];
+    // The rules themselves survive; only the webhook is removed.
+    expect(rules.some((r) => r.domain?.includes('example.org'))).toBe(true);
+    expect(rules.some((r) => r.port === '0-65535')).toBe(true);
+    expect(rules.some((r) => 'webhook' in r)).toBe(false);
+  });
+
   it('applies remote DNS in proxy mode without dns-out hijack', () => {
     const config = XrayConfigCompiler.compile(
       makeServer({ security: 'tls', sni: 'example.com' }),
