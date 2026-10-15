@@ -628,7 +628,7 @@ describe('XrayConfigCompiler', () => {
       },
     );
 
-    expect(config.version).toMatchObject({ min: '26.7.28' });
+    expect(config.version).toMatchObject({ min: '26.10.10' });
     expect(config.outbounds[0]).toMatchObject({
       protocol: 'hysteria',
       settings: {
@@ -673,7 +673,7 @@ describe('XrayConfigCompiler', () => {
       },
     );
 
-    expect(config.version).toMatchObject({ min: '26.7.28' });
+    expect(config.version).toMatchObject({ min: '26.10.10' });
     expect(config.outbounds[0]).toMatchObject({
       protocol: 'wireguard',
       settings: {
@@ -691,6 +691,162 @@ describe('XrayConfigCompiler', () => {
     });
     expect(config.outbounds[0].streamSettings).toBeUndefined();
     expect(config.outbounds[0].mux).toBeUndefined();
+  });
+
+  it('emits the WireGuard domain strategy as targetStrategy', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        protocol: 'wireguard',
+        wgSecretKey: 'client-secret',
+        wgAddress: ['10.0.0.2/32'],
+        wgPeers: [{ endpoint: 'wg.example.com:51820', publicKey: 'pub' }],
+        wgDomainStrategy: 'ForceIPv4',
+      }),
+      { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+    );
+
+    expect(config.outbounds[0].targetStrategy).toBe('ForceIPv4');
+    expect(config.outbounds[0].settings).not.toHaveProperty('domainStrategy');
+  });
+
+  it('keeps a dialing finalmask first when adding salamander obfs', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        protocol: 'hysteria',
+        hysteriaAuth: 'auth-token',
+        type: 'hysteria',
+        security: 'tls',
+        sni: 'hy.example.com',
+        hysteriaObfs: { type: 'salamander', password: 'obfs-pass' },
+        finalmask: {
+          quicParams: { udpHop: { ports: '20000-30000' } },
+        },
+      }),
+      { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+    );
+
+    expect(config.outbounds[0].streamSettings?.finalmask).toEqual({
+      udp: [
+        {
+          type: 'udphop',
+          settings: {
+            mode: 'intervalLocal,intervalRemote',
+            remotePorts: '20000-30000',
+          },
+        },
+        { type: 'salamander', settings: { password: 'obfs-pass' } },
+      ],
+    });
+  });
+
+  it('migrates outbound fields removed from Xray in raw configs', () => {
+    const rawConfig = {
+      inbounds: [],
+      outbounds: [
+        {
+          tag: 'proxy',
+          protocol: 'hysteria',
+          proxySettings: { tag: 'chain' },
+          settings: { version: 2, address: 'hy.example.com', port: 443 },
+          streamSettings: {
+            network: 'hysteria',
+            security: 'tls',
+            hysteriaSettings: { version: 2, auth: 'x' },
+            finalmask: {
+              udp: [{ type: 'salamander', settings: { password: 'p' } }],
+              quicParams: { udpHop: { ports: '20000-30000', interval: 10 } },
+            },
+          },
+        },
+        {
+          tag: 'chain',
+          protocol: 'wireguard',
+          settings: {
+            secretKey: 'client-secret',
+            address: ['10.0.0.2/32'],
+            peers: [{ endpoint: '1.2.3.4:51820', publicKey: 'pub' }],
+            domainStrategy: 'ForceIPv6v4',
+          },
+        },
+        {
+          tag: 'direct',
+          protocol: 'freedom',
+          settings: {},
+          streamSettings: {
+            sockopt: { addressPortStrategy: 'SrvPortOnly', mark: 255 },
+          },
+        },
+      ],
+    } as XrayConfig;
+
+    const config = XrayConfigCompiler.compile(makeServer({ rawConfig }), {
+      logPath: '/tmp/xray.log',
+      connectionMode: 'proxy',
+    });
+    const byTag = (tag: string) =>
+      config.outbounds.find((outbound) => outbound.tag === tag) as Record<
+        string,
+        unknown
+      > & { streamSettings?: Record<string, unknown> };
+
+    const proxy = byTag('proxy');
+    expect(proxy).not.toHaveProperty('proxySettings');
+    expect(proxy.streamSettings?.sockopt).toMatchObject({
+      dialerProxy: 'chain',
+    });
+    expect(proxy.streamSettings?.finalmask).toEqual({
+      udp: [
+        {
+          type: 'udphop',
+          settings: {
+            mode: 'intervalLocal,intervalRemote',
+            remotePorts: '20000-30000',
+            interval: 10,
+          },
+        },
+        { type: 'salamander', settings: { password: 'p' } },
+      ],
+    });
+    expect(byTag('chain').targetStrategy).toBe('ForceIPv6v4');
+    expect(byTag('chain').settings).not.toHaveProperty('domainStrategy');
+    expect(byTag('direct').streamSettings?.sockopt).toEqual({ mark: 255 });
+    // The stored subscription config stays untouched.
+    expect(rawConfig.outbounds?.[0]).toHaveProperty('proxySettings');
+  });
+
+  it('drops Lua scripts supplied by raw configs', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        security: 'tls',
+        sni: 'example.com',
+        rawConfig: {
+          dns: { script: 'dns.lua', servers: ['1.1.1.1'] },
+          routing: {
+            domainStrategy: 'AsIs',
+            script: 'router.lua',
+            rules: [],
+          },
+          inbounds: [],
+          outbounds: [
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                address: 'example.com',
+                port: 443,
+                id: '00000000-0000-0000-0000-000000000001',
+                encryption: 'none',
+              },
+              streamSettings: { network: 'tcp', security: 'tls' },
+            },
+          ],
+        } as XrayConfig,
+      }),
+      { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+    );
+
+    expect(config.routing).not.toHaveProperty('script');
+    expect(config.dns).not.toHaveProperty('script');
   });
 
   it('emits REALITY mldsa65Verify and TLS echConfigList', () => {
@@ -762,7 +918,7 @@ describe('XrayConfigCompiler', () => {
       },
     );
 
-    expect(config.version).toEqual({ min: '26.7.28', max: '99.0.0' });
+    expect(config.version).toEqual({ min: '26.10.10', max: '99.0.0' });
   });
 
   it('rejects raw outbound tag proxy when the protocol is not a tunnel', () => {

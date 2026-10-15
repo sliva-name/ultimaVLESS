@@ -287,3 +287,69 @@ export function assertAllowInsecureNotUsed(allowInsecure: unknown): void {
 export function requiresPublicTrojanMux(address: string): boolean {
   return !isPrivateOrLocalEndpoint(address);
 }
+
+/** Values the removed WireGuard `settings.domainStrategy` accepted. */
+const WIREGUARD_DOMAIN_STRATEGIES = new Map([
+  ['forceip', 'ForceIP'],
+  ['forceipv4', 'ForceIPv4'],
+  ['forceipv6', 'ForceIPv6'],
+  ['forceipv4v6', 'ForceIPv4v6'],
+  ['forceipv6v4', 'ForceIPv6v4'],
+]);
+
+/**
+ * Xray dropped WireGuard `settings.domainStrategy` (now silently ignored);
+ * resolving targets inside the tunnel moved to the outbound's
+ * `targetStrategy`, which takes the same values.
+ * @see https://github.com/XTLS/Xray-core/pull/6771
+ */
+export function wireGuardTargetStrategy(
+  domainStrategy: unknown,
+): string | undefined {
+  if (typeof domainStrategy !== 'string') return undefined;
+  return WIREGUARD_DOMAIN_STRATEGIES.get(domainStrategy.trim().toLowerCase());
+}
+
+/** UDP masks that dial by themselves; Xray only accepts them first. */
+const DIALING_UDP_MASKS = new Set(['udphop', 'xicmp']);
+
+export function isDialingUdpMask(mask: unknown): boolean {
+  if (!mask || typeof mask !== 'object') return false;
+  const type = (mask as Record<string, unknown>).type;
+  return (
+    typeof type === 'string' && DIALING_UDP_MASKS.has(type.trim().toLowerCase())
+  );
+}
+
+/**
+ * Xray turned port hopping into a `udphop` UDP mask and now ignores
+ * `finalmask.quicParams.udpHop`, so such a config would stay on one port.
+ * The old hop opened a new local socket and picked a new server port each
+ * interval; a dialing mask must come first in `finalmask.udp`.
+ * @see https://github.com/XTLS/Xray-core/pull/6327
+ */
+export function migrateLegacyUdpHop(finalmask: Record<string, unknown>): void {
+  const quicParams = finalmask.quicParams;
+  if (!quicParams || typeof quicParams !== 'object') return;
+  const params = quicParams as Record<string, unknown>;
+  if (params.udpHop === undefined) return;
+
+  const legacy =
+    params.udpHop && typeof params.udpHop === 'object'
+      ? (params.udpHop as Record<string, unknown>)
+      : {};
+  delete params.udpHop;
+  if (Object.keys(params).length === 0) delete finalmask.quicParams;
+
+  // Without ports the old hop never engaged.
+  if (legacy.ports === undefined || legacy.ports === '') return;
+  const udp = Array.isArray(finalmask.udp) ? finalmask.udp : [];
+  if (udp.some(isDialingUdpMask)) return;
+
+  const settings: Record<string, unknown> = {
+    mode: 'intervalLocal,intervalRemote',
+    remotePorts: legacy.ports,
+  };
+  if (legacy.interval !== undefined) settings.interval = legacy.interval;
+  finalmask.udp = [{ type: 'udphop', settings }, ...udp];
+}
