@@ -108,6 +108,10 @@ export interface ServerConfig {
   wgMtu?: number;
   wgReserved?: number[];
   wgNoKernelTun?: boolean;
+  /**
+   * Legacy WireGuard `settings.domainStrategy`, emitted as the outbound's
+   * `targetStrategy` (Xray 26.9.30+ ignores the old field).
+   */
   wgDomainStrategy?: string;
 
   // Ping information

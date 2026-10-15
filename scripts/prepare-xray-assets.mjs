@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 
 /** Match Project X docs (TUN gateway/auto-route, tunnel inbound, dokodemo rewriteAddress). */
-const DEFAULT_XRAY_VERSION = 'v26.7.28';
+const DEFAULT_XRAY_VERSION = 'v26.10.10';
 
 const RELEASE_API_URL =
   'https://api.github.com/repos/XTLS/Xray-core/releases/latest';

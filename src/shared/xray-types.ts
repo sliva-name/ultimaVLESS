@@ -29,6 +29,8 @@ export type XrayInbound = {
 export type XrayOutbound = {
   tag?: string;
   sendThrough?: string;
+  /** Resolves domain targets before the proxy sees them (`ForceIPv4`, …). */
+  targetStrategy?: string;
   protocol: string;
   settings?: Record<string, unknown>;
   streamSettings?: XrayStreamSettings | Record<string, unknown>;
@@ -208,6 +210,8 @@ export type XrayRouting = {
   domainStrategy: 'AsIs' | 'IPIfNonMatch' | 'IPOnDemand';
   rules: XrayRoutingRule[];
   balancers?: Array<Record<string, unknown>>;
+  /** Lua file that replaces `rules` entirely; never taken from raw configs. */
+  script?: string;
 };
 
 export type XrayVersionConstraint = {

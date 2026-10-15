@@ -3,10 +3,13 @@ import {
   assertAllowInsecureNotUsed,
   assertEncryptedPublicOutbound,
   assertSupportedShadowsocksMethod,
+  isDialingUdpMask,
   isPrivateOrLocalEndpoint,
   isServerPublicOutboundCompatible,
+  migrateLegacyUdpHop,
   normalizeVmessSecurity,
   requiresPublicTrojanMux,
+  wireGuardTargetStrategy,
 } from '@/main/services/configGenerator/outboundCompat';
 import { makeServer } from '@/test/factories';
 import type { XrayConfig } from '@/shared/xray-types';
@@ -210,5 +213,59 @@ describe('outboundCompat', () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it('maps the removed WireGuard domainStrategy to targetStrategy', () => {
+    expect(wireGuardTargetStrategy('ForceIPv4')).toBe('ForceIPv4');
+    expect(wireGuardTargetStrategy(' forceipv6v4 ')).toBe('ForceIPv6v4');
+    expect(wireGuardTargetStrategy('ForceIP')).toBe('ForceIP');
+    expect(wireGuardTargetStrategy('UseIP')).toBeUndefined();
+    expect(wireGuardTargetStrategy(undefined)).toBeUndefined();
+  });
+
+  it('moves quicParams.udpHop into a leading udphop mask', () => {
+    const finalmask: Record<string, unknown> = {
+      udp: [{ type: 'salamander', settings: { password: 'p' } }],
+      quicParams: {
+        congestion: 'bbr',
+        udpHop: { ports: '20000-30000', interval: '5-30' },
+      },
+    };
+
+    migrateLegacyUdpHop(finalmask);
+
+    expect(finalmask).toEqual({
+      udp: [
+        {
+          type: 'udphop',
+          settings: {
+            mode: 'intervalLocal,intervalRemote',
+            remotePorts: '20000-30000',
+            interval: '5-30',
+          },
+        },
+        { type: 'salamander', settings: { password: 'p' } },
+      ],
+      quicParams: { congestion: 'bbr' },
+    });
+  });
+
+  it('drops a legacy udpHop without ports or next to a dialing mask', () => {
+    const withoutPorts: Record<string, unknown> = {
+      quicParams: { udpHop: { interval: 30 } },
+    };
+    migrateLegacyUdpHop(withoutPorts);
+    expect(withoutPorts).toEqual({});
+
+    const alreadyMigrated: Record<string, unknown> = {
+      udp: [{ type: 'udpHop', settings: { mode: 'intervalRemote' } }],
+      quicParams: { udpHop: { ports: 443 } },
+    };
+    migrateLegacyUdpHop(alreadyMigrated);
+    expect(alreadyMigrated).toEqual({
+      udp: [{ type: 'udpHop', settings: { mode: 'intervalRemote' } }],
+    });
+    expect(isDialingUdpMask({ type: 'xicmp' })).toBe(true);
+    expect(isDialingUdpMask({ type: 'salamander' })).toBe(false);
   });
 });

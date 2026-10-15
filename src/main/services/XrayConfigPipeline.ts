@@ -23,8 +23,11 @@ import {
   assertAllowInsecureNotUsed,
   assertEncryptedPublicOutbound,
   assertSupportedShadowsocksMethod,
+  isDialingUdpMask,
+  migrateLegacyUdpHop,
   normalizeVmessSecurity,
   requiresPublicTrojanMux,
+  wireGuardTargetStrategy,
 } from './configGenerator/outboundCompat';
 import {
   buildBypassRules,
@@ -36,7 +39,10 @@ import { logger } from './LoggerService';
 
 type MutableConfigNode = Record<string, unknown>;
 
-type MutableSockopt = MutableConfigNode & { tcpFastOpen?: boolean };
+type MutableSockopt = MutableConfigNode & {
+  tcpFastOpen?: boolean;
+  dialerProxy?: string;
+};
 type MutableStreamSettings = MutableConfigNode & {
   sockopt?: MutableSockopt;
   method?: string;
@@ -148,6 +154,7 @@ export class XrayConfigPipeline {
     // to start with "outboundTag not found" otherwise.
     this.ensureAuxiliaryOutbounds(cfg);
     this.assertAuxiliaryOutboundProtocols(cfg);
+    this.migrateRemovedOutboundFields(cfg);
     this.applyPerfToOutbounds(cfg, perf);
     this.sanitizeRawRoutingRules(cfg);
     this.applyPerfToRouting(cfg, perf);
@@ -209,6 +216,15 @@ export class XrayConfigPipeline {
    */
   private static sanitizeRawRoutingRules(cfg: XrayConfig): void {
     if (!cfg.routing || typeof cfg.routing !== 'object') return;
+    // A Lua script replaces every rule, including the ones injected here, and
+    // Xray refuses to start when the file is missing.
+    if (cfg.routing.script !== undefined) {
+      delete cfg.routing.script;
+      logger.warn(
+        'XrayConfigPipeline',
+        'Discarded routing script supplied by raw config',
+      );
+    }
     if (!Array.isArray(cfg.routing.rules)) return;
 
     const rules = cfg.routing.rules as XrayRoutingRule[];
@@ -333,6 +349,53 @@ export class XrayConfigPipeline {
       throw new Error(
         'Raw config must include an outbound tagged "proxy" with a tunnel protocol.',
       );
+    }
+  }
+
+  /**
+   * Subscriptions still emit outbound fields that Xray 26.9+ removed. Rewrite
+   * them to their replacements so the config keeps starting (`proxySettings`,
+   * freedom `addressPortStrategy`) or keeps its meaning instead of being
+   * silently ignored (WireGuard `domainStrategy`, `quicParams.udpHop`).
+   */
+  private static migrateRemovedOutboundFields(cfg: XrayConfig): void {
+    if (!Array.isArray(cfg.outbounds)) return;
+    for (const outbound of cfg.outbounds as MutableOutbound[]) {
+      if (!outbound) continue;
+
+      if (outbound.proxySettings !== undefined) {
+        const proxySettings = outbound.proxySettings as
+          MutableConfigNode | undefined;
+        const tag =
+          typeof proxySettings?.tag === 'string' ? proxySettings.tag : '';
+        delete outbound.proxySettings;
+        if (tag) {
+          outbound.streamSettings ??= {};
+          outbound.streamSettings.sockopt ??= {};
+          // Xray used to reject both together, so an existing one wins.
+          outbound.streamSettings.sockopt.dialerProxy ??= tag;
+        }
+      }
+
+      if (outbound.protocol === 'freedom') {
+        delete outbound.streamSettings?.sockopt?.addressPortStrategy;
+      }
+
+      if (
+        outbound.protocol === 'wireguard' &&
+        outbound.settings?.domainStrategy !== undefined
+      ) {
+        const targetStrategy = wireGuardTargetStrategy(
+          outbound.settings.domainStrategy,
+        );
+        delete outbound.settings.domainStrategy;
+        if (targetStrategy) outbound.targetStrategy ??= targetStrategy;
+      }
+
+      const finalmask = outbound.streamSettings?.finalmask;
+      if (finalmask && typeof finalmask === 'object') {
+        migrateLegacyUdpHop(finalmask as MutableConfigNode);
+      }
     }
   }
 
@@ -930,15 +993,14 @@ export class XrayConfigPipeline {
     if (config.wgNoKernelTun !== undefined) {
       settings.noKernelTun = config.wgNoKernelTun;
     }
-    if (config.wgDomainStrategy) {
-      settings.domainStrategy = config.wgDomainStrategy;
-    }
 
     const outbound: XrayOutbound = {
       protocol: 'wireguard',
       settings,
       tag: 'proxy',
     };
+    const targetStrategy = wireGuardTargetStrategy(config.wgDomainStrategy);
+    if (targetStrategy) outbound.targetStrategy = targetStrategy;
     return outbound;
   }
 
@@ -1115,22 +1177,30 @@ export class XrayConfigPipeline {
     protocol: StructuredOutboundProtocol,
   ): Record<string, unknown> | undefined {
     let finalmask: Record<string, unknown> | undefined = config.finalmask
-      ? { ...config.finalmask }
+      ? (JSON.parse(JSON.stringify(config.finalmask)) as Record<
+          string,
+          unknown
+        >)
       : undefined;
+    if (finalmask) migrateLegacyUdpHop(finalmask);
 
     const obfsType = (config.hysteriaObfs?.type || '').toLowerCase();
     const obfsPassword = config.hysteriaObfs?.password;
     if (protocol === 'hysteria' && obfsType === 'salamander' && obfsPassword) {
-      const salamanderUdp = [
-        { type: 'salamander', settings: { password: obfsPassword } },
-      ];
+      const salamander = {
+        type: 'salamander',
+        settings: { password: obfsPassword },
+      };
       if (!finalmask) {
-        finalmask = { udp: salamanderUdp };
+        finalmask = { udp: [salamander] };
       } else {
-        const existingUdp = Array.isArray(finalmask.udp)
-          ? (finalmask.udp as unknown[])
+        const udp = Array.isArray(finalmask.udp)
+          ? [...(finalmask.udp as unknown[])]
           : [];
-        finalmask = { ...finalmask, udp: [...salamanderUdp, ...existingUdp] };
+        // Obfuscate right after a dialing mask such as `udphop`, which Xray
+        // only accepts first.
+        udp.splice(isDialingUdpMask(udp[0]) ? 1 : 0, 0, salamander);
+        finalmask = { ...finalmask, udp };
       }
     }
 
