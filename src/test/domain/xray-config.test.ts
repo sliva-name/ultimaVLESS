@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { makeServer } from '@/test/factories';
-import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
-import type { XrayConfig } from '@/shared/xray-types';
+import {
+  DEFAULT_PERFORMANCE_SETTINGS,
+  type PerformanceSettings,
+} from '@/shared/types';
+import type { XrayConfig, XrayRoutingRule } from '@/shared/xray-types';
 import { TUN_MTU } from '@/main/services/tunRoute/constants';
 import { XrayConfigCompiler } from '@/main/services/XrayConfigCompiler';
 
@@ -1080,5 +1083,147 @@ describe('XrayConfigCompiler', () => {
       (inbound) => inbound.tag === 'api',
     );
     expect(apiInbound?.listen).toBe('127.0.0.1');
+  });
+});
+
+describe('XrayConfigCompiler routing modes', () => {
+  const rawProxyOutbound = {
+    tag: 'proxy',
+    protocol: 'vless',
+    settings: {
+      address: 'example.com',
+      port: 443,
+      id: '00000000-0000-0000-0000-000000000001',
+      encryption: 'none',
+    },
+    streamSettings: { network: 'tcp', security: 'tls' },
+  };
+
+  function compileRaw(
+    rules: XrayRoutingRule[],
+    performanceSettings: Partial<PerformanceSettings>,
+  ) {
+    return XrayConfigCompiler.compile(
+      makeServer({
+        security: 'tls',
+        sni: 'example.com',
+        rawConfig: {
+          inbounds: [],
+          outbounds: [rawProxyOutbound],
+          routing: { domainStrategy: 'AsIs', rules },
+        } as XrayConfig,
+      }),
+      {
+        logPath: '/tmp/xray.log',
+        connectionMode: 'proxy',
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          ...performanceSettings,
+        },
+      },
+    );
+  }
+
+  it('drops subscription proxy rules and defaults to direct in sites mode', () => {
+    const config = compileRaw(
+      [
+        { type: 'field', domain: ['geosite:google'], outboundTag: 'proxy' },
+        { type: 'field', domain: ['example.net'], outboundTag: 'block' },
+        { type: 'field', port: '0-65535', outboundTag: 'proxy' },
+      ],
+      {
+        routingMode: 'sites',
+        bypassDomains: [],
+        proxyDomains: ['youtube.com'],
+      },
+    );
+    const rules = config.routing?.rules ?? [];
+    const userRules = rules.filter((r) => !r.inboundTag);
+
+    expect(userRules.map((r) => r.outboundTag)).toEqual([
+      'proxy', // probe pin (hosts)
+      'proxy', // probe pin (1.1.1.1)
+      'proxy', // youtube.com
+      'direct', // geoip:private
+      'block', // subscription block rule survives
+      'direct', // default route
+    ]);
+    expect(userRules[2].domain).toEqual(['domain:youtube.com']);
+    expect(userRules[userRules.length - 1]).toEqual({
+      type: 'field',
+      port: '0-65535',
+      outboundTag: 'direct',
+    });
+    expect(rules.some((r) => r.domain?.includes('geosite:google'))).toBe(false);
+  });
+
+  it('keeps the LAN bypass ahead of tunnelled apps whatever the subscription did', () => {
+    const config = compileRaw(
+      [
+        { type: 'field', domain: ['example.org'], outboundTag: 'proxy' },
+        { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
+      ],
+      {
+        routingMode: 'apps',
+        bypassDomains: [],
+        proxyApps: ['Telegram.exe'],
+        directApps: ['steam.exe'],
+      },
+    );
+    const rules = (config.routing?.rules ?? []).filter((r) => !r.inboundTag);
+    const index = (predicate: (r: (typeof rules)[number]) => boolean) =>
+      rules.findIndex(predicate);
+
+    const directApp = index((r) => r.process?.includes('steam.exe') === true);
+    const privateIp = index((r) => r.ip?.includes('geoip:private') === true);
+    const proxyApp = index((r) => r.process?.includes('Telegram.exe') === true);
+    expect(directApp).toBeGreaterThanOrEqual(0);
+    expect(directApp).toBeLessThan(privateIp);
+    expect(privateIp).toBeLessThan(proxyApp);
+    expect(rules[proxyApp].outboundTag).toBe('proxy');
+    expect(rules.some((r) => r.domain?.includes('example.org'))).toBe(false);
+    expect(rules[rules.length - 1]).toMatchObject({ outboundTag: 'direct' });
+  });
+
+  it('puts direct apps ahead of subscription rules in all mode and keeps them', () => {
+    const config = compileRaw(
+      [{ type: 'field', domain: ['example.org'], outboundTag: 'proxy' }],
+      { directApps: ['steam.exe'] },
+    );
+    const rules = (config.routing?.rules ?? []).filter((r) => !r.inboundTag);
+    expect(rules.map((r) => r.outboundTag)).toEqual([
+      'direct', // steam.exe
+      'direct', // vk.com
+      'direct', // geoip:private
+      'proxy', // subscription rule
+    ]);
+    expect(rules[0].process).toEqual(['steam.exe']);
+  });
+
+  it('keeps DNS service rules ahead of app rules in TUN mode', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({ security: 'tls', sni: 'example.com' }),
+      {
+        logPath: '/tmp/xray.log',
+        connectionMode: 'tun',
+        tunAutoRoute: true,
+        performanceSettings: {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          routingMode: 'apps',
+          proxyApps: ['chrome.exe'],
+          directApps: ['steam.exe'],
+        },
+      },
+    );
+    const rules = config.routing?.rules ?? [];
+    const dnsHijack = rules.findIndex((r) => r.outboundTag === 'dns-out');
+    const firstProcess = rules.findIndex((r) => r.process !== undefined);
+    expect(dnsHijack).toBeGreaterThanOrEqual(0);
+    expect(dnsHijack).toBeLessThan(firstProcess);
+    expect(rules[rules.length - 1]).toEqual({
+      type: 'field',
+      port: '0-65535',
+      outboundTag: 'direct',
+    });
   });
 });

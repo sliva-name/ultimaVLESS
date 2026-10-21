@@ -27,7 +27,7 @@ export interface SelectProps {
   triggerClassName?: string;
 }
 
-type MenuPlacement = {
+export type MenuPlacement = {
   top: number;
   left: number;
   width: number;
@@ -35,7 +35,8 @@ type MenuPlacement = {
   maxHeight: number;
 };
 
-function measurePlacement(trigger: HTMLElement): MenuPlacement {
+/** Fixed-position placement for a popup menu anchored to `trigger`. */
+export function measurePlacement(trigger: HTMLElement): MenuPlacement {
   const rect = trigger.getBoundingClientRect();
   const viewportPad = 8;
   const preferredMax = 280;

@@ -242,10 +242,51 @@ const resources = {
           splitTunnelEmpty:
             'Nothing excluded: all traffic goes through the VPN.',
           splitTunnelInvalid: 'Not a host or address: {{entries}}',
-          splitTunnelLimit: 'Exclusion list is full.',
+          splitTunnelLimit: 'The list is full.',
           splitTunnelRemove: 'Remove {{entry}}',
           splitTunnelDnsNote:
             'Site rules match the domain from TLS/HTTP sniffing; add an IP or CIDR for traffic that cannot be sniffed. DNS queries stay inside the tunnel.',
+          routingRules: 'Routing rules',
+          routingRulesHint:
+            'Choose what goes through the VPN and what goes straight out. Changes take effect on the next connection.',
+          routingLocked: 'Disconnect the VPN to change routing rules.',
+          routingModeAll: 'All traffic through VPN',
+          routingModeAllDesc: 'Except exclusions and apps that bypass the VPN.',
+          routingModeSites: 'Selected sites only',
+          routingModeSitesDesc:
+            'Sites from the list go through the VPN, everything else goes direct.',
+          routingModeApps: 'Selected apps only',
+          routingModeAppsDesc:
+            'Chosen programs go through the VPN, everything else goes direct.',
+          routingProxySites: 'Sites through VPN',
+          routingProxySitesHint:
+            'A domain also covers its subdomains. IPs, CIDR blocks and geosite:/geoip: lists work too.',
+          routingProxySitesEmpty: 'The list is empty: all traffic goes direct.',
+          routingProxyApps: 'Apps through VPN',
+          routingProxyAppsHint:
+            'All connections of these programs go through the VPN, except the local network and excluded sites.',
+          routingProxyAppsEmpty: 'The list is empty: all traffic goes direct.',
+          routingExclusionsEmpty: 'Nothing excluded.',
+          routingDirectApps: 'Apps that bypass the VPN',
+          routingDirectAppsHint:
+            'These programs always use your normal connection, in every mode.',
+          routingDirectAppsEmpty: 'No apps.',
+          routingAppsPlaceholder: 'Search programs or type a name',
+          routingAppsBrowse: 'Choose file…',
+          routingAppsInvalid: 'Not a program name: {{entries}}',
+          routingAppsShowList: 'Show running programs',
+          routingAppsLoading: 'Loading running programs…',
+          routingAppsNoMatches:
+            'No running program matches. Press Enter to add the name as typed.',
+          routingAppsNoRunning:
+            'No running programs found — type a name or choose a file.',
+          routingAppsSystemGroup: 'Windows',
+          routingAppsCaseNote:
+            'Apps are matched by executable name, case-sensitively — pick a running program from the list or choose the file. If a program uses helper processes (e.g. steamwebhelper.exe), add each of them.',
+          routingAppsProxyNote:
+            'In proxy mode app rules only apply to programs that use the system proxy. Switch to TUN mode to route every program.',
+          routingPriority:
+            'Priority, first match wins: ad and BitTorrent blocking → apps that bypass the VPN → sites and addresses (a more specific entry wins: music.example.com beats example.com; on a tie the exclusion wins) → local network, direct → apps through VPN → the selected mode.',
           savePerf: 'Save',
           savePerfFailed: 'Failed to save performance settings',
           resetDefaults: 'Reset to defaults',
@@ -538,10 +579,51 @@ const resources = {
           splitTunnelIps: 'Адреса',
           splitTunnelEmpty: 'Исключений нет: весь трафик идёт через VPN.',
           splitTunnelInvalid: 'Не похоже на домен или адрес: {{entries}}',
-          splitTunnelLimit: 'Список исключений заполнен.',
+          splitTunnelLimit: 'Список заполнен.',
           splitTunnelRemove: 'Удалить {{entry}}',
           splitTunnelDnsNote:
             'Домены определяются по SNI/Host из sniffing; для трафика без них добавьте IP или CIDR. DNS-запросы остаются внутри туннеля.',
+          routingRules: 'Правила маршрутизации',
+          routingRulesHint:
+            'Что идёт через VPN, а что — напрямую. Изменения применяются при следующем подключении.',
+          routingLocked: 'Отключите VPN, чтобы изменить правила маршрутизации.',
+          routingModeAll: 'Весь трафик через VPN',
+          routingModeAllDesc: 'Кроме исключений и приложений «напрямую».',
+          routingModeSites: 'Только выбранные сайты',
+          routingModeSitesDesc:
+            'Сайты из списка — через VPN, остальное напрямую.',
+          routingModeApps: 'Только выбранные приложения',
+          routingModeAppsDesc:
+            'Выбранные программы — через VPN, остальное напрямую.',
+          routingProxySites: 'Сайты через VPN',
+          routingProxySitesHint:
+            'Домен включает и поддомены. Подходят также IP, CIDR и списки geosite:/geoip:.',
+          routingProxySitesEmpty: 'Список пуст: весь трафик идёт напрямую.',
+          routingProxyApps: 'Приложения через VPN',
+          routingProxyAppsHint:
+            'Все соединения этих программ идут через VPN, кроме локальной сети и исключений.',
+          routingProxyAppsEmpty: 'Список пуст: весь трафик идёт напрямую.',
+          routingExclusionsEmpty: 'Исключений нет.',
+          routingDirectApps: 'Приложения напрямую',
+          routingDirectAppsHint:
+            'Эти программы всегда идут через обычное подключение — в любом режиме.',
+          routingDirectAppsEmpty: 'Нет приложений.',
+          routingAppsPlaceholder: 'Поиск программы или имя .exe',
+          routingAppsBrowse: 'Выбрать файл…',
+          routingAppsInvalid: 'Не похоже на имя программы: {{entries}}',
+          routingAppsShowList: 'Показать запущенные программы',
+          routingAppsLoading: 'Загрузка списка программ…',
+          routingAppsNoMatches:
+            'Среди запущенных программ совпадений нет. Enter добавит имя как есть.',
+          routingAppsNoRunning:
+            'Запущенных программ не найдено — введите имя или выберите файл.',
+          routingAppsSystemGroup: 'Windows',
+          routingAppsCaseNote:
+            'Приложения определяются по имени исполняемого файла с учётом регистра — надёжнее выбрать программу из списка запущенных или файл. Если у программы есть вспомогательные процессы (например, steamwebhelper.exe), добавьте каждый.',
+          routingAppsProxyNote:
+            'В режиме «Прокси» правила для приложений действуют только на программы, которые используют системный прокси. Чтобы охватить все программы, используйте TUN.',
+          routingPriority:
+            'Приоритет (срабатывает первое подходящее правило): блокировка рекламы и BitTorrent → приложения напрямую → сайты и адреса (более точное правило важнее: music.example.com важнее example.com; при равенстве побеждает исключение) → локальная сеть напрямую → приложения через VPN → выбранный режим.',
           savePerf: 'Сохранить',
           savePerfFailed: 'Не удалось сохранить настройки производительности',
           resetDefaults: 'Сбросить по умолчанию',

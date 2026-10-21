@@ -125,6 +125,10 @@ export class ConfigService {
       ...normalized,
       bypassDomains: normalized.bypassDomains.length,
       bypassIps: normalized.bypassIps.length,
+      proxyDomains: normalized.proxyDomains.length,
+      proxyIps: normalized.proxyIps.length,
+      proxyApps: normalized.proxyApps.length,
+      directApps: normalized.directApps.length,
     });
   }
 

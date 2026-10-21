@@ -27,6 +27,8 @@ export const IPC_INVOKE_CHANNELS = {
   clearBlockedServers: 'clear-blocked-servers',
   getPerformanceSettings: 'get-performance-settings',
   setPerformanceSettings: 'set-performance-settings',
+  pickApplications: 'pick-applications',
+  listRunningApps: 'list-running-apps',
   getUiLanguage: 'get-ui-language',
   setUiLanguage: 'set-ui-language',
   getUpdateStatus: 'get-update-status',

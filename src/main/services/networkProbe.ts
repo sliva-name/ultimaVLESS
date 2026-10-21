@@ -92,7 +92,8 @@ export async function probeTlsHandshake(
 const sleep = (ms: number): Promise<void> =>
   new Promise((r) => setTimeout(r, ms));
 
-const CONNECTIVITY_TARGETS = [
+/** Plain-HTTP (port 80) hosts the tunnel and host-connectivity probes hit. */
+export const CONNECTIVITY_TARGETS: readonly { host: string; path: string }[] = [
   { host: 'connectivitycheck.gstatic.com', path: '/generate_204' },
   { host: '1.1.1.1', path: '/' },
   { host: 'captive.apple.com', path: '/hotspot-detect.html' },

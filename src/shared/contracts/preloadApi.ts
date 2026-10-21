@@ -25,6 +25,7 @@ import type {
   NetworkAdapterList,
 } from '@/shared/views/tunEnvironment';
 import type { PerformanceSettings } from '@/shared/types';
+import type { AppOption } from '@/shared/appRouting';
 
 export interface IElectronAPI {
   connect: (serverId: string) => Promise<ConnectResult>;
@@ -74,6 +75,10 @@ export interface IElectronAPI {
   stopPingAllServers: () => Promise<boolean>;
   getPerformanceSettings: () => Promise<PerformanceSettings>;
   setPerformanceSettings: (settings: PerformanceSettings) => Promise<boolean>;
+  /** Opens a file picker; resolves to the chosen executables, `[]` if cancelled. */
+  pickApplications: () => Promise<AppOption[]>;
+  /** Running programs with icons (Windows; `[]` elsewhere). */
+  listRunningApps: () => Promise<AppOption[]>;
 
   getUiLanguage: () => Promise<'en' | 'ru'>;
   setUiLanguage: (language: 'en' | 'ru') => Promise<boolean>;

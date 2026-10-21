@@ -130,6 +130,35 @@ describe('normalizePerformanceSettings', () => {
       normalizePerformanceSettings({ bypassDomains: [] }).bypassDomains,
     ).toEqual([]);
   });
+
+  it('defaults routing to the whole tunnel with empty lists', () => {
+    const settings = normalizePerformanceSettings({ bypassDomains: [] });
+    expect(settings).toMatchObject({
+      routingMode: 'all',
+      proxyDomains: [],
+      proxyIps: [],
+      proxyApps: [],
+      directApps: [],
+    });
+  });
+
+  it('keeps the routing mode and usable routing entries', () => {
+    const settings = normalizePerformanceSettings({
+      routingMode: 'apps',
+      proxyDomains: ['https://www.YouTube.com/watch', 'regexp:.*', '1.2.3.4'],
+      proxyIps: ['geoip:telegram', 'youtube.com', '91.108.4.0/22'],
+      proxyApps: ['C:\\Apps\\Telegram.exe', 'Telegram.exe', 'self/'],
+      directApps: ['steam.EXE', '', 42],
+    });
+    expect(settings.routingMode).toBe('apps');
+    expect(settings.proxyDomains).toEqual(['www.youtube.com']);
+    expect(settings.proxyIps).toEqual(['geoip:telegram', '91.108.4.0/22']);
+    expect(settings.proxyApps).toEqual(['Telegram.exe']);
+    expect(settings.directApps).toEqual(['steam.exe']);
+    expect(
+      normalizePerformanceSettings({ routingMode: 'everything' }).routingMode,
+    ).toBe('all');
+  });
 });
 
 describe('legacy performance migration guard', () => {
@@ -152,6 +181,19 @@ describe('legacy performance migration guard', () => {
         bypassDomains: ['example.com'],
       }),
     ).toBe(false);
+  });
+
+  it('does not migrate when routing rules were saved', () => {
+    for (const saved of [
+      { routingMode: 'all' },
+      { proxyDomains: [] },
+      { proxyApps: ['chrome.exe'] },
+      { directApps: [] },
+    ]) {
+      expect(
+        isUnmodifiedLegacyPerformanceSettings({ ...legacyCore, ...saved }),
+      ).toBe(false);
+    }
   });
 
   it('does not migrate customized DNS or TUN routing', () => {
@@ -212,5 +254,19 @@ describe('legacy performance migration guard', () => {
         tunOutboundInterface: 'Ethernet 2',
       }),
     ).toBe(false);
+    for (const change of [
+      { routingMode: 'sites' as const },
+      { proxyDomains: ['youtube.com'] },
+      { proxyIps: ['8.8.8.8'] },
+      { proxyApps: ['chrome.exe'] },
+      { directApps: ['steam.exe'] },
+    ]) {
+      expect(
+        performanceSettingsEqual(DEFAULT_PERFORMANCE_SETTINGS, {
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          ...change,
+        }),
+      ).toBe(false);
+    }
   });
 });

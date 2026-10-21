@@ -30,6 +30,7 @@ import { appUpdaterService } from '@/main/services/AppUpdaterService';
 import { logExportService } from '@/main/services/LogExportService';
 import { mainLocaleService } from '@/main/services/MainLocaleService';
 import { trafficStatsService } from '@/main/services/TrafficStatsService';
+import { listRunningApps } from '@/main/services/runningApps';
 import {
   createPingRefreshRunner,
   isPingUnsafePhase,
@@ -72,6 +73,7 @@ export interface IpcDependencies {
   logExportService: typeof logExportService;
   mainLocaleService: typeof mainLocaleService;
   trafficStatsService: typeof trafficStatsService;
+  listRunningApps: typeof listRunningApps;
 }
 
 const pingService = createServerLatencyProbe({
@@ -132,5 +134,6 @@ export function createIpcDependencies(): IpcDependencies {
     logExportService,
     mainLocaleService,
     trafficStatsService,
+    listRunningApps,
   };
 }

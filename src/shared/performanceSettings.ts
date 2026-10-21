@@ -13,12 +13,15 @@ import {
   TUN_MTU_MIN,
   TunDnsQueryStrategy,
   VALID_PING_METHODS,
+  VALID_ROUTING_MODES,
   PingMethod,
+  RoutingMode,
   WindowsTunRouting,
 } from './types';
 import { VALID_WINDOWS_TUN_ROUTING } from './tunRouting';
 import { isValidIpv4Address } from './networkAddresses';
 import { normalizeBypassDomains, normalizeBypassIps } from './splitTunneling';
+import { normalizeAppEntries } from './appRouting';
 
 export { isValidIpv4Address };
 
@@ -116,6 +119,11 @@ export function performanceSettingsEqual(
     left.tunDnsQueryStrategy === right.tunDnsQueryStrategy &&
     sameStringList(left.bypassDomains, right.bypassDomains) &&
     sameStringList(left.bypassIps, right.bypassIps) &&
+    left.routingMode === right.routingMode &&
+    sameStringList(left.proxyDomains, right.proxyDomains) &&
+    sameStringList(left.proxyIps, right.proxyIps) &&
+    sameStringList(left.proxyApps, right.proxyApps) &&
+    sameStringList(left.directApps, right.directApps) &&
     left.pingMethod === right.pingMethod
   );
 }
@@ -154,8 +162,16 @@ export function isUnmodifiedLegacyPerformanceSettings(value: unknown): boolean {
     }
   }
 
-  if ('bypassDomains' in value || 'bypassIps' in value) {
-    return false;
+  for (const key of [
+    'bypassDomains',
+    'bypassIps',
+    'routingMode',
+    'proxyDomains',
+    'proxyIps',
+    'proxyApps',
+    'directApps',
+  ]) {
+    if (key in value) return false;
   }
   if ('pingMethod' in value && value.pingMethod !== 'tcp') {
     return false;
@@ -307,6 +323,13 @@ export function normalizePerformanceSettings(
     bypassIps: Array.isArray(value.bypassIps)
       ? normalizeBypassIps(value.bypassIps)
       : [...DEFAULT_PERFORMANCE_SETTINGS.bypassIps],
+    routingMode: VALID_ROUTING_MODES.includes(value.routingMode as RoutingMode)
+      ? (value.routingMode as RoutingMode)
+      : DEFAULT_PERFORMANCE_SETTINGS.routingMode,
+    proxyDomains: normalizeBypassDomains(value.proxyDomains),
+    proxyIps: normalizeBypassIps(value.proxyIps),
+    proxyApps: normalizeAppEntries(value.proxyApps),
+    directApps: normalizeAppEntries(value.directApps),
     pingMethod: VALID_PING_METHODS.includes(value.pingMethod as PingMethod)
       ? (value.pingMethod as PingMethod)
       : DEFAULT_PERFORMANCE_SETTINGS.pingMethod,
