@@ -30,8 +30,14 @@ import {
   wireGuardTargetStrategy,
 } from './configGenerator/outboundCompat';
 import {
-  buildBypassRules,
+  buildDefaultRouteRule,
   buildDefaultRoutingRules,
+  buildDirectAppRules,
+  buildPrivateBypassRule,
+  buildProbePinRules,
+  buildProxyAppRules,
+  buildSiteRules,
+  resolveRoutingMode,
 } from './configGenerator/routing';
 import { applyStatsApi } from './configGenerator/statsApi';
 import { applyRemoteDnsSettings, buildDnsObject } from './configGenerator/dns';
@@ -796,13 +802,15 @@ export class XrayConfigPipeline {
 
     const injectedBlockCount = rules.length - rulesLenBeforeInjections;
 
-    // Split tunneling has to outrank whatever the subscription routes to the
-    // proxy, but stay behind the block rules injected above.
-    const bypassRules = buildBypassRules(perf) as Array<
+    // User routing rules have to outrank whatever the subscription routes to
+    // the proxy, but stay behind the block rules injected above.
+    const userRules = [
+      ...buildDirectAppRules(perf),
+      ...buildSiteRules(perf),
+    ] as Array<Record<string, unknown>>;
+    const proxyAppRules = buildProxyAppRules(perf) as Array<
       Record<string, unknown>
     >;
-    rules.splice(injectedBlockCount, 0, ...bypassRules);
-    const injectedCount = injectedBlockCount + bypassRules.length;
 
     // Subscriptions often omit private / link-local bypass. Without it, Windows
     // may deliver IPv6 link-local DNS (fe80::/10) into the TUN and Xray sends
@@ -811,15 +819,48 @@ export class XrayConfigPipeline {
     // buildRoutingRules(); per Project X routing docs, `geoip:private` covers
     // private addresses (see RuleObject `ip` and `geoip:private`):
     // https://xtls.github.io/config/routing.html
-    if (!this.routingHasPrivateIpDirectBypass(rules)) {
-      rules.splice(injectedCount, 0, {
-        type: 'field',
-        ip: ['geoip:private'],
-        outboundTag: 'direct',
-      });
+    // Tunnelled apps need it ahead of their own rule, wherever the
+    // subscription placed its copy.
+    if (
+      proxyAppRules.length > 0 ||
+      !this.routingHasPrivateIpDirectBypass([...rules, ...userRules])
+    ) {
+      userRules.push(buildPrivateBypassRule());
+    }
+    userRules.push(...proxyAppRules);
+    rules.splice(injectedBlockCount, 0, ...userRules);
+
+    if (resolveRoutingMode(perf) !== 'all') {
+      this.restrictRawRulesToSelection(
+        rules,
+        injectedBlockCount + userRules.length,
+      );
+      rules.push(buildDefaultRouteRule(perf));
+      rules.unshift(...buildProbePinRules(perf));
     }
 
     cfg.routing.rules = rules as XrayRoutingRule[];
+  }
+
+  /**
+   * In the selective modes only what the user picked is tunnelled, so the
+   * subscription's own `proxy` rules (often a catch-all) are dropped; its block
+   * and DNS rules still apply.
+   */
+  private static restrictRawRulesToSelection(
+    rules: Array<Record<string, unknown>>,
+    rawStart: number,
+  ): void {
+    const raw = rules.splice(rawStart);
+    const kept = raw.filter((rule) => rule.outboundTag !== 'proxy');
+    rules.push(...kept);
+    if (kept.length < raw.length) {
+      logger.info(
+        'XrayConfigPipeline',
+        'Dropped raw proxy routing rules for selective routing mode',
+        { droppedCount: raw.length - kept.length },
+      );
+    }
   }
 
   /** True if routing already sends geoip:private to direct (any rule). */

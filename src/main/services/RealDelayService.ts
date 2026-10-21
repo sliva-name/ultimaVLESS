@@ -77,6 +77,12 @@ export function buildDelayTestConfig(
       ...performanceSettings,
       bypassDomains: [],
       bypassIps: [],
+      // Process rules would only cost a socket-table lookup per probe.
+      routingMode: 'all',
+      proxyDomains: [],
+      proxyIps: [],
+      proxyApps: [],
+      directApps: [],
     },
   });
 

@@ -66,6 +66,9 @@ describe('buildDelayTestConfig', () => {
       ...DEFAULT_PERFORMANCE_SETTINGS,
       bypassDomains: ['www.gstatic.com'],
       bypassIps: ['0.0.0.0/0'],
+      routingMode: 'sites',
+      proxyDomains: ['youtube.com'],
+      directApps: ['UltimaVLESS.exe'],
     });
 
     expect(cfg.inbounds).toEqual([
@@ -82,6 +85,8 @@ describe('buildDelayTestConfig', () => {
     });
     // A user bypass rule must never send the probe around the server.
     expect(JSON.stringify(rest)).not.toContain('gstatic');
+    expect(rest.some((rule) => rule.process !== undefined)).toBe(false);
+    expect(rest[rest.length - 1]).toMatchObject({ outboundTag: 'proxy' });
     expect(cfg.outbounds?.find((o) => o.tag === 'proxy')).toMatchObject({
       protocol: 'vless',
     });

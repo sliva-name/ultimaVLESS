@@ -153,11 +153,18 @@ export function createElectronApiMock(
       tunDnsQueryStrategy: 'UseIPv4',
       bypassDomains: [],
       bypassIps: [],
+      routingMode: 'all',
+      proxyDomains: [],
+      proxyIps: [],
+      proxyApps: [],
+      directApps: [],
       pingMethod: 'tcp',
     })),
     setPerformanceSettings: vi.fn(
       async (_settings: PerformanceSettings) => true,
     ),
+    pickApplications: vi.fn(async () => []),
+    listRunningApps: vi.fn(async () => []),
 
     getUiLanguage: vi.fn(async (): Promise<'en' | 'ru'> => 'en'),
     setUiLanguage: vi.fn(async (_language: 'en' | 'ru') => true),

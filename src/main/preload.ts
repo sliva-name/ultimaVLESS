@@ -170,6 +170,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       IPC_INVOKE_CHANNELS.setPerformanceSettings,
       settings,
     ) as Promise<boolean>,
+  pickApplications: () =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.pickApplications) as Promise<
+      string[]
+    >,
+  listRunningApps: () =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.listRunningApps) as Promise<
+      string[]
+    >,
 
   getUiLanguage: () =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getUiLanguage) as Promise<

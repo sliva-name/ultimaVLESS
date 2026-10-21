@@ -158,6 +158,13 @@ export type TunDnsQueryStrategy = 'UseIPv4' | 'UseIPv6' | 'UseIP' | 'UseSystem';
  */
 export type PingMethod = 'tcp' | 'real';
 
+/**
+ * Where traffic no user rule matched goes: `all` tunnels it (exclusions and
+ * direct apps still bypass), `sites` / `apps` send it direct and tunnel only
+ * the selected sites or applications.
+ */
+export type RoutingMode = 'all' | 'sites' | 'apps';
+
 export const VALID_XUDP_PROXY_UDP_443_VALUES: readonly XudpProxyUDP443[] = [
   'reject',
   'allow',
@@ -198,6 +205,11 @@ export const VALID_REMOTE_DNS_PRESETS: readonly RemoteDnsPreset[] = [
 export const VALID_PING_METHODS: readonly PingMethod[] = [
   'tcp',
   'real',
+] as const;
+export const VALID_ROUTING_MODES: readonly RoutingMode[] = [
+  'all',
+  'sites',
+  'apps',
 ] as const;
 export const VALID_TUN_DNS_QUERY_STRATEGIES: readonly TunDnsQueryStrategy[] = [
   'UseIPv4',
@@ -266,6 +278,22 @@ export interface PerformanceSettings {
   bypassDomains: string[];
   /** Split tunneling by address: IPs, CIDR blocks, or `geoip:` tags. */
   bypassIps: string[];
+  /** Default route for traffic that no routing rule matched. */
+  routingMode: RoutingMode;
+  /**
+   * Sites tunnelled in `sites` mode; same entry syntax as `bypassDomains`.
+   * Kept while another mode is active so switching back restores them.
+   */
+  proxyDomains: string[];
+  /** Addresses tunnelled in `sites` mode; same syntax as `bypassIps`. */
+  proxyIps: string[];
+  /**
+   * Executable names (`chrome.exe`) tunnelled in `apps` mode, matched by
+   * Xray's `process` rule against the process that owns the connection.
+   */
+  proxyApps: string[];
+  /** Executable names that always leave directly, in every mode. */
+  directApps: string[];
   /** Latency probe used by the ping buttons and unattended refreshes. */
   pingMethod: PingMethod;
 }
@@ -293,5 +321,10 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   // out of the box; users can drop it in the network settings.
   bypassDomains: ['vk.com'],
   bypassIps: [],
+  routingMode: 'all',
+  proxyDomains: [],
+  proxyIps: [],
+  proxyApps: [],
+  directApps: [],
   pingMethod: 'tcp',
 };

@@ -1,5 +1,12 @@
-import { IpcMainInvokeEvent, ipcMain } from 'electron';
+import {
+  BrowserWindow,
+  IpcMainInvokeEvent,
+  OpenDialogOptions,
+  dialog,
+  ipcMain,
+} from 'electron';
 import { normalizePerformanceSettings } from '@/shared/performanceSettings';
+import { normalizeAppEntries } from '@/shared/appRouting';
 import { IPC_INVOKE_CHANNELS, TunCapabilityStatus } from '@/shared/ipc';
 import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 import { IpcDependencies } from '@/main/ipc/dependencies';
@@ -147,6 +154,35 @@ export function registerSettingsHandlers({
       const settings = normalizePerformanceSettings(payload);
       deps.configService.setPerformanceSettings(settings);
       return true;
+    },
+  );
+
+  // Only file names leave main: routing matches the executable name, and the
+  // renderer has no use for the user's folder layout.
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.pickApplications,
+    async (event: IpcMainInvokeEvent) => {
+      assertTrustedSender(event);
+      const options: OpenDialogOptions = {
+        properties: ['openFile', 'multiSelections'],
+        filters:
+          process.platform === 'win32'
+            ? [{ name: 'Applications', extensions: ['exe'] }]
+            : [],
+      };
+      const owner = BrowserWindow.fromWebContents(event.sender);
+      const result = owner
+        ? await dialog.showOpenDialog(owner, options)
+        : await dialog.showOpenDialog(options);
+      return result.canceled ? [] : normalizeAppEntries(result.filePaths);
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.listRunningApps,
+    async (event: IpcMainInvokeEvent) => {
+      assertTrustedSender(event);
+      return deps.listRunningApps();
     },
   );
 

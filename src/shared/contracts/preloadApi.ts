@@ -74,6 +74,10 @@ export interface IElectronAPI {
   stopPingAllServers: () => Promise<boolean>;
   getPerformanceSettings: () => Promise<PerformanceSettings>;
   setPerformanceSettings: (settings: PerformanceSettings) => Promise<boolean>;
+  /** Opens a file picker; resolves to executable names, `[]` if cancelled. */
+  pickApplications: () => Promise<string[]>;
+  /** Executable names of running processes (Windows; `[]` elsewhere). */
+  listRunningApps: () => Promise<string[]>;
 
   getUiLanguage: () => Promise<'en' | 'ru'>;
   setUiLanguage: (language: 'en' | 'ru') => Promise<boolean>;

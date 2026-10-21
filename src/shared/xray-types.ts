@@ -202,6 +202,8 @@ export type XrayRoutingRule = {
   inboundTag?: string[];
   protocol?: string[];
   attrs?: string;
+  /** Executable names (`.exe` optional) owning the connection's local socket. */
+  process?: string[];
   outboundTag: string;
   balancerTag?: string;
 };

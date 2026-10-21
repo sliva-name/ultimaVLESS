@@ -11,18 +11,24 @@ interface SplitTunnelEditorProps {
   ips: string[];
   onChange: (next: { domains: string[]; ips: string[] }) => void;
   disabled?: boolean;
+  /** Defaults to the exclusion list's wording. */
+  ariaLabel?: string;
+  emptyText?: string;
 }
 
 /**
- * Editor for the destinations that must skip the tunnel. A single input accepts
- * hosts, URLs, IPs and CIDR blocks; the entry is classified on add so the user
- * sees immediately whether it became a domain rule or an address rule.
+ * Editor for a list of destinations (exclusions, or sites tunnelled in `sites`
+ * mode). A single input accepts hosts, URLs, IPs and CIDR blocks; the entry is
+ * classified on add so the user sees immediately whether it became a domain
+ * rule or an address rule.
  */
 export const SplitTunnelEditor: React.FC<SplitTunnelEditorProps> = ({
   domains,
   ips,
   onChange,
   disabled = false,
+  ariaLabel,
+  emptyText,
 }) => {
   const { t } = useTranslation();
   const [draft, setDraft] = useState('');
@@ -110,7 +116,7 @@ export const SplitTunnelEditor: React.FC<SplitTunnelEditorProps> = ({
           value={draft}
           disabled={disabled}
           placeholder={t('settings.network.splitTunnelPlaceholder')}
-          aria-label={t('settings.network.splitTunnel')}
+          aria-label={ariaLabel ?? t('settings.network.splitTunnel')}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key !== 'Enter') return;
@@ -134,7 +140,7 @@ export const SplitTunnelEditor: React.FC<SplitTunnelEditorProps> = ({
 
       {total === 0 ? (
         <p className="text-xs text-gray-500 leading-relaxed">
-          {t('settings.network.splitTunnelEmpty')}
+          {emptyText ?? t('settings.network.splitTunnelEmpty')}
         </p>
       ) : (
         <div className="space-y-3">
