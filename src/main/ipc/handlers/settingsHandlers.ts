@@ -6,7 +6,7 @@ import {
   ipcMain,
 } from 'electron';
 import { normalizePerformanceSettings } from '@/shared/performanceSettings';
-import { normalizeAppEntries } from '@/shared/appRouting';
+import { describeExecutable } from '@/main/services/runningApps';
 import { IPC_INVOKE_CHANNELS, TunCapabilityStatus } from '@/shared/ipc';
 import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 import { IpcDependencies } from '@/main/ipc/dependencies';
@@ -157,8 +157,8 @@ export function registerSettingsHandlers({
     },
   );
 
-  // Only file names leave main: routing matches the executable name, and the
-  // renderer has no use for the user's folder layout.
+  // Paths stay in main: routing matches the executable name, and the renderer
+  // only needs that name and the icon to show it.
   ipcMain.handle(
     IPC_INVOKE_CHANNELS.pickApplications,
     async (event: IpcMainInvokeEvent) => {
@@ -174,7 +174,11 @@ export function registerSettingsHandlers({
       const result = owner
         ? await dialog.showOpenDialog(owner, options)
         : await dialog.showOpenDialog(options);
-      return result.canceled ? [] : normalizeAppEntries(result.filePaths);
+      if (result.canceled) return [];
+      const picked = await Promise.all(
+        result.filePaths.map((path) => describeExecutable(path, null)),
+      );
+      return picked.filter((option) => option !== null);
     },
   );
 

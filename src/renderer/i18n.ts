@@ -271,11 +271,18 @@ const resources = {
           routingDirectAppsHint:
             'These programs always use your normal connection, in every mode.',
           routingDirectAppsEmpty: 'No apps.',
-          routingAppsPlaceholder: 'chrome.exe, Discord.exe',
+          routingAppsPlaceholder: 'Search programs or type a name',
           routingAppsBrowse: 'Choose file…',
           routingAppsInvalid: 'Not a program name: {{entries}}',
+          routingAppsShowList: 'Show running programs',
+          routingAppsLoading: 'Loading running programs…',
+          routingAppsNoMatches:
+            'No running program matches. Press Enter to add the name as typed.',
+          routingAppsNoRunning:
+            'No running programs found — type a name or choose a file.',
+          routingAppsSystemGroup: 'Windows',
           routingAppsCaseNote:
-            'Apps are matched by executable name, case-sensitively — choose the file or a running program from the suggestions. If a program uses helper processes (e.g. steamwebhelper.exe), add each of them.',
+            'Apps are matched by executable name, case-sensitively — pick a running program from the list or choose the file. If a program uses helper processes (e.g. steamwebhelper.exe), add each of them.',
           routingAppsProxyNote:
             'In proxy mode app rules only apply to programs that use the system proxy. Switch to TUN mode to route every program.',
           routingPriority:
@@ -601,11 +608,18 @@ const resources = {
           routingDirectAppsHint:
             'Эти программы всегда идут через обычное подключение — в любом режиме.',
           routingDirectAppsEmpty: 'Нет приложений.',
-          routingAppsPlaceholder: 'chrome.exe, Discord.exe',
+          routingAppsPlaceholder: 'Поиск программы или имя .exe',
           routingAppsBrowse: 'Выбрать файл…',
           routingAppsInvalid: 'Не похоже на имя программы: {{entries}}',
+          routingAppsShowList: 'Показать запущенные программы',
+          routingAppsLoading: 'Загрузка списка программ…',
+          routingAppsNoMatches:
+            'Среди запущенных программ совпадений нет. Enter добавит имя как есть.',
+          routingAppsNoRunning:
+            'Запущенных программ не найдено — введите имя или выберите файл.',
+          routingAppsSystemGroup: 'Windows',
           routingAppsCaseNote:
-            'Приложения определяются по имени исполняемого файла с учётом регистра — надёжнее выбрать файл или запущенную программу из подсказок. Если у программы есть вспомогательные процессы (например, steamwebhelper.exe), добавьте каждый.',
+            'Приложения определяются по имени исполняемого файла с учётом регистра — надёжнее выбрать программу из списка запущенных или файл. Если у программы есть вспомогательные процессы (например, steamwebhelper.exe), добавьте каждый.',
           routingAppsProxyNote:
             'В режиме «Прокси» правила для приложений действуют только на программы, которые используют системный прокси. Чтобы охватить все программы, используйте TUN.',
           routingPriority:

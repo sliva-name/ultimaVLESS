@@ -1,42 +1,61 @@
-import React, { useCallback, useId, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { FolderOpen, Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   MAX_APP_ROUTING_ENTRIES,
   classifyAppEntry,
   matchKnownAppName,
+  type AppOption,
 } from '@/shared/appRouting';
+import { AppIcon, AppPicker } from './AppPicker';
 
 interface AppListEditorProps {
   apps: string[];
   onChange: (next: string[]) => void;
-  /** Running executables; completes typed names with their exact spelling. */
-  suggestions: readonly string[];
+  /**
+   * Running programs and files picked earlier: offered in the picker, and
+   * the source of exact spellings and icons.
+   */
+  knownApps: readonly AppOption[];
+  /** Files chosen in the dialog, so the section can remember their icons. */
+  onPicked: (apps: AppOption[]) => void;
+  onOpenList?: () => void;
+  loading?: boolean;
   ariaLabel: string;
   emptyText: string;
   disabled?: boolean;
 }
 
 /**
- * Editor for a list of executables. Names can be typed (with suggestions from
- * running processes) or picked from disk; either way only the file name is
- * stored, because that is what Xray's `process` rule compares.
+ * Editor for a list of executables. Names can be picked from the running
+ * programs, typed, or chosen on disk; either way only the file name is stored,
+ * because that is what Xray's `process` rule compares.
  */
 export const AppListEditor: React.FC<AppListEditorProps> = ({
   apps,
   onChange,
-  suggestions,
+  knownApps,
+  onPicked,
+  onOpenList,
+  loading = false,
   ariaLabel,
   emptyText,
   disabled = false,
 }) => {
   const { t } = useTranslation();
-  const listId = useId();
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
 
   const atLimit = apps.length >= MAX_APP_ROUTING_ENTRIES;
+  const knownNames = useMemo(
+    () => knownApps.map((option) => option.name),
+    [knownApps],
+  );
+  const iconByName = useMemo(
+    () => new Map(knownApps.map((option) => [option.name, option.icon])),
+    [knownApps],
+  );
 
   /** Adds names to the list; returns the inputs that were not names. */
   const addNames = useCallback(
@@ -54,7 +73,7 @@ export const AppListEditor: React.FC<AppListEditorProps> = ({
           rejected.push(candidate);
           continue;
         }
-        const name = matchKnownAppName(entry, suggestions);
+        const name = matchKnownAppName(entry, knownNames);
         if (!next.includes(name)) next.push(name);
       }
       if (full) {
@@ -69,7 +88,7 @@ export const AppListEditor: React.FC<AppListEditorProps> = ({
       if (next.length !== apps.length) onChange(next);
       return rejected;
     },
-    [apps, onChange, suggestions, t],
+    [apps, knownNames, onChange, t],
   );
 
   const handleAdd = useCallback(() => {
@@ -85,18 +104,30 @@ export const AppListEditor: React.FC<AppListEditorProps> = ({
     setDraft(rejected.join(', '));
   }, [addNames, draft]);
 
+  const handlePick = useCallback(
+    (name: string) => {
+      setError(null);
+      addNames([name]);
+      setDraft('');
+    },
+    [addNames],
+  );
+
   const handleBrowse = useCallback(async () => {
     setError(null);
     setPicking(true);
     try {
       const picked = await window.electronAPI.pickApplications();
-      if (picked.length > 0) addNames(picked);
+      if (picked.length > 0) {
+        onPicked(picked);
+        addNames(picked.map((option) => option.name));
+      }
     } catch (err) {
       console.error('Failed to pick applications:', err);
     } finally {
       setPicking(false);
     }
-  }, [addNames]);
+  }, [addNames, onPicked]);
 
   const handleRemove = useCallback(
     (value: string) => {
@@ -112,26 +143,19 @@ export const AppListEditor: React.FC<AppListEditorProps> = ({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="text"
+        <AppPicker
           value={draft}
-          disabled={disabled}
-          list={listId}
+          onValueChange={setDraft}
+          options={knownApps}
+          exclude={apps}
+          onPick={handlePick}
+          onSubmit={handleAdd}
+          onOpen={onOpenList}
+          loading={loading}
+          disabled={disabled || atLimit}
+          ariaLabel={ariaLabel}
           placeholder={t('settings.network.routingAppsPlaceholder')}
-          aria-label={ariaLabel}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter') return;
-            e.preventDefault();
-            handleAdd();
-          }}
-          className="flex-1 min-w-40 bg-black/40 border border-gray-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none font-mono"
         />
-        <datalist id={listId}>
-          {suggestions.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
         <button
           type="button"
           onClick={handleAdd}
@@ -163,8 +187,9 @@ export const AppListEditor: React.FC<AppListEditorProps> = ({
           {apps.map((app) => (
             <li
               key={app}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-700/50 bg-gray-800/40 pl-2.5 pr-1.5 py-1"
+              className="flex items-center gap-1.5 rounded-lg border border-gray-700/50 bg-gray-800/40 pl-2 pr-1.5 py-1"
             >
+              <AppIcon icon={iconByName.get(app)} className="h-4 w-4" />
               <span className="text-xs text-gray-200 font-mono break-all">
                 {app}
               </span>

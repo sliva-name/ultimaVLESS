@@ -13,6 +13,18 @@
  */
 
 export const MAX_APP_ROUTING_ENTRIES = 100;
+
+/** An executable the app picker offers, as main reads it from the system. */
+export interface AppOption {
+  /** File name spelled the way Xray's `process` rule sees it. */
+  name: string;
+  /** Version-resource description (`Google Chrome`), when the file has one. */
+  description: string | null;
+  /** PNG data URL of the file icon, or null when it could not be read. */
+  icon: string | null;
+  /** Lives under the Windows directory (`explorer.exe`, `svchost.exe`). */
+  system: boolean;
+}
 const MAX_APP_NAME_LENGTH = 255;
 // eslint-disable-next-line no-control-regex
 const FORBIDDEN_NAME_CHARS = /[\u0000-\u001f\u007f<>:"|?*]/;

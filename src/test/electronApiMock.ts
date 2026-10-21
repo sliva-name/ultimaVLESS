@@ -16,6 +16,7 @@ import type {
   PerformanceSettings,
   VlessConfig,
 } from '@/shared/types';
+import type { AppOption } from '@/shared/appRouting';
 import { makeAppSnapshot } from './factories';
 
 type ListenerMap = {
@@ -163,8 +164,8 @@ export function createElectronApiMock(
     setPerformanceSettings: vi.fn(
       async (_settings: PerformanceSettings) => true,
     ),
-    pickApplications: vi.fn(async () => []),
-    listRunningApps: vi.fn(async () => []),
+    pickApplications: vi.fn(async (): Promise<AppOption[]> => []),
+    listRunningApps: vi.fn(async (): Promise<AppOption[]> => []),
 
     getUiLanguage: vi.fn(async (): Promise<'en' | 'ru'> => 'en'),
     setUiLanguage: vi.fn(async (_language: 'en' | 'ru') => true),

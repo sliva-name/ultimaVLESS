@@ -5,7 +5,11 @@ import {
   matchKnownAppName,
   normalizeAppEntries,
 } from '@/shared/appRouting';
-import { listRunningApps } from '@/main/services/runningApps';
+import {
+  describeExecutable,
+  listRunningApps,
+  parseProcessList,
+} from '@/main/services/runningApps';
 
 describe('classifyAppEntry', () => {
   it('keeps bare executable names', () => {
@@ -78,35 +82,110 @@ describe('matchKnownAppName', () => {
   });
 });
 
-describe('listRunningApps', () => {
-  it('returns unique executable names from tasklist, sorted', async () => {
-    const run = vi.fn(async () => ({
-      code: 0,
-      stdout: [
-        '"System Idle Process","0","Services","0","8 K"',
-        '"System","4","Services","0","2,464 K"',
-        '"Registry","120","Services","0","40,000 K"',
-        '"svchost.exe","1000","Services","0","10,000 K"',
-        '"Discord.exe","2000","Console","1","100,000 K"',
-        '"Discord.exe","2001","Console","1","100,000 K"',
-        '"chrome.exe","3000","Console","1","90,000 K"',
-      ].join('\r\n'),
-      stderr: '',
-    }));
-
-    await expect(listRunningApps({ platform: 'win32', run })).resolves.toEqual([
-      'chrome.exe',
-      'Discord.exe',
-      'svchost.exe',
+describe('parseProcessList', () => {
+  it('accepts the array and single-object shapes of ConvertTo-Json', () => {
+    expect(
+      parseProcessList(
+        '[{"Path":"C:\\\\A\\\\a.exe","Description":" A app "},{"Path":"C:\\\\B\\\\b.exe","Description":""},{"Path":null}]',
+      ),
+    ).toEqual([
+      { path: 'C:\\A\\a.exe', description: 'A app' },
+      { path: 'C:\\B\\b.exe', description: null },
     ]);
-    expect(run).toHaveBeenCalledWith('tasklist', ['/FO', 'CSV', '/NH']);
+    expect(
+      parseProcessList('{"Path":"C:\\\\A\\\\a.exe","Description":null}'),
+    ).toEqual([{ path: 'C:\\A\\a.exe', description: null }]);
+    expect(parseProcessList('  ')).toEqual([]);
+  });
+});
+
+describe('listRunningApps', () => {
+  const rows = [
+    {
+      Path: 'C:\\Windows\\explorer.exe',
+      Description: 'Windows Explorer',
+    },
+    {
+      Path: 'C:\\Users\\me\\AppData\\Local\\Discord\\app-1.0.9200\\Discord.exe',
+      Description: 'Discord',
+    },
+    {
+      Path: 'C:\\Users\\me\\AppData\\Local\\Discord\\app-1.0.9200\\Discord.exe',
+      Description: 'Discord',
+    },
+    // The process image name is `claude.exe`, but Xray reads the path.
+    {
+      Path: 'C:\\Program Files\\WindowsApps\\Claude_3\\app\\Claude.exe',
+      Description: 'Claude',
+    },
+    { Path: 'C:\\Tools\\zzz.exe', Description: null },
+  ];
+
+  it('lists programs by the file name in their path, with icons, user apps first', async () => {
+    const runScript = vi.fn(async () => JSON.stringify(rows));
+    const getIcon = vi.fn(async (path: string) =>
+      path.endsWith('zzz.exe') ? null : `data:image/png;base64,${path.length}`,
+    );
+
+    const apps = await listRunningApps({
+      platform: 'win32',
+      runScript,
+      getIcon,
+      systemRoot: 'C:\\Windows',
+    });
+
+    expect(apps.map((app) => app.name)).toEqual([
+      'Claude.exe',
+      'Discord.exe',
+      'zzz.exe',
+      'explorer.exe',
+    ]);
+    expect(apps[1]).toEqual({
+      name: 'Discord.exe',
+      description: 'Discord',
+      icon: expect.stringMatching(/^data:image\/png;base64,/),
+      system: false,
+    });
+    expect(apps[2]).toMatchObject({ description: null, icon: null });
+    expect(apps[3]).toMatchObject({ system: true });
+    // Duplicate processes share one entry and one icon lookup.
+    expect(getIcon).toHaveBeenCalledTimes(4);
+    expect(runScript).toHaveBeenCalledWith(
+      expect.stringContaining('Get-Process'),
+    );
   });
 
-  it('offers no suggestions outside Windows', async () => {
-    const run = vi.fn();
-    await expect(listRunningApps({ platform: 'linux', run })).resolves.toEqual(
-      [],
-    );
-    expect(run).not.toHaveBeenCalled();
+  it('offers nothing outside Windows', async () => {
+    const runScript = vi.fn();
+    await expect(
+      listRunningApps({ platform: 'linux', runScript }),
+    ).resolves.toEqual([]);
+    expect(runScript).not.toHaveBeenCalled();
+  });
+});
+
+describe('describeExecutable', () => {
+  it('names a picked file and flags Windows components', async () => {
+    const getIcon = vi.fn(async () => 'data:image/png;base64,AAAA');
+    await expect(
+      describeExecutable('C:\\Games\\Steam\\steam.exe', null, {
+        getIcon,
+        systemRoot: 'C:\\Windows\\',
+      }),
+    ).resolves.toEqual({
+      name: 'steam.exe',
+      description: null,
+      icon: 'data:image/png;base64,AAAA',
+      system: false,
+    });
+    await expect(
+      describeExecutable('\\\\?\\C:\\WINDOWS\\system32\\svchost.exe', null, {
+        getIcon,
+        systemRoot: 'C:\\Windows',
+      }),
+    ).resolves.toMatchObject({ name: 'svchost.exe', system: true });
+    await expect(
+      describeExecutable('C:\\Games\\', null, { getIcon }),
+    ).resolves.toBeNull();
   });
 });

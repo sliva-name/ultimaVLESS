@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { ConnectionMode, VlessConfig } from '@/shared/types';
+import type { AppOption } from '@/shared/appRouting';
 import {
   AddSubscriptionPayload,
   AddSubscriptionResult,
@@ -172,11 +173,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ) as Promise<boolean>,
   pickApplications: () =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.pickApplications) as Promise<
-      string[]
+      AppOption[]
     >,
   listRunningApps: () =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.listRunningApps) as Promise<
-      string[]
+      AppOption[]
     >,
 
   getUiLanguage: () =>
