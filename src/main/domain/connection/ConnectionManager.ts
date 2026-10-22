@@ -162,6 +162,11 @@ export class ConnectionManager extends EventEmitter {
       saveAll: (servers) => getServerRepository().saveAll(servers),
     };
     this.policy = deps.policy ?? createAutoSwitchPolicy();
+    // The toggle outlives the process (restarts, elevated TUN relaunch);
+    // the blocked ledger deliberately does not.
+    this.policyState.setAutoSwitchingEnabled(
+      deps.configService.getAutoSwitchingEnabled(),
+    );
     this.runtime =
       deps.runtime ??
       createConnectionRuntime({
@@ -200,6 +205,7 @@ export class ConnectionManager extends EventEmitter {
 
   public setAutoSwitchingEnabled(enabled: boolean): void {
     this.policyState.setAutoSwitchingEnabled(enabled);
+    this.deps.configService.setAutoSwitchingEnabled(enabled);
     this.emit('policy-changed');
   }
 

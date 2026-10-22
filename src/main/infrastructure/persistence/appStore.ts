@@ -35,6 +35,7 @@ export interface AppStoreSchema {
   } | null;
   performanceSettings: PerformanceSettings;
   uiLanguage?: 'ru' | 'en';
+  autoSwitchingEnabled?: boolean;
 }
 
 let appStore: Store<AppStoreSchema> | null = null;

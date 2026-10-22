@@ -19,7 +19,9 @@ import {
   type SessionPhase,
 } from '@/shared/ipc';
 
-vi.mock('@/main/services/ConfigService', () => ({ configService: {} }));
+vi.mock('@/main/services/ConfigService', () => ({
+  configService: { getAutoSwitchingEnabled: () => true },
+}));
 vi.mock('@/main/services/ConnectionMonitorService', () => ({
   connectionMonitorService: {},
 }));
@@ -79,6 +81,10 @@ function createSession(overrides: Partial<any> = {}) {
     },
     ...overrides,
   };
+
+  const configService = deps.configService as Record<string, unknown>;
+  configService.getAutoSwitchingEnabled ??= vi.fn(() => true);
+  configService.setAutoSwitchingEnabled ??= vi.fn();
 
   if (!overrides.serverRepository) {
     const listServers = () => {
@@ -718,6 +724,47 @@ describe('session lifecycle', () => {
     expect(deps.connectionMonitorService.stopMonitoring).toHaveBeenCalled();
     expect(session.getPhase()).toBe('failed');
     expect(session.getLastError()).toBe('endpoint blocked');
+  });
+
+  it('persists the auto-switch toggle', () => {
+    const { session, deps } = createSession();
+    const policyChanged = vi.fn();
+    session.on('policy-changed', policyChanged);
+
+    session.setAutoSwitchingEnabled(false);
+
+    expect(session.getAutoSwitchingEnabled()).toBe(false);
+    expect(deps.configService.setAutoSwitchingEnabled).toHaveBeenCalledWith(
+      false,
+    );
+    expect(policyChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores a turned-off auto-switch after a restart and does not switch', async () => {
+    const next = makeServer({ uuid: 'server-2', security: 'tls' });
+    const { session, server, stop, switchRuntime } = createSession({
+      configService: {
+        getServers: vi.fn(() => [server, next]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+        getAutoSwitchingEnabled: vi.fn(() => false),
+      },
+    });
+
+    expect(session.getAutoSwitchingEnabled()).toBe(false);
+
+    await session.connect(server.uuid);
+    await session.handleHealthFailure({
+      server,
+      reason: 'endpoint blocked',
+      blocking: true,
+    });
+
+    expect(switchRuntime).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalled();
+    expect(session.getPhase()).toBe('failed');
   });
 
   it('lets connect replace an in-flight switch without an illegal transition', async () => {
