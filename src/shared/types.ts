@@ -99,7 +99,8 @@ export interface ServerConfig {
 
   // Hysteria2
   hysteriaAuth?: string;
-  hysteriaObfs?: { type?: string; password?: string };
+  /** `packetSize` ("min-max") turns salamander into Gecko obfs. */
+  hysteriaObfs?: { type?: string; password?: string; packetSize?: string };
 
   // WireGuard
   wgSecretKey?: string;

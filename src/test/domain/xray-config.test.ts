@@ -763,7 +763,7 @@ describe('XrayConfigCompiler', () => {
     expect(config.outbounds[0].settings).not.toHaveProperty('domainStrategy');
   });
 
-  it('keeps a dialing finalmask first when adding salamander obfs', () => {
+  it('keeps a dialing finalmask last when adding salamander obfs', () => {
     const config = XrayConfigCompiler.compile(
       makeServer({
         protocol: 'hysteria',
@@ -781,6 +781,7 @@ describe('XrayConfigCompiler', () => {
 
     expect(config.outbounds[0].streamSettings?.finalmask).toEqual({
       udp: [
+        { type: 'salamander', settings: { password: 'obfs-pass' } },
         {
           type: 'udphop',
           settings: {
@@ -788,9 +789,58 @@ describe('XrayConfigCompiler', () => {
             remotePorts: '20000-30000',
           },
         },
-        { type: 'salamander', settings: { password: 'obfs-pass' } },
       ],
     });
+  });
+
+  it('compiles gecko obfs as salamander with packetSize', () => {
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        protocol: 'hysteria',
+        hysteriaAuth: 'auth-token',
+        type: 'hysteria',
+        security: 'tls',
+        hysteriaObfs: {
+          type: 'gecko',
+          password: 'obfs-pass',
+          packetSize: '512-1200',
+        },
+      }),
+      { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+    );
+
+    expect(config.outbounds[0].streamSettings?.finalmask).toEqual({
+      udp: [
+        {
+          type: 'salamander',
+          settings: { password: 'obfs-pass', packetSize: '512-1200' },
+        },
+      ],
+    });
+  });
+
+  it('does not add salamander obfs over one from the finalmask', () => {
+    const finalmask = {
+      udp: [
+        {
+          type: 'salamander',
+          settings: { password: 'fm-pass', packetSize: '100-200' },
+        },
+      ],
+    };
+    const config = XrayConfigCompiler.compile(
+      makeServer({
+        protocol: 'hysteria',
+        hysteriaAuth: 'auth-token',
+        type: 'hysteria',
+        security: 'tls',
+        hysteriaObfs: { type: 'salamander', password: 'link-pass' },
+        finalmask,
+      }),
+      { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
+    );
+
+    expect(config.outbounds[0].streamSettings?.finalmask).toEqual(finalmask);
   });
 
   it('migrates outbound fields removed from Xray in raw configs', () => {
@@ -850,6 +900,7 @@ describe('XrayConfigCompiler', () => {
     });
     expect(proxy.streamSettings?.finalmask).toEqual({
       udp: [
+        { type: 'salamander', settings: { password: 'p' } },
         {
           type: 'udphop',
           settings: {
@@ -858,7 +909,6 @@ describe('XrayConfigCompiler', () => {
             interval: 10,
           },
         },
-        { type: 'salamander', settings: { password: 'p' } },
       ],
     });
     expect(byTag('chain').targetStrategy).toBe('ForceIPv6v4');

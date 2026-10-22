@@ -23,7 +23,8 @@ import {
   assertAllowInsecureNotUsed,
   assertEncryptedPublicOutbound,
   assertSupportedShadowsocksMethod,
-  isDialingUdpMask,
+  addUdpMasks,
+  hasUdpMask,
   migrateLegacyUdpHop,
   normalizeVmessSecurity,
   requiresPublicTrojanMux,
@@ -1243,22 +1244,22 @@ export class XrayConfigPipeline {
 
     const obfsType = (config.hysteriaObfs?.type || '').toLowerCase();
     const obfsPassword = config.hysteriaObfs?.password;
-    if (protocol === 'hysteria' && obfsType === 'salamander' && obfsPassword) {
-      const salamander = {
-        type: 'salamander',
-        settings: { password: obfsPassword },
-      };
-      if (!finalmask) {
-        finalmask = { udp: [salamander] };
-      } else {
-        const udp = Array.isArray(finalmask.udp)
-          ? [...(finalmask.udp as unknown[])]
-          : [];
-        // Obfuscate right after a dialing mask such as `udphop`, which Xray
-        // only accepts first.
-        udp.splice(isDialingUdpMask(udp[0]) ? 1 : 0, 0, salamander);
-        finalmask = { ...finalmask, udp };
+    // Gecko is salamander with a packet size range (Hysteria v2.9.2).
+    const isSalamander = obfsType === 'salamander' || obfsType === 'gecko';
+    // A salamander mask from the server's own finalmask wins.
+    if (
+      protocol === 'hysteria' &&
+      isSalamander &&
+      obfsPassword &&
+      !hasUdpMask(finalmask, 'salamander')
+    ) {
+      const settings: Record<string, unknown> = { password: obfsPassword };
+      if (config.hysteriaObfs?.packetSize) {
+        settings.packetSize = config.hysteriaObfs.packetSize;
       }
+      finalmask ??= {};
+      // Right on the socket, but before a dialing mask such as `udphop`.
+      addUdpMasks(finalmask, [{ type: 'salamander', settings }]);
     }
 
     return finalmask;

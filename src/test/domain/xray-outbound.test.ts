@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addUdpMasks,
   assertAllowInsecureNotUsed,
   assertEncryptedPublicOutbound,
   assertSupportedShadowsocksMethod,
+  hasUdpMask,
   isDialingUdpMask,
   isPrivateOrLocalEndpoint,
   isServerPublicOutboundCompatible,
@@ -223,7 +225,7 @@ describe('outboundCompat', () => {
     expect(wireGuardTargetStrategy(undefined)).toBeUndefined();
   });
 
-  it('moves quicParams.udpHop into a leading udphop mask', () => {
+  it('moves quicParams.udpHop into a trailing udphop mask', () => {
     const finalmask: Record<string, unknown> = {
       udp: [{ type: 'salamander', settings: { password: 'p' } }],
       quicParams: {
@@ -236,6 +238,7 @@ describe('outboundCompat', () => {
 
     expect(finalmask).toEqual({
       udp: [
+        { type: 'salamander', settings: { password: 'p' } },
         {
           type: 'udphop',
           settings: {
@@ -244,10 +247,29 @@ describe('outboundCompat', () => {
             interval: '5-30',
           },
         },
-        { type: 'salamander', settings: { password: 'p' } },
       ],
       quicParams: { congestion: 'bbr' },
     });
+  });
+
+  it('adds UDP masks before a trailing dialing mask', () => {
+    const hop = { type: 'udphop', settings: { mode: 'intervalRemote' } };
+    const salamander = { type: 'salamander', settings: { password: 'p' } };
+    const noise = { type: 'noise', settings: {} };
+
+    const withHop: Record<string, unknown> = { udp: [noise, hop] };
+    addUdpMasks(withHop, [salamander]);
+    expect(withHop.udp).toEqual([noise, salamander, hop]);
+
+    const empty: Record<string, unknown> = {};
+    addUdpMasks(empty, [salamander, hop]);
+    expect(empty.udp).toEqual([salamander, hop]);
+
+    expect(hasUdpMask({ udp: [{ type: ' Salamander ' }] }, 'salamander')).toBe(
+      true,
+    );
+    expect(hasUdpMask({ udp: [noise] }, 'salamander')).toBe(false);
+    expect(hasUdpMask(undefined, 'salamander')).toBe(false);
   });
 
   it('drops a legacy udpHop without ports or next to a dialing mask', () => {
