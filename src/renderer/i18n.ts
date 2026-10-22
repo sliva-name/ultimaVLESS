@@ -146,6 +146,9 @@ const resources = {
             'Xray 26.5+ can install routes via autoSystemRoutingTable. PowerShell is the previous UltimaVLESS behavior.',
           windowsTunRoutingXray: 'Xray auto-route (test)',
           windowsTunRoutingPowershell: 'PowerShell (rollback)',
+          tunBlockDnsLeaks: 'Block DNS leaks',
+          tunBlockDnsLeaksHint:
+            'Without it Windows also sends DNS queries to the DNS servers of your other adapters, such as the router, past the tunnel. When on, Xray adds Windows Filtering Platform filters so DNS (port 53) of every program except Xray goes only through TUN. This breaks a local DNS resolver of other programs (127.0.0.1:53), the DNS of another VPN on its own adapter, virtual machines that resolve names through the host NAT, and signing in to captive portals (hotel or airport Wi-Fi).',
           windowsTunRoutingApplyHint:
             'Save performance settings and reconnect in TUN mode for the change to take effect.',
           tunAdapter: 'Network adapter for TUN',
@@ -477,6 +480,9 @@ const resources = {
             'В Xray 26.5+ маршруты можно ставить через autoSystemRoutingTable. PowerShell — прежнее поведение UltimaVLESS.',
           windowsTunRoutingXray: 'Автомаршруты Xray (тест)',
           windowsTunRoutingPowershell: 'PowerShell (откат)',
+          tunBlockDnsLeaks: 'Блокировать утечки DNS',
+          tunBlockDnsLeaksHint:
+            'Без этого Windows отправляет DNS-запросы и на DNS-серверы других адаптеров, например роутера, в обход туннеля. При включении Xray ставит фильтры Windows Filtering Platform: DNS (порт 53) всех программ, кроме Xray, идёт только через TUN. Перестанут работать локальный DNS-резолвер других программ (127.0.0.1:53), DNS другого VPN на своём адаптере, виртуальные машины, которые резолвят имена через NAT хоста, и вход в сеть через страницу авторизации (Wi-Fi в отеле или аэропорту).',
           windowsTunRoutingApplyHint:
             'Сохраните настройки производительности и переподключитесь в режиме TUN.',
           tunAdapter: 'Сетевой адаптер для TUN',

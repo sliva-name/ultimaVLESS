@@ -1,5 +1,8 @@
 import type { ConnectionMode, VlessConfig } from '@/shared/types';
-import { resolveTunAutoRoute } from '@/shared/tunRouting';
+import {
+  resolveTunAutoRoute,
+  resolveTunBlockDnsLeaks,
+} from '@/shared/tunRouting';
 import type { ConfigService } from '@/main/services/ConfigService';
 import type { SystemProxyService } from '@/main/services/SystemProxyService';
 import type {
@@ -85,6 +88,7 @@ export function createTunNetworkRuntime(
             : routingPlan?.defaultRoute.localAddress || undefined,
           tunAutoRoute,
           outboundInterface: routingPlan?.outboundInterface || undefined,
+          blockDnsLeaks: resolveTunBlockDnsLeaks(process.platform, perf),
         },
       };
     },

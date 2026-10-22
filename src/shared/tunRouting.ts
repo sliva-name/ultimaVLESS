@@ -23,6 +23,25 @@ export function resolveTunAutoRoute(
   return platform === 'linux' || platform === 'darwin';
 }
 
+/**
+ * Whether Xray should add its WFP filters against DNS leaks
+ * (`autoSystemWfpBlockLeak`). Windows only, and only with Xray auto-route:
+ * Xray refuses to start with them but without `autoSystemRoutingTable`.
+ */
+export function resolveTunBlockDnsLeaks(
+  platform: NodeJS.Platform,
+  perf?: Pick<
+    PerformanceSettings,
+    'windowsTunRouting' | 'tunBlockDnsLeaks'
+  > | null,
+): boolean {
+  return (
+    platform === 'win32' &&
+    resolveTunAutoRoute(platform, perf) &&
+    perf?.tunBlockDnsLeaks === true
+  );
+}
+
 export function usesWindowsPowerShellTunRouting(
   platform: NodeJS.Platform,
   perf?: Pick<PerformanceSettings, 'windowsTunRouting'> | null,

@@ -19,6 +19,8 @@ interface TunInboundOptions {
   mtu?: number;
   /** Adapter alias Xray binds its own sockets to; `auto` when omitted. */
   outboundInterface?: string;
+  /** Windows: WFP filters keep other programs' DNS inside the TUN. */
+  blockDnsLeaks?: boolean;
 }
 
 /**
@@ -170,6 +172,15 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
       '0.0.0.0/0',
       '::/0',
     ];
+    // Windows otherwise also queries the other adapters' DNS servers (Smart
+    // Multi-Homed Name Resolution), and a DHCP resolver on the LAN wins by its
+    // more specific route. Xray rejects this without autoSystemRoutingTable.
+    // @see https://github.com/XTLS/Xray-core/blob/main/proxy/tun/README.md#windows-support
+    if (options.blockDnsLeaks) {
+      (tunInbound.settings as MutableConfigNode).autoSystemWfpBlockLeak = [
+        'dns',
+      ];
+    }
   }
   return tunInbound;
 }

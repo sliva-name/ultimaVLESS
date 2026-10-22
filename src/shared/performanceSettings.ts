@@ -117,6 +117,7 @@ export function performanceSettingsEqual(
     left.tunOutboundInterface === right.tunOutboundInterface &&
     left.tunMtu === right.tunMtu &&
     left.tunDnsQueryStrategy === right.tunDnsQueryStrategy &&
+    left.tunBlockDnsLeaks === right.tunBlockDnsLeaks &&
     sameStringList(left.bypassDomains, right.bypassDomains) &&
     sameStringList(left.bypassIps, right.bypassIps) &&
     left.routingMode === right.routingMode &&
@@ -212,6 +213,12 @@ export function isUnmodifiedLegacyPerformanceSettings(value: unknown): boolean {
     'tunDnsQueryStrategy' in value &&
     value.tunDnsQueryStrategy !==
       DEFAULT_PERFORMANCE_SETTINGS.tunDnsQueryStrategy
+  ) {
+    return false;
+  }
+  if (
+    'tunBlockDnsLeaks' in value &&
+    value.tunBlockDnsLeaks !== DEFAULT_PERFORMANCE_SETTINGS.tunBlockDnsLeaks
   ) {
     return false;
   }
@@ -314,6 +321,10 @@ export function normalizePerformanceSettings(
     )
       ? (value.tunDnsQueryStrategy as TunDnsQueryStrategy)
       : DEFAULT_PERFORMANCE_SETTINGS.tunDnsQueryStrategy,
+    tunBlockDnsLeaks:
+      typeof value.tunBlockDnsLeaks === 'boolean'
+        ? value.tunBlockDnsLeaks
+        : DEFAULT_PERFORMANCE_SETTINGS.tunBlockDnsLeaks,
     // Only an existing list is authoritative — an empty one means the user
     // cleared the defaults. Settings saved before split tunneling existed carry
     // no list at all and inherit the shipped exclusions.

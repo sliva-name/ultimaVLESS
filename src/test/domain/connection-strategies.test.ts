@@ -45,6 +45,7 @@ describe('connection strategies', () => {
     const perf = {
       ...DEFAULT_PERFORMANCE_SETTINGS,
       windowsTunRouting: 'xray' as const,
+      tunBlockDnsLeaks: true,
     };
     const strategies = createConnectionStrategies({
       coreService: { start: coreStart } as any,
@@ -73,15 +74,21 @@ describe('connection strategies', () => {
         expect.objectContaining({
           sendThrough: undefined,
           tunAutoRoute: true,
+          blockDnsLeaks: true,
         }),
       );
     } else {
       expect(prepareRoutingPlan).not.toHaveBeenCalled();
       expect(pinProxyHostRoutes).not.toHaveBeenCalled();
+      // WFP filters are Windows-only even though Xray auto-routes here.
       expect(coreStart).toHaveBeenCalledWith(
         server,
         'tun',
-        expect.objectContaining({ tunAutoRoute: true, sendThrough: undefined }),
+        expect.objectContaining({
+          tunAutoRoute: true,
+          sendThrough: undefined,
+          blockDnsLeaks: false,
+        }),
       );
     }
     expect(routeEnable).toHaveBeenCalled();
@@ -103,6 +110,7 @@ describe('connection strategies', () => {
     const perf = {
       ...DEFAULT_PERFORMANCE_SETTINGS,
       windowsTunRouting: 'powershell' as const,
+      tunBlockDnsLeaks: true,
     };
     const strategies = createConnectionStrategies({
       coreService: { start: coreStart } as any,
@@ -143,6 +151,8 @@ describe('connection strategies', () => {
       expect.objectContaining({
         sendThrough: '192.168.1.10',
         tunAutoRoute: false,
+        // Xray would refuse autoSystemWfpBlockLeak without its own routes.
+        blockDnsLeaks: false,
       }),
     );
   });

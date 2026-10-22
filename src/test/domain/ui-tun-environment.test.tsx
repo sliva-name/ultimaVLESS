@@ -14,7 +14,10 @@ import { AppSnapshotProvider } from '@/renderer/hooks/useAppSnapshot';
 import { SettingsNetworkTab } from '@/renderer/components/settings/SettingsNetworkTab';
 import { TunConflictNotice } from '@/renderer/components/TunConflictNotice';
 import type { NetworkAdapterView, TunConflictCheck } from '@/shared/ipc';
-import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
+import {
+  DEFAULT_PERFORMANCE_SETTINGS,
+  type PerformanceSettings,
+} from '@/shared/types';
 import {
   createElectronApiMock,
   installElectronApiMock,
@@ -47,11 +50,15 @@ const ADAPTERS: NetworkAdapterView[] = [
   },
 ];
 
-function renderNetworkTab(tunOutboundInterface = '') {
+function renderNetworkTab(
+  tunOutboundInterface = '',
+  overrides: Partial<PerformanceSettings> = {},
+) {
   const electronApi = createElectronApiMock();
   electronApi.getPerformanceSettings.mockResolvedValue({
     ...DEFAULT_PERFORMANCE_SETTINGS,
     tunOutboundInterface,
+    ...overrides,
   });
   electronApi.listNetworkAdapters.mockResolvedValue({
     supported: true,
@@ -125,6 +132,48 @@ describe('TUN adapter picker', () => {
         'У адаптера «VirtualBox Host-Only Network» нет шлюза по умолчанию — TUN не сможет достучаться через него до сервера.',
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe('TUN DNS leak block', () => {
+  it('is off by default and saves when switched on', async () => {
+    const electronApi = renderNetworkTab();
+
+    const toggle = await screen.findByRole('switch', {
+      name: 'Блокировать утечки DNS',
+    });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(
+      screen.getByText(
+        /локальный DNS-резолвер других программ \(127\.0\.0\.1:53\)/,
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+
+    await waitFor(() =>
+      expect(electronApi.setPerformanceSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ tunBlockDnsLeaks: true }),
+      ),
+    );
+  });
+
+  it('is hidden with PowerShell routing, which Xray cannot combine it with', async () => {
+    renderNetworkTab('', {
+      windowsTunRouting: 'powershell',
+      tunBlockDnsLeaks: true,
+    });
+
+    const routing = await screen.findByRole('button', {
+      name: 'Маршрутизация TUN в Windows',
+    });
+    await waitFor(() =>
+      expect(routing).toHaveTextContent('PowerShell (откат)'),
+    );
+    expect(
+      screen.queryByRole('switch', { name: 'Блокировать утечки DNS' }),
+    ).toBeNull();
   });
 });
 

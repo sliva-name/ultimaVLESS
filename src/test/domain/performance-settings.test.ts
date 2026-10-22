@@ -62,6 +62,24 @@ describe('normalizePerformanceSettings', () => {
     ).toBe('UseIPv4');
   });
 
+  it('keeps the TUN DNS leak block off unless saved as true', () => {
+    // Off by default, as Xray's autoSystemWfpBlockLeak is.
+    expect(normalizePerformanceSettings({}).tunBlockDnsLeaks).toBe(false);
+    expect(
+      normalizePerformanceSettings({ tunBlockDnsLeaks: true }).tunBlockDnsLeaks,
+    ).toBe(true);
+    expect(
+      normalizePerformanceSettings({ tunBlockDnsLeaks: false })
+        .tunBlockDnsLeaks,
+    ).toBe(false);
+    for (const junk of ['true', 1, null, ['dns']]) {
+      expect(
+        normalizePerformanceSettings({ tunBlockDnsLeaks: junk })
+          .tunBlockDnsLeaks,
+      ).toBe(false);
+    }
+  });
+
   it('resolves remote DNS presets and validates custom IPv4', () => {
     expect(normalizePerformanceSettings({}).remoteDnsServers).toEqual([
       '1.1.1.1',
@@ -233,6 +251,12 @@ describe('legacy performance migration guard', () => {
         tunOutboundInterface: 'Ethernet 2',
       }),
     ).toBe(false);
+    expect(
+      isUnmodifiedLegacyPerformanceSettings({
+        ...legacyCore,
+        tunBlockDnsLeaks: true,
+      }),
+    ).toBe(false);
   });
 
   it('compares every performance field, including lists', () => {
@@ -255,6 +279,7 @@ describe('legacy performance migration guard', () => {
       }),
     ).toBe(false);
     for (const change of [
+      { tunBlockDnsLeaks: true },
       { routingMode: 'sites' as const },
       { proxyDomains: ['youtube.com'] },
       { proxyIps: ['8.8.8.8'] },
