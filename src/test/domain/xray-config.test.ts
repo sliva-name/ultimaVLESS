@@ -682,7 +682,7 @@ describe('XrayConfigCompiler', () => {
       },
     );
 
-    expect(config.version).toMatchObject({ min: '26.10.10' });
+    expect(config.version).toMatchObject({ min: '26.10.21' });
     expect(config.outbounds[0]).toMatchObject({
       protocol: 'hysteria',
       settings: {
@@ -727,7 +727,7 @@ describe('XrayConfigCompiler', () => {
       },
     );
 
-    expect(config.version).toMatchObject({ min: '26.10.10' });
+    expect(config.version).toMatchObject({ min: '26.10.21' });
     expect(config.outbounds[0]).toMatchObject({
       protocol: 'wireguard',
       settings: {
@@ -972,7 +972,7 @@ describe('XrayConfigCompiler', () => {
       },
     );
 
-    expect(config.version).toEqual({ min: '26.10.10', max: '99.0.0' });
+    expect(config.version).toEqual({ min: '26.10.21', max: '99.0.0' });
   });
 
   it('rejects raw outbound tag proxy when the protocol is not a tunnel', () => {
