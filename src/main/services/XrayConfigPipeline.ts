@@ -92,6 +92,8 @@ export interface XrayConfigPipelineOptions {
   tunAutoRoute?: boolean;
   /** Adapter alias for the TUN inbound's `autoOutboundsInterface`. */
   outboundInterface?: string;
+  /** TUN inbound's `autoSystemWfpBlockLeak: ["dns"]`; needs `tunAutoRoute`. */
+  blockDnsLeaks?: boolean;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
 }

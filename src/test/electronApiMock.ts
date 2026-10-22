@@ -152,6 +152,7 @@ export function createElectronApiMock(
       tunOutboundInterface: '',
       tunMtu: 1400,
       tunDnsQueryStrategy: 'UseIPv4',
+      tunBlockDnsLeaks: false,
       bypassDomains: [],
       bypassIps: [],
       routingMode: 'all',

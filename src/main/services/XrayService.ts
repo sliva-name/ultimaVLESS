@@ -39,6 +39,8 @@ export interface XrayStartOptions {
   tunAutoRoute?: boolean;
   /** TUN: adapter alias Xray binds its sockets to (`autoOutboundsInterface`). */
   outboundInterface?: string;
+  /** Windows TUN with auto-route: WFP filters against DNS leaks. */
+  blockDnsLeaks?: boolean;
   ports?: RuntimePorts;
   /** `staging` starts a second process without stopping the active one. */
   slot?: 'active' | 'staging';
@@ -169,6 +171,7 @@ export class XrayService extends EventEmitter {
       connectionMode,
       sendThrough: options.sendThrough || null,
       outboundInterface: options.outboundInterface || null,
+      blockDnsLeaks: options.blockDnsLeaks ?? false,
     });
 
     let xrayConfig;
@@ -179,6 +182,7 @@ export class XrayService extends EventEmitter {
         sendThrough: options.sendThrough,
         tunAutoRoute: options.tunAutoRoute,
         outboundInterface: options.outboundInterface,
+        blockDnsLeaks: options.blockDnsLeaks,
         ports,
         performanceSettings: configService.getPerformanceSettings(),
       });

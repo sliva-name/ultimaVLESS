@@ -523,6 +523,114 @@ describe('XrayConfigCompiler', () => {
     expect(direct?.sendThrough).toBe('192.168.1.10');
   });
 
+  describe('TUN DNS leak block', () => {
+    const rawServer = () =>
+      makeServer({
+        security: 'tls',
+        rawConfig: {
+          // A subscription's own TUN inbound must not decide this either.
+          inbounds: [
+            {
+              tag: 'tun-in',
+              protocol: 'tun',
+              settings: { autoSystemWfpBlockLeak: ['dns', 'misconfigtun'] },
+            },
+          ],
+          outbounds: [
+            {
+              tag: 'proxy',
+              protocol: 'vless',
+              settings: {
+                address: 'example.com',
+                port: 443,
+                id: '00000000-0000-0000-0000-000000000001',
+                encryption: 'none',
+              },
+              streamSettings: {
+                network: 'tcp',
+                security: 'tls',
+                tlsSettings: { serverName: 'example.com' },
+              },
+            },
+          ],
+        },
+      });
+    const tunSettings = (config: XrayConfig) =>
+      config.inbounds?.find((inbound) => inbound.protocol === 'tun')?.settings;
+
+    it('adds autoSystemWfpBlockLeak dns next to the Xray routes', () => {
+      for (const server of [
+        makeServer({ security: 'tls', sni: 'example.com' }),
+        rawServer(),
+      ]) {
+        const config = XrayConfigCompiler.compile(server, {
+          logPath: '/tmp/xray.log',
+          connectionMode: 'tun',
+          tunAutoRoute: true,
+          blockDnsLeaks: true,
+        });
+
+        const settings = tunSettings(config);
+        expect(settings).toMatchObject({
+          autoSystemWfpBlockLeak: ['dns'],
+          autoSystemRoutingTable: ['0.0.0.0/0', '::/0'],
+          // Xray rejects "dns" without TUN DNS servers.
+          dns: ['1.1.1.1', '1.0.0.1'],
+        });
+      }
+    });
+
+    it('leaves the filters out unless asked', () => {
+      for (const server of [
+        makeServer({ security: 'tls', sni: 'example.com' }),
+        rawServer(),
+      ]) {
+        const config = XrayConfigCompiler.compile(server, {
+          logPath: '/tmp/xray.log',
+          connectionMode: 'tun',
+          tunAutoRoute: true,
+        });
+
+        expect(tunSettings(config)).not.toHaveProperty(
+          'autoSystemWfpBlockLeak',
+        );
+      }
+    });
+
+    it('never adds them without autoSystemRoutingTable (PowerShell routing)', () => {
+      for (const server of [
+        makeServer({ security: 'tls', sni: 'example.com' }),
+        rawServer(),
+      ]) {
+        const config = XrayConfigCompiler.compile(server, {
+          logPath: '/tmp/xray.log',
+          connectionMode: 'tun',
+          sendThrough: '192.168.1.10',
+          tunAutoRoute: false,
+          blockDnsLeaks: true,
+        });
+
+        const settings = tunSettings(config);
+        expect(settings).not.toHaveProperty('autoSystemRoutingTable');
+        expect(settings).not.toHaveProperty('autoSystemWfpBlockLeak');
+      }
+    });
+
+    it('has no TUN inbound to put them on in proxy mode', () => {
+      const config = XrayConfigCompiler.compile(
+        makeServer({ security: 'tls', sni: 'example.com' }),
+        {
+          logPath: '/tmp/xray.log',
+          connectionMode: 'proxy',
+          tunAutoRoute: true,
+          blockDnsLeaks: true,
+        },
+      );
+
+      expect(tunSettings(config)).toBeUndefined();
+    });
+  });
+
   it('rejects unencrypted public VLESS profiles before spawning Xray', () => {
     expect(() =>
       XrayConfigCompiler.compile(makeServer({ security: 'none' }), {

@@ -14,6 +14,7 @@ export interface XrayRuntimeContext {
   sendThrough?: string;
   tunAutoRoute?: boolean;
   outboundInterface?: string;
+  blockDnsLeaks?: boolean;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
 }
@@ -48,6 +49,7 @@ export class XrayConfigCompiler {
         sendThrough: runtime.sendThrough,
         tunAutoRoute: runtime.tunAutoRoute,
         outboundInterface: runtime.outboundInterface,
+        blockDnsLeaks: runtime.blockDnsLeaks,
         performanceSettings: runtime.performanceSettings,
         ports: runtime.ports,
       },

@@ -272,6 +272,13 @@ export interface PerformanceSettings {
    */
   tunDnsQueryStrategy: TunDnsQueryStrategy;
   /**
+   * Windows TUN with Xray auto-route only: Xray's `autoSystemWfpBlockLeak:
+   * ["dns"]` keeps port 53 of every program but Xray inside the TUN. Off by
+   * default, as in Xray: it breaks local resolvers on 127.0.0.1:53, another
+   * VPN's DNS, VMs resolving through the host's NAT and captive portals.
+   */
+  tunBlockDnsLeaks: boolean;
+  /**
    * Split tunneling: hosts that leave through the physical interface instead of
    * the tunnel. Bare hosts cover subdomains; `full:`/`keyword:`/`geosite:`
    * matchers are stored verbatim.
@@ -318,6 +325,7 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   tunOutboundInterface: '',
   tunMtu: TUN_MTU_DEFAULT,
   tunDnsQueryStrategy: 'UseIPv4',
+  tunBlockDnsLeaks: false,
   // VK blocks or throttles traffic from many VPN exit IPs, so it is excluded
   // out of the box; users can drop it in the network settings.
   bypassDomains: ['vk.com'],
