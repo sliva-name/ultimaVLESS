@@ -36,6 +36,14 @@
 
 `regexp:` не поддерживается: ошибочное выражение замедляет маршрутизацию всех соединений.
 
+### Списки `geoip:` и `geosite:`
+
+Списки берутся из `geoip.dat` и `geosite.dat`, которые идут вместе с Xray (с Xray v26.10.21 — из [XTLS/Xray-rules-dat](https://github.com/XTLS/Xray-rules-dat)).
+
+- В `geoip.dat` из стран есть только `cn`, `ru` и `ir`. Кроме них — `private` и списки сервисов: `telegram`, `google`, `cloudflare`, `netflix`, `twitter`, `facebook` и другие. `geoip:us`, `geoip:de` и остальных стран нет: вместо них укажите IP-адреса или подсети.
+- `geosite.dat` — списки [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community). Списков, которые были только в базе Loyalsoldier (`geosite:gfw`, `geosite:win-spy` и т. п.), в нём нет.
+- **Если указанного списка нет в базе, Xray не запускается и подключиться не получится.** В журнале Xray при этом будет строка вида `failed to check code US from geoip.dat`. Удалите такую запись из списка. Это касается и правил из JSON-подписок.
+
 ### Как работают приложения
 
 Приложение определяется по **имени исполняемого файла** процесса, которому принадлежит соединение (Xray-правило `process`; на Windows — через таблицу соединений ОС `GetExtendedTcpTable` / `GetExtendedUdpTable`). Хранится только имя файла, без папки, поэтому правило продолжает работать после обновления программы, которая переезжает в новую папку (Discord, Telegram).
