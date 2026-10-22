@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { ConnectionMode, VlessConfig } from '@/shared/types';
 import type { AppOption } from '@/shared/appRouting';
+import type { GeodataTags } from '@/shared/geodata';
 import {
   AddSubscriptionPayload,
   AddSubscriptionResult,
@@ -179,6 +180,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.listRunningApps) as Promise<
       AppOption[]
     >,
+  getGeodataTags: () =>
+    ipcRenderer.invoke(
+      IPC_INVOKE_CHANNELS.getGeodataTags,
+    ) as Promise<GeodataTags | null>,
 
   getUiLanguage: () =>
     ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getUiLanguage) as Promise<

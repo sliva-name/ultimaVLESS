@@ -8,11 +8,13 @@ import {
   VlessConfig,
 } from '@/shared/types';
 import type { XrayConfig } from '@/shared/xray-types';
+import type { GeodataTags } from '@/shared/geodata';
 import { PerfTimer } from '@/shared/perfMetrics';
 import { getBinResourcesPath } from '@/main/utils/runtimePaths';
 import { XrayConfigCompiler } from './XrayConfigCompiler';
 import { logger } from './LoggerService';
 import { probeTcpPort } from './networkProbe';
+import { loadBundledGeodataTags } from './xray/bundledGeodata';
 import { trackOwnedXrayProcess } from './xray/ownedProcesses';
 import type { PingServersOptions } from './PingService';
 
@@ -54,6 +56,8 @@ export interface RealDelayServiceOptions {
     signal?: AbortSignal,
   ) => Promise<number | null>;
   getPerformanceSettings?: () => PerformanceSettings;
+  /** Lists in the bundled .dat files the probe's Xray loads. */
+  loadGeodata?: () => Promise<GeodataTags | null>;
   maxConcurrent?: number;
   testUrl?: string;
 }
@@ -69,10 +73,12 @@ export function buildDelayTestConfig(
   server: VlessConfig,
   port: number,
   performanceSettings: PerformanceSettings = DEFAULT_PERFORMANCE_SETTINGS,
+  geodata: GeodataTags | null = null,
 ): XrayConfig {
   const cfg = XrayConfigCompiler.compile(server, {
     logPath: '',
     connectionMode: 'proxy',
+    geodata,
     performanceSettings: {
       ...performanceSettings,
       bypassDomains: [],
@@ -267,6 +273,7 @@ export class RealDelayService {
   >;
   private readonly measure: NonNullable<RealDelayServiceOptions['measure']>;
   private readonly getPerformanceSettings: () => PerformanceSettings;
+  private readonly loadGeodata: () => Promise<GeodataTags | null>;
   private readonly maxConcurrent: number;
   private readonly testUrl: string;
 
@@ -277,6 +284,9 @@ export class RealDelayService {
     this.measure = options.measure ?? measureHttpThroughProxy;
     this.getPerformanceSettings =
       options.getPerformanceSettings ?? (() => DEFAULT_PERFORMANCE_SETTINGS);
+    this.loadGeodata =
+      options.loadGeodata ??
+      (() => loadBundledGeodataTags(getBinResourcesPath()));
     this.maxConcurrent = Math.max(
       1,
       options.maxConcurrent ?? MAX_CONCURRENT_TESTS,
@@ -339,6 +349,7 @@ export class RealDelayService {
         server,
         port,
         this.getPerformanceSettings(),
+        await this.loadGeodata(),
       );
     } catch (error) {
       logger.debug('RealDelayService', 'Cannot build delay test config', {

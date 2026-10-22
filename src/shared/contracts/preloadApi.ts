@@ -26,6 +26,7 @@ import type {
 } from '@/shared/views/tunEnvironment';
 import type { PerformanceSettings } from '@/shared/types';
 import type { AppOption } from '@/shared/appRouting';
+import type { GeodataTags } from '@/shared/geodata';
 
 export interface IElectronAPI {
   connect: (serverId: string) => Promise<ConnectResult>;
@@ -79,6 +80,8 @@ export interface IElectronAPI {
   pickApplications: () => Promise<AppOption[]>;
   /** Running programs with icons (Windows; `[]` elsewhere). */
   listRunningApps: () => Promise<AppOption[]>;
+  /** Lists in the bundled geoip/geosite .dat files; null if unreadable. */
+  getGeodataTags: () => Promise<GeodataTags | null>;
 
   getUiLanguage: () => Promise<'en' | 'ru'>;
   setUiLanguage: (language: 'en' | 'ru') => Promise<boolean>;

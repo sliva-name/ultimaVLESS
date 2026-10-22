@@ -1,15 +1,22 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import clsx from 'clsx';
+import { AlertTriangle, Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   MAX_SPLIT_TUNNEL_ENTRIES,
   classifySplitTunnelEntry,
 } from '@/shared/splitTunneling';
+import {
+  type GeodataCatalog,
+  isGeodataEntryAvailable,
+} from '@/shared/geodata';
 
 interface SplitTunnelEditorProps {
   domains: string[];
   ips: string[];
   onChange: (next: { domains: string[]; ips: string[] }) => void;
+  /** Bundled geodata lists; entries naming a missing one are flagged. */
+  geodata?: GeodataCatalog | null;
   disabled?: boolean;
   /** Defaults to the exclusion list's wording. */
   ariaLabel?: string;
@@ -26,6 +33,7 @@ export const SplitTunnelEditor: React.FC<SplitTunnelEditorProps> = ({
   domains,
   ips,
   onChange,
+  geodata,
   disabled = false,
   ariaLabel,
   emptyText,
@@ -36,6 +44,17 @@ export const SplitTunnelEditor: React.FC<SplitTunnelEditorProps> = ({
 
   const total = domains.length + ips.length;
   const atLimit = total >= MAX_SPLIT_TUNNEL_ENTRIES;
+
+  // Xray would not start on these, so connecting skips them.
+  const missingGeodata = useMemo(
+    () =>
+      geodata
+        ? [...domains, ...ips].filter(
+            (entry) => !isGeodataEntryAvailable(entry, geodata),
+          )
+        : [],
+    [domains, geodata, ips],
+  );
 
   const handleAdd = useCallback(() => {
     setError(null);
@@ -150,30 +169,61 @@ export const SplitTunnelEditor: React.FC<SplitTunnelEditorProps> = ({
                 {group.label}
               </div>
               <ul className="flex flex-wrap gap-1.5">
-                {group.values.map((value) => (
-                  <li
-                    key={value}
-                    className="flex items-center gap-1.5 rounded-lg border border-gray-700/50 bg-gray-800/40 pl-2.5 pr-1.5 py-1"
-                  >
-                    <span className="text-xs text-gray-200 font-mono break-all">
-                      {value}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(group.kind, value)}
-                      disabled={disabled}
-                      aria-label={t('settings.network.splitTunnelRemove', {
-                        entry: value,
-                      })}
-                      className="p-0.5 rounded text-gray-500 hover:text-orange-300 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                {group.values.map((value) => {
+                  const missing = missingGeodata.includes(value);
+                  return (
+                    <li
+                      key={value}
+                      title={
+                        missing
+                          ? t('settings.network.geodataMissingEntry')
+                          : undefined
+                      }
+                      className={clsx(
+                        'flex items-center gap-1.5 rounded-lg border pl-2.5 pr-1.5 py-1',
+                        missing
+                          ? 'border-orange-500/40 bg-orange-500/10'
+                          : 'border-gray-700/50 bg-gray-800/40',
+                      )}
                     >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </li>
-                ))}
+                      {missing && (
+                        <AlertTriangle
+                          aria-hidden
+                          className="w-3.5 h-3.5 shrink-0 text-orange-400"
+                        />
+                      )}
+                      <span
+                        className={clsx(
+                          'text-xs font-mono break-all',
+                          missing ? 'text-orange-200' : 'text-gray-200',
+                        )}
+                      >
+                        {value}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(group.kind, value)}
+                        disabled={disabled}
+                        aria-label={t('settings.network.splitTunnelRemove', {
+                          entry: value,
+                        })}
+                        className="p-0.5 rounded text-gray-500 hover:text-orange-300 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
+          {missingGeodata.length > 0 && (
+            <p role="status" className="text-xs text-orange-400 leading-relaxed">
+              {t('settings.network.geodataMissing', {
+                entries: missingGeodata.slice(0, 3).join(', '),
+              })}
+            </p>
+          )}
         </div>
       )}
     </div>

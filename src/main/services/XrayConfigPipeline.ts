@@ -15,6 +15,11 @@ import {
   XrayRoutingRule,
 } from '@/shared/xray-types';
 import {
+  type GeodataTags,
+  isGeodataEntryAvailable,
+  toGeodataCatalog,
+} from '@/shared/geodata';
+import {
   createLocalProxyInbounds,
   createTunInbound,
   ensureLocalProxyInbounds,
@@ -86,6 +91,19 @@ const PRIVATE_IP_SELECTORS = new Set([
   'fe80::/10',
 ]);
 
+/** Rule fields Xray parses as geoip/geosite-capable lists (StringList). */
+const GEODATA_RULE_FIELDS = [
+  'domain',
+  'domains',
+  'ip',
+  'source',
+  'sourceIP',
+  'localIP',
+] as const;
+
+/** Last logged set of dropped entries: delay probes recompile per server. */
+let lastDroppedGeodataKey = '';
+
 export interface XrayConfigPipelineOptions {
   sendThrough?: string;
   tunAutoRoute?: boolean;
@@ -93,6 +111,8 @@ export interface XrayConfigPipelineOptions {
   outboundInterface?: string;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
+  /** Lists in the bundled .dat files; unchecked when absent. */
+  geodata?: GeodataTags | null;
 }
 
 export class XrayConfigPipeline {
@@ -169,9 +189,65 @@ export class XrayConfigPipeline {
     applyRemoteDnsSettings(cfg, perf, {
       tunMode: connectionMode === 'tun',
     });
+    this.dropUnavailableGeodata(cfg, options.geodata);
     this.applyBundledVersionConstraint(cfg);
 
     return cfg;
+  }
+
+  /**
+   * Xray refuses to start on a `geoip:` / `geosite:` tag its .dat files lack,
+   * and since v26.10.21 the bundled geoip keeps only cn/ru/ir among the
+   * countries. Such entries (from the user's lists or a subscription) are
+   * dropped; a rule whose list ends up empty goes with them, as without the
+   * list it would match more than it did.
+   */
+  private static dropUnavailableGeodata(
+    cfg: XrayConfig,
+    geodata: GeodataTags | null | undefined,
+  ): void {
+    if (!geodata || !Array.isArray(cfg.routing?.rules)) return;
+    const catalog = toGeodataCatalog(geodata);
+    const dropped = new Set<string>();
+    let droppedRules = 0;
+
+    cfg.routing.rules = cfg.routing.rules.filter((rule) => {
+      if (!rule || typeof rule !== 'object') return true;
+      const fields = rule as unknown as Record<string, unknown>;
+      let emptied = false;
+      for (const field of GEODATA_RULE_FIELDS) {
+        const value = fields[field];
+        // Xray's StringList also accepts one comma-separated string.
+        const entries = Array.isArray(value)
+          ? value
+          : typeof value === 'string'
+            ? value.split(',')
+            : null;
+        if (!entries) continue;
+        const kept = entries.filter((entry) => {
+          if (typeof entry !== 'string') return true;
+          if (isGeodataEntryAvailable(entry.trim(), catalog)) return true;
+          dropped.add(entry.trim());
+          return false;
+        });
+        if (kept.length === entries.length) continue;
+        fields[field] = kept;
+        if (kept.length === 0) emptied = true;
+      }
+      if (emptied) droppedRules += 1;
+      return !emptied;
+    });
+
+    if (dropped.size === 0) return;
+    const entries = [...dropped].sort();
+    const key = entries.join(',');
+    if (key === lastDroppedGeodataKey) return;
+    lastDroppedGeodataKey = key;
+    logger.warn(
+      'XrayConfigPipeline',
+      'Dropped routing entries missing from the bundled geodata',
+      { entries: entries.slice(0, 20), droppedRules },
+    );
   }
 
   /**
@@ -1016,6 +1092,7 @@ export class XrayConfigPipeline {
     applyRemoteDnsSettings(cfg, perf, {
       tunMode: connectionMode === 'tun',
     });
+    this.dropUnavailableGeodata(cfg, options.geodata);
     this.applyBundledVersionConstraint(cfg);
     return cfg;
   }

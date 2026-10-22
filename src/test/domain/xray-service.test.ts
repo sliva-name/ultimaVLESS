@@ -41,6 +41,9 @@ vi.mock('@/main/services/networkProbe', () => ({ probeTcpPort: vi.fn() }));
 vi.mock('@/main/utils/runtimePaths', () => ({
   getBinResourcesPath: () => '/resources/bin',
 }));
+vi.mock('@/main/services/xray/bundledGeodata', () => ({
+  loadBundledGeodataTags: vi.fn(async () => null),
+}));
 vi.mock('@/main/services/PrivilegeService', () => ({
   buildElevatedXrayCommand: vi.fn(),
   findPkexecPath: () => null,

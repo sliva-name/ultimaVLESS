@@ -17,6 +17,7 @@ import type {
   VlessConfig,
 } from '@/shared/types';
 import type { AppOption } from '@/shared/appRouting';
+import type { GeodataTags } from '@/shared/geodata';
 import { makeAppSnapshot } from './factories';
 
 type ListenerMap = {
@@ -166,6 +167,7 @@ export function createElectronApiMock(
     ),
     pickApplications: vi.fn(async (): Promise<AppOption[]> => []),
     listRunningApps: vi.fn(async (): Promise<AppOption[]> => []),
+    getGeodataTags: vi.fn(async (): Promise<GeodataTags | null> => null),
 
     getUiLanguage: vi.fn(async (): Promise<'en' | 'ru'> => 'en'),
     setUiLanguage: vi.fn(async (_language: 'en' | 'ru') => true),

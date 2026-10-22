@@ -9,6 +9,7 @@ import clsx from 'clsx';
 import { AlertTriangle, Route } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AppOption } from '@/shared/appRouting';
+import { type GeodataCatalog, toGeodataCatalog } from '@/shared/geodata';
 import type {
   ConnectionMode,
   PerformanceSettings,
@@ -66,6 +67,7 @@ export const RoutingRulesSection: React.FC<RoutingRulesSectionProps> = ({
   const [runningApps, setRunningApps] = useState<AppOption[]>([]);
   const [pickedApps, setPickedApps] = useState<AppOption[]>([]);
   const [appsLoading, setAppsLoading] = useState(true);
+  const [geodata, setGeodata] = useState<GeodataCatalog | null>(null);
   const lastFetchRef = useRef(0);
   const mountedRef = useRef(true);
 
@@ -91,6 +93,20 @@ export const RoutingRulesSection: React.FC<RoutingRulesSectionProps> = ({
       mountedRef.current = false;
     };
   }, [loadRunningApps]);
+
+  // The bundled .dat files do not change while the app runs: read them once.
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.getGeodataTags().then(
+      (tags) => {
+        if (!cancelled && tags) setGeodata(toGeodataCatalog(tags));
+      },
+      (err) => console.error('Failed to read geodata lists:', err),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Programs started after the settings opened appear the next time a list
   // opens; the throttle keeps PowerShell from running on every click.
@@ -189,6 +205,7 @@ export const RoutingRulesSection: React.FC<RoutingRulesSectionProps> = ({
             <SplitTunnelEditor
               domains={settings.proxyDomains}
               ips={settings.proxyIps}
+              geodata={geodata}
               disabled={locked}
               ariaLabel={t('settings.network.routingProxySites')}
               emptyText={t('settings.network.routingProxySitesEmpty')}
@@ -226,6 +243,7 @@ export const RoutingRulesSection: React.FC<RoutingRulesSectionProps> = ({
           <SplitTunnelEditor
             domains={settings.bypassDomains}
             ips={settings.bypassIps}
+            geodata={geodata}
             disabled={locked}
             emptyText={
               mode === 'all'
