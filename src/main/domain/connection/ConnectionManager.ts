@@ -678,6 +678,24 @@ export class ConnectionManager extends EventEmitter {
       return;
     }
     const monitor = this.deps.connectionMonitorService;
+    const generation = this.generation;
+    const recheck = await monitor.recheckBeforeSwitch();
+    // Any connect/disconnect/switch meanwhile owns the session now.
+    if (this.state.type !== 'connected' || this.generation !== generation) {
+      return;
+    }
+    if (recheck !== 'still-failing') {
+      this.policyState.unblock(from.uuid);
+      this.emit('policy-changed');
+      logger.info('ConnectionManager', 'Auto-switch called off', {
+        server: from.name,
+        reason:
+          recheck === 'recovered'
+            ? 'current server answers again'
+            : 'host internet unavailable',
+      });
+      return;
+    }
     try {
       await this.enqueue(
         () => ({

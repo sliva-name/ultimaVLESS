@@ -7,7 +7,10 @@ import path from 'path';
 import { extractBlockingErrors, isBlockingErrorText } from './blockingErrors';
 import { xrayService } from './XrayService';
 import { ConnectionHealthState } from '@/shared/ipc';
-import { runConnectionHealthProbe } from './connectionMonitor/healthProbe';
+import {
+  runConnectionHealthProbe,
+  type ConnectionHealthProbeResult,
+} from './connectionMonitor/healthProbe';
 import { XrayLogCursor } from './connectionMonitor/xrayLogCursor';
 import { CONNECTION_MONITOR_TIMING } from './connectionMonitor/timing';
 import { HealthCheckGate } from '@/main/runtime/healthCheckGate';
@@ -46,6 +49,9 @@ export interface HealthFailureEvent {
   reason: string;
   blocking: boolean;
 }
+
+/** Outcome of the last probe of the current server before an auto-switch. */
+export type PreSwitchRecheck = 'still-failing' | 'recovered' | 'host-offline';
 
 /**
  * Health monitor: probe → events. It does not switch servers or tear down
@@ -241,6 +247,49 @@ export class ConnectionMonitorService extends EventEmitter {
   }
 
   /**
+   * One more probe of the current server right before an auto-switch. A
+   * stall that has already cleared, or a host that lost its own uplink, is
+   * not the server's fault; both reset the failure streak so a later outage
+   * is counted from scratch. With probes disarmed there is nothing to
+   * contradict the earlier failure, so it stands.
+   */
+  public async recheckBeforeSwitch(): Promise<PreSwitchRecheck> {
+    const signal = this.sessionAbort?.signal;
+    if (!signal) {
+      return 'still-failing';
+    }
+    const isStale = () =>
+      signal.aborted || !this.status.probeArmed || !this.status.currentServer;
+    if (isStale()) {
+      return 'still-failing';
+    }
+
+    const probeResult = await this.runProbe(
+      signal,
+      CONNECTION_MONITOR_TIMING.preSwitchRecheckAttempts,
+    );
+    if (isStale()) {
+      return 'still-failing';
+    }
+    this.status.lastHealthCheckAt = Date.now();
+    this.status.localProxyReachable = probeResult.localProxyReachable;
+
+    if (probeResult.type === 'healthy') {
+      this.tunnelProbeFailStreak = 0;
+      this.status.lastHealthState = 'healthy';
+      this.status.lastHealthFailureReason = null;
+      return 'recovered';
+    }
+    if (probeResult.type === 'host-offline') {
+      this.tunnelProbeFailStreak = 0;
+      this.status.lastHealthState = 'degraded';
+      this.status.lastHealthFailureReason = probeResult.failureReason;
+      return 'host-offline';
+    }
+    return 'still-failing';
+  }
+
+  /**
    * Probe/diagnostic fact. Does not emit health-failure — ConnectionManager
    * owns policy for session death.
    */
@@ -313,17 +362,10 @@ export class ConnectionMonitorService extends EventEmitter {
 
     try {
       this.status.lastHealthCheckAt = Date.now();
-      const probeResult = await runConnectionHealthProbe({
-        getXrayHealthStatus: () => xrayService.getHealthStatus(),
-        connectionMode: configService.getConnectionMode(),
-        ports: xrayService.getActivePorts(),
-        tunnelProbe: {
-          timeoutMs: CONNECTION_MONITOR_TIMING.healthTunnelProbeTimeoutMs,
-          attempts: CONNECTION_MONITOR_TIMING.healthTunnelProbeAttempts,
-          gapMs: CONNECTION_MONITOR_TIMING.healthTunnelProbeGapMs,
-        },
+      const probeResult = await this.runProbe(
         signal,
-      });
+        CONNECTION_MONITOR_TIMING.healthTunnelProbeAttempts,
+      );
       if (isStale()) {
         return;
       }
@@ -439,6 +481,23 @@ export class ConnectionMonitorService extends EventEmitter {
         this.recordError(failureReason, this.status.currentServer);
       }
     }
+  }
+
+  private runProbe(
+    signal: AbortSignal,
+    tunnelAttempts: number,
+  ): Promise<ConnectionHealthProbeResult> {
+    return runConnectionHealthProbe({
+      getXrayHealthStatus: () => xrayService.getHealthStatus(),
+      connectionMode: configService.getConnectionMode(),
+      ports: xrayService.getActivePorts(),
+      tunnelProbe: {
+        timeoutMs: CONNECTION_MONITOR_TIMING.healthTunnelProbeTimeoutMs,
+        attempts: tunnelAttempts,
+        gapMs: CONNECTION_MONITOR_TIMING.healthTunnelProbeGapMs,
+      },
+      signal,
+    });
   }
 
   private async readNewLogLines(count: number): Promise<string[]> {

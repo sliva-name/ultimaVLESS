@@ -5,6 +5,7 @@ import type { ConnectionMode } from '@/shared/types';
 import {
   probeDirectInternetConnectivity,
   probeHttpThroughProxy,
+  probeInternetFromLocalAddresses,
   probeTcpPort,
 } from '../networkProbe';
 import { TUN_ADDRESS, TUN_INTERFACE_NAME } from '../tunRoute/constants';
@@ -52,12 +53,11 @@ interface RunConnectionHealthProbeOptions {
 }
 
 /**
- * In TUN mode a direct HTTP probe is useless (it would be routed through the
- * tunnel itself), so host connectivity is approximated by the presence of a
- * usable non-TUN IPv4 interface. When the physical link drops, Windows
- * removes the DHCP address (or falls back to APIPA 169.254.x.x).
+ * IPv4 addresses of the non-TUN adapters. When the physical link drops,
+ * Windows removes the DHCP address (or falls back to APIPA 169.254.x.x).
  */
-export function hasUsableHostNetworkInterface(): boolean {
+export function listHostIpv4Addresses(): string[] {
+  const result: string[] = [];
   const interfaces = os.networkInterfaces();
   for (const [name, addresses] of Object.entries(interfaces)) {
     if (!addresses || name.startsWith(TUN_INTERFACE_NAME)) {
@@ -70,11 +70,11 @@ export function hasUsableHostNetworkInterface(): boolean {
         !address.address.startsWith('169.254.') &&
         address.address !== TUN_ADDRESS
       ) {
-        return true;
+        result.push(address.address);
       }
     }
   }
-  return false;
+  return result;
 }
 
 function getXrayFailureReason(xrayState: XrayHealthStatus): string {
@@ -85,12 +85,28 @@ function getXrayFailureReason(xrayState: XrayHealthStatus): string {
   );
 }
 
+/**
+ * In TUN mode a plain direct probe is useless: it would be routed through the
+ * tunnel itself. An adapter can keep its address while its uplink is gone
+ * (Wi-Fi, ISP), so on Windows the probe is bound to the adapters' own
+ * addresses and leaves past TUN. Elsewhere a bound socket is still routed by
+ * destination only, so the adapter having an address is all we can tell.
+ */
 export async function isHostInternetUnavailable(
   connectionMode: ConnectionMode,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<boolean> {
-  return connectionMode === 'tun'
-    ? !hasUsableHostNetworkInterface()
-    : !(await probeDirectInternetConnectivity());
+  if (connectionMode !== 'tun') {
+    return !(await probeDirectInternetConnectivity());
+  }
+  const addresses = listHostIpv4Addresses();
+  if (addresses.length === 0) {
+    return true;
+  }
+  if (platform !== 'win32') {
+    return false;
+  }
+  return !(await probeInternetFromLocalAddresses(addresses));
 }
 
 export async function runConnectionHealthProbe({
