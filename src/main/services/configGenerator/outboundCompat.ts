@@ -310,22 +310,49 @@ export function wireGuardTargetStrategy(
   return WIREGUARD_DOMAIN_STRATEGIES.get(domainStrategy.trim().toLowerCase());
 }
 
-/** UDP masks that dial by themselves; Xray only accepts them first. */
+/**
+ * UDP masks that dial by themselves. Xray reverses `finalmask.udp` so the
+ * last mask sits on the socket, and fails every dial ("incorrect index")
+ * unless such a mask is listed last; `xray run -test` does not catch it.
+ */
 const DIALING_UDP_MASKS = new Set(['udphop', 'xicmp']);
 
-export function isDialingUdpMask(mask: unknown): boolean {
-  if (!mask || typeof mask !== 'object') return false;
+function udpMaskType(mask: unknown): string {
+  if (!mask || typeof mask !== 'object') return '';
   const type = (mask as Record<string, unknown>).type;
-  return (
-    typeof type === 'string' && DIALING_UDP_MASKS.has(type.trim().toLowerCase())
-  );
+  return typeof type === 'string' ? type.trim().toLowerCase() : '';
+}
+
+export function isDialingUdpMask(mask: unknown): boolean {
+  return DIALING_UDP_MASKS.has(udpMaskType(mask));
+}
+
+export function hasUdpMask(
+  finalmask: Record<string, unknown> | undefined,
+  type: string,
+): boolean {
+  const udp = finalmask?.udp;
+  return Array.isArray(udp) && udp.some((mask) => udpMaskType(mask) === type);
+}
+
+/** Adds masks to `finalmask.udp`, keeping a trailing dialing mask last. */
+export function addUdpMasks(
+  finalmask: Record<string, unknown>,
+  masks: unknown[],
+): void {
+  const udp = Array.isArray(finalmask.udp) ? [...finalmask.udp] : [];
+  const at = isDialingUdpMask(udp[udp.length - 1])
+    ? udp.length - 1
+    : udp.length;
+  udp.splice(at, 0, ...masks);
+  finalmask.udp = udp;
 }
 
 /**
  * Xray turned port hopping into a `udphop` UDP mask and now ignores
  * `finalmask.quicParams.udpHop`, so such a config would stay on one port.
  * The old hop opened a new local socket and picked a new server port each
- * interval; a dialing mask must come first in `finalmask.udp`.
+ * interval; a dialing mask must come last in `finalmask.udp`.
  * @see https://github.com/XTLS/Xray-core/pull/6327
  */
 export function migrateLegacyUdpHop(finalmask: Record<string, unknown>): void {
@@ -351,5 +378,5 @@ export function migrateLegacyUdpHop(finalmask: Record<string, unknown>): void {
     remotePorts: legacy.ports,
   };
   if (legacy.interval !== undefined) settings.interval = legacy.interval;
-  finalmask.udp = [{ type: 'udphop', settings }, ...udp];
+  finalmask.udp = [...udp, { type: 'udphop', settings }];
 }
