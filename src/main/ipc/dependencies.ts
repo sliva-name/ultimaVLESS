@@ -31,9 +31,6 @@ import { logExportService } from '@/main/services/LogExportService';
 import { mainLocaleService } from '@/main/services/MainLocaleService';
 import { trafficStatsService } from '@/main/services/TrafficStatsService';
 import { listRunningApps } from '@/main/services/runningApps';
-import { loadBundledGeodataTags } from '@/main/services/xray/bundledGeodata';
-import { getBinResourcesPath } from '@/main/utils/runtimePaths';
-import type { GeodataTags } from '@/shared/geodata';
 import {
   createPingRefreshRunner,
   isPingUnsafePhase,
@@ -77,8 +74,6 @@ export interface IpcDependencies {
   mainLocaleService: typeof mainLocaleService;
   trafficStatsService: typeof trafficStatsService;
   listRunningApps: typeof listRunningApps;
-  /** Lists in the .dat files next to the bundled Xray. */
-  getGeodataTags: () => Promise<GeodataTags | null>;
 }
 
 const pingService = createServerLatencyProbe({
@@ -140,6 +135,5 @@ export function createIpcDependencies(): IpcDependencies {
     mainLocaleService,
     trafficStatsService,
     listRunningApps,
-    getGeodataTags: () => loadBundledGeodataTags(getBinResourcesPath()),
   };
 }

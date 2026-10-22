@@ -5,7 +5,6 @@ import {
   VlessConfig,
 } from '@/shared/types';
 import type { RuntimePorts } from '@/shared/constants';
-import type { GeodataTags } from '@/shared/geodata';
 import { XrayConfig } from '@/shared/xray-types';
 import { XrayConfigPipeline } from './XrayConfigPipeline';
 
@@ -17,8 +16,6 @@ export interface XrayRuntimeContext {
   outboundInterface?: string;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
-  /** Lists in the bundled .dat files; entries missing there are dropped. */
-  geodata?: GeodataTags | null;
 }
 
 export class XrayConfigCompiler {
@@ -53,7 +50,6 @@ export class XrayConfigCompiler {
         outboundInterface: runtime.outboundInterface,
         performanceSettings: runtime.performanceSettings,
         ports: runtime.ports,
-        geodata: runtime.geodata,
       },
     );
   }

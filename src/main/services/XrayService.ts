@@ -26,7 +26,6 @@ import {
 import { waitForProcessExit as awaitChildExit } from './xray/waitForProcessExit';
 import { trackOwnedXrayProcess } from './xray/ownedProcesses';
 import { sendConsoleBreak } from './xray/windowsConsoleBreak';
-import { loadBundledGeodataTags } from './xray/bundledGeodata';
 
 export interface XrayUnexpectedExitEvent {
   config: VlessConfig;
@@ -172,7 +171,6 @@ export class XrayService extends EventEmitter {
       outboundInterface: options.outboundInterface || null,
     });
 
-    const geodata = await loadBundledGeodataTags(this.resourcesPath);
     let xrayConfig;
     try {
       xrayConfig = XrayConfigCompiler.compile(config, {
@@ -183,7 +181,6 @@ export class XrayService extends EventEmitter {
         outboundInterface: options.outboundInterface,
         ports,
         performanceSettings: configService.getPerformanceSettings(),
-        geodata,
       });
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));

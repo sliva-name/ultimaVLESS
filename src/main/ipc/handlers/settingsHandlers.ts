@@ -190,16 +190,6 @@ export function registerSettingsHandlers({
     },
   );
 
-  // Routing entries naming a list the bundled .dat files lack are dropped on
-  // connect; the editor uses the same lists to warn about them.
-  ipcMain.handle(
-    IPC_INVOKE_CHANNELS.getGeodataTags,
-    async (event: IpcMainInvokeEvent) => {
-      assertTrustedSender(event);
-      return deps.getGeodataTags();
-    },
-  );
-
   ipcMain.handle(IPC_INVOKE_CHANNELS.getUiLanguage, (event) => {
     assertTrustedSender(event);
     return deps.mainLocaleService.getLanguage();

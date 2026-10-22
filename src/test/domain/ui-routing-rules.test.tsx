@@ -12,7 +12,6 @@ import i18n from '@/renderer/i18n';
 import { AppSnapshotProvider } from '@/renderer/hooks/useAppSnapshot';
 import { SettingsNetworkTab } from '@/renderer/components/settings/SettingsNetworkTab';
 import type { AppOption } from '@/shared/appRouting';
-import type { GeodataTags } from '@/shared/geodata';
 import {
   DEFAULT_PERFORMANCE_SETTINGS,
   type PerformanceSettings,
@@ -51,7 +50,6 @@ const RUNNING: AppOption[] = [
 function renderNetworkTab(
   settings: Partial<PerformanceSettings> = {},
   isConnected = false,
-  geodata: GeodataTags | null = null,
 ) {
   const electronApi = createElectronApiMock();
   electronApi.getPerformanceSettings.mockResolvedValue({
@@ -59,7 +57,6 @@ function renderNetworkTab(
     ...settings,
   });
   electronApi.listRunningApps.mockResolvedValue(RUNNING);
-  electronApi.getGeodataTags.mockResolvedValue(geodata);
   installElectronApiMock(electronApi);
   render(
     <AppSnapshotProvider>
@@ -235,43 +232,5 @@ describe('Routing rules section', () => {
     expect(
       screen.getByRole('radio', { name: /Только выбранные сайты/ }),
     ).toBeDisabled();
-  });
-
-  it('warns about lists the bundled geodata lacks', async () => {
-    renderNetworkTab(
-      {
-        bypassDomains: ['geosite:win-spy', 'geosite:category-ru'],
-        bypassIps: ['geoip:ru'],
-      },
-      false,
-      { geoip: ['private', 'ru'], geosite: ['category-ru'] },
-    );
-
-    const warning = await screen.findByRole('status');
-    expect(warning).toHaveTextContent(
-      /нет в базе geoip\/geosite, которая идёт с Xray: geosite:win-spy\./,
-    );
-    expect(screen.getByText('geosite:win-spy').closest('li')).toHaveAttribute(
-      'title',
-      'Нет в базе geoip/geosite из Xray: пропускается при подключении',
-    );
-    expect(
-      screen.getByText('geosite:category-ru').closest('li'),
-    ).not.toHaveAttribute('title');
-    expect(screen.getByText('geoip:ru').closest('li')).not.toHaveAttribute(
-      'title',
-    );
-
-    const input = screen.getByRole('textbox', {
-      name: 'Исключения из туннеля (split tunneling)',
-    });
-    fireEvent.change(input, { target: { value: 'geoip:us' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
-        /geosite:win-spy, geoip:us\./,
-      ),
-    );
   });
 });

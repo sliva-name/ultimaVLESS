@@ -29,7 +29,6 @@ export const IPC_INVOKE_CHANNELS = {
   setPerformanceSettings: 'set-performance-settings',
   pickApplications: 'pick-applications',
   listRunningApps: 'list-running-apps',
-  getGeodataTags: 'get-geodata-tags',
   getUiLanguage: 'get-ui-language',
   setUiLanguage: 'set-ui-language',
   getUpdateStatus: 'get-update-status',

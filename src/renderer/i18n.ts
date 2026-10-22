@@ -244,10 +244,6 @@ const resources = {
           splitTunnelInvalid: 'Not a host or address: {{entries}}',
           splitTunnelLimit: 'The list is full.',
           splitTunnelRemove: 'Remove {{entry}}',
-          geodataMissing:
-            'These lists are not in the geoip/geosite data bundled with Xray: {{entries}}. They are skipped on connect — use domains, IPs or CIDR blocks instead.',
-          geodataMissingEntry:
-            'Not in the geoip/geosite data bundled with Xray: skipped on connect',
           splitTunnelDnsNote:
             'Site rules match the domain from TLS/HTTP sniffing; add an IP or CIDR for traffic that cannot be sniffed. DNS queries stay inside the tunnel.',
           routingRules: 'Routing rules',
@@ -585,10 +581,6 @@ const resources = {
           splitTunnelInvalid: 'Не похоже на домен или адрес: {{entries}}',
           splitTunnelLimit: 'Список заполнен.',
           splitTunnelRemove: 'Удалить {{entry}}',
-          geodataMissing:
-            'Этих списков нет в базе geoip/geosite, которая идёт с Xray: {{entries}}. При подключении они пропускаются — укажите вместо них домены, IP или CIDR.',
-          geodataMissingEntry:
-            'Нет в базе geoip/geosite из Xray: пропускается при подключении',
           splitTunnelDnsNote:
             'Домены определяются по SNI/Host из sniffing; для трафика без них добавьте IP или CIDR. DNS-запросы остаются внутри туннеля.',
           routingRules: 'Правила маршрутизации',

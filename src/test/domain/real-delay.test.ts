@@ -11,7 +11,6 @@ import {
 import { createServerLatencyProbe } from '@/main/services/serverLatencyProbe';
 import { normalizePerformanceSettings } from '@/shared/performanceSettings';
 import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
-import type { XrayConfig } from '@/shared/xray-types';
 import { makeServer } from '@/test/factories';
 
 const vlessServer = (uuid: string) =>
@@ -96,58 +95,6 @@ describe('buildDelayTestConfig', () => {
     expect(cfg.stats).toBeUndefined();
     // No shared log file between parallel instances.
     expect(cfg.log).toEqual({ loglevel: 'warning', access: 'none' });
-  });
-
-  it('drops subscription entries the bundled lists lack', async () => {
-    const configs: XrayConfig[] = [];
-    const loadGeodata = vi.fn(async () => ({
-      geoip: ['private', 'telegram'],
-      geosite: [],
-    }));
-    const service = new RealDelayService({
-      spawnXray: (config) => {
-        configs.push(config);
-        return fakeProcess();
-      },
-      allocatePort: async () => 30000,
-      waitForListener: async () => true,
-      measure: async () => 42,
-      loadGeodata,
-    });
-    const server = makeServer({
-      rawConfig: {
-        outbounds: [
-          {
-            tag: 'proxy',
-            protocol: 'vless',
-            settings: {
-              address: 'vpn.example.com',
-              port: 443,
-              id: '11111111-2222-3333-4444-555555555555',
-              encryption: 'none',
-            },
-            streamSettings: { network: 'tcp', security: 'tls' },
-          },
-        ],
-        routing: {
-          domainStrategy: 'AsIs',
-          rules: [
-            {
-              type: 'field',
-              ip: ['geoip:us', 'geoip:telegram'],
-              outboundTag: 'proxy',
-            },
-          ],
-        },
-      } as XrayConfig,
-    });
-
-    await expect(service.pingServer(server)).resolves.toBe(42);
-
-    expect(loadGeodata).toHaveBeenCalled();
-    const entries = JSON.stringify(configs[0]?.routing?.rules);
-    expect(entries).toContain('geoip:telegram');
-    expect(entries).not.toContain('geoip:us');
   });
 });
 
