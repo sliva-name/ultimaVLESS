@@ -141,6 +141,16 @@ export class ConfigService {
     this.store.set('uiLanguage', language);
     logger.info('ConfigService', 'setUiLanguage', { language });
   }
+
+  /** On unless the user turned it off; configs from older builds have no key. */
+  public getAutoSwitchingEnabled(): boolean {
+    return this.store.get('autoSwitchingEnabled') !== false;
+  }
+
+  public setAutoSwitchingEnabled(enabled: boolean): void {
+    this.store.set('autoSwitchingEnabled', enabled);
+    logger.info('ConfigService', 'setAutoSwitchingEnabled', { enabled });
+  }
 }
 
 export const configService = new ConfigService();
