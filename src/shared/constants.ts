@@ -1,5 +1,5 @@
 /** Bundled Xray-core release (see scripts/prepare-xray-assets.mjs). */
-export const BUNDLED_XRAY_VERSION = 'v26.10.10';
+export const BUNDLED_XRAY_VERSION = 'v26.10.21';
 
 /**
  * Passed to the instance that UltimaVLESS starts for itself when it needs
