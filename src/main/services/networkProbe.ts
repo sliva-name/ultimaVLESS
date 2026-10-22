@@ -7,12 +7,13 @@ export async function probeTcpPort(
   host: string = '127.0.0.1',
   timeoutMs: number = 1500,
   signal?: AbortSignal,
+  localAddress?: string,
 ): Promise<boolean> {
   if (signal?.aborted) {
     return false;
   }
   return new Promise((resolve) => {
-    const socket = net.createConnection({ host, port });
+    const socket = net.createConnection({ host, port, localAddress });
     let settled = false;
 
     const onAbort = () => finish(false);
@@ -272,6 +273,55 @@ function probeDirectHttpOnce(
 
     req.once('error', () => finish(false));
     req.end();
+  });
+}
+
+/**
+ * Raw IPs: in TUN mode the OS resolver itself goes through the tunnel.
+ * Different providers and ports, so one filtered destination does not read
+ * as the whole uplink being down.
+ */
+export const HOST_UPLINK_TARGETS: readonly { host: string; port: number }[] = [
+  { host: '1.1.1.1', port: 443 },
+  { host: '8.8.8.8', port: 443 },
+  { host: '77.88.8.8', port: 53 },
+];
+
+/**
+ * TCP handshake from each given local address to HOST_UPLINK_TARGETS; true
+ * once any of them connects. Windows sends with the strong host model: a
+ * socket bound to a physical adapter's address is routed over that adapter
+ * only, past TUN's default route.
+ */
+export function probeInternetFromLocalAddresses(
+  localAddresses: readonly string[],
+  timeoutMs: number = 3000,
+): Promise<boolean> {
+  const probes = localAddresses.flatMap((localAddress) =>
+    HOST_UPLINK_TARGETS.map((target) =>
+      probeTcpPort(
+        target.port,
+        target.host,
+        timeoutMs,
+        undefined,
+        localAddress,
+      ),
+    ),
+  );
+  if (probes.length === 0) {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    let pending = probes.length;
+    for (const probe of probes) {
+      void probe.then((ok) => {
+        if (ok) {
+          resolve(true);
+        } else if (--pending === 0) {
+          resolve(false);
+        }
+      });
+    }
   });
 }
 

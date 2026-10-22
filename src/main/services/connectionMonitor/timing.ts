@@ -1,9 +1,11 @@
 /**
  * Connection health monitor timing. Tunable without touching probe logic.
  *
- * Tunnel auto-switch timeline (worst case, all probes fail):
- * initialDelay + (streak - 1) * interval + autoSwitchDelay
- * e.g. 5s + 15s + 2s ≈ 22s (was ~95s with 30s×3 + 5s).
+ * Tunnel auto-switch timeline (worst case, every probe times out): a failing
+ * tick takes attempts × timeout ≈ 12s and ticks start 15s apart, so the
+ * second failure lands ~27s after the first failing tick began. Then
+ * autoSwitchDelay and one more probe of the current server (up to ~10s with
+ * the host check) before the switch starts.
  */
 export const CONNECTION_MONITOR_TIMING = {
   /** Periodic health tick while connected. */
@@ -19,6 +21,11 @@ export const CONNECTION_MONITOR_TIMING = {
   localProxyStreakBeforeNotify: 2,
   /** Delay after a blocking error before ConnectionManager auto-switch. */
   autoSwitchDelayMs: 2_000,
+  /**
+   * Tunnel probe attempts in the last look at the current server, after
+   * autoSwitchDelay: a stall that has already cleared calls the switch off.
+   */
+  preSwitchRecheckAttempts: 1,
   /**
    * Wall-clock budget for one auto-switch run. Without this, up to 30
    * candidates each paying Xray restart + validation can leave the UI

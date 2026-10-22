@@ -26,6 +26,11 @@ export class SessionPolicyState {
     this.blockedServerIds.add(serverId);
   }
 
+  public unblock(serverId: string): void {
+    this.blockedServerIds.delete(serverId);
+    this.blockedAt.delete(serverId);
+  }
+
   public clearBlocked(): void {
     this.blockedServerIds.clear();
     this.blockedAt.clear();

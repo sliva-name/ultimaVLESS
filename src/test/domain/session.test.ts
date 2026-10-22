@@ -58,6 +58,7 @@ function createSession(overrides: Partial<any> = {}) {
       notifySwitching: vi.fn(),
       setProbeTarget: vi.fn(),
       noteFailure: vi.fn(),
+      recheckBeforeSwitch: vi.fn(async () => 'still-failing'),
     },
     hasTunPrivileges: vi.fn(async () => true),
     requestTunPrivilegesRelaunch: vi.fn(async () => false),
@@ -596,6 +597,110 @@ describe('session lifecycle', () => {
     expect(session.getLastError()).toBe(
       'Auto-switch aborted: host internet unavailable',
     );
+  });
+
+  it.each(['recovered', 'host-offline'] as const)(
+    'calls auto-switch off when the pre-switch recheck says %s',
+    async (verdict) => {
+      const next = makeServer({ uuid: 'server-2', security: 'tls' });
+      const { session, server, switchRuntime, deps } = createSession({
+        configService: {
+          getServers: vi.fn(() => [server, next]),
+          getConnectionMode: vi.fn((): ConnectionMode => 'tun'),
+          setSelectedServerId: vi.fn(),
+          setPendingTunReconnect: vi.fn(),
+          clearPendingTunReconnect: vi.fn(),
+        },
+      });
+      deps.connectionMonitorService.recheckBeforeSwitch.mockResolvedValue(
+        verdict,
+      );
+
+      await session.connect(server.uuid);
+      vi.useFakeTimers();
+      try {
+        await session.handleHealthFailure({
+          server,
+          reason: 'endpoint blocked',
+          blocking: true,
+        });
+        expect(session.getBlockedServerIds()).toEqual([server.uuid]);
+        await vi.advanceTimersByTimeAsync(2_000);
+        await vi.runAllTimersAsync();
+
+        expect(switchRuntime).not.toHaveBeenCalled();
+        expect(
+          deps.connectionMonitorService.notifySwitching,
+        ).not.toHaveBeenCalled();
+        expect(session.getBlockedServerIds()).toEqual([]);
+        expect(session.getConnectionState()).toEqual({
+          type: 'connected',
+          serverId: server.uuid,
+          mode: 'tun',
+        });
+
+        // The policy is re-armed: a later failure is handled again.
+        await session.handleHealthFailure({
+          server,
+          reason: 'endpoint blocked',
+          blocking: true,
+        });
+        await vi.runAllTimersAsync();
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(
+        deps.connectionMonitorService.recheckBeforeSwitch,
+      ).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('does not auto-switch away from a server the user picked during the recheck', async () => {
+    const next = makeServer({ uuid: 'server-2', security: 'tls' });
+    const picked = makeServer({ uuid: 'server-3', security: 'tls' });
+    const { session, server, switchRuntime, deps } = createSession({
+      configService: {
+        getServers: vi.fn(() => [server, next, picked]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+    });
+    let finishRecheck: (verdict: 'still-failing') => void = () => undefined;
+    deps.connectionMonitorService.recheckBeforeSwitch.mockReturnValue(
+      new Promise((resolve) => {
+        finishRecheck = resolve;
+      }),
+    );
+
+    await session.connect(server.uuid);
+    vi.useFakeTimers();
+    try {
+      await session.handleHealthFailure({
+        server,
+        reason: 'endpoint blocked',
+        blocking: true,
+      });
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(
+        deps.connectionMonitorService.recheckBeforeSwitch,
+      ).toHaveBeenCalledTimes(1);
+
+      await session.connect(picked.uuid);
+      finishRecheck('still-failing');
+      await vi.runAllTimersAsync();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(switchRuntime).not.toHaveBeenCalled();
+    expect(session.getConnectionState()).toEqual({
+      type: 'connected',
+      serverId: picked.uuid,
+      mode: 'proxy',
+    });
   });
 
   it('disconnects to failed when auto-switch is off', async () => {
