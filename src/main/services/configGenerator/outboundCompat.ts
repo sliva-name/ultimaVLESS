@@ -272,8 +272,25 @@ export function isServerPublicOutboundCompatible(server: VlessConfig): boolean {
   );
 }
 
-export function assertAllowInsecureNotUsed(allowInsecure: unknown): void {
-  if (allowInsecure === true) {
+/**
+ * `allowInsecure` is gone from Xray; its replacements are `pcs` / `vcn`.
+ * Panels still put `insecure=1` next to them for older clients, and a leaf
+ * pin alone already accepts the certificate, so the flag only matters when
+ * neither is given.
+ * @see https://xtls.github.io/config/transports/tls.html (`pinnedPeerCertSha256`)
+ */
+export function assertAllowInsecureNotUsed(
+  allowInsecure: unknown,
+  replacements: {
+    pinnedPeerCertSha256?: unknown;
+    verifyPeerCertByName?: unknown;
+  } = {},
+): void {
+  const replaced = [
+    replacements.pinnedPeerCertSha256,
+    replacements.verifyPeerCertByName,
+  ].some((value) => typeof value === 'string' && value.trim() !== '');
+  if (allowInsecure === true && !replaced) {
     throw new Error(
       `"allowInsecure" was removed in bundled Xray ${BUNDLED_XRAY_VERSION}; use pinnedPeerCertSha256 (pcs) and/or verifyPeerCertByName (vcn) instead.`,
     );

@@ -73,6 +73,18 @@ function bundledVersionMin(): string {
   return BUNDLED_XRAY_VERSION.replace(/^v/i, '');
 }
 
+/**
+ * A share link's `fp`, or undefined when it names none: panels still export
+ * `fp=none` from the time an empty fingerprint meant Go TLS, but Xray rejects
+ * `none` ("unknown fingerprint") and defaults to `chrome` itself.
+ * @see https://xtls.github.io/config/transports/tls.html (`fingerprint`)
+ */
+function configuredFingerprint(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed && trimmed.toLowerCase() !== 'none' ? trimmed : undefined;
+}
+
 /** Chrome major version on Xray's own schedule (`common/utils/browser.go`). */
 function chromeMajorVersion(now: number = Date.now()): number {
   const day = 86_400_000;
@@ -527,7 +539,7 @@ export class XrayConfigPipeline {
       const tlsSettings = stream?.tlsSettings as
         Record<string, unknown> | undefined;
       if (tlsSettings) {
-        assertAllowInsecureNotUsed(tlsSettings.allowInsecure);
+        assertAllowInsecureNotUsed(tlsSettings.allowInsecure, tlsSettings);
         delete tlsSettings.allowInsecure;
       }
 
@@ -675,6 +687,21 @@ export class XrayConfigPipeline {
       ) {
         streamSettings.network =
           streamSettings.method === 'raw' ? 'tcp' : streamSettings.method;
+      }
+    }
+
+    for (const key of ['tlsSettings', 'realitySettings'] as const) {
+      const settings = streamSettings[key];
+      if (
+        settings &&
+        typeof settings === 'object' &&
+        !Array.isArray(settings)
+      ) {
+        const security = settings as Record<string, unknown>;
+        if (configuredFingerprint(security.fingerprint) === undefined) {
+          // Xray then uses its default, `chrome`.
+          delete security.fingerprint;
+        }
       }
     }
 
@@ -1019,7 +1046,7 @@ export class XrayConfigPipeline {
   ): XrayConfig {
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
     const protocol = this.getStructuredProtocol(config);
-    assertAllowInsecureNotUsed(config.allowInsecure);
+    assertAllowInsecureNotUsed(config.allowInsecure, config);
 
     const outbound =
       protocol === 'wireguard'
@@ -1148,11 +1175,11 @@ export class XrayConfigPipeline {
       vlessEncryption: config.encryption,
     });
 
-    const defaultFp = perf.fingerprint;
+    const fingerprint = configuredFingerprint(config.fp) ?? perf.fingerprint;
 
     if (streamSettings.security === 'reality') {
       streamSettings.realitySettings = {
-        fingerprint: config.fp || defaultFp,
+        fingerprint,
         serverName: config.sni || '',
         password: config.pbk || '',
         shortId: config.sid || '',
@@ -1168,7 +1195,7 @@ export class XrayConfigPipeline {
         alpn: config.alpn?.length
           ? [...config.alpn]
           : this.tlsAlpnForTransport(transport),
-        fingerprint: config.fp || defaultFp,
+        fingerprint,
       };
       if (config.pinnedPeerCertSha256) {
         streamSettings.tlsSettings.pinnedPeerCertSha256 =

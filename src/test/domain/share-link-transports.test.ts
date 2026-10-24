@@ -193,3 +193,104 @@ describe('IPv6 share links', () => {
     expect(server.uuid).toContain('[2001:db8::10]:443');
   });
 });
+
+describe('fp=none', () => {
+  // Xray rejects `none` ("unknown fingerprint") and defaults to chrome.
+  it('falls back to the default fingerprint for TLS and REALITY links', () => {
+    const tls = parseOne(
+      `vless://${UUID}@cdn.example.org:443?type=tcp&security=tls&sni=cdn.example.org&fp=none#T`,
+    );
+    expect(stream(tls).tlsSettings?.fingerprint).toBe('chrome');
+    const reality = parseOne(
+      `vless://${UUID}@example.org:443?type=tcp&security=reality&sni=www.example.com&pbk=${PBK}&fp=none#R`,
+    );
+    expect(stream(reality).realitySettings?.fingerprint).toBe('chrome');
+  });
+
+  it('drops fingerprint "none" from raw JSON configs', () => {
+    const outbound = proxyOutbound({
+      uuid: 'raw',
+      name: 'raw',
+      address: 'cdn.example.org',
+      port: 443,
+      rawConfig: {
+        outbounds: [
+          {
+            tag: 'proxy',
+            protocol: 'vless',
+            settings: { address: 'cdn.example.org', port: 443, id: UUID },
+            streamSettings: {
+              network: 'tcp',
+              security: 'tls',
+              tlsSettings: {
+                serverName: 'cdn.example.org',
+                fingerprint: 'none',
+              },
+            },
+          },
+        ],
+      },
+    });
+    const settings = outbound.streamSettings as XrayStreamSettings;
+    expect(settings.tlsSettings).toEqual({ serverName: 'cdn.example.org' });
+  });
+});
+
+describe('insecure=1 next to its replacements', () => {
+  const PIN =
+    'f57cdcb0820ee009fa015211bb67db480d4f906c6124d58eb5c53084894ea7b6';
+
+  it('accepts a Hysteria2 link that pins the certificate', () => {
+    const server = parseOne(
+      `hy2://auth@hy.example.org:443?sni=hy.example.org&insecure=1&pinSHA256=${PIN}#H`,
+    );
+    const tls = stream(server).tlsSettings as Record<string, unknown>;
+    expect(tls.pinnedPeerCertSha256).toBe(PIN);
+    expect(tls).not.toHaveProperty('allowInsecure');
+  });
+
+  it('accepts a link that verifies by name', () => {
+    const server = parseOne(
+      `vless://${UUID}@cdn.example.org:443?type=tcp&security=tls&sni=front.example.org&allowInsecure=1&vcn=cdn.example.org#V`,
+    );
+    expect(stream(server).tlsSettings?.verifyPeerCertByName).toBe(
+      'cdn.example.org',
+    );
+  });
+
+  it('still refuses insecure=1 alone', () => {
+    const server = parseOne(
+      `vless://${UUID}@cdn.example.org:443?type=tcp&security=tls&sni=cdn.example.org&insecure=1#V`,
+    );
+    expect(() => proxyOutbound(server)).toThrow(/"allowInsecure" was removed/);
+  });
+
+  it('strips allowInsecure from a raw config that pins the certificate', () => {
+    const outbound = proxyOutbound({
+      uuid: 'raw',
+      name: 'raw',
+      address: 'cdn.example.org',
+      port: 443,
+      rawConfig: {
+        outbounds: [
+          {
+            tag: 'proxy',
+            protocol: 'trojan',
+            settings: { address: 'cdn.example.org', port: 443, password: 'p' },
+            streamSettings: {
+              security: 'tls',
+              tlsSettings: {
+                serverName: 'cdn.example.org',
+                allowInsecure: true,
+                pinnedPeerCertSha256: PIN,
+              },
+            },
+          },
+        ],
+      },
+    });
+    const tls = (outbound.streamSettings as XrayStreamSettings).tlsSettings;
+    expect(tls).toMatchObject({ pinnedPeerCertSha256: PIN });
+    expect(tls).not.toHaveProperty('allowInsecure');
+  });
+});
