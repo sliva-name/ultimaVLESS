@@ -1,69 +1,77 @@
 import net from 'net';
 import { BUNDLED_XRAY_VERSION } from '@/shared/constants';
-import { isPrivateOrReservedHost } from '@/shared/networkAddresses';
+import { unbracketIpv6 } from '@/shared/networkAddresses';
 import type { VlessConfig } from '@/shared/types';
 import type { XrayOutbound } from '@/shared/xray-types';
 
 const REMOVED_SS_METHODS = new Set(['none', 'plain']);
 const REMOVED_VMESS_SECURITY = new Set(['none', 'zero']);
 
-/** Hosts Xray still treats as private / local (see geodata private matchers). */
-const PRIVATE_DOMAIN_SUFFIXES = [
-  'localhost',
-  'local',
-  'lan',
-  'localdomain',
-  'home.arpa',
-  'internal',
-  'test',
-  'invalid',
-  'example',
+/**
+ * Xray's own private matchers. Without TLS, REALITY or VLESS encryption Xray
+ * refuses VLESS/Trojan unless the server address matches one of them.
+ * @see https://github.com/XTLS/Xray-core/blob/main/common/geodata/consts.go
+ * @see https://github.com/XTLS/Xray-core/blob/main/infra/conf/xray.go (`requiresTransportSecurity`)
+ */
+const XRAY_PRIVATE_SUBNETS: ReadonlyArray<[string, number, 'ipv4' | 'ipv6']> = [
+  ['0.0.0.0', 8, 'ipv4'],
+  ['10.0.0.0', 8, 'ipv4'],
+  ['100.64.0.0', 10, 'ipv4'],
+  ['127.0.0.0', 8, 'ipv4'],
+  ['169.254.0.0', 16, 'ipv4'],
+  ['172.16.0.0', 12, 'ipv4'],
+  ['192.0.0.0', 24, 'ipv4'],
+  ['192.0.2.0', 24, 'ipv4'],
+  ['192.88.99.0', 24, 'ipv4'],
+  ['192.168.0.0', 16, 'ipv4'],
+  ['198.18.0.0', 15, 'ipv4'],
+  ['198.51.100.0', 24, 'ipv4'],
+  ['203.0.113.0', 24, 'ipv4'],
+  ['224.0.0.0', 3, 'ipv4'],
+  ['::', 127, 'ipv6'],
+  ['fc00::', 7, 'ipv6'],
+  ['fe80::', 10, 'ipv6'],
+  ['ff00::', 8, 'ipv6'],
 ];
 
+const xrayPrivateIps = new net.BlockList();
+for (const [address, prefix, type] of XRAY_PRIVATE_SUBNETS) {
+  xrayPrivateIps.addSubnet(address, prefix, type);
+}
+
+/** Each entry matches the name itself and its subdomains. */
+const XRAY_PRIVATE_DOMAINS = [
+  'lan',
+  'localdomain',
+  'example',
+  'invalid',
+  'localhost',
+  'test',
+  'local',
+  'home.arpa',
+  'internal',
+];
+
+const XRAY_DOTLESS_DOMAIN = /^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
 export function isPrivateOrLocalEndpoint(hostname: string): boolean {
-  const normalized = hostname.trim().toLowerCase().replace(/\.$/, '');
-  if (!normalized) return false;
-  const host =
-    normalized.startsWith('[') && normalized.endsWith(']')
-      ? normalized.slice(1, -1)
-      : normalized;
+  const host = unbracketIpv6(hostname.trim());
+  if (!host) return false;
 
-  if (host === 'localhost' || host.endsWith('.localhost')) return true;
-
-  const ipVersion = net.isIP(host);
-  if (ipVersion === 4) {
-    const octets = host.split('.').map(Number);
-    if (octets.length !== 4 || octets.some((value) => Number.isNaN(value))) {
-      return false;
-    }
-    const [a, b] = octets;
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 0) ||
-      (a === 192 && b === 168) ||
-      (a === 198 && (b === 18 || b === 19)) ||
-      a >= 224
-    );
+  // Go's net.ParseIP rejects zone ids, so Xray reads those as domains.
+  // BlockList, like Xray, matches IPv4-mapped IPv6 against the IPv4 subnets.
+  const ipVersion = host.includes('%') ? 0 : net.isIP(host);
+  if (ipVersion !== 0) {
+    return xrayPrivateIps.check(host, ipVersion === 4 ? 'ipv4' : 'ipv6');
   }
 
-  if (ipVersion === 6) {
-    // Mapped IPv4, loopback, ULA and link-local share the SSRF helper.
-    if (isPrivateOrReservedHost(host)) return true;
-    // Xray also treats multicast (ff00::/8) as non-public.
-    return host === '::' || host.startsWith('ff');
-  }
-
-  if (PRIVATE_DOMAIN_SUFFIXES.some((suffix) => host === suffix)) return true;
-  if (PRIVATE_DOMAIN_SUFFIXES.some((suffix) => host.endsWith(`.${suffix}`))) {
-    return true;
-  }
-  // Xray also treats single-label (dotless) names as private.
-  return !host.includes('.');
+  const domain = host.toLowerCase().replace(/\.$/, '');
+  return (
+    XRAY_DOTLESS_DOMAIN.test(domain) ||
+    XRAY_PRIVATE_DOMAINS.some(
+      (suffix) => domain === suffix || domain.endsWith(`.${suffix}`),
+    )
+  );
 }
 
 export function normalizeVmessSecurity(security: string | undefined): string {
@@ -112,8 +120,7 @@ export function assertEncryptedPublicOutbound(options: {
   ) {
     return;
   }
-  if (isPrivateOrLocalEndpoint(options.address)) return;
-
+  // Xray's Hysteria dialer needs TLS whatever the address.
   if (protocol === 'hysteria') {
     if ((options.streamSecurity || '').toLowerCase() === 'tls') return;
     throw new Error(
@@ -122,6 +129,7 @@ export function assertEncryptedPublicOutbound(options: {
   }
 
   if (protocol !== 'vless' && protocol !== 'trojan') return;
+  if (isPrivateOrLocalEndpoint(options.address)) return;
   if (hasStreamTransportSecurity(options.streamSecurity)) return;
   if (
     protocol === 'vless' &&
