@@ -288,11 +288,21 @@ type LinkStreamParams = Pick<
 function parseLinkStreamParams(
   params: URLSearchParams,
   defaultSecurity: 'tls' | 'none',
-): LinkStreamParams {
-  const typeValue = params.get('type') || 'tcp';
-  const type = (
-    LINK_TRANSPORTS.includes(typeValue) ? typeValue : 'tcp'
-  ) as VlessConfig['type'];
+): LinkStreamParams | null {
+  const typeValue = (params.get('type') || 'tcp').trim().toLowerCase();
+  // `h2` is the old name of the standard's `http` (HTTP/2), which the
+  // compiler then rejects with a pointer to XHTTP.
+  const transport =
+    typeValue === 'h2' ? 'http' : typeValue === 'none' ? 'tcp' : typeValue;
+  if (!LINK_TRANSPORTS.includes(transport)) {
+    // A RAW config in its place would never connect.
+    logger.warn('SubscriptionService', 'Skipping link', {
+      reason: 'unsupported transport',
+      type: typeValue,
+    });
+    return null;
+  }
+  const type = transport as VlessConfig['type'];
   const securityValue = params.get('security') || defaultSecurity;
   const security = (
     ['reality', 'tls', 'none'].includes(securityValue)
@@ -366,6 +376,7 @@ function parseVlessLink(
     const params = parsedUrl.searchParams;
 
     const stream = parseLinkStreamParams(params, 'none');
+    if (!stream) return null;
     const {
       type,
       security,
@@ -433,7 +444,8 @@ function parseTrojanLink(link: string): VlessConfig | null {
     const password = safeDecodeComponent(parsedUrl.username || '');
     const idHost = parsedUrl.hostname || '';
     const address = unbracketIpv6(idHost);
-    const port = Number(parsedUrl.port);
+    // Trojan-Go URL scheme: the port defaults to 443.
+    const port = parsedUrl.port ? Number(parsedUrl.port) : 443;
     if (
       !password ||
       !address ||
@@ -448,6 +460,7 @@ function parseTrojanLink(link: string): VlessConfig | null {
       : 'Trojan Server';
     const params = parsedUrl.searchParams;
     const stream = parseLinkStreamParams(params, 'tls');
+    if (!stream) return null;
     const { type, security } = stream;
 
     // Earlier builds read only tcp/ws/grpc and TLS; those links keep their id.
@@ -724,15 +737,27 @@ function parseShadowsocksLink(link: string): VlessConfig | null {
       ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Shadowsocks Server'
       : 'Shadowsocks Server';
     const params = parsedUrl.searchParams;
-    const pluginParams = parsePluginParams(params.get('plugin'));
-    const mode = (pluginParams.get('mode') || params.get('type') || '')
-      .toLowerCase()
-      .trim();
-    const isWebSocket =
-      mode === 'websocket' ||
-      mode === 'ws' ||
-      pluginParams.has('tls') ||
-      params.get('type') === 'ws';
+    const plugin = params.get('plugin') ?? '';
+    const pluginName = plugin.split(';', 1)[0]!.trim().toLowerCase();
+    const pluginParams = parsePluginParams(plugin);
+    // SIP003 plugins run beside the client; Xray can stand in only for
+    // v2ray-plugin's WebSocket mode (its default). obfs-local, kcptun and the
+    // QUIC/Hysteria2 modes would leave a config that never connects.
+    const pluginMode = (pluginParams.get('mode') || 'websocket')
+      .trim()
+      .toLowerCase();
+    const isV2rayPlugin =
+      pluginName === 'v2ray-plugin' || pluginName === 'xray-plugin';
+    if (pluginName && !(isV2rayPlugin && pluginMode === 'websocket')) {
+      logger.warn('SubscriptionService', 'Skipping Shadowsocks link', {
+        reason: 'unsupported plugin',
+        plugin: pluginName,
+        mode: isV2rayPlugin ? pluginMode : undefined,
+      });
+      return null;
+    }
+    const mode = (params.get('type') || '').toLowerCase().trim();
+    const isWebSocket = isV2rayPlugin || mode === 'websocket' || mode === 'ws';
     const host = pluginParams.get('host') || params.get('host') || undefined;
     const path = pluginParams.get('path') || params.get('path') || undefined;
     const sni = pluginParams.get('sni') || params.get('sni') || host;

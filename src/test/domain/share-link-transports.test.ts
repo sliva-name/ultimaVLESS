@@ -294,3 +294,61 @@ describe('insecure=1 next to its replacements', () => {
     expect(tls).not.toHaveProperty('allowInsecure');
   });
 });
+
+describe('links the client cannot build', () => {
+  it('defaults the Trojan port to 443 (Trojan-Go URL scheme)', () => {
+    expect(
+      parseOne('trojan://pass@tj.example.com?sni=tj.example.com#T'),
+    ).toMatchObject({
+      address: 'tj.example.com',
+      port: 443,
+    });
+  });
+
+  const ssUser = Buffer.from('aes-256-gcm:pw').toString('base64url');
+  const ss = (plugin: string) =>
+    `ss://${ssUser}@ss.example.com:443?plugin=${encodeURIComponent(plugin)}#S`;
+
+  it('maps v2ray-plugin to WebSocket, its default mode', () => {
+    const plain = parseOne(ss('v2ray-plugin;host=cdn.example.com;path=/s'));
+    expect(stream(plain)).toMatchObject({
+      method: 'websocket',
+      security: 'none',
+      wsSettings: { path: '/s', host: 'cdn.example.com' },
+    });
+    const tls = parseOne(ss('v2ray-plugin;tls;host=cdn.example.com'));
+    expect(stream(tls)).toMatchObject({ method: 'websocket', security: 'tls' });
+  });
+
+  it.each([
+    'obfs-local;obfs=http;obfs-host=bing.com',
+    'simple-obfs;obfs=tls',
+    'v2ray-plugin;mode=quic;host=cdn.example.com',
+    'kcptun;mode=fast2',
+  ])('skips a Shadowsocks link with plugin %s', (plugin) => {
+    expect(parseDirectLinksFromText(ss(plugin))).toEqual([]);
+  });
+
+  it('turns type=h2 into http, which the compiler explains', () => {
+    const server = parseOne(
+      `vless://${UUID}@cdn.example.org:443?type=h2&security=tls&sni=cdn.example.org#H2`,
+    );
+    expect(server.type).toBe('http');
+    expect(() => proxyOutbound(server)).toThrow(/use XHTTP instead/);
+  });
+
+  it('skips a link with a transport the client does not know', () => {
+    expect(
+      parseDirectLinksFromText(
+        `vless://${UUID}@cdn.example.org:443?type=xdrive&security=none&encryption=x#X`,
+      ),
+    ).toEqual([]);
+  });
+
+  it('reads the transport name case-insensitively', () => {
+    const server = parseOne(
+      `vless://${UUID}@cdn.example.org:443?type=WS&security=tls&sni=cdn.example.org#W`,
+    );
+    expect(stream(server).method).toBe('websocket');
+  });
+});
