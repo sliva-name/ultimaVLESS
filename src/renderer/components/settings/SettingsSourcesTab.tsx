@@ -8,6 +8,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { localizeError } from '@/shared/localizeError';
 import { Subscription } from '@/shared/types';
 import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '@/shared/subscriptionUrls';
 import { PrimaryButton, Toggle } from '@/renderer/components/ui';
@@ -21,7 +22,7 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
   subscriptions,
   isOpen,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const [manualLinks, setManualLinks] = useState('');
   const [isManualExpanded, setIsManualExpanded] = useState(false);
@@ -263,7 +264,7 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
               />
               {addError && (
                 <p className="text-xs text-orange-400 leading-relaxed">
-                  {addError}
+                  {localizeError(addError, i18n.language)}
                 </p>
               )}
               <PrimaryButton type="submit" disabled={isAdding} block>
@@ -295,7 +296,7 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
         </button>
         {importMobileError && (
           <p className="text-sm text-orange-400 mt-3 leading-relaxed">
-            {importMobileError}
+            {localizeError(importMobileError, i18n.language)}
           </p>
         )}
       </div>
@@ -344,7 +345,7 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
                 </div>
                 {manualSaveError && (
                   <p className="text-sm text-orange-400 mt-3 leading-relaxed">
-                    {manualSaveError}
+                    {localizeError(manualSaveError, i18n.language)}
                   </p>
                 )}
               </div>

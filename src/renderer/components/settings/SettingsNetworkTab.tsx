@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { localizeError } from '@/shared/localizeError';
 import type { TFunction } from 'i18next';
 import type { NetworkAdapterView } from '@/shared/ipc';
 import {
@@ -41,7 +42,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
   isConnected,
   isConnectionBusy,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     connectionMode,
     setConnectionMode,
@@ -89,7 +90,9 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
       } catch (err) {
         console.error('Failed to set connection mode:', err);
         setModeError(
-          err instanceof Error ? err.message : 'Failed to set connection mode',
+          err instanceof Error
+            ? err.message
+            : t('settings.network.setModeFailed'),
         );
       }
     },
@@ -296,7 +299,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
           {adaptersError && (
             <p className="text-xs text-orange-400 leading-relaxed">
               {t('settings.network.tunAdapterLoadFailed', {
-                error: adaptersError,
+                error: localizeError(adaptersError, i18n.language),
               })}
             </p>
           )}
@@ -313,7 +316,9 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
         </p>
       )}
       {modeError && (
-        <p className="text-sm text-orange-400 leading-relaxed">{modeError}</p>
+        <p className="text-sm text-orange-400 leading-relaxed">
+          {localizeError(modeError, i18n.language)}
+        </p>
       )}
 
       <div className="mt-6 pt-6 border-t border-gray-700/50 space-y-4">
@@ -677,7 +682,9 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
           </button>
         </div>
         {perfError && (
-          <p className="text-sm text-orange-400 leading-relaxed">{perfError}</p>
+          <p className="text-sm text-orange-400 leading-relaxed">
+            {localizeError(perfError, i18n.language)}
+          </p>
         )}
       </div>
     </div>

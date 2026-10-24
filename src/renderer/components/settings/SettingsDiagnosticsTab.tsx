@@ -10,6 +10,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { localizeError } from '@/shared/localizeError';
 import { VlessConfig } from '@/shared/types';
 import { ConnectionMonitorEvent, type AppSnapshot } from '@/shared/ipc';
 import { Toggle } from '@/renderer/components/ui';
@@ -33,7 +34,8 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
   snapshot,
   recentEvents,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const localize = (message: string) => localizeError(message, i18n.language);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const conflicts = useConflictingApps();
@@ -134,7 +136,7 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
             )}
             {session.lastError && (
               <DiagError
-                label={`${t('settings.diagnostics.lastError')}: ${session.lastError}`}
+                label={`${t('settings.diagnostics.lastError')}: ${localize(session.lastError)}`}
               />
             )}
             {xrayStateLabel && (
@@ -177,12 +179,12 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
               <div className="space-y-2 pt-2">
                 {health.lastHealthFailureReason && (
                   <DiagError
-                    label={`${t('settings.diagnostics.healthFailure')}: ${health.lastHealthFailureReason}`}
+                    label={`${t('settings.diagnostics.healthFailure')}: ${localize(health.lastHealthFailureReason)}`}
                   />
                 )}
                 {process.lastFailureReason && (
                   <DiagError
-                    label={`${t('settings.diagnostics.xrayFailure')}: ${process.lastFailureReason}`}
+                    label={`${t('settings.diagnostics.xrayFailure')}: ${localize(process.lastFailureReason)}`}
                   />
                 )}
                 {(recovery.recoveryInProgress || recovery.recoveryBlocked) && (
@@ -293,7 +295,7 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
                     <Check className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
                   )}
                   <span className="text-gray-300 flex-1 min-w-0 leading-relaxed">
-                    {event.message ||
+                    {(event.message && localize(event.message)) ||
                       t(`settings.diagnostics.eventTypes.${event.type}`, {
                         defaultValue: event.type,
                       })}

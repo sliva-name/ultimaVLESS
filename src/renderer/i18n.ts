@@ -40,6 +40,8 @@ const resources = {
         disconnectingHint: 'Applying disconnect sequence and cleaning routes.',
         cancelSwitchHint:
           'Click the button to cancel switching and disconnect.',
+        disconnectFailed: 'Failed to disconnect cleanly',
+        connectionActionFailed: 'Connection operation failed',
         country: 'Country',
         ipAddress: 'IP Address',
         protocol: 'Protocol',
@@ -292,6 +294,7 @@ const resources = {
             'Priority, first match wins: ad and BitTorrent blocking → apps that bypass the VPN → sites and addresses (a more specific entry wins: music.example.com beats example.com; on a tie the exclusion wins) → local network, direct → apps through VPN → the selected mode.',
           savePerf: 'Save',
           savePerfFailed: 'Failed to save performance settings',
+          setModeFailed: 'Failed to change connection mode',
           resetDefaults: 'Reset to defaults',
         },
         diagnostics: {
@@ -372,6 +375,8 @@ const resources = {
           'Применение последовательности отключения и очистка маршрутов.',
         cancelSwitchHint:
           'Нажмите кнопку, чтобы отменить переключение и отключиться.',
+        disconnectFailed: 'Отключение завершилось с ошибкой',
+        connectionActionFailed: 'Ошибка при подключении или отключении',
         country: 'Страна',
         ipAddress: 'IP Адрес',
         protocol: 'Протокол',
@@ -632,6 +637,7 @@ const resources = {
             'Приоритет (срабатывает первое подходящее правило): блокировка рекламы и BitTorrent → приложения напрямую → сайты и адреса (более точное правило важнее: music.example.com важнее example.com; при равенстве побеждает исключение) → локальная сеть напрямую → приложения через VPN → выбранный режим.',
           savePerf: 'Сохранить',
           savePerfFailed: 'Не удалось сохранить настройки производительности',
+          setModeFailed: 'Не удалось изменить режим сети',
           resetDefaults: 'Сбросить по умолчанию',
         },
         diagnostics: {
