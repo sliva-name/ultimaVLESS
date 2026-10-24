@@ -42,6 +42,7 @@ import {
   resolveRoutingMode,
 } from './configGenerator/routing';
 import { applyStatsApi } from './configGenerator/statsApi';
+import { adoptProxyOutboundTag } from './configGenerator/proxyTag';
 import { applyRemoteDnsSettings, buildDnsObject } from './configGenerator/dns';
 import { logger } from './LoggerService';
 
@@ -217,6 +218,9 @@ export class XrayConfigPipeline {
         this.applySendThroughIfNeeded(cfg, options.sendThrough);
       }
     }
+
+    // Servers saved before tags were normalized at import.
+    adoptProxyOutboundTag(cfg as unknown as Record<string, unknown>);
 
     // Raw subscriptions often omit the `block` / `direct` outbounds that are
     // mandatory once routing rules reference them (either from the raw config
