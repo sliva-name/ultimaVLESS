@@ -16,6 +16,7 @@ type MutableOutbound = MutableConfigNode & {
   protocol?: string;
   tag?: string;
   settings?: MutableConfigNode;
+  streamSettings?: MutableConfigNode;
 };
 
 export function buildDnsObject(
@@ -41,29 +42,29 @@ export function buildDnsObject(
 }
 
 /**
- * DNS outbound that hijacks A/AAAA into the built-in DNS module (remote servers
- * via routing) and rewrites other queries to the primary remote resolver.
- * @see https://xtls.github.io/en/config/outbounds/dns.html
+ * DNS outbound for the queries the OS sends into the TUN. The built-in DNS
+ * module only answers A/AAAA (`hijack`); every other type (HTTPS/SVCB, SRV,
+ * TXT, MX …) would get an empty answer, so those go to the primary remote
+ * resolver instead, through the proxy rather than in plaintext past it.
+ * @see https://xtls.github.io/config/outbounds/dns.html
  */
 export function ensureDnsOutbound(cfg: XrayConfig, primaryDnsIp: string): void {
   if (!Array.isArray(cfg.outbounds)) cfg.outbounds = [];
   const outbounds = cfg.outbounds as MutableOutbound[];
-  // `action: 'hijack'` without a qType filter routes *every* query type into the
-  // built-in resolver. A trailing `{ action: 'direct' }` would instead let all
-  // non-A/AAAA types (notably qType 65 HTTPS/SVCB, which browsers request for
-  // nearly every navigation) leave as plaintext DNS carrying the hostname.
-  // @see https://xtls.github.io/config/outbounds/dns.html
   const settings = {
     rewriteNetwork: 'udp',
     rewriteAddress: primaryDnsIp,
     rewritePort: 53,
-    rules: [{ action: 'hijack' }],
+    rules: [{ action: 'hijack', qType: '1,28' }, { action: 'direct' }],
   };
+  // `direct` dials the rewritten resolver with this outbound's own dialer.
+  const streamSettings = { sockopt: { dialerProxy: PROXY_OUTBOUND_TAG } };
 
   const existing = outbounds.find((o) => o?.tag === DNS_OUTBOUND_TAG);
   if (existing) {
     existing.protocol = 'dns';
     existing.settings = settings;
+    existing.streamSettings = streamSettings;
     return;
   }
 
@@ -77,6 +78,7 @@ export function ensureDnsOutbound(cfg: XrayConfig, primaryDnsIp: string): void {
     tag: DNS_OUTBOUND_TAG,
     protocol: 'dns',
     settings,
+    streamSettings,
   });
 }
 
