@@ -1,4 +1,5 @@
 import net from 'net';
+import { unbracketIpv6 } from '@/shared/networkAddresses';
 import type { VlessConfig } from '@/shared/types';
 import type { XrayConfig } from '@/shared/xray-types';
 
@@ -19,7 +20,9 @@ function asNode(value: unknown): MutableNode | null {
 
 function isDomain(address: unknown): address is string {
   return (
-    typeof address === 'string' && address !== '' && net.isIP(address) === 0
+    typeof address === 'string' &&
+    address !== '' &&
+    net.isIP(unbracketIpv6(address)) === 0
   );
 }
 

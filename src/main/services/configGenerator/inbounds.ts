@@ -21,6 +21,8 @@ interface TunInboundOptions {
   outboundInterface?: string;
   /** Windows: WFP filters keep other programs' DNS inside the TUN. */
   blockDnsLeaks?: boolean;
+  /** False when the system cannot give the TUN an IPv6 address (Linux). */
+  ipv6?: boolean;
 }
 
 /**
@@ -141,6 +143,7 @@ export function ensureLocalProxyInbounds(
 }
 
 export function createTunInbound(options: TunInboundOptions): XrayInbound {
+  const ipv6 = options.ipv6 !== false;
   const dnsServers =
     options.dnsServers && options.dnsServers.length > 0
       ? options.dnsServers
@@ -155,7 +158,7 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
       mtu: options.mtu ?? TUN_MTU,
       gateway: [
         `${TUN_ADDRESS}/${TUN_PREFIX}`,
-        `${TUN_IPV6_ADDRESS}/${TUN_IPV6_PREFIX}`,
+        ...(ipv6 ? [`${TUN_IPV6_ADDRESS}/${TUN_IPV6_PREFIX}`] : []),
       ],
       dns: dnsServers,
       // Always bind Xray-originated packets (proxy + freedom/direct) to a
@@ -170,7 +173,7 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
     // otherwise IPv6 bypasses the tunnel (or hangs) while IPv4 works in logs.
     (tunInbound.settings as MutableConfigNode).autoSystemRoutingTable = [
       '0.0.0.0/0',
-      '::/0',
+      ...(ipv6 ? ['::/0'] : []),
     ];
     // Windows otherwise also queries the other adapters' DNS servers (Smart
     // Multi-Homed Name Resolution), and a DHCP resolver on the LAN wins by its

@@ -140,6 +140,8 @@ export interface XrayConfigPipelineOptions {
   outboundInterface?: string;
   /** TUN inbound's `autoSystemWfpBlockLeak: ["dns"]`; needs `tunAutoRoute`. */
   blockDnsLeaks?: boolean;
+  /** False drops the TUN's IPv6 address and `::/0` (Linux without IPv6). */
+  tunIpv6?: boolean;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
 }
@@ -191,6 +193,7 @@ export class XrayConfigPipeline {
       cfg.inbounds.unshift(
         createTunInbound({
           ...options,
+          ipv6: options.tunIpv6,
           dnsServers: perf.remoteDnsServers,
           sniffingRouteOnly: perf.sniffingRouteOnly,
           mtu: perf.tunMtu,
@@ -1031,6 +1034,7 @@ export class XrayConfigPipeline {
       inbounds.unshift(
         createTunInbound({
           ...options,
+          ipv6: options.tunIpv6,
           dnsServers: perf.remoteDnsServers,
           sniffingRouteOnly: perf.sniffingRouteOnly,
           mtu: perf.tunMtu,

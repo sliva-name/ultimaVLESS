@@ -41,6 +41,8 @@ export interface XrayStartOptions {
   outboundInterface?: string;
   /** Windows TUN with auto-route: WFP filters against DNS leaks. */
   blockDnsLeaks?: boolean;
+  /** TUN: false when the TUN interface cannot take an IPv6 address. */
+  tunIpv6?: boolean;
   ports?: RuntimePorts;
   /** `staging` starts a second process without stopping the active one. */
   slot?: 'active' | 'staging';
@@ -172,6 +174,7 @@ export class XrayService extends EventEmitter {
       sendThrough: options.sendThrough || null,
       outboundInterface: options.outboundInterface || null,
       blockDnsLeaks: options.blockDnsLeaks ?? false,
+      tunIpv6: options.tunIpv6 ?? null,
     });
 
     let xrayConfig;
@@ -183,6 +186,7 @@ export class XrayService extends EventEmitter {
         tunAutoRoute: options.tunAutoRoute,
         outboundInterface: options.outboundInterface,
         blockDnsLeaks: options.blockDnsLeaks,
+        tunIpv6: options.tunIpv6,
         ports,
         performanceSettings: configService.getPerformanceSettings(),
       });

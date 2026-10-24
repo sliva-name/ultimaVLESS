@@ -11,6 +11,7 @@ import {
   migrateLegacyUdpHop,
 } from '@/main/services/configGenerator/outboundCompat';
 import { redactUrl } from '@/main/utils/redactUrl';
+import { unbracketIpv6 } from '@/shared/networkAddresses';
 
 function safeDecodeComponent(value: string): string {
   try {
@@ -242,17 +243,6 @@ const LINK_TRANSPORTS: readonly string[] = [
   'httpupgrade',
 ];
 
-/**
- * `URL.hostname` keeps the brackets of an IPv6 literal (`[2001:db8::1]`).
- * Xray strips them itself, but Node's `net`/`dns` (pings, TUN host routes)
- * do not, so the address is stored bare.
- */
-function unbracketHost(hostname: string): string {
-  return hostname.startsWith('[') && hostname.endsWith(']')
-    ? hostname.slice(1, -1)
-    : hostname;
-}
-
 /** `alpn=h2,http/1.1` — comma-separated, as the share-link standard has it. */
 function parseAlpnParam(value: string | null): string[] | undefined {
   if (!value) return undefined;
@@ -358,7 +348,7 @@ function parseVlessLink(
     const uuid = safeDecodeComponent(parsedUrl.username || '');
     // Ids keep the bracketed form so existing IPv6 servers keep theirs.
     const idHost = parsedUrl.hostname || '';
-    const address = unbracketHost(idHost);
+    const address = unbracketIpv6(idHost);
     // `vless://uuid@host?...` without an explicit port defaults to 443.
     const port = parsedUrl.port ? Number(parsedUrl.port) : 443;
     if (
@@ -442,7 +432,7 @@ function parseTrojanLink(link: string): VlessConfig | null {
 
     const password = safeDecodeComponent(parsedUrl.username || '');
     const idHost = parsedUrl.hostname || '';
-    const address = unbracketHost(idHost);
+    const address = unbracketIpv6(idHost);
     const port = Number(parsedUrl.port);
     if (
       !password ||
@@ -570,7 +560,7 @@ function parseHysteria2Link(link: string): VlessConfig | null {
 
     const auth = safeDecodeComponent(parsedUrl.username || '');
     const idHost = parsedUrl.hostname || '';
-    const address = unbracketHost(idHost);
+    const address = unbracketIpv6(idHost);
     const port = parsedUrl.port ? Number(parsedUrl.port) : 443;
     if (
       !auth ||
@@ -783,7 +773,7 @@ function parseShadowsocksLink(link: string): VlessConfig | null {
 
     return {
       uuid,
-      address: unbracketHost(parsed.address),
+      address: unbracketIpv6(parsed.address),
       port: parsed.port,
       name,
       protocol: 'shadowsocks',

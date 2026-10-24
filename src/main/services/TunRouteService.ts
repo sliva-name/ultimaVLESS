@@ -8,6 +8,7 @@ import {
   resolveWindowsTunRouting,
   usesWindowsPowerShellTunRouting,
 } from '@/shared/tunRouting';
+import { unbracketIpv6 } from '@/shared/networkAddresses';
 import { logger } from './LoggerService';
 import { configService } from './ConfigService';
 import { isElevatedOnWindows } from './PrivilegeService';
@@ -724,7 +725,9 @@ export class TunRouteService {
 
   // ---- DNS / route arithmetic ----------------------------------------------
 
-  private async resolveProxyAddresses(address: string): Promise<string[]> {
+  private async resolveProxyAddresses(rawAddress: string): Promise<string[]> {
+    // Servers saved by earlier builds may still hold `[ipv6]`.
+    const address = unbracketIpv6(rawAddress);
     if (this.isIp(address)) return [address];
 
     // Prefer OS resolver (local cache / ISP DNS) — usually much faster than

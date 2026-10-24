@@ -10,6 +10,7 @@ import type {
   TunRoutingPlan,
 } from '@/main/services/TunRouteService';
 import type { XrayStartOptions } from '@/main/services/XrayService';
+import { isLinuxIpv6Available } from '@/main/services/tunRoute/linuxIpv6';
 import { bindProxyEndpointToIp } from './bindProxyEndpoint';
 import type { ConnectionSpec } from './ConnectionSpec';
 
@@ -36,7 +37,10 @@ export function createProxyNetworkRuntime(
       return { spec, server: spec.server };
     },
     async activate(prepared: PreparedConnection): Promise<void> {
-      await proxyService.enable(prepared.spec.ports.http, prepared.spec.ports.socks);
+      await proxyService.enable(
+        prepared.spec.ports.http,
+        prepared.spec.ports.socks,
+      );
     },
     async deactivate(): Promise<void> {
       await proxyService.disable();
@@ -47,10 +51,7 @@ export function createProxyNetworkRuntime(
 export function createTunNetworkRuntime(
   routeService: Pick<
     TunRouteService,
-    | 'prepareRoutingPlan'
-    | 'pinProxyHostRoutes'
-    | 'enable'
-    | 'disable'
+    'prepareRoutingPlan' | 'pinProxyHostRoutes' | 'enable' | 'disable'
   >,
   configService: Pick<ConfigService, 'getPerformanceSettings'>,
 ): NetworkModeRuntime {
@@ -89,6 +90,8 @@ export function createTunNetworkRuntime(
           tunAutoRoute,
           outboundInterface: routingPlan?.outboundInterface || undefined,
           blockDnsLeaks: resolveTunBlockDnsLeaks(process.platform, perf),
+          tunIpv6:
+            process.platform === 'linux' ? isLinuxIpv6Available() : undefined,
         },
       };
     },

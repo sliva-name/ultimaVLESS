@@ -591,6 +591,21 @@ describe('TunRouteService native Windows fast path', () => {
     expect(runPowerShell).toHaveBeenCalledTimes(1);
   });
 
+  it('pins a bracketed IPv6 server address saved by earlier builds', async () => {
+    const native = createNativeFake();
+    const { service } = createService({ native });
+    vi.spyOn(service as any, 'runPowerShell').mockResolvedValue(
+      '12|192.168.1.1|Ethernet|192.168.1.10',
+    );
+
+    const routingPlan = await service.prepareRoutingPlan(
+      makeServer({ address: '[2001:db8::10]' }),
+      { awaitStableDefaultRoute: false },
+    );
+
+    expect(routingPlan.proxyIps).toEqual(['2001:db8::10']);
+  });
+
   it('pins host routes with route.exe and records them for teardown', async () => {
     const native = createNativeFake();
     const { service, stateStore } = createService({ native });
