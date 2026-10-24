@@ -92,6 +92,7 @@ export function createTunNetworkRuntime(
           blockDnsLeaks: resolveTunBlockDnsLeaks(process.platform, perf),
           tunIpv6:
             process.platform === 'linux' ? isLinuxIpv6Available() : undefined,
+          tunSplitDefaultRoute: process.platform === 'linux',
         },
       };
     },

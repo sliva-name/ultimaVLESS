@@ -45,6 +45,8 @@ export interface XrayStartOptions {
   blockDnsLeaks?: boolean;
   /** TUN: false when the TUN interface cannot take an IPv6 address. */
   tunIpv6?: boolean;
+  /** TUN on Linux: `/1` halves instead of the default route. */
+  tunSplitDefaultRoute?: boolean;
   ports?: RuntimePorts;
   /** `staging` starts a second process without stopping the active one. */
   slot?: 'active' | 'staging';
@@ -193,6 +195,7 @@ export class XrayService extends EventEmitter {
         outboundInterface: options.outboundInterface,
         blockDnsLeaks: options.blockDnsLeaks,
         tunIpv6: options.tunIpv6,
+        tunSplitDefaultRoute: options.tunSplitDefaultRoute,
         ports,
         performanceSettings: configService.getPerformanceSettings(),
       });

@@ -23,6 +23,13 @@ interface TunInboundOptions {
   blockDnsLeaks?: boolean;
   /** False when the system cannot give the TUN an IPv6 address (Linux). */
   ipv6?: boolean;
+  /**
+   * Linux: route the two halves of the address space instead of the default
+   * route. Xray adds its routes with metric 1, which loses to a default route
+   * with metric 0, and a more specific prefix wins whatever the metrics. Xray
+   * keeps finding the physical interface by its own `/0` route.
+   */
+  splitDefaultRoute?: boolean;
 }
 
 /**
@@ -171,9 +178,10 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
   if (options.tunAutoRoute) {
     // Keep both defaults: browsers resolve AAAA and need ::/0 via TUN,
     // otherwise IPv6 bypasses the tunnel (or hangs) while IPv4 works in logs.
+    const split = options.splitDefaultRoute === true;
     (tunInbound.settings as MutableConfigNode).autoSystemRoutingTable = [
-      '0.0.0.0/0',
-      ...(ipv6 ? ['::/0'] : []),
+      ...(split ? ['0.0.0.0/1', '128.0.0.0/1'] : ['0.0.0.0/0']),
+      ...(ipv6 ? (split ? ['::/1', '8000::/1'] : ['::/0']) : []),
     ];
     // Windows otherwise also queries the other adapters' DNS servers (Smart
     // Multi-Homed Name Resolution), and a DHCP resolver on the LAN wins by its

@@ -155,6 +155,8 @@ export interface XrayConfigPipelineOptions {
   blockDnsLeaks?: boolean;
   /** False drops the TUN's IPv6 address and `::/0` (Linux without IPv6). */
   tunIpv6?: boolean;
+  /** Linux: TUN routes as two `/1` halves (see `createTunInbound`). */
+  tunSplitDefaultRoute?: boolean;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
 }
@@ -207,6 +209,7 @@ export class XrayConfigPipeline {
         createTunInbound({
           ...options,
           ipv6: options.tunIpv6,
+          splitDefaultRoute: options.tunSplitDefaultRoute,
           dnsServers: perf.remoteDnsServers,
           sniffingRouteOnly: perf.sniffingRouteOnly,
           mtu: perf.tunMtu,
@@ -1066,6 +1069,7 @@ export class XrayConfigPipeline {
         createTunInbound({
           ...options,
           ipv6: options.tunIpv6,
+          splitDefaultRoute: options.tunSplitDefaultRoute,
           dnsServers: perf.remoteDnsServers,
           sniffingRouteOnly: perf.sniffingRouteOnly,
           mtu: perf.tunMtu,

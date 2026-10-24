@@ -16,6 +16,7 @@ export interface XrayRuntimeContext {
   outboundInterface?: string;
   blockDnsLeaks?: boolean;
   tunIpv6?: boolean;
+  tunSplitDefaultRoute?: boolean;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
 }
@@ -52,6 +53,7 @@ export class XrayConfigCompiler {
         outboundInterface: runtime.outboundInterface,
         blockDnsLeaks: runtime.blockDnsLeaks,
         tunIpv6: runtime.tunIpv6,
+        tunSplitDefaultRoute: runtime.tunSplitDefaultRoute,
         performanceSettings: runtime.performanceSettings,
         ports: runtime.ports,
       },
