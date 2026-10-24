@@ -15,6 +15,7 @@ import {
   buildConsoleBreakScript,
   sendConsoleBreak,
 } from '@/main/services/xray/windowsConsoleBreak';
+import { findBusyLoopbackPort } from '@/main/services/xray/loopbackPorts';
 import { makeServer } from '@/test/factories';
 
 vi.mock('child_process', async (importOriginal) => ({
@@ -38,6 +39,9 @@ vi.mock('@/main/services/ConfigService', () => ({
   configService: { getPerformanceSettings: vi.fn(() => ({})) },
 }));
 vi.mock('@/main/services/networkProbe', () => ({ probeTcpPort: vi.fn() }));
+vi.mock('@/main/services/xray/loopbackPorts', () => ({
+  findBusyLoopbackPort: vi.fn(async () => null),
+}));
 vi.mock('@/main/utils/runtimePaths', () => ({
   getBinResourcesPath: () => '/resources/bin',
 }));
@@ -187,6 +191,43 @@ describe('XrayService on Windows', () => {
       exitChild(child, 1);
       await vi.advanceTimersByTimeAsync(0);
       await failure;
+      expect(service.getHealthStatus().state).toBe('failed');
+    });
+
+    it('names the cause Xray printed when it refused to start', async () => {
+      const service = new XrayService();
+      const started = service.start(makeServer(), 'proxy');
+      const failure = expect(started).rejects.toThrow(
+        'Xray exited during startup (code=23, signal=none): Failed to build TLS config. > unknown "fingerprint": none',
+      );
+
+      await vi.advanceTimersByTimeAsync(50);
+      child.stdout.emit(
+        'data',
+        Buffer.from(
+          'Failed to start: main: failed to load config files: [C:\\Users\\u\\config.json] > infra/conf: failed to build outbound config with tag proxy > infra/conf: Failed to build TLS config. > infra/conf: unknown "fingerprint": none\n',
+        ),
+      );
+      exitChild(child, 23);
+      await vi.advanceTimersByTimeAsync(0);
+      await failure;
+      expect(service.getHealthStatus().lastFailureReason).toContain(
+        'unknown "fingerprint": none',
+      );
+    });
+
+    it('refuses to start when another program holds a local proxy port', async () => {
+      vi.mocked(findBusyLoopbackPort).mockResolvedValueOnce({
+        port: 10808,
+        code: 'EADDRINUSE',
+      });
+      listenersUp = true;
+      const service = new XrayService();
+
+      await expect(service.start(makeServer(), 'proxy')).rejects.toThrow(
+        /Port 10808 on 127\.0\.0\.1 is already used by another program/,
+      );
+      expect(spawn).not.toHaveBeenCalled();
       expect(service.getHealthStatus().state).toBe('failed');
     });
   });

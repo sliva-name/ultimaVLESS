@@ -26,6 +26,8 @@ import {
 import { waitForProcessExit as awaitChildExit } from './xray/waitForProcessExit';
 import { trackOwnedXrayProcess } from './xray/ownedProcesses';
 import { sendConsoleBreak } from './xray/windowsConsoleBreak';
+import { findBusyLoopbackPort } from './xray/loopbackPorts';
+import { summarizeStartupFailure } from './xray/startupFailure';
 
 export interface XrayUnexpectedExitEvent {
   config: VlessConfig;
@@ -46,6 +48,10 @@ export interface XrayStartOptions {
   ports?: RuntimePorts;
   /** `staging` starts a second process without stopping the active one. */
   slot?: 'active' | 'staging';
+}
+
+function withCause(message: string, cause: string | null): string {
+  return cause ? `${message}: ${cause}` : message;
 }
 
 /**
@@ -242,6 +248,28 @@ export class XrayService extends EventEmitter {
       }
     }
 
+    const busy = await findBusyLoopbackPort([
+      ports.socks,
+      ports.http,
+      ports.api,
+    ]);
+    if (busy) {
+      const error = new Error(
+        busy.code === 'EADDRINUSE'
+          ? `Port ${busy.port} on 127.0.0.1 is already used by another program (another VPN or proxy client?). Close it and connect again.`
+          : `Port ${busy.port} on 127.0.0.1 cannot be used (${busy.code}).`,
+      );
+      if (slot === 'active') {
+        this.markFailed(error.message);
+      }
+      logger.error('XrayService', 'Local proxy port unavailable', {
+        port: busy.port,
+        code: busy.code,
+        slot,
+      });
+      throw error;
+    }
+
     const pkexecPath = findPkexecPath();
     const elevate =
       shouldElevateXray({
@@ -301,27 +329,27 @@ export class XrayService extends EventEmitter {
       throw error;
     }
 
-    spawnedProcess.stdout?.on('data', (data) => {
-      const output = data.toString();
-      const lines: string[] = output
+    // Xray prints why it refused to start on stdout; keep the tail of it.
+    const recentOutput: string[] = [];
+    const startupFailure = () => summarizeStartupFailure(recentOutput);
+    const onOutput = (stream: 'stdout' | 'stderr', data: Buffer) => {
+      const lines: string[] = data
+        .toString()
         .split(/\r?\n/)
         .map((line: string) => line.trim())
         .filter(Boolean);
       for (const line of lines) {
-        this.logXrayLine('stdout', line, config);
+        recentOutput.push(line);
+        if (recentOutput.length > 20) recentOutput.shift();
+        this.logXrayLine(stream, line, config);
       }
-    });
-
-    spawnedProcess.stderr?.on('data', (data) => {
-      const output = data.toString();
-      const lines: string[] = output
-        .split(/\r?\n/)
-        .map((line: string) => line.trim())
-        .filter(Boolean);
-      for (const line of lines) {
-        this.logXrayLine('stderr', line, config);
-      }
-    });
+    };
+    spawnedProcess.stdout?.on('data', (data: Buffer) =>
+      onOutput('stdout', data),
+    );
+    spawnedProcess.stderr?.on('data', (data: Buffer) =>
+      onOutput('stderr', data),
+    );
 
     spawnedProcess.on('close', (code) => {
       const signal = spawnedProcess.signalCode ?? null;
@@ -344,7 +372,10 @@ export class XrayService extends EventEmitter {
       this.maybeEmitUnexpectedExit(spawnedProcess, config, {
         code,
         signal,
-        reason: `Xray exited unexpectedly (code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
+        reason: withCause(
+          `Xray exited unexpectedly (code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
+          startupFailure(),
+        ),
       });
       if (wasActive) {
         this.process = null;
@@ -388,6 +419,7 @@ export class XrayService extends EventEmitter {
         {
           timeoutMs: readinessTimeoutMs,
           elevated: elevate,
+          startupFailure,
         },
       );
       if (!readiness.reachable) {
@@ -743,7 +775,11 @@ export class XrayService extends EventEmitter {
   private async awaitLocalProxyReadiness(
     processRef: ChildProcess,
     ports: RuntimePorts,
-    options: { timeoutMs?: number; elevated?: boolean } = {},
+    options: {
+      timeoutMs?: number;
+      elevated?: boolean;
+      startupFailure?: () => string | null;
+    } = {},
   ): Promise<{ reachable: boolean; reason: string | null }> {
     const readinessTimeoutMs =
       options.timeoutMs ?? XrayService.READINESS_TIMEOUT_MS;
@@ -772,7 +808,10 @@ export class XrayService extends EventEmitter {
       }
       exitReject?.(
         new Error(
-          `Xray exited during startup (code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
+          withCause(
+            `Xray exited during startup (code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
+            options.startupFailure?.() ?? null,
+          ),
         ),
       );
     };
