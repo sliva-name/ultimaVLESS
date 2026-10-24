@@ -227,6 +227,125 @@ export function extractSupportedLinks(input: string): string[] {
     .filter((link) => isSupportedLink(link));
 }
 
+const LINK_TRANSPORTS: readonly string[] = [
+  'tcp',
+  'raw',
+  'kcp',
+  'mkcp',
+  'ws',
+  'websocket',
+  'http',
+  'grpc',
+  'quic',
+  'xhttp',
+  'splithttp',
+  'httpupgrade',
+];
+
+/**
+ * `URL.hostname` keeps the brackets of an IPv6 literal (`[2001:db8::1]`).
+ * Xray strips them itself, but Node's `net`/`dns` (pings, TUN host routes)
+ * do not, so the address is stored bare.
+ */
+function unbracketHost(hostname: string): string {
+  return hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+}
+
+/** `alpn=h2,http/1.1` — comma-separated, as the share-link standard has it. */
+function parseAlpnParam(value: string | null): string[] | undefined {
+  if (!value) return undefined;
+  const alpn = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return alpn.length > 0 ? alpn : undefined;
+}
+
+type LinkStreamParams = Pick<
+  VlessConfig,
+  | 'type'
+  | 'security'
+  | 'sni'
+  | 'fp'
+  | 'pbk'
+  | 'sid'
+  | 'spx'
+  | 'path'
+  | 'host'
+  | 'serviceName'
+  | 'authority'
+  | 'mode'
+  | 'xhttpExtra'
+  | 'noGRPCHeader'
+  | 'allowInsecure'
+  | 'alpn'
+  | 'headerType'
+  | 'pinnedPeerCertSha256'
+  | 'verifyPeerCertByName'
+  | 'mldsa65Verify'
+  | 'echConfigList'
+  | 'finalmask'
+>;
+
+/**
+ * Transport and TLS/REALITY parameters. The share-link standard is written
+ * for VLESS/VMess, but panels (3x-ui, Marzban, Remnawave) put the same ones on
+ * trojan:// links, REALITY and XHTTP included.
+ * @see https://github.com/XTLS/Xray-core/discussions/716
+ */
+function parseLinkStreamParams(
+  params: URLSearchParams,
+  defaultSecurity: 'tls' | 'none',
+): LinkStreamParams {
+  const typeValue = params.get('type') || 'tcp';
+  const type = (
+    LINK_TRANSPORTS.includes(typeValue) ? typeValue : 'tcp'
+  ) as VlessConfig['type'];
+  const securityValue = params.get('security') || defaultSecurity;
+  const security = (
+    ['reality', 'tls', 'none'].includes(securityValue)
+      ? securityValue
+      : defaultSecurity
+  ) as VlessConfig['security'];
+  const fm = parseFinalmaskParam(params);
+  // v2rayN / 3x-ui export RAW HTTP camouflage as `headerType=http`; for mKCP
+  // the same parameter names a legacy header mask.
+  const isRaw = type === 'tcp' || type === 'raw';
+  const headerType = (params.get('headerType') ?? '').trim().toLowerCase();
+  return {
+    type,
+    security,
+    sni: params.get('sni') ?? undefined,
+    fp: params.get('fp') ?? undefined,
+    pbk: params.get('pbk') ?? undefined,
+    sid: params.get('sid') ?? undefined,
+    spx: params.get('spx') ?? undefined,
+    path: params.get('path') ?? undefined,
+    host: params.get('host') ?? undefined,
+    serviceName: params.get('serviceName') ?? undefined,
+    authority: params.get('authority') || undefined,
+    mode: params.get('mode') ?? undefined,
+    xhttpExtra: parseJsonObjectParam(params, 'extra'),
+    noGRPCHeader: parseOptionalBooleanQueryParam(params.get('noGRPCHeader')),
+    allowInsecure:
+      isTruthyQueryParam(params.get('insecure')) ||
+      isTruthyQueryParam(params.get('allowInsecure')),
+    alpn: parseAlpnParam(params.get('alpn')),
+    headerType: isRaw && headerType === 'http' ? 'http' : undefined,
+    pinnedPeerCertSha256:
+      params.get('pinnedPeerCertSha256') ?? params.get('pcs') ?? undefined,
+    verifyPeerCertByName:
+      params.get('verifyPeerCertByName') ?? params.get('vcn') ?? undefined,
+    mldsa65Verify:
+      params.get('mldsa65Verify') ?? params.get('pqv') ?? undefined,
+    echConfigList: params.get('ech') ?? undefined,
+    finalmask:
+      type === 'kcp' || type === 'mkcp' ? withMkcpLegacyMasks(fm, params) : fm,
+  };
+}
+
 function parseVlessLink(
   link: string,
   identitySalt?: string,
@@ -237,7 +356,9 @@ function parseVlessLink(
     if (parsedUrl.protocol !== 'vless:') return null;
 
     const uuid = safeDecodeComponent(parsedUrl.username || '');
-    const address = parsedUrl.hostname || '';
+    // Ids keep the bracketed form so existing IPv6 servers keep theirs.
+    const idHost = parsedUrl.hostname || '';
+    const address = unbracketHost(idHost);
     // `vless://uuid@host?...` without an explicit port defaults to 443.
     const port = parsedUrl.port ? Number(parsedUrl.port) : 443;
     if (
@@ -254,54 +375,26 @@ function parseVlessLink(
       : 'Server';
     const params = parsedUrl.searchParams;
 
-    const typeValue = params.get('type') || 'tcp';
-    const securityValue = params.get('security') || 'none';
-    const type = (
-      [
-        'tcp',
-        'raw',
-        'kcp',
-        'mkcp',
-        'ws',
-        'websocket',
-        'http',
-        'grpc',
-        'quic',
-        'xhttp',
-        'splithttp',
-        'httpupgrade',
-      ].includes(typeValue)
-        ? typeValue
-        : 'tcp'
-    ) as VlessConfig['type'];
-    const security = (
-      ['reality', 'tls', 'none'].includes(securityValue)
-        ? securityValue
-        : 'none'
-    ) as VlessConfig['security'];
+    const stream = parseLinkStreamParams(params, 'none');
+    const {
+      type,
+      security,
+      sni,
+      fp,
+      pbk,
+      sid,
+      spx,
+      path,
+      host,
+      serviceName,
+      authority,
+      mode,
+      noGRPCHeader,
+      allowInsecure,
+    } = stream;
     const flow = params.get('flow') ?? undefined;
     const encryption = params.get('encryption') ?? undefined;
-    const sni = params.get('sni') ?? undefined;
-    const fp = params.get('fp') ?? undefined;
-    const pbk = params.get('pbk') ?? undefined;
-    const sid = params.get('sid') ?? undefined;
-    const spx = params.get('spx') ?? undefined;
-    const path = params.get('path') ?? undefined;
-    const host = params.get('host') ?? undefined;
-    const serviceName = params.get('serviceName') ?? undefined;
-    const authority = params.get('authority') || undefined;
-    const mode = params.get('mode') ?? undefined;
-    const xhttpExtra = parseJsonObjectParam(params, 'extra');
-    const noGRPCHeader = parseOptionalBooleanQueryParam(
-      params.get('noGRPCHeader'),
-    );
-    const fm = parseFinalmaskParam(params);
-    const finalmask =
-      type === 'kcp' || type === 'mkcp' ? withMkcpLegacyMasks(fm, params) : fm;
-    const allowInsecure =
-      isTruthyQueryParam(params.get('insecure')) ||
-      isTruthyQueryParam(params.get('allowInsecure'));
-    const stableId = createStableServerId(uuid, address, port, [
+    const stableId = createStableServerId(uuid, idHost, port, [
       identitySalt,
       type,
       security,
@@ -324,36 +417,14 @@ function parseVlessLink(
     ]);
 
     return {
+      ...stream,
       uuid: stableId,
       userId: uuid,
       address,
       port,
       name,
       encryption,
-      type,
-      security,
-      sni,
-      fp,
-      pbk,
-      sid,
       flow,
-      spx,
-      path,
-      host,
-      serviceName,
-      authority,
-      mode,
-      xhttpExtra,
-      noGRPCHeader,
-      allowInsecure,
-      pinnedPeerCertSha256:
-        params.get('pinnedPeerCertSha256') ?? params.get('pcs') ?? undefined,
-      verifyPeerCertByName:
-        params.get('verifyPeerCertByName') ?? params.get('vcn') ?? undefined,
-      mldsa65Verify:
-        params.get('mldsa65Verify') ?? params.get('pqv') ?? undefined,
-      echConfigList: params.get('ech') ?? undefined,
-      finalmask,
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing VLESS link', {
@@ -370,7 +441,8 @@ function parseTrojanLink(link: string): VlessConfig | null {
     if (parsedUrl.protocol !== 'trojan:') return null;
 
     const password = safeDecodeComponent(parsedUrl.username || '');
-    const address = parsedUrl.hostname || '';
+    const idHost = parsedUrl.hostname || '';
+    const address = unbracketHost(idHost);
     const port = Number(parsedUrl.port);
     if (
       !password ||
@@ -385,62 +457,51 @@ function parseTrojanLink(link: string): VlessConfig | null {
       ? safeDecodeComponent(parsedUrl.hash.substring(1)) || 'Trojan Server'
       : 'Trojan Server';
     const params = parsedUrl.searchParams;
-    const typeParam = params.get('type') || '';
-    const network = (
-      ['tcp', 'ws', 'grpc'].includes(typeParam) ? typeParam : 'tcp'
-    ) as 'tcp' | 'ws' | 'grpc';
-    const security = (
-      (params.get('security') || 'tls') === 'none' ? 'none' : 'tls'
-    ) as 'tls' | 'none';
+    const stream = parseLinkStreamParams(params, 'tls');
+    const { type, security } = stream;
+
+    // Earlier builds read only tcp/ws/grpc and TLS; those links keep their id.
+    const legacyNetwork =
+      type === 'ws' || type === 'grpc'
+        ? type
+        : type === 'tcp' || type === 'raw'
+          ? 'tcp'
+          : undefined;
+    const idParts = [
+      legacyNetwork ?? 'tcp',
+      security === 'none' ? 'none' : 'tls',
+      params.get('sni') || '',
+      params.get('fp') || '',
+      params.get('path') || '',
+      params.get('host') || '',
+      params.get('serviceName') || '',
+      String(stream.allowInsecure),
+      // Appended last and only when set so existing server ids stay stable.
+      ...(stream.authority ? [stream.authority] : []),
+      ...(legacyNetwork
+        ? []
+        : [`type:${type}`, stream.mode, params.get('extra')]),
+      ...(security === 'reality'
+        ? ['reality', stream.pbk, stream.sid, stream.spx]
+        : []),
+    ];
 
     // Structured fields only; the runtime compiler adds inbounds, auxiliary
     // outbounds, and routing rules so imported links cannot produce half-baked
     // raw configs that crash Xray.
     return {
+      ...stream,
       uuid: createStableServerId(
-        createHashedIdentityToken('tj', password || 'trojan', address, port),
-        address,
+        createHashedIdentityToken('tj', password || 'trojan', idHost, port),
+        idHost,
         port,
-        [
-          network,
-          security,
-          params.get('sni') || '',
-          params.get('fp') || '',
-          params.get('path') || '',
-          params.get('host') || '',
-          params.get('serviceName') || '',
-          String(
-            isTruthyQueryParam(params.get('insecure')) ||
-              isTruthyQueryParam(params.get('allowInsecure')),
-          ),
-          // Appended last and only when set so existing server ids stay stable.
-          ...(params.get('authority') ? [params.get('authority')] : []),
-        ],
+        idParts,
       ),
       address,
       port,
       name,
       protocol: 'trojan',
       password,
-      type: network,
-      security,
-      sni: params.get('sni') ?? undefined,
-      fp: params.get('fp') ?? undefined,
-      path: params.get('path') ?? undefined,
-      host: params.get('host') ?? undefined,
-      serviceName: params.get('serviceName') ?? undefined,
-      authority: params.get('authority') || undefined,
-      allowInsecure:
-        isTruthyQueryParam(params.get('insecure')) ||
-        isTruthyQueryParam(params.get('allowInsecure')),
-      pinnedPeerCertSha256:
-        params.get('pinnedPeerCertSha256') ?? params.get('pcs') ?? undefined,
-      verifyPeerCertByName:
-        params.get('verifyPeerCertByName') ?? params.get('vcn') ?? undefined,
-      mldsa65Verify:
-        params.get('mldsa65Verify') ?? params.get('pqv') ?? undefined,
-      echConfigList: params.get('ech') ?? undefined,
-      finalmask: parseFinalmaskParam(params),
     };
   } catch {
     logger.error('SubscriptionService', 'Error parsing Trojan link', {
@@ -508,7 +569,8 @@ function parseHysteria2Link(link: string): VlessConfig | null {
     if (parsedUrl.protocol !== 'hysteria2:') return null;
 
     const auth = safeDecodeComponent(parsedUrl.username || '');
-    const address = parsedUrl.hostname || '';
+    const idHost = parsedUrl.hostname || '';
+    const address = unbracketHost(idHost);
     const port = parsedUrl.port ? Number(parsedUrl.port) : 443;
     if (
       !auth ||
@@ -563,8 +625,8 @@ function parseHysteria2Link(link: string): VlessConfig | null {
     return {
       // Hop ports and gecko sizes stay out of the id, like the masks.
       uuid: createStableServerId(
-        createHashedIdentityToken('hy2', auth, address, port),
-        address,
+        createHashedIdentityToken('hy2', auth, idHost, port),
+        idHost,
         port,
         [
           'hysteria',
@@ -721,7 +783,7 @@ function parseShadowsocksLink(link: string): VlessConfig | null {
 
     return {
       uuid,
-      address: parsed.address,
+      address: unbracketHost(parsed.address),
       port: parsed.port,
       name,
       protocol: 'shadowsocks',

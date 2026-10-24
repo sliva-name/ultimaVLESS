@@ -132,7 +132,7 @@ describe('share link finalmask', () => {
     ).toMatchObject({ port: 20000 });
 
     const ipv6 = parseOne('hy2://auth@[2001:db8::1]:8443,5000-6000/#V6');
-    expect(ipv6).toMatchObject({ address: '[2001:db8::1]', port: 8443 });
+    expect(ipv6).toMatchObject({ address: '2001:db8::1', port: 8443 });
     expect(ipv6.finalmask?.udp).toEqual([
       {
         type: 'udphop',

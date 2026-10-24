@@ -13,6 +13,7 @@ import {
   XrayStreamSettings,
   XrayMuxSettings,
   XrayRoutingRule,
+  XrayTcpSettings,
 } from '@/shared/xray-types';
 import {
   createLocalProxyInbounds,
@@ -70,6 +71,51 @@ type StructuredOutboundProtocol =
 
 function bundledVersionMin(): string {
   return BUNDLED_XRAY_VERSION.replace(/^v/i, '');
+}
+
+/** Chrome major version on Xray's own schedule (`common/utils/browser.go`). */
+function chromeMajorVersion(now: number = Date.now()): number {
+  const day = 86_400_000;
+  const days = Math.floor((now - Date.UTC(2026, 0, 13)) / day);
+  return 144 + Math.floor(Math.max(0, days - 70) / 35);
+}
+
+function splitList(value: string | undefined): string[] | undefined {
+  const items = (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : undefined;
+}
+
+/**
+ * RAW HTTP camouflage from `headerType=http` (v2rayN / 3x-ui links: `path`
+ * and `host` may list several values). Xray replaces its whole default
+ * request header set once `headers` is given, so the browser-like headers are
+ * spelled out next to `Host`; without a host the defaults stay.
+ * @see https://xtls.github.io/config/transports/raw.html#httpheaderobject
+ */
+function buildRawHttpHeader(
+  config: VlessConfig,
+): NonNullable<XrayTcpSettings['header']> {
+  const hosts = splitList(config.host);
+  const request: Record<string, unknown> = {
+    version: '1.1',
+    method: 'GET',
+    path: splitList(config.path) ?? ['/'],
+  };
+  if (hosts) {
+    request.headers = {
+      Host: hosts,
+      'User-Agent': [
+        `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajorVersion()}.0.0.0 Safari/537.36`,
+      ],
+      'Accept-Encoding': ['gzip, deflate'],
+      Connection: ['keep-alive'],
+      Pragma: ['no-cache'],
+    };
+  }
+  return { type: 'http', request };
 }
 
 /** Outbound tags a subscription-supplied routing rule may target. */
@@ -1114,7 +1160,10 @@ export class XrayConfigPipeline {
     } else if (streamSettings.security === 'tls') {
       streamSettings.tlsSettings = {
         serverName: config.sni || '',
-        alpn: this.tlsAlpnForTransport(transport),
+        // XHTTP picks its HTTP version from the ALPN (`["h3"]` → QUIC).
+        alpn: config.alpn?.length
+          ? [...config.alpn]
+          : this.tlsAlpnForTransport(transport),
         fingerprint: config.fp || defaultFp,
       };
       if (config.pinnedPeerCertSha256) {
@@ -1167,7 +1216,13 @@ export class XrayConfigPipeline {
       streamSettings.grpcSettings = {
         serviceName: config.serviceName || '',
         ...(config.authority ? { authority: config.authority } : {}),
+        // Share-link `mode=multi` (default `gun`).
+        ...(config.mode === 'multi' ? { multiMode: true } : {}),
       };
+    }
+
+    if (transport === 'raw' && config.headerType === 'http') {
+      streamSettings.rawSettings = { header: buildRawHttpHeader(config) };
     }
 
     if (transport === 'xhttp') {
@@ -1363,7 +1418,14 @@ export class XrayConfigPipeline {
     perf: PerformanceSettings,
     options: { forceMux?: boolean } = {},
   ): XrayMuxSettings {
-    if (transport === 'grpc' || transport === 'hysteria') {
+    // XHTTP multiplexes by itself (XMUX), and an XHTTP inbound only lets UDP
+    // through Mux.Cool (`app/proxyman/inbound`), so TCP over Mux would fail.
+    if (
+      transport === 'grpc' ||
+      transport === 'hysteria' ||
+      transport === 'xhttp' ||
+      transport === 'splithttp'
+    ) {
       return { enabled: false };
     }
     if (hasVisionFlow) {
