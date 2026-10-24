@@ -132,3 +132,42 @@ describe('connection monitor pre-switch recheck', () => {
     }
   });
 });
+
+describe('connection monitor xray log scan', () => {
+  const DIRECT_FAILURE =
+    '[Info] [1] app/proxyman/outbound: failed to process outbound traffic > proxy/freedom: failed to open connection to tcp:vk.com:80 > common/retry: [transport/internet/tcp: failed to dial to dest > i/o timeout]';
+  const PROXY_FAILURE =
+    '[Info] [2] app/proxyman/outbound: failed to process outbound traffic > proxy/vless/outbound: failed to find an available destination > common/retry: [transport/internet/tcp: failed to dial to dest > i/o timeout]';
+
+  async function runHealthyTick(logLines: string[]) {
+    const monitor = new ConnectionMonitorService();
+    const healthFailure = vi.fn();
+    monitor.on('health-failure', healthFailure);
+    monitor.on('error', () => undefined);
+    probe.mockResolvedValue({ type: 'healthy', localProxyReachable: true });
+    vi.spyOn(monitor as never, 'readNewLogLines').mockResolvedValue(
+      logLines as never,
+    );
+    vi.useFakeTimers();
+    try {
+      monitor.startMonitoring(makeServer({ uuid: 'live' }));
+      await vi.advanceTimersByTimeAsync(5_000);
+      return { healthFailure, state: monitor.getStatus().lastHealthState };
+    } finally {
+      monitor.stopMonitoring();
+      vi.useRealTimers();
+    }
+  }
+
+  it('ignores failures of direct routes after a passing tunnel probe', async () => {
+    const { healthFailure, state } = await runHealthyTick([DIRECT_FAILURE]);
+    expect(healthFailure).not.toHaveBeenCalled();
+    expect(state).toBe('healthy');
+  });
+
+  it('reports proxy dial errors as degraded without failing the server', async () => {
+    const { healthFailure, state } = await runHealthyTick([PROXY_FAILURE]);
+    expect(healthFailure).not.toHaveBeenCalled();
+    expect(state).toBe('degraded');
+  });
+});

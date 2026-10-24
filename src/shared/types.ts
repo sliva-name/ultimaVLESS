@@ -62,6 +62,8 @@ export interface ServerConfig {
   verifyPeerCertByName?: string;
   /** TLS Encrypted Client Hello config list (client). */
   echConfigList?: string;
+  /** TLS ALPN from the share link (`alpn=h2,http/1.1`); XHTTP picks H3 on `["h3"]`. */
+  alpn?: string[];
   /**
    * VMess security when protocol === 'vmess'.
    * `none` / `zero` are accepted from older links and coerced to `auto`
@@ -83,9 +85,11 @@ export interface ServerConfig {
   /** Opaque streamSettings.finalmask passthrough / emit. */
   finalmask?: Record<string, unknown>;
 
-  // WS specific
+  // WS / HTTPUpgrade / XHTTP; also RAW HTTP camouflage (`headerType: 'http'`)
   path?: string;
   host?: string;
+  /** RAW (TCP) camouflage header from `headerType=http`. */
+  headerType?: 'http';
   wsMaxEarlyData?: number;
 
   // XHTTP specific

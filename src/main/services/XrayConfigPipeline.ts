@@ -13,6 +13,7 @@ import {
   XrayStreamSettings,
   XrayMuxSettings,
   XrayRoutingRule,
+  XrayTcpSettings,
 } from '@/shared/xray-types';
 import {
   createLocalProxyInbounds,
@@ -41,6 +42,7 @@ import {
   resolveRoutingMode,
 } from './configGenerator/routing';
 import { applyStatsApi } from './configGenerator/statsApi';
+import { adoptProxyOutboundTag } from './configGenerator/proxyTag';
 import { applyRemoteDnsSettings, buildDnsObject } from './configGenerator/dns';
 import { logger } from './LoggerService';
 
@@ -72,6 +74,63 @@ function bundledVersionMin(): string {
   return BUNDLED_XRAY_VERSION.replace(/^v/i, '');
 }
 
+/**
+ * A share link's `fp`, or undefined when it names none: panels still export
+ * `fp=none` from the time an empty fingerprint meant Go TLS, but Xray rejects
+ * `none` ("unknown fingerprint") and defaults to `chrome` itself.
+ * @see https://xtls.github.io/config/transports/tls.html (`fingerprint`)
+ */
+function configuredFingerprint(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed && trimmed.toLowerCase() !== 'none' ? trimmed : undefined;
+}
+
+/** Chrome major version on Xray's own schedule (`common/utils/browser.go`). */
+function chromeMajorVersion(now: number = Date.now()): number {
+  const day = 86_400_000;
+  const days = Math.floor((now - Date.UTC(2026, 0, 13)) / day);
+  return 144 + Math.floor(Math.max(0, days - 70) / 35);
+}
+
+function splitList(value: string | undefined): string[] | undefined {
+  const items = (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : undefined;
+}
+
+/**
+ * RAW HTTP camouflage from `headerType=http` (v2rayN / 3x-ui links: `path`
+ * and `host` may list several values). Xray replaces its whole default
+ * request header set once `headers` is given, so the browser-like headers are
+ * spelled out next to `Host`; without a host the defaults stay.
+ * @see https://xtls.github.io/config/transports/raw.html#httpheaderobject
+ */
+function buildRawHttpHeader(
+  config: VlessConfig,
+): NonNullable<XrayTcpSettings['header']> {
+  const hosts = splitList(config.host);
+  const request: Record<string, unknown> = {
+    version: '1.1',
+    method: 'GET',
+    path: splitList(config.path) ?? ['/'],
+  };
+  if (hosts) {
+    request.headers = {
+      Host: hosts,
+      'User-Agent': [
+        `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajorVersion()}.0.0.0 Safari/537.36`,
+      ],
+      'Accept-Encoding': ['gzip, deflate'],
+      Connection: ['keep-alive'],
+      Pragma: ['no-cache'],
+    };
+  }
+  return { type: 'http', request };
+}
+
 /** Outbound tags a subscription-supplied routing rule may target. */
 const ALLOWED_RAW_OUTBOUND_TAGS = new Set(['proxy', 'block', 'dns-out']);
 
@@ -94,6 +153,10 @@ export interface XrayConfigPipelineOptions {
   outboundInterface?: string;
   /** TUN inbound's `autoSystemWfpBlockLeak: ["dns"]`; needs `tunAutoRoute`. */
   blockDnsLeaks?: boolean;
+  /** False drops the TUN's IPv6 address and `::/0` (Linux without IPv6). */
+  tunIpv6?: boolean;
+  /** Linux: TUN routes as two `/1` halves (see `createTunInbound`). */
+  tunSplitDefaultRoute?: boolean;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
 }
@@ -145,6 +208,8 @@ export class XrayConfigPipeline {
       cfg.inbounds.unshift(
         createTunInbound({
           ...options,
+          ipv6: options.tunIpv6,
+          splitDefaultRoute: options.tunSplitDefaultRoute,
           dnsServers: perf.remoteDnsServers,
           sniffingRouteOnly: perf.sniffingRouteOnly,
           mtu: perf.tunMtu,
@@ -156,6 +221,9 @@ export class XrayConfigPipeline {
         this.applySendThroughIfNeeded(cfg, options.sendThrough);
       }
     }
+
+    // Servers saved before tags were normalized at import.
+    adoptProxyOutboundTag(cfg as unknown as Record<string, unknown>);
 
     // Raw subscriptions often omit the `block` / `direct` outbounds that are
     // mandatory once routing rules reference them (either from the raw config
@@ -478,7 +546,7 @@ export class XrayConfigPipeline {
       const tlsSettings = stream?.tlsSettings as
         Record<string, unknown> | undefined;
       if (tlsSettings) {
-        assertAllowInsecureNotUsed(tlsSettings.allowInsecure);
+        assertAllowInsecureNotUsed(tlsSettings.allowInsecure, tlsSettings);
         delete tlsSettings.allowInsecure;
       }
 
@@ -626,6 +694,21 @@ export class XrayConfigPipeline {
       ) {
         streamSettings.network =
           streamSettings.method === 'raw' ? 'tcp' : streamSettings.method;
+      }
+    }
+
+    for (const key of ['tlsSettings', 'realitySettings'] as const) {
+      const settings = streamSettings[key];
+      if (
+        settings &&
+        typeof settings === 'object' &&
+        !Array.isArray(settings)
+      ) {
+        const security = settings as Record<string, unknown>;
+        if (configuredFingerprint(security.fingerprint) === undefined) {
+          // Xray then uses its default, `chrome`.
+          delete security.fingerprint;
+        }
       }
     }
 
@@ -970,7 +1053,7 @@ export class XrayConfigPipeline {
   ): XrayConfig {
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
     const protocol = this.getStructuredProtocol(config);
-    assertAllowInsecureNotUsed(config.allowInsecure);
+    assertAllowInsecureNotUsed(config.allowInsecure, config);
 
     const outbound =
       protocol === 'wireguard'
@@ -985,6 +1068,8 @@ export class XrayConfigPipeline {
       inbounds.unshift(
         createTunInbound({
           ...options,
+          ipv6: options.tunIpv6,
+          splitDefaultRoute: options.tunSplitDefaultRoute,
           dnsServers: perf.remoteDnsServers,
           sniffingRouteOnly: perf.sniffingRouteOnly,
           mtu: perf.tunMtu,
@@ -1098,11 +1183,11 @@ export class XrayConfigPipeline {
       vlessEncryption: config.encryption,
     });
 
-    const defaultFp = perf.fingerprint;
+    const fingerprint = configuredFingerprint(config.fp) ?? perf.fingerprint;
 
     if (streamSettings.security === 'reality') {
       streamSettings.realitySettings = {
-        fingerprint: config.fp || defaultFp,
+        fingerprint,
         serverName: config.sni || '',
         password: config.pbk || '',
         shortId: config.sid || '',
@@ -1114,8 +1199,11 @@ export class XrayConfigPipeline {
     } else if (streamSettings.security === 'tls') {
       streamSettings.tlsSettings = {
         serverName: config.sni || '',
-        alpn: this.tlsAlpnForTransport(transport),
-        fingerprint: config.fp || defaultFp,
+        // XHTTP picks its HTTP version from the ALPN (`["h3"]` → QUIC).
+        alpn: config.alpn?.length
+          ? [...config.alpn]
+          : this.tlsAlpnForTransport(transport),
+        fingerprint,
       };
       if (config.pinnedPeerCertSha256) {
         streamSettings.tlsSettings.pinnedPeerCertSha256 =
@@ -1167,7 +1255,13 @@ export class XrayConfigPipeline {
       streamSettings.grpcSettings = {
         serviceName: config.serviceName || '',
         ...(config.authority ? { authority: config.authority } : {}),
+        // Share-link `mode=multi` (default `gun`).
+        ...(config.mode === 'multi' ? { multiMode: true } : {}),
       };
+    }
+
+    if (transport === 'raw' && config.headerType === 'http') {
+      streamSettings.rawSettings = { header: buildRawHttpHeader(config) };
     }
 
     if (transport === 'xhttp') {
@@ -1363,7 +1457,14 @@ export class XrayConfigPipeline {
     perf: PerformanceSettings,
     options: { forceMux?: boolean } = {},
   ): XrayMuxSettings {
-    if (transport === 'grpc' || transport === 'hysteria') {
+    // XHTTP multiplexes by itself (XMUX), and an XHTTP inbound only lets UDP
+    // through Mux.Cool (`app/proxyman/inbound`), so TCP over Mux would fail.
+    if (
+      transport === 'grpc' ||
+      transport === 'hysteria' ||
+      transport === 'xhttp' ||
+      transport === 'splithttp'
+    ) {
       return { enabled: false };
     }
     if (hasVisionFlow) {

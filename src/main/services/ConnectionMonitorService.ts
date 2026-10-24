@@ -448,17 +448,15 @@ export class ConnectionMonitorService extends EventEmitter {
       const errors = this.analyzeLogForErrors(logLines);
 
       if (errors.length > 0) {
+        // The probe has just gone through this server, so these are failures
+        // of single requests, not a dead tunnel: report them, and leave
+        // switching (or, with auto-switch off, disconnecting) to failed probes.
         this.status.lastHealthState = 'degraded';
         this.status.lastHealthFailureReason = errors[0];
         logger.warn('ConnectionMonitorService', 'Health check found errors', {
           errorCount: errors.length,
           errors: errors.slice(0, 3),
         });
-
-        const criticalErrors = errors.filter((e) => this.isBlockingError(e));
-        if (criticalErrors.length > 0) {
-          this.recordError(criticalErrors[0], this.status.currentServer);
-        }
       } else {
         this.status.lastHealthState = 'healthy';
         this.status.lastHealthFailureReason = null;

@@ -34,6 +34,43 @@ describe('outboundCompat', () => {
     expect(isPrivateOrLocalEndpoint('::ffff:1.1.1.1')).toBe(false);
   });
 
+  it('matches exactly the addresses Xray treats as private', () => {
+    const cases: Array<[string, boolean]> = [
+      ['192.0.2.10', true],
+      ['192.0.5.1', false],
+      ['192.88.99.1', true],
+      ['198.51.100.7', true],
+      ['203.0.113.5', true],
+      ['198.19.255.1', true],
+      ['198.20.0.1', false],
+      ['255.255.255.255', true],
+      ['::', true],
+      ['::2', false],
+      ['fd00::1', true],
+      ['ff02::1', true],
+      ['::ffff:a00:1', true],
+      ['::ffff:8.8.8.8', false],
+      ['fe80::1%eth0', false],
+      ['10.0.0.1.', false],
+      ['server1', true],
+      ['1server', false],
+      ['my_host', false],
+      ['host-', false],
+      ['host.lan', true],
+      ['ROUTER.Home.Arpa.', true],
+      ['foo.example', true],
+      ['example.com', false],
+      ['notlan.com', false],
+      ['', false],
+    ];
+    for (const [address, expected] of cases) {
+      expect([address, isPrivateOrLocalEndpoint(address)]).toEqual([
+        address,
+        expected,
+      ]);
+    }
+  });
+
   it('coerces removed VMess security values to auto', () => {
     expect(normalizeVmessSecurity('none')).toBe('auto');
     expect(normalizeVmessSecurity('zero')).toBe('auto');
@@ -101,11 +138,19 @@ describe('outboundCompat', () => {
     ).not.toThrow();
   });
 
-  it('requires TLS for public Hysteria outbounds', () => {
+  it('requires TLS for Hysteria outbounds', () => {
     expect(() =>
       assertEncryptedPublicOutbound({
         protocol: 'hysteria',
         address: 'example.com',
+        streamSecurity: 'none',
+      }),
+    ).toThrow(/Hysteria requires/);
+
+    expect(() =>
+      assertEncryptedPublicOutbound({
+        protocol: 'hysteria',
+        address: '192.168.1.10',
         streamSecurity: 'none',
       }),
     ).toThrow(/Hysteria requires/);

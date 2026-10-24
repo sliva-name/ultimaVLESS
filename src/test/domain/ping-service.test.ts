@@ -36,6 +36,18 @@ describe('PingService', () => {
     }
   });
 
+  it('connects to a bracketed IPv6 literal without a DNS lookup', async () => {
+    const lookup = vi.fn(async () => [{ address: '127.0.0.1', family: 4 }]);
+    const service = new PingService({ lookup });
+    const connect = vi.spyOn(net.Socket.prototype, 'connect');
+
+    await service.pingServer(makeServer({ address: '[::1]', port }), 300);
+
+    expect(lookup).not.toHaveBeenCalled();
+    expect(connect).toHaveBeenCalledWith(port, '::1');
+    connect.mockRestore();
+  });
+
   it('prefers an IPv4 record when the resolver returns both families', async () => {
     const lookup = vi.fn(async () => [
       { address: '::1', family: 6 },

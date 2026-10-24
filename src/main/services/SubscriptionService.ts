@@ -38,6 +38,22 @@ async function fetchWithTimeout(
   const id = setTimeout(() => ctrl.abort(), ms);
   try {
     return await fetch(url, { ...init, signal: ctrl.signal });
+  } catch (error) {
+    // fetch reports the timeout as "This operation was aborted" and every
+    // network failure as "fetch failed", with the reason only in `cause`.
+    if (ctrl.signal.aborted) {
+      throw new Error(
+        `Subscription server did not respond within ${ms / 1000}s`,
+        { cause: error },
+      );
+    }
+    const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
+    if (error instanceof TypeError && typeof code === 'string') {
+      throw new Error(`Could not reach the subscription server (${code})`, {
+        cause: error,
+      });
+    }
+    throw error;
   } finally {
     clearTimeout(id);
   }

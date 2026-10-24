@@ -4,6 +4,10 @@ import {
   createStableServerId,
 } from '@/shared/serverIdentity';
 import { logger } from '@/main/services/LoggerService';
+import {
+  adoptProxyOutboundTag,
+  findRawProxyOutbound,
+} from '@/main/services/configGenerator/proxyTag';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -26,7 +30,9 @@ function asNumber(value: unknown, fallback = 0): number {
 
 function asStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const items = value.filter((item): item is string => typeof item === 'string');
+  const items = value.filter(
+    (item): item is string => typeof item === 'string',
+  );
   return items.length > 0 ? items : undefined;
 }
 
@@ -46,12 +52,6 @@ const PROXY_PROTOCOLS = [
   'hysteria',
   'wireguard',
 ] as const;
-
-function isProxyOutbound(outbound: Record<string, unknown>): boolean {
-  const tag = asString(outbound.tag);
-  const protocol = asString(outbound.protocol);
-  return tag === 'proxy' || (PROXY_PROTOCOLS as readonly string[]).includes(protocol);
-}
 
 function parseEndpointHostPort(endpoint: string): {
   address: string;
@@ -77,7 +77,9 @@ function parseEndpointHostPort(endpoint: string): {
   return { address, port };
 }
 
-function parseWireGuardPeers(settings: Record<string, unknown>): WireGuardPeer[] {
+function parseWireGuardPeers(
+  settings: Record<string, unknown>,
+): WireGuardPeer[] {
   const peers: WireGuardPeer[] = [];
   for (const item of asArray(settings.peers)) {
     const peer = asRecord(item);
@@ -105,13 +107,13 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
       if (!root) continue;
 
       const name = asString(root.remarks) || asString(root.ps) || 'Server';
-      const outbounds = asArray(root.outbounds);
-      const proxyOutbound = outbounds.find((item) => {
-        const outbound = asRecord(item);
-        return outbound ? isProxyOutbound(outbound) : false;
-      });
-
-      const outbound = asRecord(proxyOutbound);
+      // The listed endpoint is the outbound the connection will use.
+      const rawConfig = JSON.parse(JSON.stringify(root)) as Record<
+        string,
+        unknown
+      >;
+      adoptProxyOutboundTag(rawConfig);
+      const outbound = asRecord(findRawProxyOutbound(rawConfig.outbounds));
       if (!outbound) {
         logger.warn('SubscriptionService', 'No proxy outbound found', { name });
         continue;
@@ -257,10 +259,8 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
           sni = asString(ts.serverName);
           fp = asString(ts.fingerprint);
           echConfigList = asString(ts.echConfigList) || undefined;
-          pinnedPeerCertSha256 =
-            asString(ts.pinnedPeerCertSha256) || undefined;
-          verifyPeerCertByName =
-            asString(ts.verifyPeerCertByName) || undefined;
+          pinnedPeerCertSha256 = asString(ts.pinnedPeerCertSha256) || undefined;
+          verifyPeerCertByName = asString(ts.verifyPeerCertByName) || undefined;
         }
       }
 
@@ -376,9 +376,9 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         wgSecretKey,
       ]);
 
-      const outboundProtocol = (
-        PROXY_PROTOCOLS as readonly string[]
-      ).includes(protocol)
+      const outboundProtocol = (PROXY_PROTOCOLS as readonly string[]).includes(
+        protocol,
+      )
         ? (protocol as VlessConfig['protocol'])
         : undefined;
 
@@ -430,7 +430,7 @@ export function parseJsonConfigs(configs: unknown[]): VlessConfig[] {
         wgReserved,
         wgNoKernelTun,
         wgDomainStrategy,
-        rawConfig: cfg as Record<string, unknown>,
+        rawConfig,
       });
     } catch (error) {
       logger.error('SubscriptionService', 'Error parsing JSON config', error);

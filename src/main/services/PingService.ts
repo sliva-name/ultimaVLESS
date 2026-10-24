@@ -4,6 +4,7 @@ import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { probeTlsHandshake } from './networkProbe';
 import { PerfTimer } from '@/shared/perfMetrics';
+import { unbracketIpv6 } from '@/shared/networkAddresses';
 
 interface TlsCacheEntry {
   ok: boolean;
@@ -144,9 +145,11 @@ export class PingService {
   }
 
   private resolveHost(
-    address: string,
+    rawAddress: string,
     context: ProbeContext,
   ): Promise<string | null> {
+    // Servers saved by earlier builds may still hold `[ipv6]`.
+    const address = unbracketIpv6(rawAddress);
     if (net.isIP(address) !== 0) {
       return Promise.resolve(address);
     }

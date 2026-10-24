@@ -2,6 +2,7 @@ import React from 'react';
 import clsx from 'clsx';
 import { AlertTriangle, Check, Loader2, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { localizeError } from '@/shared/localizeError';
 import type { ConflictingAppView, ConflictingAppsScan } from '@/shared/ipc';
 
 interface ConflictingAppsPanelProps {
@@ -43,7 +44,7 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
   resolved = false,
   className,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const apps = scan?.apps ?? [];
 
   if (scan && !scan.supported) return null;
@@ -52,7 +53,9 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
     if (error) {
       return (
         <p className={clsx('text-sm text-orange-400', className)}>
-          {t('conflicts.scanFailed', { error })}
+          {t('conflicts.scanFailed', {
+            error: localizeError(error, i18n.language),
+          })}
         </p>
       );
     }
@@ -182,7 +185,9 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
       </div>
       {error && (
         <p className="text-xs text-orange-300">
-          {t('conflicts.scanFailed', { error })}
+          {t('conflicts.scanFailed', {
+            error: localizeError(error, i18n.language),
+          })}
         </p>
       )}
     </div>
