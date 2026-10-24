@@ -517,28 +517,6 @@ export class XrayService extends EventEmitter {
     });
   }
 
-  public commitStaging(): void {
-    if (!this.stagingProcess || !this.stagingPorts) {
-      throw new Error('No staging Xray process to commit');
-    }
-    const outgoing = this.process;
-    this.process = this.stagingProcess;
-    this.activePorts = this.stagingPorts;
-    this.stagingProcess = null;
-    this.stagingPorts = null;
-    if (outgoing) {
-      this.trackDyingProcess(outgoing);
-      try {
-        this.terminateProcess(outgoing);
-      } catch {
-        // Already gone.
-      }
-    }
-    logger.info('XrayService', 'Committed staging Xray process', {
-      ports: this.activePorts,
-    });
-  }
-
   public abortStaging(): void {
     const staging = this.stagingProcess;
     if (!staging) {
