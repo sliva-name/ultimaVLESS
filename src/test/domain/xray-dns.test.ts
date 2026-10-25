@@ -107,15 +107,14 @@ describe('configGenerator/dns', () => {
     });
   });
 
-  it('ensureDnsHijackRule places port 53 after api rule', () => {
+  it('ensureDnsHijackRule places port 53 ahead of private and catch-all rules', () => {
     const rules: XrayRoutingRule[] = [
-      { type: 'field', inboundTag: ['api'], outboundTag: 'api' },
       { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
       { type: 'field', port: '0-65535', outboundTag: 'proxy' },
     ];
     ensureDnsHijackRule(rules);
-    expect(rules[0].inboundTag).toEqual(['api']);
-    expect(rules[1]).toMatchObject({
+    expect(rules).toHaveLength(3);
+    expect(rules[0]).toMatchObject({
       port: '53',
       network: 'udp,tcp',
       outboundTag: 'dns-out',

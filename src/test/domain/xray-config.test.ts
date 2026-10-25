@@ -1235,12 +1235,21 @@ describe('XrayConfigCompiler', () => {
       { logPath: '/tmp/xray.log', connectionMode: 'proxy' },
     );
 
-    expect(config.api).toEqual({ tag: 'api', services: ['StatsService'] });
-    expect(config.api?.services).not.toContain('HandlerService');
-    const apiInbound = config.inbounds?.find(
-      (inbound) => inbound.tag === 'api',
+    expect(config.api).toEqual({
+      tag: 'api',
+      listen: '127.0.0.1:10810',
+      services: ['StatsService'],
+    });
+    // Xray serves the API on its own socket: no inbound, rule or outbound.
+    expect(config.inbounds?.some((inbound) => inbound.tag === 'api')).toBe(
+      false,
     );
-    expect(apiInbound?.listen).toBe('127.0.0.1');
+    expect(config.outbounds?.some((outbound) => outbound.tag === 'api')).toBe(
+      false,
+    );
+    expect(
+      config.routing?.rules?.some((rule) => rule.inboundTag?.includes('api')),
+    ).toBe(false);
   });
 });
 

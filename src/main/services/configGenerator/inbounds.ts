@@ -52,19 +52,6 @@ export function createSniffing(routeOnly: boolean): {
 }
 
 type MutableConfigNode = Record<string, unknown>;
-type MutableSniffing = MutableConfigNode & {
-  enabled?: boolean;
-  destOverride?: string[];
-  routeOnly?: boolean;
-};
-export type MutableInbound = MutableConfigNode & {
-  protocol?: string;
-  tag?: string;
-  port?: number;
-  listen?: string;
-  settings?: MutableConfigNode;
-  sniffing?: MutableSniffing;
-};
 
 export function createLocalProxyInbounds(
   sniffingRouteOnly = true,

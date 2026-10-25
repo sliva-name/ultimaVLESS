@@ -100,7 +100,7 @@ export function ensureDnsHijackRule(rules: XrayRoutingRule[]): void {
     outboundTag: DNS_OUTBOUND_TAG,
   };
 
-  rules.splice(dnsRuleInsertIndex(rules), 0, dnsRule);
+  rules.unshift(dnsRule);
 }
 
 /**
@@ -126,19 +126,11 @@ export function ensureDnsModulePinnedToProxy(
   rules.length = 0;
   rules.push(...withoutOld);
 
-  rules.splice(dnsRuleInsertIndex(rules), 0, {
+  rules.unshift({
     type: 'field',
     inboundTag: [DNS_MODULE_TAG],
     outboundTag: PROXY_OUTBOUND_TAG,
   });
-}
-
-/** After the API inbound rule if present; otherwise at the front. */
-function dnsRuleInsertIndex(rules: XrayRoutingRule[]): number {
-  const apiIdx = rules.findIndex(
-    (r) => Array.isArray(r.inboundTag) && r.inboundTag.includes('api'),
-  );
-  return apiIdx >= 0 ? apiIdx + 1 : 0;
 }
 
 export function applyRemoteDnsSettings(

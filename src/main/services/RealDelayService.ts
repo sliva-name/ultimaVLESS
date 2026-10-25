@@ -98,9 +98,7 @@ export function buildDelayTestConfig(
       settings: {},
     },
   ];
-  const rules = (cfg.routing?.rules ?? []).filter(
-    (rule) => !rule.inboundTag?.includes('api'),
-  );
+  const rules = cfg.routing?.rules ?? [];
   cfg.routing = {
     domainStrategy: cfg.routing?.domainStrategy ?? 'AsIs',
     ...cfg.routing,
@@ -113,9 +111,6 @@ export function buildDelayTestConfig(
       ...rules,
     ],
   };
-  if (Array.isArray(cfg.outbounds)) {
-    cfg.outbounds = cfg.outbounds.filter((outbound) => outbound?.tag !== 'api');
-  }
   return cfg;
 }
 
