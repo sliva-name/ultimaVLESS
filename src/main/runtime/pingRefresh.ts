@@ -2,7 +2,6 @@ import { EventEmitter } from 'events';
 import type { VlessConfig } from '@/shared/types';
 import type { PingResult, SessionPhase } from '@/shared/ipc';
 import {
-  allServersHaveFreshPing,
   DEFAULT_MIN_PING_INTERVAL_MS,
   filterServersNeedingPing,
 } from '@/shared/pingFilters';
@@ -10,10 +9,9 @@ import { PerfTimer } from '@/shared/perfMetrics';
 import { logger } from '@/main/services/LoggerService';
 import { createSerialQueue } from '@/main/ipc/serialQueue';
 import {
-  createPingAllCoordinator,
+  createPingResultSink,
   type PingPersistStore,
-  type PingResultSink,
-} from '@/main/ipc/pingAllCoordinator';
+} from '@/main/ipc/pingResultSink';
 
 export type PingAutoTrigger = 'startup' | 'catalog-changed' | 'session-idle';
 export type PingRefreshTrigger = 'user' | PingAutoTrigger;
@@ -217,17 +215,15 @@ export function createPingRefreshRunner(
   const beginSink = (signal: AbortSignal, retry = false) => {
     let closed = false;
     let flushing = false;
-    const coordinator = createPingAllCoordinator({
+    const sink = createPingResultSink({
       store: deps.store,
       notifySnapshot: (_reason, options) =>
         emitChanged(options?.immediate ?? false),
       isUnsafe: () =>
         closed || (signal.aborted && !flushing) || deps.isUnsafe(),
+      onlyMissing: retry,
       now,
     });
-    const sink: PingResultSink = retry
-      ? coordinator.beginFill()
-      : coordinator.beginRun();
     const close = (preserve: boolean): void => {
       if (closed) return;
       closed = !preserve;
@@ -355,21 +351,13 @@ export function createPingRefreshRunner(
       timer.end({ trigger, skipped: 'unsafe' });
       return toResults(catalog);
     }
-    if (
-      !force &&
-      servers.length > 0 &&
-      allServersHaveFreshPing(servers, minPingIntervalMs, now())
-    ) {
-      timer.end({ trigger, skipped: 'fresh', total: servers.length });
-      return toResults(catalog);
-    }
     const targets = filterServersNeedingPing(servers, {
       force,
       minPingIntervalMs,
       now: now(),
     });
     if (targets.length === 0) {
-      timer.end({ trigger, skipped: 'no-targets' });
+      timer.end({ trigger, skipped: 'fresh', total: servers.length });
       return toResults(catalog);
     }
 

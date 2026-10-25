@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  createPingAllCoordinator,
+  createPingResultSink,
   extractPingOverlay,
   mergePingResults,
   PING_PARTIAL_BATCH_SIZE,
   PING_PARTIAL_DEBOUNCE_MS,
-} from '@/main/ipc/pingAllCoordinator';
+} from '@/main/ipc/pingResultSink';
 import { makeServer } from '@/test/factories';
 
 function createStore(
@@ -27,7 +27,7 @@ function createStore(
   };
 }
 
-describe('ping-all coordinator', () => {
+describe('ping result sink', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -73,14 +73,12 @@ describe('ping-all coordinator', () => {
     vi.useFakeTimers();
     const store = createStore();
     const notifySnapshot = vi.fn();
-    const coordinator = createPingAllCoordinator({
+    const run = createPingResultSink({
       store,
       notifySnapshot,
       isUnsafe: () => false,
       now: () => 1000,
     });
-
-    const run = coordinator.beginRun();
     run.onResult('a', 12);
     expect(store.savePings).not.toHaveBeenCalled();
     expect(store.saveAll).not.toHaveBeenCalled();
@@ -94,13 +92,12 @@ describe('ping-all coordinator', () => {
   it('flushes immediately on the final persist of a run', () => {
     const store = createStore();
     const notifySnapshot = vi.fn();
-    const coordinator = createPingAllCoordinator({
+    const run = createPingResultSink({
       store,
       notifySnapshot,
       isUnsafe: () => false,
       now: () => 42,
     });
-    const run = coordinator.beginRun();
     run.onResult('a', 11);
     const updated = run.persist(
       new Map([
@@ -118,43 +115,15 @@ describe('ping-all coordinator', () => {
     expect(updated.map((server) => server.ping)).toEqual([11, 22]);
   });
 
-  it('does not let a superseded run overwrite a newer ping generation', () => {
-    const store = createStore();
-    const notifySnapshot = vi.fn();
-    const coordinator = createPingAllCoordinator({
-      store,
-      notifySnapshot,
-      isUnsafe: () => false,
-      now: () => 5000,
-    });
-
-    const first = coordinator.beginRun();
-    first.persist(new Map([['a', 80]]), { immediate: true });
-    expect(store.savePings).toHaveBeenCalledTimes(1);
-
-    const second = coordinator.beginRun();
-    second.persist(new Map([['a', 15]]), { immediate: true });
-    expect(store.savePings).toHaveBeenCalledTimes(2);
-    const latestOverlay = store.savePings.mock.calls.at(-1)?.[0];
-    expect(latestOverlay.a.ping).toBe(15);
-
-    first.persist(new Map([['a', 999]]), { immediate: true });
-    expect(store.savePings).toHaveBeenCalledTimes(2);
-    expect(store.savePings.mock.calls.at(-1)?.[0].a.ping).toBe(15);
-    expect(first.isCurrent()).toBe(false);
-    expect(second.isCurrent()).toBe(true);
-  });
-
   it('applies results to a catalog refreshed mid-run by uuid and skips vanished rows', () => {
     const store = createStore();
     const notifySnapshot = vi.fn();
-    const coordinator = createPingAllCoordinator({
+    const run = createPingResultSink({
       store,
       notifySnapshot,
       isUnsafe: () => false,
       now: () => 7,
     });
-    const run = coordinator.beginRun();
 
     // A subscription refresh dropped `b` and added `c` while probes ran.
     store.catalog = [makeServer({ uuid: 'a' }), makeServer({ uuid: 'c' })];
@@ -179,12 +148,11 @@ describe('ping-all coordinator', () => {
   it('drops persist while a session holds the network stack', () => {
     const store = createStore();
     let unsafe = false;
-    const coordinator = createPingAllCoordinator({
+    const run = createPingResultSink({
       store,
       notifySnapshot: vi.fn(),
       isUnsafe: () => unsafe,
     });
-    const run = coordinator.beginRun();
     unsafe = true;
     run.persist(new Map([['a', 1]]), { immediate: true });
     expect(store.savePings).not.toHaveBeenCalled();
@@ -196,33 +164,30 @@ describe('ping-all coordinator', () => {
         makeServer({ uuid: `s-${index}` }),
       ),
     );
-    const coordinator = createPingAllCoordinator({
+    const run = createPingResultSink({
       store,
       notifySnapshot: vi.fn(),
       isUnsafe: () => false,
       now: () => 1,
     });
-    const run = coordinator.beginRun();
     for (let index = 0; index < PING_PARTIAL_BATCH_SIZE; index += 1) {
       run.onResult(`s-${index}`, index);
     }
     expect(store.savePings).toHaveBeenCalledTimes(1);
   });
 
-  it('background fill only writes rows still lacking a latency and ignores generations', () => {
+  it('background fill only writes rows still lacking a latency', () => {
     const store = createStore([
       makeServer({ uuid: 'a', ping: null, pingTime: 3 }),
       makeServer({ uuid: 'b', ping: 12, pingTime: 3 }),
     ]);
-    const coordinator = createPingAllCoordinator({
+    const fill = createPingResultSink({
       store,
       notifySnapshot: vi.fn(),
       isUnsafe: () => false,
+      onlyMissing: true,
       now: () => 9,
     });
-    const fill = coordinator.beginFill();
-    // A newer foreground run starts in between — the fill must still land.
-    coordinator.beginRun();
 
     const merged = fill.persist(
       new Map([

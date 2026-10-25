@@ -38,25 +38,3 @@ export function filterServersNeedingPing(
     return now - server.pingTime >= minPingIntervalMs;
   });
 }
-
-export function allServersHaveFreshPing(
-  servers: VlessConfig[],
-  minPingIntervalMs: number = DEFAULT_MIN_PING_INTERVAL_MS,
-  now: number = Date.now(),
-): boolean {
-  if (servers.length === 0) {
-    return true;
-  }
-  return servers.every((server) => {
-    if (server.ping == null) {
-      return false;
-    }
-    if (!server.pingTime || server.pingTime <= 0) {
-      return false;
-    }
-    if (server.pingStale) {
-      return false;
-    }
-    return now - server.pingTime < minPingIntervalMs;
-  });
-}

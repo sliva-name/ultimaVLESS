@@ -5,16 +5,11 @@ import { logger } from './LoggerService';
 import { probeTlsHandshake } from './networkProbe';
 import { PerfTimer } from '@/shared/perfMetrics';
 import { unbracketIpv6 } from '@/shared/networkAddresses';
+import { probeServers, type PingServersOptions } from './serverLatencyProbe';
 
 interface TlsCacheEntry {
   ok: boolean;
   expiresAt: number;
-}
-
-export interface PingServersOptions {
-  onResult?: (uuid: string, latency: number | null) => void;
-  /** Stops dequeuing targets and tears down in-flight probes. */
-  signal?: AbortSignal;
 }
 
 export type HostLookup = (
@@ -293,36 +288,14 @@ export class PingService {
     timeout: number = this.DEFAULT_TIMEOUT,
     options: PingServersOptions = {},
   ): Promise<Map<string, number | null>> {
-    const results = new Map<string, number | null>();
     const timer = new PerfTimer('PingService', 'pingServers');
-
-    if (servers.length === 0) {
-      timer.end({ count: 0 });
-      return results;
-    }
-
     const context: ProbeContext = { hosts: new Map(), signal: options.signal };
-    const workersCount = Math.min(this.maxConcurrentPings, servers.length);
-    let cursor = 0;
-
-    const runWorker = async () => {
-      while (cursor < servers.length && !options.signal?.aborted) {
-        const index = cursor;
-        cursor += 1;
-        const server = servers[index];
-        if (!server) break;
-
-        const latency = await this.probeServer(server, timeout, context);
-        if (options.signal?.aborted) {
-          // A torn-down probe is not a measurement.
-          break;
-        }
-        results.set(server.uuid, latency);
-        options.onResult?.(server.uuid, latency);
-      }
-    };
-
-    await Promise.all(Array.from({ length: workersCount }, () => runWorker()));
+    const results = await probeServers(
+      servers,
+      this.maxConcurrentPings,
+      options,
+      (server) => this.probeServer(server, timeout, context),
+    );
 
     timer.end({
       totalServers: servers.length,
