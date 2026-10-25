@@ -411,6 +411,72 @@ describe('renderer session view', () => {
     expect(result.current.selectedServer?.uuid).toBe(serverA.uuid);
   });
 
+  it('switches a connected session to the clicked server', async () => {
+    const serverA = makeServer({ uuid: 'server-a' });
+    const serverB = makeServer({ uuid: 'server-b' });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [serverA, serverB],
+        selectedServerId: serverA.uuid,
+        session: {
+          phase: 'connected',
+          activeServerId: serverA.uuid,
+          lastError: null,
+          blockedServerIds: [],
+        },
+      }),
+    );
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.snapshot.session.phase).toBe('connected'),
+    );
+
+    act(() => {
+      result.current.selectServer(serverB);
+    });
+
+    await waitFor(() =>
+      expect(electronApi.connect).toHaveBeenCalledWith(serverB.uuid),
+    );
+    expect(electronApi.setSelectedServerId).toHaveBeenCalledWith(serverB.uuid);
+    expect(electronApi.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('does not reconnect when the connected server itself is clicked', async () => {
+    const serverA = makeServer({ uuid: 'server-a' });
+    const electronApi = createElectronApiMock();
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        servers: [serverA],
+        selectedServerId: serverA.uuid,
+        session: {
+          phase: 'connected',
+          activeServerId: serverA.uuid,
+          lastError: null,
+          blockedServerIds: [],
+        },
+      }),
+    );
+    installElectronApiMock(electronApi);
+
+    const { result } = renderHook(() => useAppSnapshotContext(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.snapshot.session.phase).toBe('connected'),
+    );
+
+    act(() => {
+      result.current.selectServer(serverA);
+    });
+
+    await waitFor(() =>
+      expect(electronApi.setSelectedServerId).toHaveBeenCalled(),
+    );
+    expect(electronApi.connect).not.toHaveBeenCalled();
+  });
+
   it('applies a runtime snapshot patch without replacing the server list', async () => {
     const server = makeServer({ uuid: 'live' });
     const electronApi = createElectronApiMock();
