@@ -36,6 +36,7 @@ export function registerPingHandlers({
           isPingUnsafePhase(
             deps.connectionManager.getPhase(),
             deps.connectionManager.isBusy(),
+            deps.connectionManager.getActiveMode(),
           )
         ) {
           return {

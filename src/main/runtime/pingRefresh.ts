@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import type { VlessConfig } from '@/shared/types';
+import type { ConnectionMode, VlessConfig } from '@/shared/types';
 import type { PingResult, SessionPhase } from '@/shared/ipc';
 import {
   DEFAULT_MIN_PING_INTERVAL_MS,
@@ -79,13 +79,18 @@ export const PING_AUTO_DELAYS_MS: Record<PingAutoTrigger, number> = {
 /** Phases in which the network stack is not engaged by a session. */
 const SETTLED_PHASES = new Set<SessionPhase>(['idle', 'failed']);
 
-export function isPingUnsafePhase(phase: SessionPhase, busy: boolean): boolean {
-  return (
-    busy ||
-    phase === 'connected' ||
-    phase === 'connecting' ||
-    phase === 'switching'
-  );
+/**
+ * Pings dial the servers directly. A TUN session would carry them through the
+ * tunnel, while Node's sockets ignore the system proxy, so a proxy session
+ * leaves them on the direct path. In-flight phases stay off-limits either way.
+ */
+export function isPingUnsafePhase(
+  phase: SessionPhase,
+  busy: boolean,
+  mode: ConnectionMode | null,
+): boolean {
+  if (busy || phase === 'connecting' || phase === 'switching') return true;
+  return phase === 'connected' && mode !== 'proxy';
 }
 
 interface PingAutoSchedulerDeps {
@@ -486,7 +491,8 @@ export function createPingRefreshRunner(
       scheduler.schedule(trigger, delayMs);
     },
     handleSessionPhase(phase: SessionPhase) {
-      if (isPingUnsafePhase(phase, false)) {
+      // A TUN session that comes up was `connecting` first, which aborted.
+      if (phase === 'connecting' || phase === 'switching') {
         abortInFlightProbes();
       }
       scheduler.handleSessionPhase(phase);

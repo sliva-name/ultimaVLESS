@@ -183,6 +183,11 @@ export class ConnectionManager extends EventEmitter {
     return this.state;
   }
 
+  /** Mode of the session being started, switched or running. */
+  public getActiveMode(): ConnectionMode | null {
+    return 'mode' in this.state ? this.state.mode : null;
+  }
+
   public getPhase(): SessionPhase {
     return connectionStateToSessionPhase(this.state);
   }

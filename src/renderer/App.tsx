@@ -50,6 +50,8 @@ function AppShell() {
         subscriptions={subscriptions}
         selectedServer={selectedServer}
         isConnected={isConnected}
+        // Proxy mode leaves Node's sockets, and so the pings, on the direct path.
+        pingBlockedWhileConnected={connectionMode === 'tun'}
         // A pick while connected switches the server; only in-flight work locks.
         selectionLocked={isConnectionBusy}
         isRefreshingPings={isRefreshingPings}
