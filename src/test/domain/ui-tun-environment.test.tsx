@@ -165,6 +165,26 @@ describe('TUN DNS leak block', () => {
   });
 });
 
+describe('network settings layout', () => {
+  it('keeps the everyday settings in view and the Xray internals folded away', async () => {
+    renderNetworkTab();
+
+    expect(await screen.findByText('Способ пинга')).toBeInTheDocument();
+    expect(screen.getByText('Удалённый DNS')).toBeInTheDocument();
+    expect(screen.getByText('Блокировка рекламы')).toBeInTheDocument();
+    expect(screen.queryByText('MTU туннеля')).toBeNull();
+    expect(screen.queryByText('TCP Mux')).toBeNull();
+
+    const advanced = screen.getByRole('button', { name: 'Дополнительно' });
+    expect(advanced).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(advanced);
+
+    expect(advanced).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('MTU туннеля')).toBeInTheDocument();
+    expect(screen.getByText('TCP Mux')).toBeInTheDocument();
+  });
+});
+
 describe('connection mode while connected', () => {
   it('changes the mode instead of asking to disconnect first', async () => {
     const electronApi = renderNetworkTab('', {}, true);

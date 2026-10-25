@@ -168,6 +168,9 @@ const resources = {
           tunAdapterLoadFailed: 'Could not read network adapters: {{error}}',
           performance: 'Performance tuning',
           performanceHint: 'Changes take effect on the next connection.',
+          advanced: 'Advanced',
+          advancedHint:
+            'Low-level Xray parameters. The defaults suit most servers.',
           performanceLocked:
             'Disconnect the VPN to change performance settings.',
           muxEnabled: 'TCP Mux',
@@ -502,6 +505,9 @@ const resources = {
             'Не удалось получить список адаптеров: {{error}}',
           performance: 'Настройки производительности',
           performanceHint: 'Изменения применяются при следующем подключении.',
+          advanced: 'Дополнительно',
+          advancedHint:
+            'Низкоуровневые параметры Xray. Значения по умолчанию подходят большинству серверов.',
           performanceLocked:
             'Отключите VPN, чтобы изменить настройки производительности.',
           muxEnabled: 'TCP Mux',

@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Loader2,
   Check,
+  ChevronDown,
   RefreshCw,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -99,6 +100,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
   );
 
   const [perfError, setPerfError] = useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const handleSavePerfSettings = useCallback(async () => {
     setPerfError(null);
@@ -133,6 +135,14 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
     !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
   const tunButtonDisabled = tunUnavailable;
   const networkLocked = isConnected || isConnectionBusy;
+  const lockedFieldsetProps = {
+    disabled: networkLocked,
+    'aria-disabled': networkLocked,
+    className: clsx(
+      'space-y-3 transition-opacity duration-200',
+      networkLocked && 'opacity-60 pointer-events-none select-none',
+    ),
+  };
   // A connected session reconnects in the picked mode; only in-flight work locks.
   const modeLockedByConnection = isConnectionBusy;
 
@@ -314,14 +324,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
           </div>
         )}
 
-        <fieldset
-          disabled={networkLocked}
-          aria-disabled={networkLocked}
-          className={clsx(
-            'space-y-3 transition-opacity duration-200',
-            networkLocked && 'opacity-60 pointer-events-none select-none',
-          )}
-        >
+        <fieldset {...lockedFieldsetProps}>
           <PerfSelectRow
             label={t('settings.network.pingMethod')}
             hint={t('settings.network.pingMethodHint')}
@@ -339,35 +342,6 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
                 description: t('settings.network.pingMethodRealDesc'),
               },
             ]}
-          />
-
-          <div className="border-t border-gray-700/40 my-1" />
-
-          <PerfToggleRow
-            label={t('settings.network.muxEnabled')}
-            hint={t('settings.network.muxEnabledHint')}
-            checked={perfSettings.muxEnabled}
-            onChange={(v) => updatePerfField('muxEnabled', v)}
-          />
-
-          {perfSettings.muxEnabled && (
-            <PerfNumberRow
-              label={t('settings.network.muxConcurrency')}
-              hint={t('settings.network.muxConcurrencyHint')}
-              value={perfSettings.muxConcurrency}
-              min={1}
-              max={128}
-              onChange={(v) => updatePerfField('muxConcurrency', v)}
-            />
-          )}
-
-          <PerfNumberRow
-            label={t('settings.network.xhttpMaxConnections')}
-            hint={t('settings.network.xhttpMaxConnectionsHint')}
-            value={perfSettings.xhttpMaxConnections}
-            min={1}
-            max={16}
-            onChange={(v) => updatePerfField('xhttpMaxConnections', v)}
           />
 
           <PerfSelectRow
@@ -445,136 +419,6 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             </div>
           )}
 
-          <PerfNumberRow
-            label={t('settings.network.tunMtu')}
-            hint={t('settings.network.tunMtuHint')}
-            value={perfSettings.tunMtu}
-            min={TUN_MTU_MIN}
-            max={TUN_MTU_MAX}
-            onChange={(v) => updatePerfField('tunMtu', v)}
-          />
-
-          <PerfSelectRow
-            label={t('settings.network.tunDnsQueryStrategy')}
-            hint={t('settings.network.tunDnsQueryStrategyHint')}
-            value={perfSettings.tunDnsQueryStrategy}
-            onChange={(v) =>
-              updatePerfField('tunDnsQueryStrategy', v as TunDnsQueryStrategy)
-            }
-            options={[
-              {
-                value: 'UseIPv4',
-                label: t('settings.network.tunDnsUseIPv4'),
-                description: t('settings.network.tunDnsUseIPv4Desc'),
-              },
-              {
-                value: 'UseIP',
-                label: t('settings.network.tunDnsUseIP'),
-                description: t('settings.network.tunDnsUseIPDesc'),
-              },
-              {
-                value: 'UseIPv6',
-                label: t('settings.network.tunDnsUseIPv6'),
-                description: t('settings.network.tunDnsUseIPv6Desc'),
-              },
-              {
-                value: 'UseSystem',
-                label: t('settings.network.tunDnsUseSystem'),
-                description: t('settings.network.tunDnsUseSystemDesc'),
-              },
-            ]}
-          />
-
-          <PerfNumberRow
-            label={t('settings.network.xudpConcurrency')}
-            hint={t('settings.network.xudpConcurrencyHint')}
-            value={perfSettings.xudpConcurrency}
-            min={1}
-            max={1024}
-            onChange={(v) => updatePerfField('xudpConcurrency', v)}
-          />
-
-          <PerfSelectRow
-            label={t('settings.network.xudpProxyUDP443')}
-            hint={t('settings.network.xudpProxyUDP443Hint')}
-            value={perfSettings.xudpProxyUDP443}
-            onChange={(v) =>
-              updatePerfField('xudpProxyUDP443', v as XudpProxyUDP443)
-            }
-            options={[
-              {
-                value: 'reject',
-                label: t('settings.network.udp443Reject'),
-                description: 'QUIC → TCP',
-              },
-              {
-                value: 'allow',
-                label: t('settings.network.udp443Allow'),
-                description: 'XUDP mux',
-              },
-              {
-                value: 'skip',
-                label: t('settings.network.udp443Skip'),
-                description: 'Native UDP',
-              },
-            ]}
-          />
-
-          <PerfToggleRow
-            label={t('settings.network.tcpFastOpen')}
-            hint={t('settings.network.tcpFastOpenHint')}
-            checked={perfSettings.tcpFastOpen}
-            onChange={(v) => updatePerfField('tcpFastOpen', v)}
-          />
-
-          <PerfToggleRow
-            label={t('settings.network.sniffingRouteOnly')}
-            hint={t('settings.network.sniffingRouteOnlyHint')}
-            checked={perfSettings.sniffingRouteOnly}
-            onChange={(v) => updatePerfField('sniffingRouteOnly', v)}
-          />
-
-          <div className="border-t border-gray-700/40 my-1" />
-
-          <PerfSelectRow
-            label={t('settings.network.logLevel')}
-            hint={t('settings.network.logLevelHint')}
-            value={perfSettings.logLevel}
-            onChange={(v) => updatePerfField('logLevel', v as LogLevel)}
-            options={[
-              { value: 'debug', label: 'debug', description: 'Verbose' },
-              { value: 'info', label: 'info' },
-              { value: 'warning', label: 'warning', description: 'Default' },
-              { value: 'error', label: 'error' },
-              { value: 'none', label: 'none', description: 'Silent' },
-            ]}
-          />
-
-          <PerfSelectRow
-            label={t('settings.network.fingerprint')}
-            hint={t('settings.network.fingerprintHint')}
-            value={perfSettings.fingerprint}
-            onChange={(v) =>
-              updatePerfField('fingerprint', v as TlsFingerprint)
-            }
-            options={[
-              { value: 'chrome', label: 'Chrome', description: 'Default' },
-              { value: 'firefox', label: 'Firefox' },
-              { value: 'safari', label: 'Safari' },
-              { value: 'ios', label: 'iOS' },
-              { value: 'android', label: 'Android' },
-              { value: 'edge', label: 'Edge' },
-              { value: '360', label: '360' },
-              { value: 'qq', label: 'QQ' },
-              { value: 'random', label: 'Random' },
-              {
-                value: 'randomized',
-                label: 'Randomized',
-                description: 'Per connection',
-              },
-            ]}
-          />
-
           <PerfToggleRow
             label={t('settings.network.blockAds')}
             hint={t('settings.network.blockAdsHint')}
@@ -588,33 +432,211 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             checked={perfSettings.blockBittorrent}
             onChange={(v) => updatePerfField('blockBittorrent', v)}
           />
-
-          <PerfSelectRow
-            label={t('settings.network.domainStrategy')}
-            hint={t('settings.network.domainStrategyHint')}
-            value={perfSettings.domainStrategy}
-            onChange={(v) =>
-              updatePerfField('domainStrategy', v as DomainStrategy)
-            }
-            options={[
-              {
-                value: 'AsIs',
-                label: 'AsIs',
-                description: 'No resolve for routing',
-              },
-              {
-                value: 'IPIfNonMatch',
-                label: 'IPIfNonMatch',
-                description: 'Resolve if no domain rule',
-              },
-              {
-                value: 'IPOnDemand',
-                label: 'IPOnDemand',
-                description: 'Resolve for IP rules',
-              },
-            ]}
-          />
         </fieldset>
+
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((open) => !open)}
+          aria-expanded={advancedOpen}
+          className="flex w-full items-center justify-between rounded-lg py-1.5 text-sm font-medium text-gray-300 hover:text-white transition-colors"
+        >
+          <span>{t('settings.network.advanced')}</span>
+          <ChevronDown
+            className={clsx(
+              'w-4 h-4 transition-transform duration-200',
+              advancedOpen && 'rotate-180',
+            )}
+          />
+        </button>
+
+        {advancedOpen && (
+          <fieldset {...lockedFieldsetProps}>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              {t('settings.network.advancedHint')}
+            </p>
+            <PerfToggleRow
+              label={t('settings.network.muxEnabled')}
+              hint={t('settings.network.muxEnabledHint')}
+              checked={perfSettings.muxEnabled}
+              onChange={(v) => updatePerfField('muxEnabled', v)}
+            />
+
+            {perfSettings.muxEnabled && (
+              <PerfNumberRow
+                label={t('settings.network.muxConcurrency')}
+                hint={t('settings.network.muxConcurrencyHint')}
+                value={perfSettings.muxConcurrency}
+                min={1}
+                max={128}
+                onChange={(v) => updatePerfField('muxConcurrency', v)}
+              />
+            )}
+
+            <PerfNumberRow
+              label={t('settings.network.xhttpMaxConnections')}
+              hint={t('settings.network.xhttpMaxConnectionsHint')}
+              value={perfSettings.xhttpMaxConnections}
+              min={1}
+              max={16}
+              onChange={(v) => updatePerfField('xhttpMaxConnections', v)}
+            />
+
+            <PerfNumberRow
+              label={t('settings.network.tunMtu')}
+              hint={t('settings.network.tunMtuHint')}
+              value={perfSettings.tunMtu}
+              min={TUN_MTU_MIN}
+              max={TUN_MTU_MAX}
+              onChange={(v) => updatePerfField('tunMtu', v)}
+            />
+
+            <PerfSelectRow
+              label={t('settings.network.tunDnsQueryStrategy')}
+              hint={t('settings.network.tunDnsQueryStrategyHint')}
+              value={perfSettings.tunDnsQueryStrategy}
+              onChange={(v) =>
+                updatePerfField('tunDnsQueryStrategy', v as TunDnsQueryStrategy)
+              }
+              options={[
+                {
+                  value: 'UseIPv4',
+                  label: t('settings.network.tunDnsUseIPv4'),
+                  description: t('settings.network.tunDnsUseIPv4Desc'),
+                },
+                {
+                  value: 'UseIP',
+                  label: t('settings.network.tunDnsUseIP'),
+                  description: t('settings.network.tunDnsUseIPDesc'),
+                },
+                {
+                  value: 'UseIPv6',
+                  label: t('settings.network.tunDnsUseIPv6'),
+                  description: t('settings.network.tunDnsUseIPv6Desc'),
+                },
+                {
+                  value: 'UseSystem',
+                  label: t('settings.network.tunDnsUseSystem'),
+                  description: t('settings.network.tunDnsUseSystemDesc'),
+                },
+              ]}
+            />
+
+            <PerfNumberRow
+              label={t('settings.network.xudpConcurrency')}
+              hint={t('settings.network.xudpConcurrencyHint')}
+              value={perfSettings.xudpConcurrency}
+              min={1}
+              max={1024}
+              onChange={(v) => updatePerfField('xudpConcurrency', v)}
+            />
+
+            <PerfSelectRow
+              label={t('settings.network.xudpProxyUDP443')}
+              hint={t('settings.network.xudpProxyUDP443Hint')}
+              value={perfSettings.xudpProxyUDP443}
+              onChange={(v) =>
+                updatePerfField('xudpProxyUDP443', v as XudpProxyUDP443)
+              }
+              options={[
+                {
+                  value: 'reject',
+                  label: t('settings.network.udp443Reject'),
+                  description: 'QUIC → TCP',
+                },
+                {
+                  value: 'allow',
+                  label: t('settings.network.udp443Allow'),
+                  description: 'XUDP mux',
+                },
+                {
+                  value: 'skip',
+                  label: t('settings.network.udp443Skip'),
+                  description: 'Native UDP',
+                },
+              ]}
+            />
+
+            <PerfToggleRow
+              label={t('settings.network.tcpFastOpen')}
+              hint={t('settings.network.tcpFastOpenHint')}
+              checked={perfSettings.tcpFastOpen}
+              onChange={(v) => updatePerfField('tcpFastOpen', v)}
+            />
+
+            <PerfToggleRow
+              label={t('settings.network.sniffingRouteOnly')}
+              hint={t('settings.network.sniffingRouteOnlyHint')}
+              checked={perfSettings.sniffingRouteOnly}
+              onChange={(v) => updatePerfField('sniffingRouteOnly', v)}
+            />
+
+            <PerfSelectRow
+              label={t('settings.network.domainStrategy')}
+              hint={t('settings.network.domainStrategyHint')}
+              value={perfSettings.domainStrategy}
+              onChange={(v) =>
+                updatePerfField('domainStrategy', v as DomainStrategy)
+              }
+              options={[
+                {
+                  value: 'AsIs',
+                  label: 'AsIs',
+                  description: 'No resolve for routing',
+                },
+                {
+                  value: 'IPIfNonMatch',
+                  label: 'IPIfNonMatch',
+                  description: 'Resolve if no domain rule',
+                },
+                {
+                  value: 'IPOnDemand',
+                  label: 'IPOnDemand',
+                  description: 'Resolve for IP rules',
+                },
+              ]}
+            />
+            <div className="border-t border-gray-700/40 my-1" />
+
+            <PerfSelectRow
+              label={t('settings.network.logLevel')}
+              hint={t('settings.network.logLevelHint')}
+              value={perfSettings.logLevel}
+              onChange={(v) => updatePerfField('logLevel', v as LogLevel)}
+              options={[
+                { value: 'debug', label: 'debug', description: 'Verbose' },
+                { value: 'info', label: 'info' },
+                { value: 'warning', label: 'warning', description: 'Default' },
+                { value: 'error', label: 'error' },
+                { value: 'none', label: 'none', description: 'Silent' },
+              ]}
+            />
+
+            <PerfSelectRow
+              label={t('settings.network.fingerprint')}
+              hint={t('settings.network.fingerprintHint')}
+              value={perfSettings.fingerprint}
+              onChange={(v) =>
+                updatePerfField('fingerprint', v as TlsFingerprint)
+              }
+              options={[
+                { value: 'chrome', label: 'Chrome', description: 'Default' },
+                { value: 'firefox', label: 'Firefox' },
+                { value: 'safari', label: 'Safari' },
+                { value: 'ios', label: 'iOS' },
+                { value: 'android', label: 'Android' },
+                { value: 'edge', label: 'Edge' },
+                { value: '360', label: '360' },
+                { value: 'qq', label: 'QQ' },
+                { value: 'random', label: 'Random' },
+                {
+                  value: 'randomized',
+                  label: 'Randomized',
+                  description: 'Per connection',
+                },
+              ]}
+            />
+          </fieldset>
+        )}
 
         {/* Part of the same settings object, so it shares the save row below. */}
         <div className="mt-6 pt-6 border-t border-gray-700/50">
