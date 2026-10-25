@@ -173,14 +173,6 @@ function registerPowerMonitor(): void {
       trigger,
     });
     void (async () => {
-      // Re-pin TUN host routes first: after sleep the default gateway may have
-      // changed, and probing over stale routes would misreport a dead tunnel.
-      try {
-        const { tunRouteService } = await import('./services/TunRouteService');
-        await tunRouteService.reapplyRoutesAfterResume();
-      } catch (error) {
-        logger.warn('Main', 'Failed to reapply TUN routes after resume', error);
-      }
       try {
         const { connectionMonitorService } =
           await import('./services/ConnectionMonitorService');

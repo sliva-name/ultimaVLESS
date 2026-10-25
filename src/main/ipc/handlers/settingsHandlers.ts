@@ -7,6 +7,7 @@ import {
 } from 'electron';
 import { normalizePerformanceSettings } from '@/shared/performanceSettings';
 import { describeExecutable } from '@/main/services/runningApps';
+import { logger } from '@/main/services/LoggerService';
 import { IPC_INVOKE_CHANNELS, TunCapabilityStatus } from '@/shared/ipc';
 import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 import { IpcDependencies } from '@/main/ipc/dependencies';
@@ -92,15 +93,30 @@ export function registerSettingsHandlers({
       }
       const phase = deps.connectionManager.getPhase();
       if (
-        phase === 'connected' ||
         phase === 'connecting' ||
         phase === 'switching' ||
         deps.connectionManager.isBusy()
       ) {
-        throw new Error('Disconnect before changing connection mode.');
+        throw new Error(
+          'Wait for the connection to finish before changing connection mode.',
+        );
       }
+      const changed = deps.configService.getConnectionMode() !== mode;
       deps.configService.setConnectionMode(mode);
       notifySnapshot('settings');
+      if (changed && phase === 'connected') {
+        // The renderer follows the session phase; a failure lands in the
+        // session's last error, and a UAC relaunch quits this instance.
+        void deps.connectionManager.reconnect().catch((error) => {
+          logger.warn(
+            'IPC',
+            'Reconnect after a connection mode change failed',
+            {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          );
+        });
+      }
       return true;
     },
   );

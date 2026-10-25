@@ -14,7 +14,7 @@ import { XrayConfigCompiler } from './XrayConfigCompiler';
 import { logger } from './LoggerService';
 import { probeTcpPort } from './networkProbe';
 import { trackOwnedXrayProcess } from './xray/ownedProcesses';
-import type { PingServersOptions } from './PingService';
+import { probeServers, type PingServersOptions } from './serverLatencyProbe';
 
 /** Same probe v2rayN uses for its "real delay": tiny, cacheless, plain HTTP. */
 export const REAL_DELAY_TEST_URL = 'http://www.gstatic.com/generate_204';
@@ -98,9 +98,7 @@ export function buildDelayTestConfig(
       settings: {},
     },
   ];
-  const rules = (cfg.routing?.rules ?? []).filter(
-    (rule) => !rule.inboundTag?.includes('api'),
-  );
+  const rules = cfg.routing?.rules ?? [];
   cfg.routing = {
     domainStrategy: cfg.routing?.domainStrategy ?? 'AsIs',
     ...cfg.routing,
@@ -113,9 +111,6 @@ export function buildDelayTestConfig(
       ...rules,
     ],
   };
-  if (Array.isArray(cfg.outbounds)) {
-    cfg.outbounds = cfg.outbounds.filter((outbound) => outbound?.tag !== 'api');
-  }
   return cfg;
 }
 
@@ -296,25 +291,14 @@ export class RealDelayService {
     timeout: number = REAL_DELAY_MIN_TIMEOUT_MS,
     options: PingServersOptions = {},
   ): Promise<Map<string, number | null>> {
-    const results = new Map<string, number | null>();
     const timer = new PerfTimer('RealDelayService', 'pingServers');
     const { signal } = options;
-    let cursor = 0;
-
-    const runWorker = async (): Promise<void> => {
-      while (cursor < servers.length && !signal?.aborted) {
-        const server = servers[cursor];
-        cursor += 1;
-        if (!server) break;
-        const latency = await this.testServer(server, timeout, signal);
-        if (signal?.aborted) break;
-        results.set(server.uuid, latency);
-        options.onResult?.(server.uuid, latency);
-      }
-    };
-
-    const workers = Math.min(this.maxConcurrent, servers.length);
-    await Promise.all(Array.from({ length: workers }, () => runWorker()));
+    const results = await probeServers(
+      servers,
+      this.maxConcurrent,
+      options,
+      (server) => this.testServer(server, timeout, signal),
+    );
 
     timer.end({
       totalServers: servers.length,

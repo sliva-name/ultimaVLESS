@@ -13,11 +13,11 @@ import {
   XrayStreamSettings,
   XrayMuxSettings,
   XrayRoutingRule,
+  XrayTcpSettings,
 } from '@/shared/xray-types';
 import {
   createLocalProxyInbounds,
   createTunInbound,
-  ensureLocalProxyInbounds,
 } from './configGenerator/inbounds';
 import {
   assertAllowInsecureNotUsed,
@@ -27,6 +27,8 @@ import {
   hasUdpMask,
   migrateLegacyUdpHop,
   normalizeVmessSecurity,
+  readRawOutboundAddress,
+  readRawVlessEncryption,
   requiresPublicTrojanMux,
   wireGuardTargetStrategy,
 } from './configGenerator/outboundCompat';
@@ -41,6 +43,7 @@ import {
   resolveRoutingMode,
 } from './configGenerator/routing';
 import { applyStatsApi } from './configGenerator/statsApi';
+import { adoptProxyOutboundTag } from './configGenerator/proxyTag';
 import { applyRemoteDnsSettings, buildDnsObject } from './configGenerator/dns';
 import { logger } from './LoggerService';
 
@@ -72,6 +75,63 @@ function bundledVersionMin(): string {
   return BUNDLED_XRAY_VERSION.replace(/^v/i, '');
 }
 
+/**
+ * A share link's `fp`, or undefined when it names none: panels still export
+ * `fp=none` from the time an empty fingerprint meant Go TLS, but Xray rejects
+ * `none` ("unknown fingerprint") and defaults to `chrome` itself.
+ * @see https://xtls.github.io/config/transports/tls.html (`fingerprint`)
+ */
+function configuredFingerprint(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed && trimmed.toLowerCase() !== 'none' ? trimmed : undefined;
+}
+
+/** Chrome major version on Xray's own schedule (`common/utils/browser.go`). */
+function chromeMajorVersion(now: number = Date.now()): number {
+  const day = 86_400_000;
+  const days = Math.floor((now - Date.UTC(2026, 0, 13)) / day);
+  return 144 + Math.floor(Math.max(0, days - 70) / 35);
+}
+
+function splitList(value: string | undefined): string[] | undefined {
+  const items = (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : undefined;
+}
+
+/**
+ * RAW HTTP camouflage from `headerType=http` (v2rayN / 3x-ui links: `path`
+ * and `host` may list several values). Xray replaces its whole default
+ * request header set once `headers` is given, so the browser-like headers are
+ * spelled out next to `Host`; without a host the defaults stay.
+ * @see https://xtls.github.io/config/transports/raw.html#httpheaderobject
+ */
+function buildRawHttpHeader(
+  config: VlessConfig,
+): NonNullable<XrayTcpSettings['header']> {
+  const hosts = splitList(config.host);
+  const request: Record<string, unknown> = {
+    version: '1.1',
+    method: 'GET',
+    path: splitList(config.path) ?? ['/'],
+  };
+  if (hosts) {
+    request.headers = {
+      Host: hosts,
+      'User-Agent': [
+        `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajorVersion()}.0.0.0 Safari/537.36`,
+      ],
+      'Accept-Encoding': ['gzip, deflate'],
+      Connection: ['keep-alive'],
+      Pragma: ['no-cache'],
+    };
+  }
+  return { type: 'http', request };
+}
+
 /** Outbound tags a subscription-supplied routing rule may target. */
 const ALLOWED_RAW_OUTBOUND_TAGS = new Set(['proxy', 'block', 'dns-out']);
 
@@ -88,12 +148,14 @@ const PRIVATE_IP_SELECTORS = new Set([
 ]);
 
 export interface XrayConfigPipelineOptions {
-  sendThrough?: string;
-  tunAutoRoute?: boolean;
   /** Adapter alias for the TUN inbound's `autoOutboundsInterface`. */
   outboundInterface?: string;
-  /** TUN inbound's `autoSystemWfpBlockLeak: ["dns"]`; needs `tunAutoRoute`. */
+  /** TUN inbound's `autoSystemWfpBlockLeak: ["dns"]` (Windows). */
   blockDnsLeaks?: boolean;
+  /** False drops the TUN's IPv6 address and `::/0` (Linux without IPv6). */
+  tunIpv6?: boolean;
+  /** Linux: TUN routes as two `/1` halves (see `createTunInbound`). */
+  tunSplitDefaultRoute?: boolean;
   performanceSettings?: PerformanceSettings;
   ports?: RuntimePorts;
 }
@@ -132,30 +194,26 @@ export class XrayConfigPipeline {
     }
 
     this.stripUntrustedInbounds(cfg);
-    ensureLocalProxyInbounds(
-      cfg.inbounds,
+    cfg.inbounds = createLocalProxyInbounds(
       perf.sniffingRouteOnly,
       options.ports,
     );
-    const hasTun = cfg.inbounds.some(
-      (ib) => ib?.protocol === 'tun' || ib?.tag === 'tun-in',
-    );
 
-    if (connectionMode === 'tun' && !hasTun) {
+    if (connectionMode === 'tun') {
       cfg.inbounds.unshift(
         createTunInbound({
           ...options,
+          ipv6: options.tunIpv6,
+          splitDefaultRoute: options.tunSplitDefaultRoute,
           dnsServers: perf.remoteDnsServers,
           sniffingRouteOnly: perf.sniffingRouteOnly,
           mtu: perf.tunMtu,
         }),
       );
-      // Prefer autoOutboundsInterface for loop prevention; sendThrough is
-      // dual-stack-limited and only needed when Xray auto-route is off.
-      if (!options.tunAutoRoute) {
-        this.applySendThroughIfNeeded(cfg, options.sendThrough);
-      }
     }
+
+    // Servers saved before tags were normalized at import.
+    adoptProxyOutboundTag(cfg as unknown as Record<string, unknown>);
 
     // Raw subscriptions often omit the `block` / `direct` outbounds that are
     // mandatory once routing rules reference them (either from the raw config
@@ -199,7 +257,7 @@ export class XrayConfigPipeline {
    * Inbounds are owned by the client, never by the subscription: a raw config
    * could otherwise publish a listener on 0.0.0.0 (an open relay into the user's
    * LAN, running elevated in TUN mode) or supply its own `tun` settings.
-   * Local SOCKS/HTTP are recreated by `ensureLocalProxyInbounds`.
+   * Local SOCKS/HTTP are recreated by `createLocalProxyInbounds`.
    */
   private static stripUntrustedInbounds(cfg: XrayConfig): void {
     if (!Array.isArray(cfg.inbounds) || cfg.inbounds.length === 0) return;
@@ -451,7 +509,7 @@ export class XrayConfigPipeline {
       // Always rewrite Vision mux: raw subs often leave XUDP mux on, and TUN
       // DNS (udp/53) then waits on the mux client → ~12s cold-start stall.
       if (!outbound.mux || hasVisionFlow) {
-        const address = this.readOutboundAddress(outbound);
+        const address = readRawOutboundAddress(outbound.settings);
         const forceMux =
           outbound.protocol === 'trojan' &&
           !!address &&
@@ -478,7 +536,7 @@ export class XrayConfigPipeline {
       const tlsSettings = stream?.tlsSettings as
         Record<string, unknown> | undefined;
       if (tlsSettings) {
-        assertAllowInsecureNotUsed(tlsSettings.allowInsecure);
+        assertAllowInsecureNotUsed(tlsSettings.allowInsecure, tlsSettings);
         delete tlsSettings.allowInsecure;
       }
 
@@ -498,59 +556,16 @@ export class XrayConfigPipeline {
         protocol === 'trojan' ||
         protocol === 'hysteria'
       ) {
-        const address = this.readOutboundAddress(outbound);
+        const address = readRawOutboundAddress(outbound.settings);
         if (!address) continue;
         assertEncryptedPublicOutbound({
           protocol,
           address,
           streamSecurity,
-          vlessEncryption: this.readVlessEncryption(outbound),
+          vlessEncryption: readRawVlessEncryption(outbound.settings),
         });
       }
     }
-  }
-
-  private static readOutboundAddress(
-    outbound: MutableOutbound,
-  ): string | undefined {
-    const settings = outbound.settings;
-    if (!settings) return undefined;
-    if (typeof settings.address === 'string' && settings.address) {
-      return settings.address;
-    }
-    const vnext = settings.vnext;
-    if (Array.isArray(vnext) && vnext[0] && typeof vnext[0] === 'object') {
-      const address = (vnext[0] as Record<string, unknown>).address;
-      if (typeof address === 'string' && address) return address;
-    }
-    const servers = settings.servers;
-    if (
-      Array.isArray(servers) &&
-      servers[0] &&
-      typeof servers[0] === 'object'
-    ) {
-      const address = (servers[0] as Record<string, unknown>).address;
-      if (typeof address === 'string' && address) return address;
-    }
-    return undefined;
-  }
-
-  private static readVlessEncryption(
-    outbound: MutableOutbound,
-  ): string | undefined {
-    const settings = outbound.settings;
-    if (!settings) return undefined;
-    if (typeof settings.encryption === 'string') return settings.encryption;
-    const vnext = settings.vnext;
-    if (!Array.isArray(vnext) || !vnext[0] || typeof vnext[0] !== 'object') {
-      return undefined;
-    }
-    const users = (vnext[0] as Record<string, unknown>).users;
-    if (!Array.isArray(users) || !users[0] || typeof users[0] !== 'object') {
-      return undefined;
-    }
-    const encryption = (users[0] as Record<string, unknown>).encryption;
-    return typeof encryption === 'string' ? encryption : undefined;
   }
 
   private static readShadowsocksMethod(
@@ -626,6 +641,21 @@ export class XrayConfigPipeline {
       ) {
         streamSettings.network =
           streamSettings.method === 'raw' ? 'tcp' : streamSettings.method;
+      }
+    }
+
+    for (const key of ['tlsSettings', 'realitySettings'] as const) {
+      const settings = streamSettings[key];
+      if (
+        settings &&
+        typeof settings === 'object' &&
+        !Array.isArray(settings)
+      ) {
+        const security = settings as Record<string, unknown>;
+        if (configuredFingerprint(security.fingerprint) === undefined) {
+          // Xray then uses its default, `chrome`.
+          delete security.fingerprint;
+        }
       }
     }
 
@@ -970,7 +1000,7 @@ export class XrayConfigPipeline {
   ): XrayConfig {
     const perf = options.performanceSettings ?? DEFAULT_PERFORMANCE_SETTINGS;
     const protocol = this.getStructuredProtocol(config);
-    assertAllowInsecureNotUsed(config.allowInsecure);
+    assertAllowInsecureNotUsed(config.allowInsecure, config);
 
     const outbound =
       protocol === 'wireguard'
@@ -985,6 +1015,8 @@ export class XrayConfigPipeline {
       inbounds.unshift(
         createTunInbound({
           ...options,
+          ipv6: options.tunIpv6,
+          splitDefaultRoute: options.tunSplitDefaultRoute,
           dnsServers: perf.remoteDnsServers,
           sniffingRouteOnly: perf.sniffingRouteOnly,
           mtu: perf.tunMtu,
@@ -1006,14 +1038,6 @@ export class XrayConfigPipeline {
         rules: buildDefaultRoutingRules(perf),
       },
     };
-
-    if (
-      connectionMode === 'tun' &&
-      options.sendThrough &&
-      !options.tunAutoRoute
-    ) {
-      this.applySendThroughIfNeeded(cfg, options.sendThrough);
-    }
 
     applyStatsApi(cfg, options.ports?.api);
     applyRemoteDnsSettings(cfg, perf, {
@@ -1098,11 +1122,11 @@ export class XrayConfigPipeline {
       vlessEncryption: config.encryption,
     });
 
-    const defaultFp = perf.fingerprint;
+    const fingerprint = configuredFingerprint(config.fp) ?? perf.fingerprint;
 
     if (streamSettings.security === 'reality') {
       streamSettings.realitySettings = {
-        fingerprint: config.fp || defaultFp,
+        fingerprint,
         serverName: config.sni || '',
         password: config.pbk || '',
         shortId: config.sid || '',
@@ -1114,8 +1138,11 @@ export class XrayConfigPipeline {
     } else if (streamSettings.security === 'tls') {
       streamSettings.tlsSettings = {
         serverName: config.sni || '',
-        alpn: this.tlsAlpnForTransport(transport),
-        fingerprint: config.fp || defaultFp,
+        // XHTTP picks its HTTP version from the ALPN (`["h3"]` → QUIC).
+        alpn: config.alpn?.length
+          ? [...config.alpn]
+          : this.tlsAlpnForTransport(transport),
+        fingerprint,
       };
       if (config.pinnedPeerCertSha256) {
         streamSettings.tlsSettings.pinnedPeerCertSha256 =
@@ -1167,7 +1194,13 @@ export class XrayConfigPipeline {
       streamSettings.grpcSettings = {
         serviceName: config.serviceName || '',
         ...(config.authority ? { authority: config.authority } : {}),
+        // Share-link `mode=multi` (default `gun`).
+        ...(config.mode === 'multi' ? { multiMode: true } : {}),
       };
+    }
+
+    if (transport === 'raw' && config.headerType === 'http') {
+      streamSettings.rawSettings = { header: buildRawHttpHeader(config) };
     }
 
     if (transport === 'xhttp') {
@@ -1326,16 +1359,12 @@ export class XrayConfigPipeline {
     maxConnections: number,
   ): void {
     const mutable = streamSettings as MutableStreamSettings;
-    const transport = mutable.method ?? mutable.network;
     const xhttpKey = mutable.xhttpSettings
       ? 'xhttpSettings'
       : mutable.splithttpSettings
         ? 'splithttpSettings'
         : null;
-    if (!xhttpKey) {
-      if (transport !== 'xhttp' && transport !== 'splithttp') return;
-      return;
-    }
+    if (!xhttpKey) return;
     const xhttp = mutable[xhttpKey];
     if (!xhttp || typeof xhttp !== 'object' || Array.isArray(xhttp)) return;
 
@@ -1363,7 +1392,14 @@ export class XrayConfigPipeline {
     perf: PerformanceSettings,
     options: { forceMux?: boolean } = {},
   ): XrayMuxSettings {
-    if (transport === 'grpc' || transport === 'hysteria') {
+    // XHTTP multiplexes by itself (XMUX), and an XHTTP inbound only lets UDP
+    // through Mux.Cool (`app/proxyman/inbound`), so TCP over Mux would fail.
+    if (
+      transport === 'grpc' ||
+      transport === 'hysteria' ||
+      transport === 'xhttp' ||
+      transport === 'splithttp'
+    ) {
       return { enabled: false };
     }
     if (hasVisionFlow) {
@@ -1377,31 +1413,5 @@ export class XrayConfigPipeline {
       xudpConcurrency: perf.xudpConcurrency,
       xudpProxyUDP443: perf.xudpProxyUDP443,
     };
-  }
-
-  private static applySendThroughIfNeeded(
-    cfg: XrayConfig,
-    sendThrough?: string,
-  ): void {
-    if (
-      !sendThrough ||
-      !Array.isArray(cfg.outbounds) ||
-      cfg.outbounds.length === 0
-    ) {
-      return;
-    }
-    // Pin both proxy and freedom/direct. Direct without a physical bind loops
-    // into TUN whenever routing sends geoip:private there.
-    const outbounds = cfg.outbounds as MutableOutbound[];
-    for (const outbound of outbounds) {
-      if (!outbound || outbound.sendThrough) continue;
-      if (
-        outbound.tag === 'proxy' ||
-        outbound.tag === 'direct' ||
-        outbound.protocol === 'freedom'
-      ) {
-        outbound.sendThrough = sendThrough;
-      }
-    }
   }
 }

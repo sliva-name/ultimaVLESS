@@ -40,6 +40,8 @@ const resources = {
         disconnectingHint: 'Applying disconnect sequence and cleaning routes.',
         cancelSwitchHint:
           'Click the button to cancel switching and disconnect.',
+        disconnectFailed: 'Failed to disconnect cleanly',
+        connectionActionFailed: 'Connection operation failed',
         country: 'Country',
         ipAddress: 'IP Address',
         protocol: 'Protocol',
@@ -128,9 +130,10 @@ const resources = {
           proxyDesc: 'System proxy for typical desktop apps.',
           tunMode: 'TUN mode',
           tunDesc: 'Full system traffic. May require elevated privileges.',
-          disconnectHint:
-            'Disconnect before changing mode. The choice applies on the next connection.',
-          disconnectHintError: 'Disconnect before changing connection mode.',
+          modeReconnectHint:
+            'Picking the other mode reconnects to the same server in it.',
+          disconnectHintError:
+            'Wait for the connection to finish before changing connection mode.',
           tunUnavailable: 'TUN mode is not supported on this operating system.',
           tunUnsupportedDarwin:
             'TUN mode is currently supported only on Windows and Linux by the bundled Xray core.',
@@ -141,15 +144,10 @@ const resources = {
           tunDegradedLinux:
             'Linux TUN routing currently relies on Xray auto-route behavior rather than explicit OS-level route teardown.',
           routingMode: 'Routing mode: {{mode}}',
-          windowsTunRouting: 'Windows TUN routing',
-          windowsTunRoutingHint:
-            'Xray 26.5+ can install routes via autoSystemRoutingTable. PowerShell is the previous UltimaVLESS behavior.',
-          windowsTunRoutingXray: 'Xray auto-route (test)',
-          windowsTunRoutingPowershell: 'PowerShell (rollback)',
           tunBlockDnsLeaks: 'Block DNS leaks',
           tunBlockDnsLeaksHint:
             'Without it Windows also sends DNS queries to the DNS servers of your other adapters, such as the router, past the tunnel. When on, Xray adds Windows Filtering Platform filters so DNS (port 53) of every program except Xray goes only through TUN. This breaks a local DNS resolver of other programs (127.0.0.1:53), the DNS of another VPN on its own adapter, virtual machines that resolve names through the host NAT, and signing in to captive portals (hotel or airport Wi-Fi).',
-          windowsTunRoutingApplyHint:
+          windowsTunApplyHint:
             'Save performance settings and reconnect in TUN mode for the change to take effect.',
           tunAdapter: 'Network adapter for TUN',
           tunAdapterHint:
@@ -170,6 +168,9 @@ const resources = {
           tunAdapterLoadFailed: 'Could not read network adapters: {{error}}',
           performance: 'Performance tuning',
           performanceHint: 'Changes take effect on the next connection.',
+          advanced: 'Advanced',
+          advancedHint:
+            'Low-level Xray parameters. The defaults suit most servers.',
           performanceLocked:
             'Disconnect the VPN to change performance settings.',
           muxEnabled: 'TCP Mux',
@@ -292,6 +293,7 @@ const resources = {
             'Priority, first match wins: ad and BitTorrent blocking → apps that bypass the VPN → sites and addresses (a more specific entry wins: music.example.com beats example.com; on a tie the exclusion wins) → local network, direct → apps through VPN → the selected mode.',
           savePerf: 'Save',
           savePerfFailed: 'Failed to save performance settings',
+          setModeFailed: 'Failed to change connection mode',
           resetDefaults: 'Reset to defaults',
         },
         diagnostics: {
@@ -372,6 +374,8 @@ const resources = {
           'Применение последовательности отключения и очистка маршрутов.',
         cancelSwitchHint:
           'Нажмите кнопку, чтобы отменить переключение и отключиться.',
+        disconnectFailed: 'Отключение завершилось с ошибкой',
+        connectionActionFailed: 'Ошибка при подключении или отключении',
         country: 'Страна',
         ipAddress: 'IP Адрес',
         protocol: 'Протокол',
@@ -461,9 +465,10 @@ const resources = {
           tunMode: 'Режим TUN',
           tunDesc:
             'Весь системный трафик. Могут потребоваться права администратора.',
-          disconnectHint:
-            'Отключитесь перед сменой режима. Изменения применятся при следующем подключении.',
-          disconnectHintError: 'Отключитесь перед изменением режима сети.',
+          modeReconnectHint:
+            'При выборе другого режима подключение к тому же серверу перезапустится в нём.',
+          disconnectHintError:
+            'Дождитесь окончания подключения, прежде чем менять режим сети.',
           tunUnavailable:
             'Режим TUN не поддерживается в данной операционной системе.',
           tunUnsupportedDarwin:
@@ -475,15 +480,10 @@ const resources = {
           tunDegradedLinux:
             'Маршрутизация TUN в Linux сейчас полагается на поведение автомаршрутизации Xray, а не на явное удаление маршрутов на уровне ОС.',
           routingMode: 'Режим маршрутизации: {{mode}}',
-          windowsTunRouting: 'Маршрутизация TUN в Windows',
-          windowsTunRoutingHint:
-            'В Xray 26.5+ маршруты можно ставить через autoSystemRoutingTable. PowerShell — прежнее поведение UltimaVLESS.',
-          windowsTunRoutingXray: 'Автомаршруты Xray (тест)',
-          windowsTunRoutingPowershell: 'PowerShell (откат)',
           tunBlockDnsLeaks: 'Блокировать утечки DNS',
           tunBlockDnsLeaksHint:
             'Без этого Windows отправляет DNS-запросы и на DNS-серверы других адаптеров, например роутера, в обход туннеля. При включении Xray ставит фильтры Windows Filtering Platform: DNS (порт 53) всех программ, кроме Xray, идёт только через TUN. Перестанут работать локальный DNS-резолвер других программ (127.0.0.1:53), DNS другого VPN на своём адаптере, виртуальные машины, которые резолвят имена через NAT хоста, и вход в сеть через страницу авторизации (Wi-Fi в отеле или аэропорту).',
-          windowsTunRoutingApplyHint:
+          windowsTunApplyHint:
             'Сохраните настройки производительности и переподключитесь в режиме TUN.',
           tunAdapter: 'Сетевой адаптер для TUN',
           tunAdapterHint:
@@ -505,6 +505,9 @@ const resources = {
             'Не удалось получить список адаптеров: {{error}}',
           performance: 'Настройки производительности',
           performanceHint: 'Изменения применяются при следующем подключении.',
+          advanced: 'Дополнительно',
+          advancedHint:
+            'Низкоуровневые параметры Xray. Значения по умолчанию подходят большинству серверов.',
           performanceLocked:
             'Отключите VPN, чтобы изменить настройки производительности.',
           muxEnabled: 'TCP Mux',
@@ -632,6 +635,7 @@ const resources = {
             'Приоритет (срабатывает первое подходящее правило): блокировка рекламы и BitTorrent → приложения напрямую → сайты и адреса (более точное правило важнее: music.example.com важнее example.com; при равенстве побеждает исключение) → локальная сеть напрямую → приложения через VPN → выбранный режим.',
           savePerf: 'Сохранить',
           savePerfFailed: 'Не удалось сохранить настройки производительности',
+          setModeFailed: 'Не удалось изменить режим сети',
           resetDefaults: 'Сбросить по умолчанию',
         },
         diagnostics: {

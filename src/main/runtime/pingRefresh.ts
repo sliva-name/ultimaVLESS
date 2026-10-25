@@ -1,8 +1,7 @@
 import { EventEmitter } from 'events';
-import type { VlessConfig } from '@/shared/types';
+import type { ConnectionMode, VlessConfig } from '@/shared/types';
 import type { PingResult, SessionPhase } from '@/shared/ipc';
 import {
-  allServersHaveFreshPing,
   DEFAULT_MIN_PING_INTERVAL_MS,
   filterServersNeedingPing,
 } from '@/shared/pingFilters';
@@ -10,10 +9,9 @@ import { PerfTimer } from '@/shared/perfMetrics';
 import { logger } from '@/main/services/LoggerService';
 import { createSerialQueue } from '@/main/ipc/serialQueue';
 import {
-  createPingAllCoordinator,
+  createPingResultSink,
   type PingPersistStore,
-  type PingResultSink,
-} from '@/main/ipc/pingAllCoordinator';
+} from '@/main/ipc/pingResultSink';
 
 export type PingAutoTrigger = 'startup' | 'catalog-changed' | 'session-idle';
 export type PingRefreshTrigger = 'user' | PingAutoTrigger;
@@ -81,13 +79,18 @@ export const PING_AUTO_DELAYS_MS: Record<PingAutoTrigger, number> = {
 /** Phases in which the network stack is not engaged by a session. */
 const SETTLED_PHASES = new Set<SessionPhase>(['idle', 'failed']);
 
-export function isPingUnsafePhase(phase: SessionPhase, busy: boolean): boolean {
-  return (
-    busy ||
-    phase === 'connected' ||
-    phase === 'connecting' ||
-    phase === 'switching'
-  );
+/**
+ * Pings dial the servers directly. A TUN session would carry them through the
+ * tunnel, while Node's sockets ignore the system proxy, so a proxy session
+ * leaves them on the direct path. In-flight phases stay off-limits either way.
+ */
+export function isPingUnsafePhase(
+  phase: SessionPhase,
+  busy: boolean,
+  mode: ConnectionMode | null,
+): boolean {
+  if (busy || phase === 'connecting' || phase === 'switching') return true;
+  return phase === 'connected' && mode !== 'proxy';
 }
 
 interface PingAutoSchedulerDeps {
@@ -217,17 +220,15 @@ export function createPingRefreshRunner(
   const beginSink = (signal: AbortSignal, retry = false) => {
     let closed = false;
     let flushing = false;
-    const coordinator = createPingAllCoordinator({
+    const sink = createPingResultSink({
       store: deps.store,
       notifySnapshot: (_reason, options) =>
         emitChanged(options?.immediate ?? false),
       isUnsafe: () =>
         closed || (signal.aborted && !flushing) || deps.isUnsafe(),
+      onlyMissing: retry,
       now,
     });
-    const sink: PingResultSink = retry
-      ? coordinator.beginFill()
-      : coordinator.beginRun();
     const close = (preserve: boolean): void => {
       if (closed) return;
       closed = !preserve;
@@ -355,21 +356,13 @@ export function createPingRefreshRunner(
       timer.end({ trigger, skipped: 'unsafe' });
       return toResults(catalog);
     }
-    if (
-      !force &&
-      servers.length > 0 &&
-      allServersHaveFreshPing(servers, minPingIntervalMs, now())
-    ) {
-      timer.end({ trigger, skipped: 'fresh', total: servers.length });
-      return toResults(catalog);
-    }
     const targets = filterServersNeedingPing(servers, {
       force,
       minPingIntervalMs,
       now: now(),
     });
     if (targets.length === 0) {
-      timer.end({ trigger, skipped: 'no-targets' });
+      timer.end({ trigger, skipped: 'fresh', total: servers.length });
       return toResults(catalog);
     }
 
@@ -498,7 +491,8 @@ export function createPingRefreshRunner(
       scheduler.schedule(trigger, delayMs);
     },
     handleSessionPhase(phase: SessionPhase) {
-      if (isPingUnsafePhase(phase, false)) {
+      // A TUN session that comes up was `connecting` first, which aborted.
+      if (phase === 'connecting' || phase === 'switching') {
         abortInFlightProbes();
       }
       scheduler.handleSessionPhase(phase);

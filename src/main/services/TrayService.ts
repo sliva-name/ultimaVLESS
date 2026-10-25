@@ -3,6 +3,7 @@ import {
   getAppIconPath,
   getNotificationIconPath,
 } from '@/main/utils/runtimePaths';
+import { localizeError } from '@/shared/localizeError';
 import { logger } from './LoggerService';
 import { mainLocaleService } from './MainLocaleService';
 
@@ -104,7 +105,10 @@ export class TrayService {
   public reportError(message: string): void {
     this.state = { kind: 'error', message };
     this.applyState();
-    this.notify(mainLocaleService.t('notify.error.title'), message);
+    this.notify(
+      mainLocaleService.t('notify.error.title'),
+      localizeError(message, mainLocaleService.getLanguage()),
+    );
   }
 
   public reportSwitching(): void {
@@ -171,7 +175,7 @@ export class TrayService {
       case 'connecting':
         return `${base} — ${t('tray.connecting')}`;
       case 'error':
-        return `${base} — ${this.state.message}`;
+        return `${base} — ${localizeError(this.state.message, mainLocaleService.getLanguage())}`;
       case 'disconnected':
       default:
         return `${base} — ${t('tray.disconnected')}`;

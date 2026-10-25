@@ -11,7 +11,6 @@ import {
 } from '../tunRoute/constants';
 
 interface TunInboundOptions {
-  tunAutoRoute?: boolean;
   /** DNS servers advertised on the TUN interface (Windows). */
   dnsServers?: string[];
   sniffingRouteOnly?: boolean;
@@ -21,6 +20,15 @@ interface TunInboundOptions {
   outboundInterface?: string;
   /** Windows: WFP filters keep other programs' DNS inside the TUN. */
   blockDnsLeaks?: boolean;
+  /** False when the system cannot give the TUN an IPv6 address (Linux). */
+  ipv6?: boolean;
+  /**
+   * Linux: route the two halves of the address space instead of the default
+   * route. Xray adds its routes with metric 1, which loses to a default route
+   * with metric 0, and a more specific prefix wins whatever the metrics. Xray
+   * keeps finding the physical interface by its own `/0` route.
+   */
+  splitDefaultRoute?: boolean;
 }
 
 /**
@@ -43,19 +51,6 @@ export function createSniffing(routeOnly: boolean): {
 }
 
 type MutableConfigNode = Record<string, unknown>;
-type MutableSniffing = MutableConfigNode & {
-  enabled?: boolean;
-  destOverride?: string[];
-  routeOnly?: boolean;
-};
-export type MutableInbound = MutableConfigNode & {
-  protocol?: string;
-  tag?: string;
-  port?: number;
-  listen?: string;
-  settings?: MutableConfigNode;
-  sniffing?: MutableSniffing;
-};
 
 export function createLocalProxyInbounds(
   sniffingRouteOnly = true,
@@ -84,63 +79,9 @@ export function createLocalProxyInbounds(
   ];
 }
 
-export function ensureLocalProxyInbounds(
-  inbounds: MutableInbound[],
-  sniffingRouteOnly = true,
-  ports: { socks: number; http: number } = {
-    socks: APP_CONSTANTS.PORTS.SOCKS,
-    http: APP_CONSTANTS.PORTS.HTTP,
-  },
-): void {
-  let hasSocks = false;
-  let hasHttp = false;
-
-  const ensureSniffing = (inbound: MutableInbound) => {
-    if (!inbound.sniffing) {
-      inbound.sniffing = createSniffing(sniffingRouteOnly);
-    } else {
-      inbound.sniffing.routeOnly = sniffingRouteOnly;
-    }
-  };
-
-  for (const inbound of inbounds) {
-    if (inbound.protocol === 'socks') {
-      inbound.tag ??= 'socks';
-      inbound.port = ports.socks;
-      inbound.listen = '127.0.0.1';
-      inbound.settings = {
-        auth: 'noauth',
-        ...inbound.settings,
-        udp: true,
-      };
-      ensureSniffing(inbound);
-      hasSocks = true;
-    }
-    if (inbound.protocol === 'http') {
-      inbound.tag ??= 'http';
-      inbound.port = ports.http;
-      inbound.listen = '127.0.0.1';
-      inbound.settings = {
-        allowTransparent: false,
-        ...inbound.settings,
-      };
-      ensureSniffing(inbound);
-      hasHttp = true;
-    }
-  }
-
-  if (!hasSocks || !hasHttp) {
-    const defaults = createLocalProxyInbounds(sniffingRouteOnly, ports);
-    if (!hasSocks) {
-      inbounds.push(defaults[0] as MutableInbound);
-    }
-    if (!hasHttp) {
-      inbounds.push(defaults[1] as MutableInbound);
-    }
-  }
-}
-
 export function createTunInbound(options: TunInboundOptions): XrayInbound {
+  const ipv6 = options.ipv6 !== false;
+  const split = options.splitDefaultRoute === true;
   const dnsServers =
     options.dnsServers && options.dnsServers.length > 0
       ? options.dnsServers
@@ -155,32 +96,27 @@ export function createTunInbound(options: TunInboundOptions): XrayInbound {
       mtu: options.mtu ?? TUN_MTU,
       gateway: [
         `${TUN_ADDRESS}/${TUN_PREFIX}`,
-        `${TUN_IPV6_ADDRESS}/${TUN_IPV6_PREFIX}`,
+        ...(ipv6 ? [`${TUN_IPV6_ADDRESS}/${TUN_IPV6_PREFIX}`] : []),
       ],
       dns: dnsServers,
-      // Always bind Xray-originated packets (proxy + freedom/direct) to a
-      // physical NIC. Without this, PowerShell TUN mode loops: geoip:private →
-      // direct → default route back into TUN (NetBIOS storms). An explicit
-      // adapter (Windows) overrides Xray's name-based guess.
+      // Xray's own connections (proxy, freedom/direct, DNS) stay on the
+      // physical adapter instead of looping into the TUN. An explicit adapter
+      // (Windows) overrides Xray's own pick.
       autoOutboundsInterface: options.outboundInterface || 'auto',
+      // Keep both defaults: browsers resolve AAAA and need ::/0 via TUN,
+      // otherwise IPv6 bypasses the tunnel (or hangs) while IPv4 works in logs.
+      autoSystemRoutingTable: [
+        ...(split ? ['0.0.0.0/1', '128.0.0.0/1'] : ['0.0.0.0/0']),
+        ...(ipv6 ? (split ? ['::/1', '8000::/1'] : ['::/0']) : []),
+      ],
     },
   };
-  if (options.tunAutoRoute) {
-    // Keep both defaults: browsers resolve AAAA and need ::/0 via TUN,
-    // otherwise IPv6 bypasses the tunnel (or hangs) while IPv4 works in logs.
-    (tunInbound.settings as MutableConfigNode).autoSystemRoutingTable = [
-      '0.0.0.0/0',
-      '::/0',
-    ];
-    // Windows otherwise also queries the other adapters' DNS servers (Smart
-    // Multi-Homed Name Resolution), and a DHCP resolver on the LAN wins by its
-    // more specific route. Xray rejects this without autoSystemRoutingTable.
-    // @see https://github.com/XTLS/Xray-core/blob/main/proxy/tun/README.md#windows-support
-    if (options.blockDnsLeaks) {
-      (tunInbound.settings as MutableConfigNode).autoSystemWfpBlockLeak = [
-        'dns',
-      ];
-    }
+  // Windows otherwise also queries the other adapters' DNS servers (Smart
+  // Multi-Homed Name Resolution), and a DHCP resolver on the LAN wins by its
+  // more specific route.
+  // @see https://github.com/XTLS/Xray-core/blob/main/proxy/tun/README.md#windows-support
+  if (options.blockDnsLeaks) {
+    (tunInbound.settings as MutableConfigNode).autoSystemWfpBlockLeak = ['dns'];
   }
   return tunInbound;
 }

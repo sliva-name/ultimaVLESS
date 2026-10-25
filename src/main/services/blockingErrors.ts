@@ -23,8 +23,20 @@ export function isBlockingErrorText(text: string): boolean {
   return BLOCKING_ERROR_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+/**
+ * Xray log lines from outbounds that never carry the tunnel: a site behind a
+ * direct rule that is down, a blocked destination or a DNS upstream says
+ * nothing about the server.
+ */
+const NON_TUNNEL_SOURCE = /\b(?:proxy\/(?:freedom|blackhole|dns)|app\/dns):/i;
+
 export function extractBlockingErrors(lines: string[]): string[] {
   return lines
     .map((line) => line.trim())
-    .filter((line) => line.length > 0 && isBlockingErrorText(line));
+    .filter(
+      (line) =>
+        line.length > 0 &&
+        !NON_TUNNEL_SOURCE.test(line) &&
+        isBlockingErrorText(line),
+    );
 }

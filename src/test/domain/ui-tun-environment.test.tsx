@@ -53,6 +53,7 @@ const ADAPTERS: NetworkAdapterView[] = [
 function renderNetworkTab(
   tunOutboundInterface = '',
   overrides: Partial<PerformanceSettings> = {},
+  isConnected = false,
 ) {
   const electronApi = createElectronApiMock();
   electronApi.getPerformanceSettings.mockResolvedValue({
@@ -67,7 +68,11 @@ function renderNetworkTab(
   installElectronApiMock(electronApi);
   render(
     <AppSnapshotProvider>
-      <SettingsNetworkTab isOpen isConnected={false} isConnectionBusy={false} />
+      <SettingsNetworkTab
+        isOpen
+        isConnected={isConnected}
+        isConnectionBusy={false}
+      />
     </AppSnapshotProvider>,
   );
   return electronApi;
@@ -158,22 +163,44 @@ describe('TUN DNS leak block', () => {
       ),
     );
   });
+});
 
-  it('is hidden with PowerShell routing, which Xray cannot combine it with', async () => {
-    renderNetworkTab('', {
-      windowsTunRouting: 'powershell',
-      tunBlockDnsLeaks: true,
-    });
+describe('network settings layout', () => {
+  it('keeps the everyday settings in view and the Xray internals folded away', async () => {
+    renderNetworkTab();
 
-    const routing = await screen.findByRole('button', {
-      name: 'Маршрутизация TUN в Windows',
-    });
-    await waitFor(() =>
-      expect(routing).toHaveTextContent('PowerShell (откат)'),
-    );
+    expect(await screen.findByText('Способ пинга')).toBeInTheDocument();
+    expect(screen.getByText('Удалённый DNS')).toBeInTheDocument();
+    expect(screen.getByText('Блокировка рекламы')).toBeInTheDocument();
+    expect(screen.queryByText('MTU туннеля')).toBeNull();
+    expect(screen.queryByText('TCP Mux')).toBeNull();
+
+    const advanced = screen.getByRole('button', { name: 'Дополнительно' });
+    expect(advanced).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(advanced);
+
+    expect(advanced).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('MTU туннеля')).toBeInTheDocument();
+    expect(screen.getByText('TCP Mux')).toBeInTheDocument();
+  });
+});
+
+describe('connection mode while connected', () => {
+  it('changes the mode instead of asking to disconnect first', async () => {
+    const electronApi = renderNetworkTab('', {}, true);
+
     expect(
-      screen.queryByRole('switch', { name: 'Блокировать утечки DNS' }),
-    ).toBeNull();
+      screen.getByText(
+        'При выборе другого режима подключение к тому же серверу перезапустится в нём.',
+      ),
+    ).toBeInTheDocument();
+    const tun = await screen.findByRole('button', { name: /^Режим TUN/ });
+    await waitFor(() => expect(tun).toBeEnabled());
+    fireEvent.click(tun);
+
+    await waitFor(() =>
+      expect(electronApi.setConnectionMode).toHaveBeenCalledWith('tun'),
+    );
   });
 });
 

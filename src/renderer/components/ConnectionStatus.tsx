@@ -20,6 +20,7 @@ import { useRenderPerf } from '@/renderer/hooks/useRenderPerf';
 import clsx from 'clsx';
 import { CountryFlag } from './CountryFlag';
 import { useTranslation } from 'react-i18next';
+import { localizeError } from '@/shared/localizeError';
 
 interface ConnectionStatusProps {
   phase: SessionPhase;
@@ -55,7 +56,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
   trafficSnapshot = null,
   onToggleConnection,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isSwitching = phase === 'switching';
   const isDisconnecting = phase === 'disconnecting';
   const isConnecting = phase === 'connecting';
@@ -308,7 +309,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           {connectionError && (
             <div className="mt-6 w-full max-w-2xl p-4 rounded-xl bg-orange-500/10 border border-orange-500/30 animate-[fadeIn_0.3s_ease-out]">
               <div className="text-sm text-orange-300 font-medium break-words">
-                {connectionError}
+                {localizeError(connectionError, i18n.language)}
               </div>
             </div>
           )}

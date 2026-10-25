@@ -194,6 +194,45 @@ describe('SubscriptionService with HTML-wrapped responses', () => {
     ).rejects.toThrow('HTML page without proxy links');
   });
 
+  it('names the network error instead of "fetch failed"', async () => {
+    fetchMock.mockRejectedValueOnce(
+      new TypeError('fetch failed', {
+        cause: Object.assign(new Error('getaddrinfo ENOTFOUND'), {
+          code: 'ENOTFOUND',
+        }),
+      }),
+    );
+    await expect(
+      service.fetchAndParseDetailed('https://raw.githack.com/u/r/main/sub.txt'),
+    ).rejects.toThrow('Could not reach the subscription server (ENOTFOUND)');
+  });
+
+  it('reports a subscription server that does not answer in time', async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockImplementationOnce(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(
+                new DOMException('This operation was aborted', 'AbortError'),
+              ),
+            );
+          }),
+      );
+      const result = service.fetchAndParseDetailed(
+        'https://raw.githack.com/u/r/main/sub.txt',
+      );
+      const assertion = expect(result).rejects.toThrow(
+        'Subscription server did not respond within 30s',
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('still parses an unwrapped Base64 subscription', async () => {
     const result = await parse(encode(`${VLESS_A}\n${VLESS_B}`));
 

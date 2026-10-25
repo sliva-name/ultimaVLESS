@@ -41,16 +41,44 @@ describe('configGenerator/dns', () => {
     });
   });
 
-  it('dns-out hijacks every query type so qType 65 cannot leak', () => {
+  it('dns-out answers A/AAAA itself and tunnels other query types', () => {
     const cfg: XrayConfig = {
       outbounds: [{ tag: 'proxy', protocol: 'vless', settings: {} }],
     };
     ensureDnsOutbound(cfg, '1.1.1.1');
-    const settings = cfg.outbounds?.[1]?.settings as {
-      rules: Array<Record<string, unknown>>;
+    const dnsOut = cfg.outbounds?.[1] as {
+      settings: {
+        rules: Array<Record<string, unknown>>;
+        rewriteAddress: string;
+      };
+      streamSettings: { sockopt: { dialerProxy: string } };
     };
-    expect(settings.rules).toEqual([{ action: 'hijack' }]);
-    expect(settings.rules.some((rule) => rule.action === 'direct')).toBe(false);
+    // The built-in module answers only A/AAAA; the rest (qType 65 HTTPS
+    // included) goes to the remote resolver, never past the tunnel.
+    expect(dnsOut.settings.rules).toEqual([
+      { action: 'hijack', qType: '1,28' },
+      { action: 'direct' },
+    ]);
+    expect(dnsOut.settings.rewriteAddress).toBe('1.1.1.1');
+    expect(dnsOut.streamSettings.sockopt.dialerProxy).toBe('proxy');
+  });
+
+  it('replaces the streamSettings of a dns-out a subscription supplied', () => {
+    const cfg: XrayConfig = {
+      outbounds: [
+        { tag: 'proxy', protocol: 'vless', settings: {} },
+        {
+          tag: 'dns-out',
+          protocol: 'dns',
+          settings: {},
+          streamSettings: { sockopt: { dialerProxy: 'direct' } },
+        },
+      ],
+    };
+    ensureDnsOutbound(cfg, '1.1.1.1');
+    expect(cfg.outbounds?.[1]?.streamSettings).toEqual({
+      sockopt: { dialerProxy: 'proxy' },
+    });
   });
 
   it('ensureDnsOutbound inserts dns-out before direct', () => {
@@ -79,15 +107,14 @@ describe('configGenerator/dns', () => {
     });
   });
 
-  it('ensureDnsHijackRule places port 53 after api rule', () => {
+  it('ensureDnsHijackRule places port 53 ahead of private and catch-all rules', () => {
     const rules: XrayRoutingRule[] = [
-      { type: 'field', inboundTag: ['api'], outboundTag: 'api' },
       { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
       { type: 'field', port: '0-65535', outboundTag: 'proxy' },
     ];
     ensureDnsHijackRule(rules);
-    expect(rules[0].inboundTag).toEqual(['api']);
-    expect(rules[1]).toMatchObject({
+    expect(rules).toHaveLength(3);
+    expect(rules[0]).toMatchObject({
       port: '53',
       network: 'udp,tcp',
       outboundTag: 'dns-out',

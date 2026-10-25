@@ -1,20 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import dns from 'dns';
 import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
+import { TunRouteService } from '@/main/services/TunRouteService';
 import {
-  TunRouteService,
-  type TunRoutingPlan,
-} from '@/main/services/TunRouteService';
-import { createMemoryTunRouteStateStore } from '@/main/services/tunRoute/routeStateStore';
+  createMemoryTunRouteStateStore,
+  type TunRouteState,
+} from '@/main/services/tunRoute/routeStateStore';
 import type { WindowsNativeRouting } from '@/main/services/tunRoute/windowsNativeRouting';
 import { configService } from '@/main/services/ConfigService';
 import { makeServer } from '@/test/factories';
 
 vi.mock('@/main/services/ConfigService', () => ({
   configService: {
-    getPerformanceSettings: vi.fn(() => ({
-      windowsTunRouting: 'powershell',
-    })),
+    getPerformanceSettings: vi.fn(() => ({})),
   },
 }));
 
@@ -22,7 +20,7 @@ vi.mock('@/main/services/tunRoute/platformAdapter', () => ({
   createPlatformTunAdapter: () => ({
     isSupported: () => true,
     getUnsupportedReason: () => null,
-    getRouteMode: () => 'windows-static-routes',
+    getRouteMode: () => 'windows-xray-auto-route',
     getDegradedReason: () => null,
   }),
 }));
@@ -31,44 +29,34 @@ vi.mock('@/main/services/tunRoute/powerShellRunner', () => ({
   runPowerShell: vi.fn(async () => ''),
 }));
 
-const ENABLE_OUTPUT = [
-  'HOST_CREATED|203.0.113.10/32',
-  'DEFAULT4_CREATED',
-  'DEFAULT6_CREATED',
-].join('\n');
+const DEFAULT_ROUTE = {
+  interfaceIndex: 10,
+  gateway: '192.168.0.1',
+  interfaceName: 'Wi-Fi',
+  localAddress: '192.168.0.124',
+};
 
-function createService(
-  options: {
-    elevated?: boolean;
-    native?: WindowsNativeRouting | null;
-    interfaceNames?: string[];
-  } = {},
-) {
-  const stateStore = createMemoryTunRouteStateStore();
-  const service = new TunRouteService('win32', {
-    stateStore,
-    isElevated: async () => options.elevated ?? true,
-    // These specs exercise the PowerShell path unless a native fake is given.
-    nativeRouting: options.native ?? null,
-    listInterfaceNames: () => options.interfaceNames ?? ['Wi-Fi', 'Ethernet'],
-  });
-  return { service, stateStore };
+function legacyState(overrides: Partial<TunRouteState> = {}): TunRouteState {
+  return {
+    version: 1,
+    hostPrefixes: ['203.0.113.10/32'],
+    hostRouteMetric: 1,
+    defaultRoutes: false,
+    tunInterfaceIndex: null,
+    updatedAt: Date.now(),
+    ...overrides,
+  };
 }
 
 function createNativeFake(
   overrides: Partial<WindowsNativeRouting> = {},
 ): WindowsNativeRouting & {
   discoverDefaultRoute: ReturnType<typeof vi.fn>;
-  addHostRoutes: ReturnType<typeof vi.fn>;
   removeHostRoutes: ReturnType<typeof vi.fn>;
 } {
   return {
     discoverDefaultRoute: vi.fn(async () => null),
     listAdapters: vi.fn(async () => []),
-    addHostRoutes: vi.fn(async ({ prefixes }: { prefixes: string[] }) => ({
-      created: prefixes,
-      failed: [],
-    })),
     removeHostRoutes: vi.fn(async (prefixes: string[]) => ({
       removed: prefixes.length,
       remaining: [],
@@ -76,389 +64,53 @@ function createNativeFake(
     ...overrides,
   } as WindowsNativeRouting & {
     discoverDefaultRoute: ReturnType<typeof vi.fn>;
-    addHostRoutes: ReturnType<typeof vi.fn>;
     removeHostRoutes: ReturnType<typeof vi.fn>;
   };
 }
 
-describe('TunRouteService Windows routing', () => {
-  const plan: TunRoutingPlan = {
-    defaultRoute: {
-      interfaceIndex: 12,
-      gateway: '192.168.1.1',
-      interfaceName: 'Ethernet',
-      localAddress: '192.168.1.10',
-    },
-    proxyIps: ['203.0.113.10'],
-  };
-
-  beforeEach(() => {
-    vi.mocked(configService.getPerformanceSettings).mockReturnValue({
-      ...DEFAULT_PERFORMANCE_SETTINGS,
-      windowsTunRouting: 'powershell',
-    });
+function createService(
+  options: {
+    elevated?: boolean;
+    native?: WindowsNativeRouting | null;
+    interfaceNames?: string[];
+    state?: TunRouteState | null;
+  } = {},
+) {
+  const stateStore = createMemoryTunRouteStateStore(options.state ?? null);
+  const service = new TunRouteService('win32', {
+    stateStore,
+    isElevated: async () => options.elevated ?? true,
+    nativeRouting:
+      options.native === undefined ? createNativeFake() : options.native,
+    listInterfaceNames: () => options.interfaceNames ?? ['Wi-Fi', 'Ethernet'],
   });
+  return { service, stateStore };
+}
 
-  it('applies the full TUN routing setup in a single PowerShell call', async () => {
-    const { service } = createService();
-    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
-    const runPowerShell = vi
-      .spyOn(service as any, 'runPowerShell')
-      .mockResolvedValue(ENABLE_OUTPUT);
-
-    await service.enable(makeServer(), plan);
-
-    expect(runPowerShell).toHaveBeenCalledTimes(1);
-    const script = runPowerShell.mock.calls[0][0] as string;
-    // Proxy server IP pinned to the physical gateway via the default-route interface.
-    expect(script).toContain("'203.0.113.10/32'");
-    expect(script).toContain('192.168.1.1');
-    expect(script).toContain('-InterfaceIndex 12');
-    // Default route via the TUN interface index.
-    expect(script).toContain('$tunIdx = 7');
-    expect(script).toContain('0.0.0.0/0');
-    expect(script).toContain('::/0');
-    // Existing host routes with a stale NextHop must be removed and recreated.
-    expect(script).toContain('$existingHost.NextHop -ne "192.168.1.1"');
-    // A failed default route is reported as a marker, never as exit 1, so the
-    // HOST_CREATED bookkeeping printed before it is not lost.
-    expect(script).not.toMatch(/exit 1/);
-  });
-
-  it('records created routes from the script output and persists them', async () => {
-    const { service, stateStore } = createService();
-    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
-    vi.spyOn(service as any, 'runPowerShell').mockResolvedValue(ENABLE_OUTPUT);
-
-    await service.enable(makeServer(), plan);
-
-    expect((service as any).addedRoutes).toEqual([
-      {
-        destination: '203.0.113.10',
-        mask: '255.255.255.255',
-        interfaceIndex: 12,
-        prefix: '203.0.113.10/32',
-      },
-      { destination: '0.0.0.0', mask: '0.0.0.0', interfaceIndex: 7 },
-      { destination: '::', mask: '::', interfaceIndex: 7, prefix: '::/0' },
-    ]);
-    expect(stateStore.current).toMatchObject({
-      version: 1,
-      hostPrefixes: ['203.0.113.10/32'],
-      defaultRoutes: true,
-      tunInterfaceIndex: 7,
-    });
-  });
-
-  it('pinProxyHostRoutes persists the pinned prefixes for crash recovery', async () => {
-    const { service, stateStore } = createService();
-    vi.spyOn(service as any, 'runPowerShell').mockResolvedValue(
-      'HOST_CREATED|203.0.113.10/32',
-    );
-
-    await service.pinProxyHostRoutes(plan);
-
-    expect(stateStore.current).toMatchObject({
-      hostPrefixes: ['203.0.113.10/32'],
-      defaultRoutes: false,
-      tunInterfaceIndex: null,
-    });
-  });
-
-  it('disable is a no-op when nothing was created', async () => {
-    const { service } = createService();
-    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
-
-    await service.disable();
-
-    expect(runPowerShell).not.toHaveBeenCalled();
-  });
-
-  it('disable removes every created route in one PowerShell call and clears state', async () => {
-    const { service, stateStore } = createService();
-    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
-    const runPowerShell = vi
-      .spyOn(service as any, 'runPowerShell')
-      .mockResolvedValue(ENABLE_OUTPUT);
-    await service.enable(makeServer(), plan);
-    runPowerShell.mockClear();
-    runPowerShell.mockResolvedValue('REMOVED|1|2');
-
-    await service.disable();
-
-    expect(runPowerShell).toHaveBeenCalledTimes(1);
-    const script = runPowerShell.mock.calls[0][0] as string;
-    expect(script).toContain("'203.0.113.10/32'");
-    expect(script).toContain('$tunIdx = 7');
-    expect(script).toContain('0.0.0.0/0');
-    expect(script).toContain('::/0');
-    expect((service as any).addedRoutes).toEqual([]);
-    expect(stateStore.current).toBeNull();
-  });
-
-  it('keeps the persisted state when the removal fails so a later start retries', async () => {
-    const { service, stateStore } = createService();
-    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
-    const runPowerShell = vi
-      .spyOn(service as any, 'runPowerShell')
-      .mockResolvedValue(ENABLE_OUTPUT);
-    await service.enable(makeServer(), plan);
-    runPowerShell.mockRejectedValue(new Error('powershell timed out'));
-
-    await service.disable();
-
-    expect(stateStore.current).not.toBeNull();
-  });
-
-  it('fails enable and rolls back the planned prefixes when a host route cannot be added', async () => {
-    const { service } = createService();
-    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
-    vi.spyOn(service as any, 'runPowerShell').mockResolvedValue(
-      [
-        'HOST_FAIL|203.0.113.10/32|Access denied',
-        'DEFAULT4_CREATED',
-        'DEFAULT6_CREATED',
-      ].join('\n'),
-    );
-    const disableSpy = vi
-      .spyOn(service, 'disable')
-      .mockResolvedValue(undefined);
-
-    await expect(service.enable(makeServer(), plan)).rejects.toThrow(
-      /host route/i,
-    );
-    expect(disableSpy).toHaveBeenCalledWith({
-      sweepHostPrefixes: ['203.0.113.10/32'],
-      sweepDefaultRoutes: true,
-    });
-  });
-
-  it('treats DEFAULT_FAIL as a failed enable and rolls back', async () => {
-    const { service } = createService();
-    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
-    vi.spyOn(service as any, 'runPowerShell').mockResolvedValue(
-      ['HOST_CREATED|203.0.113.10/32', 'DEFAULT_FAIL|route add failed'].join(
-        '\n',
-      ),
-    );
-    const disableSpy = vi
-      .spyOn(service, 'disable')
-      .mockResolvedValue(undefined);
-
-    await expect(service.enable(makeServer(), plan)).rejects.toThrow(
-      /default route.*route add failed/i,
-    );
-    expect(disableSpy).toHaveBeenCalledWith({
-      sweepHostPrefixes: ['203.0.113.10/32'],
-      sweepDefaultRoutes: true,
-    });
-  });
-
-  it('sweeps the planned prefixes and default routes when the enable script itself fails', async () => {
-    const { service } = createService();
-    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
-    vi.spyOn(service as any, 'runPowerShell').mockRejectedValue(
-      new Error('PowerShell exited with code 1'),
-    );
-    const removeSpy = vi
-      .spyOn(service as any, 'removeTunRoutes')
-      .mockResolvedValue(undefined);
-
-    await expect(service.enable(makeServer(), plan)).rejects.toThrow(
-      'PowerShell exited with code 1',
-    );
-    expect(removeSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        hostPrefixes: ['203.0.113.10/32'],
-        removeDefaultRoutes: true,
-      }),
-    );
-  });
-
-  it('recoverOrphanedRoutes does nothing when no session state was persisted', async () => {
-    const { service } = createService();
-    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
-
-    await service.recoverOrphanedRoutes();
-
-    expect(runPowerShell).not.toHaveBeenCalled();
-  });
-
-  it('recoverOrphanedRoutes leaves the state for an elevated instance when unprivileged', async () => {
-    const stateStore = createMemoryTunRouteStateStore({
-      version: 1,
-      hostPrefixes: ['203.0.113.10/32'],
-      hostRouteMetric: 1,
-      defaultRoutes: true,
-      tunInterfaceIndex: 7,
-      updatedAt: Date.now(),
-    });
-    const service = new TunRouteService('win32', {
-      stateStore,
-      isElevated: async () => false,
-      nativeRouting: null,
-    });
-    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
-
-    await service.recoverOrphanedRoutes();
-
-    expect(runPowerShell).not.toHaveBeenCalled();
-    expect(stateStore.current).not.toBeNull();
-  });
-
-  it('recoverOrphanedRoutes removes the persisted routes in one call and clears the state', async () => {
-    vi.mocked(configService.getPerformanceSettings).mockReturnValue({
-      ...DEFAULT_PERFORMANCE_SETTINGS,
-      windowsTunRouting: 'xray',
-    });
-    const stateStore = createMemoryTunRouteStateStore({
-      version: 1,
-      hostPrefixes: ['203.0.113.10/32', '203.0.113.11/32'],
-      hostRouteMetric: 1,
-      defaultRoutes: true,
-      tunInterfaceIndex: 9,
-      updatedAt: Date.now(),
-    });
-    const service = new TunRouteService('win32', {
-      stateStore,
-      isElevated: async () => true,
-      nativeRouting: null,
-    });
-    const runPowerShell = vi
-      .spyOn(service as any, 'runPowerShell')
-      .mockResolvedValue('REMOVED|2|2');
-
-    await service.recoverOrphanedRoutes();
-
-    expect(runPowerShell).toHaveBeenCalledTimes(1);
-    const script = runPowerShell.mock.calls[0][0] as string;
-    expect(script).toContain("'203.0.113.10/32', '203.0.113.11/32'");
-    expect(script).toContain('$tunIdx = 9');
-    expect(script).not.toContain('Resolve-DnsName');
-    expect(stateStore.current).toBeNull();
-  });
-
-  it('reapplyRoutesAfterResume is a no-op when TUN routing is inactive', async () => {
-    const { service } = createService();
-    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
-
-    await service.reapplyRoutesAfterResume();
-
-    expect(runPowerShell).not.toHaveBeenCalled();
-  });
-
-  it('reapplyRoutesAfterResume re-pins host routes via the new gateway', async () => {
-    const { service, stateStore } = createService();
-    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
-    const runPowerShell = vi
-      .spyOn(service as any, 'runPowerShell')
-      .mockResolvedValue(ENABLE_OUTPUT);
-    await service.enable(makeServer(), plan);
-    runPowerShell.mockClear();
-
-    vi.spyOn(service as any, 'waitForDefaultRoute').mockResolvedValue({
-      interfaceIndex: 21,
-      gateway: '10.0.0.1',
-      interfaceName: 'Wi-Fi',
-      localAddress: '10.0.0.5',
-    });
-    runPowerShell.mockResolvedValue('HOST_CREATED|203.0.113.10/32');
-
-    await service.reapplyRoutesAfterResume();
-
-    expect(runPowerShell).toHaveBeenCalledTimes(1);
-    const script = runPowerShell.mock.calls[0][0] as string;
-    expect(script).toContain("'203.0.113.10/32'");
-    expect(script).toContain('10.0.0.1');
-    expect(script).toContain('-InterfaceIndex 21');
-    const hostRoute = (service as any).addedRoutes.find(
-      (route: { prefix?: string }) => route.prefix === '203.0.113.10/32',
-    );
-    expect(hostRoute.interfaceIndex).toBe(21);
-    expect(stateStore.current?.hostPrefixes).toEqual(['203.0.113.10/32']);
-  });
-
-  it('reapplyRoutesAfterResume skips PowerShell when the gateway is unchanged', async () => {
-    const { service } = createService();
-    vi.spyOn(service as any, 'waitForTunInterface').mockResolvedValue(7);
-    const runPowerShell = vi
-      .spyOn(service as any, 'runPowerShell')
-      .mockResolvedValue(ENABLE_OUTPUT);
-    await service.enable(makeServer(), plan);
-    runPowerShell.mockClear();
-
-    vi.spyOn(service as any, 'waitForDefaultRoute').mockResolvedValue(
-      plan.defaultRoute,
-    );
-
-    await service.reapplyRoutesAfterResume();
-
-    expect(runPowerShell).not.toHaveBeenCalled();
-  });
-
-  it('skips PowerShell when Windows routing is delegated to Xray', async () => {
-    vi.mocked(configService.getPerformanceSettings).mockReturnValue({
-      ...DEFAULT_PERFORMANCE_SETTINGS,
-      windowsTunRouting: 'xray',
-    });
-
-    const { service } = createService();
-    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
-
-    await service.enable(makeServer(), plan);
-
-    expect(runPowerShell).not.toHaveBeenCalled();
-  });
-
-  it('auto-route enable does not discover default route or DNS without a plan', async () => {
-    vi.mocked(configService.getPerformanceSettings).mockReturnValue({
-      ...DEFAULT_PERFORMANCE_SETTINGS,
-      windowsTunRouting: 'xray',
-    });
-
-    const { service } = createService();
-    const prepare = vi.spyOn(service, 'prepareRoutingPlan');
-    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
-
-    await service.enable(makeServer());
-
-    expect(prepare).not.toHaveBeenCalled();
-    expect(runPowerShell).not.toHaveBeenCalled();
+beforeEach(() => {
+  vi.mocked(configService.getPerformanceSettings).mockReturnValue({
+    ...DEFAULT_PERFORMANCE_SETTINGS,
   });
 });
 
-describe('TunRouteService native Windows fast path', () => {
-  const plan: TunRoutingPlan = {
-    defaultRoute: {
-      interfaceIndex: 10,
-      gateway: '192.168.0.1',
-      interfaceName: 'Wi-Fi',
-      localAddress: '192.168.0.124',
-    },
-    proxyIps: ['203.0.113.10'],
-  };
-
-  beforeEach(() => {
-    vi.mocked(configService.getPerformanceSettings).mockReturnValue({
-      ...DEFAULT_PERFORMANCE_SETTINGS,
-      windowsTunRouting: 'xray',
-    });
-  });
-
+describe('TunRouteService routing plan (Windows)', () => {
   it('discovers the default route natively and never spawns PowerShell', async () => {
     const native = createNativeFake({
-      discoverDefaultRoute: vi.fn(async () => plan.defaultRoute),
+      discoverDefaultRoute: vi.fn(async () => DEFAULT_ROUTE),
     });
     const { service } = createService({ native });
     const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
 
-    const routingPlan = await service.prepareRoutingPlan(
+    const plan = await service.prepareRoutingPlan(
       makeServer({ address: '203.0.113.10' }),
-      { awaitStableDefaultRoute: false },
     );
 
-    // The adapter the server is pinned through is the one Xray binds to.
-    expect(routingPlan).toEqual({ ...plan, outboundInterface: 'Wi-Fi' });
+    // Xray binds its sockets to the adapter of the default route.
+    expect(plan).toEqual({
+      defaultRoute: DEFAULT_ROUTE,
+      proxyIps: ['203.0.113.10'],
+      outboundInterface: 'Wi-Fi',
+    });
     expect(native.discoverDefaultRoute).toHaveBeenCalledTimes(1);
     expect(native.discoverDefaultRoute).toHaveBeenCalledWith(undefined);
     expect(runPowerShell).not.toHaveBeenCalled();
@@ -467,19 +119,18 @@ describe('TunRouteService native Windows fast path', () => {
   it('leaves the TUN outbound adapter to Xray when the route has no real adapter name', async () => {
     const native = createNativeFake({
       discoverDefaultRoute: vi.fn(async () => ({
-        ...plan.defaultRoute,
+        ...DEFAULT_ROUTE,
         // `route print` description fallback: not an alias Xray can resolve.
         interfaceName: 'Intel(R) Wi-Fi 6E AX210 160MHz',
       })),
     });
     const { service } = createService({ native });
 
-    const routingPlan = await service.prepareRoutingPlan(
+    const plan = await service.prepareRoutingPlan(
       makeServer({ address: '203.0.113.10' }),
-      { awaitStableDefaultRoute: false },
     );
 
-    expect(routingPlan.outboundInterface).toBeNull();
+    expect(plan.outboundInterface).toBeNull();
   });
 
   it('discovers and binds through the adapter selected in settings', async () => {
@@ -487,32 +138,22 @@ describe('TunRouteService native Windows fast path', () => {
       ...DEFAULT_PERFORMANCE_SETTINGS,
       tunOutboundInterface: 'Беспроводная сеть',
     });
-    const wifi = {
-      interfaceIndex: 11,
-      gateway: '192.168.0.1',
-      interfaceName: 'Беспроводная сеть',
-      localAddress: '192.168.0.124',
-    };
+    const wifi = { ...DEFAULT_ROUTE, interfaceName: 'Беспроводная сеть' };
     const native = createNativeFake({
       discoverDefaultRoute: vi.fn(async () => wifi),
     });
     // The selected name is trusted as-is; it need not match Node's list.
     const { service } = createService({ native, interfaceNames: [] });
 
-    const routingPlan = await service.prepareRoutingPlan(
+    const plan = await service.prepareRoutingPlan(
       makeServer({ address: '203.0.113.10' }),
-      { awaitStableDefaultRoute: false },
     );
-    await service.pinProxyHostRoutes(routingPlan);
 
     expect(native.discoverDefaultRoute).toHaveBeenCalledWith(
       'Беспроводная сеть',
     );
-    expect(routingPlan.defaultRoute).toEqual(wifi);
-    expect(routingPlan.outboundInterface).toBe('Беспроводная сеть');
-    expect(native.addHostRoutes).toHaveBeenCalledWith(
-      expect.objectContaining({ gateway: '192.168.0.1', interfaceIndex: 11 }),
-    );
+    expect(plan.defaultRoute).toEqual(wifi);
+    expect(plan.outboundInterface).toBe('Беспроводная сеть');
   });
 
   it('names the selected adapter when it has no default gateway', async () => {
@@ -528,9 +169,7 @@ describe('TunRouteService native Windows fast path', () => {
     vi.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
 
     await expect(
-      service.prepareRoutingPlan(makeServer({ address: '203.0.113.10' }), {
-        awaitStableDefaultRoute: false,
-      }),
+      service.prepareRoutingPlan(makeServer({ address: '203.0.113.10' })),
     ).rejects.toThrow(
       /"Ethernet 2" selected for TUN has no IPv4 default gateway/,
     );
@@ -541,6 +180,60 @@ describe('TunRouteService native Windows fast path', () => {
       Buffer.from('Ethernet 2', 'utf8').toString('base64'),
     );
     expect(script).not.toContain("'Ethernet 2'");
+  });
+
+  it('falls back to PowerShell discovery when the native tables yield nothing', async () => {
+    const { service } = createService();
+    const runPowerShell = vi
+      .spyOn(service as any, 'runPowerShell')
+      .mockResolvedValue('12|192.168.1.1|Ethernet|192.168.1.10');
+
+    const plan = await service.prepareRoutingPlan(
+      makeServer({ address: '203.0.113.10' }),
+    );
+
+    expect(plan.defaultRoute).toEqual({
+      interfaceIndex: 12,
+      gateway: '192.168.1.1',
+      interfaceName: 'Ethernet',
+      localAddress: '192.168.1.10',
+    });
+    expect(runPowerShell).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a bracketed IPv6 server address saved by earlier builds', async () => {
+    const { service } = createService({
+      native: createNativeFake({
+        discoverDefaultRoute: vi.fn(async () => DEFAULT_ROUTE),
+      }),
+    });
+
+    const plan = await service.prepareRoutingPlan(
+      makeServer({ address: '[2001:db8::10]' }),
+    );
+
+    expect(plan.proxyIps).toEqual(['2001:db8::10']);
+  });
+
+  it('prefers IPv4 when DNS returns both families', async () => {
+    const lookup = vi.spyOn(dns.promises, 'lookup').mockResolvedValue([
+      { address: '2001:db8::10', family: 6 },
+      { address: '203.0.113.10', family: 4 },
+    ] as unknown as Awaited<ReturnType<typeof dns.promises.lookup>>);
+    const { service } = createService({
+      native: createNativeFake({
+        discoverDefaultRoute: vi.fn(async () => DEFAULT_ROUTE),
+      }),
+    });
+
+    try {
+      const plan = await service.prepareRoutingPlan(
+        makeServer({ address: 'vpn.example.com' }),
+      );
+      expect(plan.proxyIps).toEqual(['203.0.113.10']);
+    } finally {
+      lookup.mockRestore();
+    }
   });
 
   it('lists network adapters through the native tables on Windows only', async () => {
@@ -554,10 +247,9 @@ describe('TunRouteService native Windows fast path', () => {
         isAutomaticChoice: true,
       },
     ];
-    const native = createNativeFake({
-      listAdapters: vi.fn(async () => adapters),
+    const { service } = createService({
+      native: createNativeFake({ listAdapters: vi.fn(async () => adapters) }),
     });
-    const { service } = createService({ native });
 
     await expect(service.listNetworkAdapters()).resolves.toEqual({
       supported: true,
@@ -569,208 +261,67 @@ describe('TunRouteService native Windows fast path', () => {
       }).listNetworkAdapters(),
     ).resolves.toEqual({ supported: false, adapters: [] });
   });
+});
 
-  it('falls back to PowerShell discovery when the native tables yield nothing', async () => {
+describe('TunRouteService orphaned routes of earlier versions', () => {
+  it('does nothing when no session state was persisted', async () => {
     const native = createNativeFake();
     const { service } = createService({ native });
-    const runPowerShell = vi
-      .spyOn(service as any, 'runPowerShell')
-      .mockResolvedValue('12|192.168.1.1|Ethernet|192.168.1.10');
 
-    const routingPlan = await service.prepareRoutingPlan(
-      makeServer({ address: '203.0.113.10' }),
-      { awaitStableDefaultRoute: false },
-    );
+    await service.recoverOrphanedRoutes();
 
-    expect(routingPlan.defaultRoute).toEqual({
-      interfaceIndex: 12,
-      gateway: '192.168.1.1',
-      interfaceName: 'Ethernet',
-      localAddress: '192.168.1.10',
-    });
-    expect(runPowerShell).toHaveBeenCalledTimes(1);
+    expect(native.removeHostRoutes).not.toHaveBeenCalled();
   });
 
-  it('pins host routes with route.exe and records them for teardown', async () => {
+  it('leaves the state for an elevated instance when unprivileged', async () => {
     const native = createNativeFake();
-    const { service, stateStore } = createService({ native });
+    const { service, stateStore } = createService({
+      native,
+      elevated: false,
+      state: legacyState(),
+    });
+
+    await service.recoverOrphanedRoutes();
+
+    expect(native.removeHostRoutes).not.toHaveBeenCalled();
+    expect(stateStore.current).not.toBeNull();
+  });
+
+  it('removes the IPv4 pins with route.exe and clears the state', async () => {
+    const native = createNativeFake();
+    const { service, stateStore } = createService({
+      native,
+      // The old static mode's default routes left with the TUN adapter, and
+      // IPv6 pins needed PowerShell: neither is touched.
+      state: legacyState({
+        hostPrefixes: ['203.0.113.10/32', '2001:db8::10/128'],
+        defaultRoutes: true,
+        tunInterfaceIndex: 7,
+      }),
+    });
     const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
 
-    await service.pinProxyHostRoutes(plan);
-
-    expect(native.addHostRoutes).toHaveBeenCalledWith({
-      prefixes: ['203.0.113.10/32'],
-      gateway: '192.168.0.1',
-      interfaceIndex: 10,
-      metric: 1,
-    });
-    expect(runPowerShell).not.toHaveBeenCalled();
-    expect(stateStore.current).toMatchObject({
-      hostPrefixes: ['203.0.113.10/32'],
-      defaultRoutes: false,
-    });
-  });
-
-  it('reports a native pin failure with the same error as the PowerShell path', async () => {
-    const native = createNativeFake({
-      addHostRoutes: vi.fn(async () => ({
-        created: [],
-        failed: [{ prefix: '203.0.113.10/32', message: 'Access denied' }],
-      })),
-    });
-    const { service } = createService({ native });
-
-    await expect(service.pinProxyHostRoutes(plan)).rejects.toThrow(
-      /host route.*203\.0\.113\.10\/32\|Access denied/i,
-    );
-  });
-
-  it('uses PowerShell for IPv6 pins the native path cannot express', async () => {
-    const native = createNativeFake();
-    const { service } = createService({ native });
-    const runPowerShell = vi
-      .spyOn(service as any, 'runPowerShell')
-      .mockResolvedValue('HOST_CREATED|2001:db8::10/128');
-
-    await service.pinProxyHostRoutes({
-      ...plan,
-      proxyIps: ['2001:db8::10'],
-    });
-
-    expect(native.addHostRoutes).not.toHaveBeenCalled();
-    expect(runPowerShell).toHaveBeenCalledTimes(1);
-  });
-
-  it('prefers IPv4 when DNS returns mixed families so native pins stay on the hot path', async () => {
-    const lookup = vi.spyOn(dns.promises, 'lookup').mockResolvedValue([
-      { address: '2001:db8::10', family: 6 },
-      { address: '203.0.113.10', family: 4 },
-    ] as unknown as Awaited<ReturnType<typeof dns.promises.lookup>>);
-    const native = createNativeFake({
-      discoverDefaultRoute: vi.fn(async () => plan.defaultRoute),
-    });
-    const { service } = createService({ native });
-
-    try {
-      const routingPlan = await service.prepareRoutingPlan(
-        makeServer({ address: 'vpn.example.com' }),
-        { awaitStableDefaultRoute: false },
-      );
-      expect(routingPlan.proxyIps).toEqual(['203.0.113.10']);
-    } finally {
-      lookup.mockRestore();
-    }
-  });
-
-  it('removes host pins natively on disable and clears the persisted state', async () => {
-    const native = createNativeFake();
-    const { service, stateStore } = createService({ native });
-    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
-    await service.pinProxyHostRoutes(plan);
-
-    await service.disable();
+    await service.recoverOrphanedRoutes();
 
     expect(native.removeHostRoutes).toHaveBeenCalledWith(['203.0.113.10/32']);
     expect(runPowerShell).not.toHaveBeenCalled();
     expect(stateStore.current).toBeNull();
   });
 
-  it('keeps the state when a pin survives the native removal', async () => {
+  it('keeps the state when a pin survives the removal so a later start retries', async () => {
     const native = createNativeFake({
       removeHostRoutes: vi.fn(async () => ({
         removed: 0,
         remaining: ['203.0.113.10/32'],
       })),
     });
-    const { service, stateStore } = createService({ native });
-    await service.pinProxyHostRoutes(plan);
-
-    await service.disable();
-
-    expect(stateStore.current).not.toBeNull();
-  });
-
-  it('keeps in-memory host pins when removal throws so disable can retry', async () => {
-    const native = createNativeFake({
-      removeHostRoutes: vi
-        .fn()
-        .mockRejectedValueOnce(new Error('Access denied'))
-        .mockResolvedValue({ removed: 1, remaining: [] }),
+    const { service, stateStore } = createService({
+      native,
+      state: legacyState(),
     });
-    const { service, stateStore } = createService({ native });
-    await service.pinProxyHostRoutes(plan);
-
-    await service.disable();
-    expect(stateStore.current).not.toBeNull();
-
-    await service.disable();
-    expect(native.removeHostRoutes).toHaveBeenCalledTimes(2);
-    expect(stateStore.current).toBeNull();
-  });
-
-  it('recovers orphaned host pins natively but leaves TUN default routes to PowerShell', async () => {
-    const native = createNativeFake();
-    const hostOnly = createMemoryTunRouteStateStore({
-      version: 1,
-      hostPrefixes: ['203.0.113.10/32'],
-      hostRouteMetric: 1,
-      defaultRoutes: false,
-      tunInterfaceIndex: null,
-      updatedAt: Date.now(),
-    });
-    const service = new TunRouteService('win32', {
-      stateStore: hostOnly,
-      isElevated: async () => true,
-      nativeRouting: native,
-    });
-    const runPowerShell = vi.spyOn(service as any, 'runPowerShell');
 
     await service.recoverOrphanedRoutes();
-    expect(native.removeHostRoutes).toHaveBeenCalledWith(['203.0.113.10/32']);
-    expect(runPowerShell).not.toHaveBeenCalled();
-    expect(hostOnly.current).toBeNull();
 
-    const withDefaults = createMemoryTunRouteStateStore({
-      version: 1,
-      hostPrefixes: ['203.0.113.10/32'],
-      hostRouteMetric: 1,
-      defaultRoutes: true,
-      tunInterfaceIndex: 7,
-      updatedAt: Date.now(),
-    });
-    const legacy = new TunRouteService('win32', {
-      stateStore: withDefaults,
-      isElevated: async () => true,
-      nativeRouting: native,
-    });
-    const legacyPowerShell = vi
-      .spyOn(legacy as any, 'runPowerShell')
-      .mockResolvedValue('REMOVED|1|2');
-
-    await legacy.recoverOrphanedRoutes();
-    expect(native.removeHostRoutes).toHaveBeenCalledTimes(1);
-    expect(legacyPowerShell).toHaveBeenCalledTimes(1);
-    expect(withDefaults.current).toBeNull();
-  });
-
-  it('re-pins after resume through the native path', async () => {
-    const native = createNativeFake();
-    const { service } = createService({ native });
-    await service.pinProxyHostRoutes(plan);
-    vi.spyOn(service as any, 'waitForDefaultRoute').mockResolvedValue({
-      interfaceIndex: 21,
-      gateway: '10.0.0.1',
-      interfaceName: 'Ethernet',
-      localAddress: '10.0.0.5',
-    });
-
-    await service.reapplyRoutesAfterResume();
-
-    expect(native.addHostRoutes).toHaveBeenLastCalledWith({
-      prefixes: ['203.0.113.10/32'],
-      gateway: '10.0.0.1',
-      interfaceIndex: 21,
-      metric: 1,
-    });
+    expect(stateStore.current).not.toBeNull();
   });
 });

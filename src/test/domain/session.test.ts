@@ -377,6 +377,104 @@ describe('session lifecycle', () => {
     );
   });
 
+  it('switches instead of reconnecting when another server is picked while connected', async () => {
+    const next = makeServer({ uuid: 'server-2', security: 'tls' });
+    const { session, server, start, stop, switchRuntime, deps } = createSession(
+      {
+        configService: {
+          getServers: vi.fn(() => [server, next]),
+          getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+          setSelectedServerId: vi.fn(),
+          setPendingTunReconnect: vi.fn(),
+          clearPendingTunReconnect: vi.fn(),
+        },
+      },
+    );
+    deps.runtime.status.mockReturnValue({ xrayRunning: true });
+
+    await session.connect(server.uuid);
+    start.mockClear();
+    stop.mockClear();
+    await session.connect(next.uuid);
+
+    expect(start).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    expect(switchRuntime).toHaveBeenCalledTimes(1);
+    expect(session.getConnectionState()).toEqual({
+      type: 'connected',
+      serverId: next.uuid,
+      mode: 'proxy',
+    });
+  });
+
+  it('drops the session when a picked server fails to switch', async () => {
+    const next = makeServer({ uuid: 'server-2', security: 'tls' });
+    const { session, server, stop, switchRuntime, deps } = createSession({
+      configService: {
+        getServers: vi.fn(() => [server, next]),
+        getConnectionMode: vi.fn((): ConnectionMode => 'proxy'),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+    });
+    deps.runtime.status.mockReturnValue({ xrayRunning: true });
+    switchRuntime.mockRejectedValueOnce(
+      new Error('Post-switch traffic validation failed'),
+    );
+
+    await session.connect(server.uuid);
+    stop.mockClear();
+    await expect(session.connect(next.uuid)).rejects.toThrow(
+      'Post-switch traffic validation failed',
+    );
+
+    // The previous server must not keep serving behind a failed session.
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(session.getConnectionState()).toEqual({
+      type: 'failed',
+      reason: { message: 'Post-switch traffic validation failed' },
+    });
+  });
+
+  it('reconnects a connected session in the newly picked mode', async () => {
+    let mode: ConnectionMode = 'proxy';
+    const { session, server, start, deps } = createSession({
+      configService: {
+        getConnectionMode: vi.fn(() => mode),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+    });
+
+    await session.connect(server.uuid);
+    start.mockClear();
+    mode = 'tun';
+    await session.reconnect();
+
+    // The normal connect path: TUN privileges are checked again.
+    expect(deps.hasTunPrivileges).toHaveBeenCalled();
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ server, mode: 'tun' }),
+      expect.any(AbortSignal),
+    );
+    expect(session.getConnectionState()).toEqual({
+      type: 'connected',
+      serverId: server.uuid,
+      mode: 'tun',
+    });
+  });
+
+  it('does not reconnect a session that is not connected', async () => {
+    const { session, start } = createSession();
+
+    await session.reconnect();
+
+    expect(start).not.toHaveBeenCalled();
+    expect(session.getConnectionState()).toEqual({ type: 'disconnected' });
+  });
+
   it('auto-switches on a blocking health failure', async () => {
     const next = makeServer({ uuid: 'server-2', security: 'tls' });
     const { session, server, switchRuntime, deps } = createSession({
@@ -1133,11 +1231,11 @@ describe('session state projection', () => {
     ).toBe('b');
   });
 
-  it('treats failed as selectable and idle, but not in-flight', () => {
+  it('lets the list pick idle, failed and connected sessions, but not in-flight ones', () => {
     expect(isSessionPhaseSelectable('idle')).toBe(true);
     expect(isSessionPhaseSelectable('failed')).toBe(true);
     expect(isSessionPhaseSelectable('connecting')).toBe(false);
-    expect(isSessionPhaseSelectable('connected')).toBe(false);
+    expect(isSessionPhaseSelectable('connected')).toBe(true);
     expect(isSessionPhaseSelectable('switching')).toBe(false);
     expect(isSessionPhaseSelectable('disconnecting')).toBe(false);
     expect(isSessionPhaseCancellable('switching')).toBe(true);

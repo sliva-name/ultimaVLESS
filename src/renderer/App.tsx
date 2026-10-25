@@ -50,8 +50,10 @@ function AppShell() {
         subscriptions={subscriptions}
         selectedServer={selectedServer}
         isConnected={isConnected}
-        // Failed sessions stay selectable so a bad profile does not freeze the list.
-        selectionLocked={isConnectionBusy || isConnected}
+        // Proxy mode leaves Node's sockets, and so the pings, on the direct path.
+        pingBlockedWhileConnected={connectionMode === 'tun'}
+        // A pick while connected switches the server; only in-flight work locks.
+        selectionLocked={isConnectionBusy}
         isRefreshingPings={isRefreshingPings}
         onSelectServer={selectServer}
         onOpenSettings={handleOpenSettings}

@@ -118,6 +118,8 @@ export type XrayStreamSettings = {
   xhttpSettings?: XrayXhttpSettings;
   hysteriaSettings?: XrayHysteriaSettings;
   tcpSettings?: XrayTcpSettings;
+  /** Current name of `tcpSettings` (RAW transport). */
+  rawSettings?: XrayTcpSettings;
   /** Final traffic camouflage / QUIC params (opaque object). */
   finalmask?: Record<string, unknown>;
   sockopt?: {

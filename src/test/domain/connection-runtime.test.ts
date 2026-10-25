@@ -243,12 +243,11 @@ describe('ConnectionRuntime', () => {
     );
   });
 
-  it('starts the next Xray on staging ports before retargeting system proxy', async () => {
+  it('checks the next server on staging ports, then moves it to the primary ports', async () => {
     const proxy = fakeNetwork('proxy');
     const tun = fakeNetwork('tun');
     const start = vi.fn(async () => undefined);
     const startStaging = vi.fn(async () => undefined);
-    const commitStaging = vi.fn();
     const abortStaging = vi.fn();
     const stop = vi.fn();
     const validate = vi.fn(async () => true);
@@ -258,9 +257,7 @@ describe('ConnectionRuntime', () => {
         stop,
         isRunning: () => true,
         startStaging,
-        commitStaging,
         abortStaging,
-        getActivePorts: () => ({ socks: 10808, http: 10809, api: 10810 }),
       },
       proxy,
       tun,
@@ -269,7 +266,7 @@ describe('ConnectionRuntime', () => {
 
     await runtime.start(spec('proxy', 'a'));
     start.mockClear();
-    stop.mockClear();
+    proxy.activate.mockClear();
     proxy.deactivate.mockClear();
     await runtime.switch(spec('proxy', 'b'));
 
@@ -280,27 +277,75 @@ describe('ConnectionRuntime', () => {
         ports: { socks: 10818, http: 10819, api: 10820 },
       }),
     );
-    expect(proxy.activate).toHaveBeenCalled();
-    expect(commitStaging).toHaveBeenCalled();
-    expect(stop).not.toHaveBeenCalled();
-    expect(start).not.toHaveBeenCalled();
+    expect(validate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ports: { socks: 10818, http: 10819, api: 10820 },
+      }),
+      undefined,
+    );
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'b' }),
+      'proxy',
+      expect.objectContaining({
+        ports: { socks: 10808, http: 10809, api: 10810 },
+      }),
+    );
+    expect(startStaging.mock.invocationCallOrder[0]).toBeLessThan(
+      start.mock.invocationCallOrder[0],
+    );
+    // The system proxy already points at the primary ports.
+    expect(proxy.activate).not.toHaveBeenCalled();
+    expect(proxy.deactivate).not.toHaveBeenCalled();
     expect(abortStaging).not.toHaveBeenCalled();
+    expect(runtime.status().ports).toEqual({
+      socks: 10808,
+      http: 10809,
+      api: 10810,
+    });
+  });
+
+  it('keeps the same ports across repeated switches', async () => {
+    const proxy = fakeNetwork('proxy');
+    const start = vi.fn(async () => undefined);
+    const runtime = createConnectionRuntime({
+      xray: {
+        start,
+        stop: vi.fn(),
+        isRunning: () => true,
+        startStaging: vi.fn(async () => undefined),
+        abortStaging: vi.fn(),
+      },
+      proxy,
+      tun: fakeNetwork('tun'),
+      validator: { validate: vi.fn(async () => true) },
+    });
+
+    await runtime.start(spec('proxy', 'a'));
+    for (const id of ['b', 'c', 'd']) {
+      await runtime.switch(spec('proxy', id));
+    }
+
+    for (const call of start.mock.calls as unknown as Array<
+      [unknown, unknown, { ports: unknown }]
+    >) {
+      expect(call[2].ports).toEqual({ socks: 10808, http: 10809, api: 10810 });
+    }
+    expect(proxy.activate).toHaveBeenCalledTimes(1);
   });
 
   it('aborts staging Xray and keeps the old proxy when validation fails', async () => {
     const proxy = fakeNetwork('proxy');
     const tun = fakeNetwork('tun');
+    const start = vi.fn(async () => undefined);
     const startStaging = vi.fn(async () => undefined);
-    const commitStaging = vi.fn();
     const abortStaging = vi.fn();
     const stop = vi.fn();
     const runtime = createConnectionRuntime({
       xray: {
-        start: vi.fn(async () => undefined),
+        start,
         stop,
         isRunning: () => true,
         startStaging,
-        commitStaging,
         abortStaging,
       },
       proxy,
@@ -309,6 +354,7 @@ describe('ConnectionRuntime', () => {
     });
 
     await runtime.start(spec('proxy', 'a'));
+    start.mockClear();
     stop.mockClear();
     proxy.activate.mockClear();
     await expect(runtime.switch(spec('proxy', 'b'))).rejects.toThrow(
@@ -316,26 +362,24 @@ describe('ConnectionRuntime', () => {
     );
 
     expect(startStaging).toHaveBeenCalled();
-    expect(commitStaging).not.toHaveBeenCalled();
     expect(abortStaging).toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
     expect(stop).not.toHaveBeenCalled();
     expect(proxy.activate).not.toHaveBeenCalled();
   });
 
-  it('retargets system proxy back to the old ports if commit fails after activate', async () => {
+  it('tears down when the checked server cannot take over the primary ports', async () => {
     const proxy = fakeNetwork('proxy');
     const tun = fakeNetwork('tun');
-    const abortStaging = vi.fn();
+    const start = vi.fn(async () => undefined);
+    const stop = vi.fn();
     const runtime = createConnectionRuntime({
       xray: {
-        start: vi.fn(async () => undefined),
-        stop: vi.fn(),
+        start,
+        stop,
         isRunning: () => true,
         startStaging: vi.fn(async () => undefined),
-        commitStaging: vi.fn(() => {
-          throw new Error('No staging Xray process to commit');
-        }),
-        abortStaging,
+        abortStaging: vi.fn(),
       },
       proxy,
       tun,
@@ -343,65 +387,13 @@ describe('ConnectionRuntime', () => {
     });
 
     await runtime.start(spec('proxy', 'a'));
-    proxy.activate.mockClear();
+    start.mockRejectedValueOnce(new Error('port 10808 is in use'));
     await expect(runtime.switch(spec('proxy', 'b'))).rejects.toThrow(
-      /No staging Xray process/,
+      /port 10808 is in use/,
     );
 
-    expect(proxy.activate).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        spec: expect.objectContaining({
-          ports: { socks: 10818, http: 10819, api: 10820 },
-        }),
-      }),
-    );
-    expect(proxy.activate).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        spec: expect.objectContaining({
-          ports: { socks: 10808, http: 10809, api: 10810 },
-        }),
-      }),
-    );
-    expect(abortStaging).toHaveBeenCalled();
-  });
-
-  it('restores the old system proxy if retarget throws after mutating OS settings', async () => {
-    const proxy = fakeNetwork('proxy');
-    const tun = fakeNetwork('tun');
-    const abortStaging = vi.fn();
-    proxy.activate.mockImplementation(async (prepared: PreparedConnection) => {
-      if (prepared.spec.ports.socks === 10818) {
-        throw new Error('proxy enable failed');
-      }
-    });
-    const runtime = createConnectionRuntime({
-      xray: {
-        start: vi.fn(async () => undefined),
-        stop: vi.fn(),
-        isRunning: () => true,
-        startStaging: vi.fn(async () => undefined),
-        commitStaging: vi.fn(),
-        abortStaging,
-      },
-      proxy,
-      tun,
-      validator: { validate: vi.fn(async () => true) },
-    });
-
-    await runtime.start(spec('proxy', 'a'));
-    await expect(runtime.switch(spec('proxy', 'b'))).rejects.toThrow(
-      /proxy enable failed/,
-    );
-
-    expect(proxy.activate).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        spec: expect.objectContaining({
-          ports: { socks: 10808, http: 10809, api: 10810 },
-        }),
-      }),
-    );
-    expect(abortStaging).toHaveBeenCalled();
+    expect(stop).toHaveBeenCalled();
+    expect(proxy.deactivate).toHaveBeenCalled();
+    expect(runtime.status().mode).toBeNull();
   });
 });

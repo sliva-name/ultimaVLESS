@@ -1,4 +1,5 @@
 import { Dispatch, SetStateAction, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   isSessionPhaseCancellable,
   isSessionPhaseInFlight,
@@ -17,6 +18,7 @@ export function useConnectionActions({
   phase,
   setConnectionError,
 }: UseConnectionActionsParams) {
+  const { t } = useTranslation();
   return useCallback(async () => {
     if (!selectedServer) {
       return;
@@ -29,7 +31,7 @@ export function useConnectionActions({
       if (phase === 'connected' || canCancel) {
         const result = await window.electronAPI.disconnect();
         if (!result.ok) {
-          setConnectionError('Failed to disconnect cleanly');
+          setConnectionError(t('status.disconnectFailed'));
           return;
         }
         setConnectionError(null);
@@ -48,8 +50,10 @@ export function useConnectionActions({
     } catch (error) {
       console.error('Connection toggle failed', error);
       setConnectionError(
-        error instanceof Error ? error.message : 'Connection operation failed',
+        error instanceof Error
+          ? error.message
+          : t('status.connectionActionFailed'),
       );
     }
-  }, [selectedServer, phase, setConnectionError]);
+  }, [selectedServer, phase, setConnectionError, t]);
 }

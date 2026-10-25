@@ -16,9 +16,7 @@ import {
   VALID_ROUTING_MODES,
   PingMethod,
   RoutingMode,
-  WindowsTunRouting,
 } from './types';
-import { VALID_WINDOWS_TUN_ROUTING } from './tunRouting';
 import { isValidIpv4Address } from './networkAddresses';
 import { normalizeBypassDomains, normalizeBypassIps } from './splitTunneling';
 import { normalizeAppEntries } from './appRouting';
@@ -113,7 +111,6 @@ export function performanceSettingsEqual(
     left.blockAds === right.blockAds &&
     left.blockBittorrent === right.blockBittorrent &&
     left.domainStrategy === right.domainStrategy &&
-    left.windowsTunRouting === right.windowsTunRouting &&
     left.tunOutboundInterface === right.tunOutboundInterface &&
     left.tunMtu === right.tunMtu &&
     left.tunDnsQueryStrategy === right.tunDnsQueryStrategy &&
@@ -194,6 +191,7 @@ export function isUnmodifiedLegacyPerformanceSettings(value: unknown): boolean {
   if ('xhttpMaxConnections' in value && value.xhttpMaxConnections !== 3) {
     return false;
   }
+  // Removed setting; its legacy default was `powershell`.
   if (
     'windowsTunRouting' in value &&
     value.windowsTunRouting !== 'powershell'
@@ -302,11 +300,6 @@ export function normalizePerformanceSettings(
     )
       ? (value.domainStrategy as PerformanceSettings['domainStrategy'])
       : DEFAULT_PERFORMANCE_SETTINGS.domainStrategy,
-    windowsTunRouting: VALID_WINDOWS_TUN_ROUTING.includes(
-      value.windowsTunRouting as WindowsTunRouting,
-    )
-      ? (value.windowsTunRouting as WindowsTunRouting)
-      : DEFAULT_PERFORMANCE_SETTINGS.windowsTunRouting,
     tunOutboundInterface: normalizeNetworkInterfaceName(
       value.tunOutboundInterface,
     ),

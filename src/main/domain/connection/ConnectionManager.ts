@@ -183,6 +183,11 @@ export class ConnectionManager extends EventEmitter {
     return this.state;
   }
 
+  /** Mode of the session being started, switched or running. */
+  public getActiveMode(): ConnectionMode | null {
+    return 'mode' in this.state ? this.state.mode : null;
+  }
+
   public getPhase(): SessionPhase {
     return connectionStateToSessionPhase(this.state);
   }
@@ -435,9 +440,9 @@ export class ConnectionManager extends EventEmitter {
   }
 
   /**
-   * Startup recovery (undoing a crashed session's routes / system proxy) runs
+   * Startup recovery (undoing a crashed session's system proxy / routes) runs
    * in the background after the first window; wait for it before touching the
-   * stack so it cannot delete a route this connect has just pinned.
+   * stack so it cannot switch off a system proxy this connect has just set.
    */
   private async awaitNetworkRecovery(signal: AbortSignal): Promise<void> {
     await this.deps.recoveryGate?.awaitNetworkRecovery();
@@ -464,13 +469,38 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public connect(serverId: string): Promise<void> {
-    if (
-      this.state.type === 'connected' &&
-      this.state.serverId === serverId &&
-      this.runtime.status().xrayRunning
-    ) {
+    if (this.state.type === 'connected' && this.runtime.status().xrayRunning) {
+      if (this.state.serverId === serverId) {
+        return Promise.resolve();
+      }
+      // Another server picked while connected: switch without a disconnect.
+      const server = this.servers.get(serverId);
+      if (server) {
+        return this.switchToServer(server, { stopOnFailure: true });
+      }
+    }
+    this.abortCurrentOperation();
+    return this.enqueue(
+      () => ({
+        type: 'starting',
+        serverId,
+        mode: this.deps.configService.getConnectionMode(),
+        generation: this.nextGeneration(),
+      }),
+      (signal) => this.connectUnsafe(serverId, signal),
+    );
+  }
+
+  /**
+   * Brings a connected session up again with the current settings, e.g. in
+   * the connection mode just picked. Goes through the normal connect path, so
+   * TUN still asks for its privileges. No-op unless connected.
+   */
+  public reconnect(): Promise<void> {
+    if (this.state.type !== 'connected') {
       return Promise.resolve();
     }
+    const serverId = this.state.serverId;
     this.abortCurrentOperation();
     return this.enqueue(
       () => ({
@@ -506,7 +536,15 @@ export class ConnectionManager extends EventEmitter {
     );
   }
 
-  public switchToServer(server: VlessConfig): Promise<void> {
+  /**
+   * `stopOnFailure` drops the session when the switch fails. A proxy switch
+   * that fails on the staging ports otherwise leaves the previous server
+   * running behind a session reported as failed.
+   */
+  public switchToServer(
+    server: VlessConfig,
+    options: { stopOnFailure?: boolean } = {},
+  ): Promise<void> {
     this.abortCurrentOperation();
     return this.enqueue(
       () => ({
@@ -517,7 +555,14 @@ export class ConnectionManager extends EventEmitter {
         generation: this.nextGeneration(),
       }),
       async (signal) => {
-        await this.runtime.switch(this.buildSpec(server), signal);
+        try {
+          await this.runtime.switch(this.buildSpec(server), signal);
+        } catch (error) {
+          if (options.stopOnFailure && !signal.aborted) {
+            await this.runtime.stop();
+          }
+          throw error;
+        }
         this.deps.configService.setSelectedServerId(server.uuid);
         this.deps.connectionMonitorService.startMonitoring(server);
       },

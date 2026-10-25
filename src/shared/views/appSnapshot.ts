@@ -30,9 +30,12 @@ export function isSessionPhaseCancellable(phase: SessionPhase): boolean {
   return phase === 'connecting' || phase === 'switching';
 }
 
-/** Server list picks are allowed while idle or after a failed connect. */
+/**
+ * Server list picks are allowed while idle, after a failed connect, and while
+ * connected, where a pick switches the session to that server.
+ */
 export function isSessionPhaseSelectable(phase: SessionPhase): boolean {
-  return phase === 'idle' || phase === 'failed';
+  return phase === 'idle' || phase === 'failed' || phase === 'connected';
 }
 
 export interface AppSessionSnapshot {

@@ -644,13 +644,17 @@ describe('ping auto scheduler', () => {
 });
 
 describe('isPingUnsafePhase', () => {
-  it('treats connected and in-flight connect phases as unsafe', () => {
-    expect(isPingUnsafePhase('connected', false)).toBe(true);
-    expect(isPingUnsafePhase('connecting', false)).toBe(true);
-    expect(isPingUnsafePhase('switching', false)).toBe(true);
-    expect(isPingUnsafePhase('idle', true)).toBe(true);
-    expect(isPingUnsafePhase('idle', false)).toBe(false);
-    expect(isPingUnsafePhase('failed', false)).toBe(false);
-    expect(isPingUnsafePhase('disconnecting', false)).toBe(false);
+  it('treats a TUN session and in-flight connect phases as unsafe', () => {
+    expect(isPingUnsafePhase('connected', false, 'tun')).toBe(true);
+    expect(isPingUnsafePhase('connecting', false, 'proxy')).toBe(true);
+    expect(isPingUnsafePhase('switching', false, 'proxy')).toBe(true);
+    expect(isPingUnsafePhase('idle', true, null)).toBe(true);
+    expect(isPingUnsafePhase('idle', false, null)).toBe(false);
+    expect(isPingUnsafePhase('failed', false, null)).toBe(false);
+    expect(isPingUnsafePhase('disconnecting', false, null)).toBe(false);
+  });
+
+  it('lets a connected proxy session ping, since pings ignore the system proxy', () => {
+    expect(isPingUnsafePhase('connected', false, 'proxy')).toBe(false);
   });
 });

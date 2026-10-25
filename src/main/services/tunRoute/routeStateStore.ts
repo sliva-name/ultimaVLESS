@@ -5,10 +5,10 @@ import { logger } from '@/main/services/LoggerService';
 import { removeFileSync } from '@/main/utils/removeFile';
 
 /**
- * What this app has put into the Windows routing table for the current TUN
- * session. Persisted next to the system-proxy snapshot so that a crashed or
- * killed session can be undone exactly on the next start — without guessing
- * from DNS lookups of the whole server catalog.
+ * What versions up to 7.19 put into the Windows routing table for a TUN
+ * session, persisted next to the system-proxy snapshot so that a crashed or
+ * killed session could be undone on the next start. Only read now, to remove
+ * what such a session left behind.
  */
 export interface TunRouteState {
   version: 1;
@@ -23,7 +23,6 @@ export interface TunRouteState {
 
 export interface TunRouteStateStore {
   read(): TunRouteState | null;
-  write(state: TunRouteState): void;
   clear(): void;
 }
 
@@ -68,15 +67,6 @@ export function createFileTunRouteStateStore(
         return null;
       }
     },
-    write(state) {
-      try {
-        fs.writeFileSync(statePath(), JSON.stringify(state, null, 2), 'utf8');
-      } catch (error) {
-        logger.warn('TunRouteService', 'Failed to persist TUN route state', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    },
     clear() {
       try {
         removeFileSync(statePath());
@@ -96,9 +86,6 @@ export function createMemoryTunRouteStateStore(
   const store = {
     current: initial,
     read: () => store.current,
-    write: (state: TunRouteState) => {
-      store.current = state;
-    },
     clear: () => {
       store.current = null;
     },

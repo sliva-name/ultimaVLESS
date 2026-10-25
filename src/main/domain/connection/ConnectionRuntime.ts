@@ -33,7 +33,6 @@ export interface XrayRuntime {
     mode: ConnectionMode,
     options?: XrayStartOptions,
   ): Promise<void>;
-  commitStaging?(): void | Promise<void>;
   abortStaging?(): void | Promise<void>;
   getActivePorts?(): RuntimePorts;
 }
@@ -58,9 +57,8 @@ export function createConnectionRuntime(deps: {
   let activeMode: ConnectionMode | null = null;
   let activePorts: RuntimePorts = { ...PRIMARY_RUNTIME_PORTS };
   /**
-   * Network paths this process has touched. `prepare()` may already mutate the
-   * OS (TUN pins host routes before Xray starts), so a path counts as engaged
-   * from its first `prepare()`/`activate()` until `deactivate()` succeeds.
+   * Network paths this process has touched. A path counts as engaged from its
+   * first `prepare()`/`activate()` until `deactivate()` succeeds.
    * Paths never engaged are never deactivated: a clean first connect must not
    * pay for tearing down state that only a previous *process* could have left
    * behind — that is the startup recovery's job.
@@ -119,64 +117,55 @@ export function createConnectionRuntime(deps: {
     activePorts = spec.ports;
   }
 
+  /**
+   * Proxy-mode switch. The next server is started and checked on the idle
+   * staging ports while the current one keeps serving; only then does it take
+   * over the primary ports. The system proxy, and any app pointed at
+   * 127.0.0.1:10808 by hand, keeps the same ports across switches.
+   */
   async function switchProxyTransaction(
     spec: ConnectionSpec,
     signal?: AbortSignal,
   ): Promise<void> {
-    const previousPorts = activePorts;
-    const nextPorts = otherRuntimePorts(activePorts);
-    const nextSpec: ConnectionSpec = { ...spec, ports: nextPorts };
+    const stagingSpec: ConnectionSpec = {
+      ...spec,
+      ports: otherRuntimePorts(spec.ports),
+    };
     throwIfAborted(signal);
     engaged.proxy = true;
-    const prepared = await deps.proxy.prepare(nextSpec);
+    const prepared = await deps.proxy.prepare(stagingSpec);
     throwIfAborted(signal);
-    let proxyRetargetAttempted = false;
-    let committed = false;
     try {
       await xray.startStaging!(prepared.server, 'proxy', {
         ...prepared.xrayOptions,
-        ports: nextPorts,
+        ports: stagingSpec.ports,
       });
       throwIfAborted(signal);
       if (
         deps.validator &&
-        !(await deps.validator.validate(nextSpec, signal))
+        !(await deps.validator.validate(stagingSpec, signal))
       ) {
         throw new Error('Post-switch traffic validation failed');
       }
       throwIfAborted(signal);
-      proxyRetargetAttempted = true;
-      await deps.proxy.activate(prepared);
-      throwIfAborted(signal);
-      await xray.commitStaging!();
-      committed = true;
-      activeMode = 'proxy';
-      activePorts = nextPorts;
     } catch (error) {
-      if (!committed && proxyRetargetAttempted) {
-        try {
-          await deps.proxy.activate({
-            spec: { ...spec, mode: 'proxy', ports: previousPorts },
-            server: spec.server,
-          });
-        } catch (restoreError) {
-          logger.warn(
-            'ConnectionRuntime',
-            'Failed to restore system proxy after aborted switch',
-            {
-              error:
-                restoreError instanceof Error
-                  ? restoreError.message
-                  : String(restoreError),
-            },
-          );
-        }
-      }
-      if (!committed) {
-        await xray.abortStaging?.();
-      }
+      await xray.abortStaging?.();
       throw error;
     }
+
+    // Replaces both the staging and the current process.
+    try {
+      await xray.start(prepared.server, 'proxy', {
+        ...prepared.xrayOptions,
+        ports: spec.ports,
+      });
+      throwIfAborted(signal);
+    } catch (error) {
+      await tearDown();
+      throw error;
+    }
+    activeMode = 'proxy';
+    activePorts = spec.ports;
   }
 
   return {
@@ -198,8 +187,7 @@ export function createConnectionRuntime(deps: {
       const canStage =
         spec.mode === 'proxy' &&
         activeMode === 'proxy' &&
-        typeof xray.startStaging === 'function' &&
-        typeof xray.commitStaging === 'function';
+        typeof xray.startStaging === 'function';
 
       if (canStage) {
         try {

@@ -80,7 +80,7 @@ function ipv4InCidr(address: string, base: string, prefix: number): boolean {
   const network = ipv4ToInt(base);
   if (ip == null || network == null) return false;
   if (prefix === 0) return true;
-  const mask = prefix === 32 ? 0xffffffff : (~((1 << (32 - prefix)) - 1)) >>> 0;
+  const mask = prefix === 32 ? 0xffffffff : ~((1 << (32 - prefix)) - 1) >>> 0;
   return (ip & mask) === (network & mask);
 }
 
@@ -112,8 +112,13 @@ function expandIpv6Hextets(address: string): number[] | null {
     ? [...head, ...tail].slice(0, -1)
     : [...head, ...tail];
   const missing = 8 - hextetTokens.length - (hasEmbeddedIpv4 ? 2 : 0);
-  const zeros = halves.length === 2 ? Array.from({ length: missing }, () => '0') : [];
-  const tokens = [...head, ...zeros, ...(hasEmbeddedIpv4 ? tail.slice(0, -1) : tail)];
+  const zeros =
+    halves.length === 2 ? Array.from({ length: missing }, () => '0') : [];
+  const tokens = [
+    ...head,
+    ...zeros,
+    ...(hasEmbeddedIpv4 ? tail.slice(0, -1) : tail),
+  ];
   const hextets = tokens.map((token) => Number.parseInt(token, 16));
   if (hasEmbeddedIpv4 && last) {
     const ipv4 = ipv4ToInt(last);
@@ -154,7 +159,11 @@ function isPrivateOrReservedIpv6(address: string): boolean {
 
   const unspecified = hextets.every((n) => n === 0);
   if (unspecified) return true;
-  if (hextets[0] === 0 && hextets.slice(1, 7).every((n) => n === 0) && hextets[7] === 1) {
+  if (
+    hextets[0] === 0 &&
+    hextets.slice(1, 7).every((n) => n === 0) &&
+    hextets[7] === 1
+  ) {
     return true;
   }
   // Unique-local fc00::/7 and link-local fe80::/10.
@@ -168,7 +177,10 @@ function isPrivateOrReservedIpv6(address: string): boolean {
  * RFC1918, CGNAT, ULA, and IPv4-mapped forms of the same ranges.
  */
 export function isPrivateOrReservedHost(hostname: string): boolean {
-  const normalized = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  const normalized = hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '');
   if (normalized === 'localhost' || normalized.endsWith('.localhost')) {
     return true;
   }
@@ -179,4 +191,12 @@ export function isPrivateOrReservedHost(hostname: string): boolean {
     return isPrivateOrReservedIpv6(normalized);
   }
   return false;
+}
+
+/**
+ * URLs bracket IPv6 literals (`[2001:db8::1]`). Xray strips the brackets
+ * itself, Node's `net`/`dns` do not.
+ */
+export function unbracketIpv6(host: string): string {
+  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
 }

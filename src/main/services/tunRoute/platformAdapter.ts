@@ -18,7 +18,7 @@ export function createPlatformTunAdapter(
       return 'TUN mode is not supported on this operating system.';
     },
     getRouteMode: () => {
-      if (platform === 'win32') return 'windows-static-routes';
+      if (platform === 'win32') return 'windows-xray-auto-route';
       if (platform === 'linux') return 'linux-xray-auto-route';
       return null;
     },
