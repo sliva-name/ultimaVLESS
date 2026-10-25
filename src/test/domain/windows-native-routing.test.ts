@@ -501,7 +501,7 @@ describe('host prefixes', () => {
   });
 });
 
-describe('native route mutations', () => {
+describe('native host route removal', () => {
   function createRunner(table: () => string) {
     const calls: string[][] = [];
     const run: CommandRunner = vi.fn(
@@ -516,74 +516,6 @@ describe('native route mutations', () => {
     );
     return { run, calls };
   }
-
-  it('replaces a stale pin, adds via the gateway and confirms from the table', async () => {
-    let pinned = false;
-    const { run, calls } = createRunner(() =>
-      pinned
-        ? `   203.0.113.10  255.255.255.255      192.168.0.1    192.168.0.124     36`
-        : '',
-    );
-    const runWithPin: CommandRunner = async (command, args) => {
-      const result = await run(command, args);
-      if (args[0] === 'ADD') pinned = true;
-      return result;
-    };
-    const routing = createWindowsNativeRouting(runWithPin, () => ({}));
-
-    const result = await routing.addHostRoutes({
-      prefixes: ['203.0.113.10/32'],
-      gateway: '192.168.0.1',
-      interfaceIndex: 10,
-      metric: 1,
-    });
-
-    expect(result).toEqual({ created: ['203.0.113.10/32'], failed: [] });
-    expect(calls).toEqual([
-      ['route', 'DELETE', '203.0.113.10', 'MASK', '255.255.255.255'],
-      [
-        'route',
-        'ADD',
-        '203.0.113.10',
-        'MASK',
-        '255.255.255.255',
-        '192.168.0.1',
-        'METRIC',
-        '1',
-        'IF',
-        '10',
-      ],
-      ['route', 'print', '-4'],
-    ]);
-  });
-
-  it('reports the tool output when the route is missing after ADD', async () => {
-    const run: CommandRunner = vi.fn(async (_command, args) => ({
-      code: args[0] === 'ADD' ? 1 : 0,
-      stdout:
-        args[0] === 'ADD'
-          ? 'Не удалось добавить маршрут: Запрошенная операция требует повышения.\r\n'
-          : '',
-      stderr: '',
-    }));
-    const routing = createWindowsNativeRouting(run, () => ({}));
-
-    const result = await routing.addHostRoutes({
-      prefixes: ['203.0.113.10/32'],
-      gateway: '192.168.0.1',
-      interfaceIndex: 10,
-      metric: 1,
-    });
-
-    expect(result.created).toEqual([]);
-    expect(result.failed).toEqual([
-      {
-        prefix: '203.0.113.10/32',
-        message:
-          'Не удалось добавить маршрут: Запрошенная операция требует повышения.',
-      },
-    ]);
-  });
 
   it('removes pins and reports the ones that survived', async () => {
     const { run, calls } = createRunner(

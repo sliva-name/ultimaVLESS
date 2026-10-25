@@ -36,15 +36,13 @@ describe('Linux IPv6 availability', () => {
 
 describe('TUN inbound without IPv6', () => {
   it('drops the IPv6 gateway and ::/0', () => {
-    const settings = createTunInbound({ tunAutoRoute: true, ipv6: false })
-      .settings as TunSettings;
+    const settings = createTunInbound({ ipv6: false }).settings as TunSettings;
     expect(settings.gateway).toEqual(['172.19.0.1/30']);
     expect(settings.autoSystemRoutingTable).toEqual(['0.0.0.0/0']);
   });
 
   it('keeps both families by default', () => {
-    const settings = createTunInbound({ tunAutoRoute: true })
-      .settings as TunSettings;
+    const settings = createTunInbound({}).settings as TunSettings;
     expect(settings.gateway).toHaveLength(2);
     expect(settings.autoSystemRoutingTable).toEqual(['0.0.0.0/0', '::/0']);
   });
@@ -53,7 +51,6 @@ describe('TUN inbound without IPv6', () => {
 describe('TUN routes on Linux', () => {
   it('routes the two /1 halves so a metric-0 default route cannot win', () => {
     const settings = createTunInbound({
-      tunAutoRoute: true,
       splitDefaultRoute: true,
     }).settings as TunSettings;
     expect(settings.autoSystemRoutingTable).toEqual([
@@ -66,7 +63,6 @@ describe('TUN routes on Linux', () => {
 
   it('splits IPv4 only when the TUN has no IPv6', () => {
     const settings = createTunInbound({
-      tunAutoRoute: true,
       splitDefaultRoute: true,
       ipv6: false,
     }).settings as TunSettings;

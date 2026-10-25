@@ -99,22 +99,6 @@ describe('localizeError', () => {
     ).toBe(
       'Порт 10808 на 127.0.0.1 занят другой программой (другим VPN или прокси-клиентом?). Закройте её и подключитесь снова.',
     );
-    expect(
-      localizeError(
-        'TUN interface did not appear within 20s. Make sure app runs as Administrator and Xray has TUN support. Details: timeout',
-        'ru',
-      ),
-    ).toBe(
-      'TUN-интерфейс не появился за 20 с. Проверьте, что приложение запущено от имени администратора и Xray поддерживает TUN. Подробности: timeout',
-    );
-    expect(
-      localizeError(
-        'TUN setup timed out after 45s while running: apply TUN routing. Xray may not support TUN on this system.',
-        'ru',
-      ),
-    ).toBe(
-      'Настройка TUN не уложилась в 45 с (этап: apply TUN routing). Возможно, Xray не поддерживает TUN в этой системе.',
-    );
     expect(localizeError('Switching from A to B', 'ru')).toBe(
       'Переключение с A на B',
     );

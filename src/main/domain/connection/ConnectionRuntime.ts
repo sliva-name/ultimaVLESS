@@ -57,9 +57,8 @@ export function createConnectionRuntime(deps: {
   let activeMode: ConnectionMode | null = null;
   let activePorts: RuntimePorts = { ...PRIMARY_RUNTIME_PORTS };
   /**
-   * Network paths this process has touched. `prepare()` may already mutate the
-   * OS (TUN pins host routes before Xray starts), so a path counts as engaged
-   * from its first `prepare()`/`activate()` until `deactivate()` succeeds.
+   * Network paths this process has touched. A path counts as engaged from its
+   * first `prepare()`/`activate()` until `deactivate()` succeeds.
    * Paths never engaged are never deactivated: a clean first connect must not
    * pay for tearing down state that only a previous *process* could have left
    * behind — that is the startup recovery's job.

@@ -148,11 +148,9 @@ const PRIVATE_IP_SELECTORS = new Set([
 ]);
 
 export interface XrayConfigPipelineOptions {
-  sendThrough?: string;
-  tunAutoRoute?: boolean;
   /** Adapter alias for the TUN inbound's `autoOutboundsInterface`. */
   outboundInterface?: string;
-  /** TUN inbound's `autoSystemWfpBlockLeak: ["dns"]`; needs `tunAutoRoute`. */
+  /** TUN inbound's `autoSystemWfpBlockLeak: ["dns"]` (Windows). */
   blockDnsLeaks?: boolean;
   /** False drops the TUN's IPv6 address and `::/0` (Linux without IPv6). */
   tunIpv6?: boolean;
@@ -212,11 +210,6 @@ export class XrayConfigPipeline {
           mtu: perf.tunMtu,
         }),
       );
-      // Prefer autoOutboundsInterface for loop prevention; sendThrough is
-      // dual-stack-limited and only needed when Xray auto-route is off.
-      if (!options.tunAutoRoute) {
-        this.applySendThroughIfNeeded(cfg, options.sendThrough);
-      }
     }
 
     // Servers saved before tags were normalized at import.
@@ -1046,14 +1039,6 @@ export class XrayConfigPipeline {
       },
     };
 
-    if (
-      connectionMode === 'tun' &&
-      options.sendThrough &&
-      !options.tunAutoRoute
-    ) {
-      this.applySendThroughIfNeeded(cfg, options.sendThrough);
-    }
-
     applyStatsApi(cfg, options.ports?.api);
     applyRemoteDnsSettings(cfg, perf, {
       tunMode: connectionMode === 'tun',
@@ -1428,31 +1413,5 @@ export class XrayConfigPipeline {
       xudpConcurrency: perf.xudpConcurrency,
       xudpProxyUDP443: perf.xudpProxyUDP443,
     };
-  }
-
-  private static applySendThroughIfNeeded(
-    cfg: XrayConfig,
-    sendThrough?: string,
-  ): void {
-    if (
-      !sendThrough ||
-      !Array.isArray(cfg.outbounds) ||
-      cfg.outbounds.length === 0
-    ) {
-      return;
-    }
-    // Pin both proxy and freedom/direct. Direct without a physical bind loops
-    // into TUN whenever routing sends geoip:private there.
-    const outbounds = cfg.outbounds as MutableOutbound[];
-    for (const outbound of outbounds) {
-      if (!outbound || outbound.sendThrough) continue;
-      if (
-        outbound.tag === 'proxy' ||
-        outbound.tag === 'direct' ||
-        outbound.protocol === 'freedom'
-      ) {
-        outbound.sendThrough = sendThrough;
-      }
-    }
   }
 }

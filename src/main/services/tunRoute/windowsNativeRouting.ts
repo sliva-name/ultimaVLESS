@@ -2,7 +2,6 @@ import net from 'net';
 import os from 'os';
 import { logger } from '@/main/services/LoggerService';
 import {
-  combineCommandOutput,
   runProcessWithOutput,
   type CommandOutput,
 } from '@/main/services/platform/commandRunner';
@@ -20,7 +19,7 @@ import { TUN_INTERFACE_NAME, type DefaultRouteInfo } from './constants';
  * before Xray could even start. `route.exe` and `netsh.exe` answer the same
  * questions in ~50–90 ms each. Their tables are parsed positionally on the
  * numeric columns only, so localized headers ("Активные маршруты", "Auf
- * Verbindung") never matter. Mutations are verified by re-reading the table
+ * Verbindung") never matter. Removals are verified by re-reading the table
  * instead of trusting exit codes or localized status lines.
  */
 
@@ -73,11 +72,6 @@ export interface HostInterface {
   internal: boolean;
 }
 
-export interface HostRouteApplyResult {
-  created: string[];
-  failed: Array<{ prefix: string; message: string }>;
-}
-
 export interface HostRouteRemoveResult {
   removed: number;
   remaining: string[];
@@ -94,14 +88,7 @@ export interface WindowsNativeRouting {
   ): Promise<DefaultRouteInfo | null>;
   /** Every non-loopback IPv4 adapter except our own TUN, best choice first. */
   listAdapters(): Promise<NetworkAdapterView[]>;
-  /** Pin IPv4 `/32` prefixes to the gateway; stale pins for the same prefix are replaced. */
-  addHostRoutes(params: {
-    prefixes: string[];
-    gateway: string;
-    interfaceIndex: number;
-    metric: number;
-  }): Promise<HostRouteApplyResult>;
-  /** Remove IPv4 `/32` pins regardless of which gateway they point at. */
+  /** Removes IPv4 `/32` host routes; reports those still present. */
   removeHostRoutes(prefixes: string[]): Promise<HostRouteRemoveResult>;
 }
 
@@ -466,14 +453,6 @@ export function supportsNativeHostRoutes(prefixes: string[]): boolean {
   );
 }
 
-function firstMeaningfulLine(output: CommandOutput): string {
-  const text = combineCommandOutput(output)
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-  return text ?? `exit code ${output.code ?? 'null'}`;
-}
-
 export function createWindowsNativeRouting(
   run: CommandRunner = defaultCommandRunner,
   networkInterfaces?: () => NodeJS.Dict<os.NetworkInterfaceInfo[]>,
@@ -526,56 +505,6 @@ export function createWindowsNativeRouting(
 
     async listAdapters() {
       return describeNetworkAdapters(await readRoutingTables());
-    },
-
-    async addHostRoutes({ prefixes, gateway, interfaceIndex, metric }) {
-      const attempts = new Map<
-        string,
-        { address: string; output: CommandOutput }
-      >();
-      for (const prefix of prefixes) {
-        const address = hostAddressFromPrefix(prefix);
-        if (address === null) {
-          throw new Error(
-            `Native host routes support IPv4 /32 only: ${prefix}`,
-          );
-        }
-        // A pin left by a crashed session (or persisted by the old PowerShell
-        // path) may point at a stale gateway; replace it wholesale.
-        await run('route', ['DELETE', address, 'MASK', HOST_MASK]).catch(
-          () => undefined,
-        );
-        const output = await run('route', [
-          'ADD',
-          address,
-          'MASK',
-          HOST_MASK,
-          gateway,
-          'METRIC',
-          String(metric),
-          'IF',
-          String(interfaceIndex),
-        ]);
-        attempts.set(prefix, { address, output });
-      }
-
-      const present = await readActiveHostRoutes();
-      const result: HostRouteApplyResult = { created: [], failed: [] };
-      for (const [prefix, attempt] of attempts) {
-        const pinned = present.some(
-          (route) =>
-            route.destination === attempt.address && route.gateway === gateway,
-        );
-        if (pinned) {
-          result.created.push(prefix);
-        } else {
-          result.failed.push({
-            prefix,
-            message: firstMeaningfulLine(attempt.output),
-          });
-        }
-      }
-      return result;
     },
 
     async removeHostRoutes(prefixes) {

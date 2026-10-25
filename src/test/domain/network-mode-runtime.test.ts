@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
-import { resolveTunAutoRoute } from '@/shared/tunRouting';
 import { APP_CONSTANTS } from '@/shared/constants';
 import { makeServer } from '@/test/factories';
 import {
@@ -41,23 +40,21 @@ describe('network mode runtime', () => {
     expect(enable).toHaveBeenCalledWith(PORTS.http, PORTS.socks);
   });
 
-  it('tun auto-route on Windows pins host routes and dials resolved IP', async () => {
-    const server = makeServer({ address: 'oauth.example.com' });
-    const prepareRoutingPlan = vi.fn(async () => PLAN);
-    const pinProxyHostRoutes = vi.fn();
-    const perf = {
-      ...DEFAULT_PERFORMANCE_SETTINGS,
-      windowsTunRouting: 'xray' as const,
-      tunBlockDnsLeaks: true,
-    };
+  it('Windows TUN dials the resolved server IP through the default-route adapter', async () => {
+    const server = makeServer({ address: 'oauth.example.com', sni: '' });
+    const prepareRoutingPlan = vi.fn(async () => ({
+      ...PLAN,
+      outboundInterface: 'Ethernet',
+    }));
     const runtime = createTunNetworkRuntime(
+      { prepareRoutingPlan },
       {
-        prepareRoutingPlan,
-        pinProxyHostRoutes,
-        enable: vi.fn(),
-        disable: vi.fn(),
+        getPerformanceSettings: () => ({
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          tunBlockDnsLeaks: true,
+        }),
       },
-      { getPerformanceSettings: () => perf },
+      'win32',
     );
 
     const prepared = await runtime.prepare({
@@ -66,32 +63,47 @@ describe('network mode runtime', () => {
       ports: PORTS,
     });
 
-    expect(resolveTunAutoRoute(process.platform, perf)).toBe(true);
-    if (process.platform === 'win32') {
-      expect(prepareRoutingPlan).toHaveBeenCalledWith(server, {
-        awaitStableDefaultRoute: false,
-      });
-      expect(pinProxyHostRoutes).toHaveBeenCalled();
-      expect(prepared.server.address).toBe('203.0.113.1');
-      expect(prepared.xrayOptions).toEqual(
-        expect.objectContaining({
-          sendThrough: undefined,
-          tunAutoRoute: true,
-          blockDnsLeaks: true,
+    expect(prepareRoutingPlan).toHaveBeenCalledWith(server);
+    expect(prepared.server.address).toBe('203.0.113.1');
+    // The domain stays the TLS server name once the address is an IP.
+    expect(prepared.server.sni).toBe('oauth.example.com');
+    expect(prepared.xrayOptions).toEqual({
+      outboundInterface: 'Ethernet',
+      blockDnsLeaks: true,
+      tunIpv6: undefined,
+      tunSplitDefaultRoute: false,
+    });
+  });
+
+  it('Linux TUN leaves the server and the routes to Xray', async () => {
+    const server = makeServer({ address: 'oauth.example.com' });
+    const prepareRoutingPlan = vi.fn();
+    const runtime = createTunNetworkRuntime(
+      { prepareRoutingPlan },
+      {
+        getPerformanceSettings: () => ({
+          ...DEFAULT_PERFORMANCE_SETTINGS,
+          // WFP filters exist on Windows only.
+          tunBlockDnsLeaks: true,
         }),
-      );
-    } else {
-      expect(prepareRoutingPlan).not.toHaveBeenCalled();
-      expect(pinProxyHostRoutes).not.toHaveBeenCalled();
-      expect(prepared.server).toBe(server);
-      // WFP filters are Windows-only even though Xray auto-routes here.
-      expect(prepared.xrayOptions).toEqual(
-        expect.objectContaining({
-          tunAutoRoute: true,
-          sendThrough: undefined,
-          blockDnsLeaks: false,
-        }),
-      );
-    }
+      },
+      'linux',
+    );
+
+    const prepared = await runtime.prepare({
+      server,
+      mode: 'tun',
+      ports: PORTS,
+    });
+
+    expect(prepareRoutingPlan).not.toHaveBeenCalled();
+    expect(prepared.server).toBe(server);
+    expect(prepared.xrayOptions).toEqual(
+      expect.objectContaining({
+        outboundInterface: undefined,
+        blockDnsLeaks: false,
+        tunSplitDefaultRoute: true,
+      }),
+    );
   });
 });

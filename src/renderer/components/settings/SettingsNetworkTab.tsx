@@ -23,7 +23,6 @@ import {
   TUN_MTU_MAX,
   TUN_MTU_MIN,
   TunDnsQueryStrategy,
-  WindowsTunRouting,
   XudpProxyUDP443,
 } from '@/shared/types';
 import { PrimaryButton, Select, Toggle } from '@/renderer/components/ui';
@@ -226,35 +225,12 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             networkLocked && 'opacity-60 pointer-events-none select-none',
           )}
         >
-          <PerfSelectRow
-            label={t('settings.network.windowsTunRouting')}
-            hint={t('settings.network.windowsTunRoutingHint')}
-            value={perfSettings.windowsTunRouting}
-            onChange={(v) =>
-              updatePerfField('windowsTunRouting', v as WindowsTunRouting)
-            }
-            options={[
-              {
-                value: 'xray',
-                label: t('settings.network.windowsTunRoutingXray'),
-                description: 'autoSystemRoutingTable',
-              },
-              {
-                value: 'powershell',
-                label: t('settings.network.windowsTunRoutingPowershell'),
-                description: 'Set-NetRoute / DNS',
-              },
-            ]}
+          <PerfToggleRow
+            label={t('settings.network.tunBlockDnsLeaks')}
+            hint={t('settings.network.tunBlockDnsLeaksHint')}
+            checked={perfSettings.tunBlockDnsLeaks}
+            onChange={(v) => updatePerfField('tunBlockDnsLeaks', v)}
           />
-          {/* Xray only accepts its WFP filters together with its own routes. */}
-          {perfSettings.windowsTunRouting === 'xray' && (
-            <PerfToggleRow
-              label={t('settings.network.tunBlockDnsLeaks')}
-              hint={t('settings.network.tunBlockDnsLeaksHint')}
-              checked={perfSettings.tunBlockDnsLeaks}
-              onChange={(v) => updatePerfField('tunBlockDnsLeaks', v)}
-            />
-          )}
           <div className="border-t border-gray-700/40 my-1" />
           <div className="flex items-center justify-between gap-3">
             <PerfLabel
@@ -304,7 +280,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             </p>
           )}
           <p className="text-xs text-gray-500 leading-relaxed">
-            {t('settings.network.windowsTunRoutingApplyHint')}
+            {t('settings.network.windowsTunApplyHint')}
           </p>
         </div>
       )}

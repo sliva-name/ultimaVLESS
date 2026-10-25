@@ -37,11 +37,9 @@ export interface XrayUnexpectedExitEvent {
 }
 
 export interface XrayStartOptions {
-  sendThrough?: string;
-  tunAutoRoute?: boolean;
   /** TUN: adapter alias Xray binds its sockets to (`autoOutboundsInterface`). */
   outboundInterface?: string;
-  /** Windows TUN with auto-route: WFP filters against DNS leaks. */
+  /** Windows TUN: WFP filters against DNS leaks. */
   blockDnsLeaks?: boolean;
   /** TUN: false when the TUN interface cannot take an IPv6 address. */
   tunIpv6?: boolean;
@@ -179,7 +177,6 @@ export class XrayService extends EventEmitter {
       transport: config.type || 'tcp',
       security: config.security || 'none',
       connectionMode,
-      sendThrough: options.sendThrough || null,
       outboundInterface: options.outboundInterface || null,
       blockDnsLeaks: options.blockDnsLeaks ?? false,
       tunIpv6: options.tunIpv6 ?? null,
@@ -190,8 +187,6 @@ export class XrayService extends EventEmitter {
       xrayConfig = XrayConfigCompiler.compile(config, {
         logPath,
         connectionMode,
-        sendThrough: options.sendThrough,
-        tunAutoRoute: options.tunAutoRoute,
         outboundInterface: options.outboundInterface,
         blockDnsLeaks: options.blockDnsLeaks,
         tunIpv6: options.tunIpv6,

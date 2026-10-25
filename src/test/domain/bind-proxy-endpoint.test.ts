@@ -8,7 +8,6 @@ function compileProxy(server: ReturnType<typeof makeServer>) {
   const config = XrayConfigCompiler.compile(server, {
     logPath: '/tmp/xray.log',
     connectionMode: 'tun',
-    tunAutoRoute: true,
   });
   return config.outbounds.find((outbound) => outbound.tag === 'proxy')!;
 }

@@ -158,23 +158,6 @@ describe('TUN DNS leak block', () => {
       ),
     );
   });
-
-  it('is hidden with PowerShell routing, which Xray cannot combine it with', async () => {
-    renderNetworkTab('', {
-      windowsTunRouting: 'powershell',
-      tunBlockDnsLeaks: true,
-    });
-
-    const routing = await screen.findByRole('button', {
-      name: 'Маршрутизация TUN в Windows',
-    });
-    await waitFor(() =>
-      expect(routing).toHaveTextContent('PowerShell (откат)'),
-    );
-    expect(
-      screen.queryByRole('switch', { name: 'Блокировать утечки DNS' }),
-    ).toBeNull();
-  });
 });
 
 describe('TUN conflict notice', () => {

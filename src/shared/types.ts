@@ -151,9 +151,6 @@ export type TlsFingerprint =
   | 'random'
   | 'randomized';
 
-/** Windows-only: who installs TUN routes — Xray 26.5+ or legacy PowerShell. */
-export type WindowsTunRouting = 'xray' | 'powershell';
-
 /** Xray `dns.queryStrategy`. Used for TUN; proxy mode stays IPv4-only. */
 export type TunDnsQueryStrategy = 'UseIPv4' | 'UseIPv6' | 'UseIP' | 'UseSystem';
 
@@ -257,12 +254,10 @@ export interface PerformanceSettings {
   blockAds: boolean;
   blockBittorrent: boolean;
   domainStrategy: DomainStrategy;
-  /** Windows TUN only. Default `xray` for testing; use `powershell` to roll back. */
-  windowsTunRouting: WindowsTunRouting;
   /**
    * Windows TUN only: adapter (its Windows name, e.g. `Ethernet 2`) that Xray
-   * binds its own sockets to and the server route is pinned through. Empty
-   * picks the adapter carrying the system default route.
+   * binds its own sockets to. Empty picks the adapter carrying the system
+   * default route.
    */
   tunOutboundInterface: string;
   /**
@@ -325,7 +320,6 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   blockAds: false,
   blockBittorrent: false,
   domainStrategy: 'AsIs',
-  windowsTunRouting: 'xray',
   tunOutboundInterface: '',
   tunMtu: TUN_MTU_DEFAULT,
   tunDnsQueryStrategy: 'UseIPv4',

@@ -113,23 +113,6 @@ const RU_PHRASES: PhraseTable = [
     'Не удалось получить IP-адрес сервера: ',
   ],
   [
-    /Failed to pin proxy host route\(s\) to the physical gateway: /g,
-    'Не удалось направить маршрут до сервера через основной шлюз: ',
-  ],
-  [
-    /Failed to add the default route via the TUN interface: /g,
-    'Не удалось добавить маршрут по умолчанию через TUN-интерфейс: ',
-  ],
-  [
-    /TUN interface did not appear within (?<seconds>\d+)s\. Make sure app runs as Administrator and Xray has TUN support\./g,
-    'TUN-интерфейс не появился за $<seconds> с. Проверьте, что приложение запущено от имени администратора и Xray поддерживает TUN.',
-  ],
-  [/ Details: /g, ' Подробности: '],
-  [
-    /TUN setup timed out after (?<seconds>\d+)s while running: (?<stage>[^.]*)\. Xray may not support TUN on this system\./g,
-    'Настройка TUN не уложилась в $<seconds> с (этап: $<stage>). Возможно, Xray не поддерживает TUN в этой системе.',
-  ],
-  [
     /Disconnect before changing connection mode\./g,
     'Отключитесь перед изменением режима сети.',
   ],

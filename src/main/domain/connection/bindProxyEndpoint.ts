@@ -61,10 +61,10 @@ function keepRawServerName(stream: MutableNode, domain: string): void {
 }
 
 /**
- * Point the proxy outbound at a resolved IPv4/IPv6 literal so TUN dials do not
- * use the system dual-stack resolver (AAAA-first hangs of ~12s are common when
- * ::/0 is already via TUN). The original host stays the TLS/REALITY server name
- * and the transport `Host`.
+ * Point the proxy outbound at a resolved IPv4/IPv6 literal. On Windows Xray
+ * would look the server's domain up through the system resolver, whose queries
+ * go into the TUN and back into Xray. The original host stays the TLS/REALITY
+ * server name and the transport `Host`.
  */
 export function bindProxyEndpointToIp(
   server: VlessConfig,

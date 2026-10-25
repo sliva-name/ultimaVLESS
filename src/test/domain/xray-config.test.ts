@@ -70,14 +70,12 @@ describe('XrayConfigCompiler', () => {
     expect(config.outbounds[0].settings).not.toHaveProperty('vnext');
   });
 
-  it('uses autoOutboundsInterface without sendThrough when tunAutoRoute is on', () => {
+  it('lets Xray route TUN and keep its own sockets on the physical adapter', () => {
     const config = XrayConfigCompiler.compile(
       makeServer({ security: 'tls', sni: 'example.com' }),
       {
         logPath: '/tmp/xray.log',
         connectionMode: 'tun',
-        sendThrough: '192.168.1.10',
-        tunAutoRoute: true,
       },
     );
 
@@ -113,7 +111,6 @@ describe('XrayConfigCompiler', () => {
       {
         logPath: '/tmp/xray.log',
         connectionMode: 'tun',
-        tunAutoRoute: true,
         performanceSettings: {
           ...DEFAULT_PERFORMANCE_SETTINGS,
           tunMtu: 1280,
@@ -135,7 +132,6 @@ describe('XrayConfigCompiler', () => {
       {
         logPath: '/tmp/xray.log',
         connectionMode: 'tun',
-        tunAutoRoute: true,
         performanceSettings: {
           ...DEFAULT_PERFORMANCE_SETTINGS,
           remoteDnsPreset: 'google',
@@ -201,7 +197,6 @@ describe('XrayConfigCompiler', () => {
       {
         logPath: '/tmp/xray.log',
         connectionMode: 'tun',
-        tunAutoRoute: true,
       },
     );
 
@@ -249,7 +244,7 @@ describe('XrayConfigCompiler', () => {
           ],
         } as XrayConfig,
       }),
-      { logPath: '/tmp/xray.log', connectionMode: 'tun', tunAutoRoute: true },
+      { logPath: '/tmp/xray.log', connectionMode: 'tun' },
     );
 
     const listeners = (config.inbounds ?? []).map((i) => ({
@@ -470,7 +465,6 @@ describe('XrayConfigCompiler', () => {
       {
         logPath: '/tmp/xray.log',
         connectionMode: 'tun',
-        tunAutoRoute: true,
       },
     );
 
@@ -478,49 +472,20 @@ describe('XrayConfigCompiler', () => {
   });
 
   it('binds the TUN outbound sockets to an explicit adapter when given one', () => {
-    for (const tunAutoRoute of [true, false]) {
-      const config = XrayConfigCompiler.compile(
-        makeServer({ security: 'tls', sni: 'example.com' }),
-        {
-          logPath: '/tmp/xray.log',
-          connectionMode: 'tun',
-          tunAutoRoute,
-          outboundInterface: 'Беспроводная сеть',
-        },
-      );
-      const tunInbound = config.inbounds?.find(
-        (inbound) => inbound.protocol === 'tun',
-      );
-      expect(tunInbound?.settings).toMatchObject({
-        autoOutboundsInterface: 'Беспроводная сеть',
-      });
-    }
-  });
-
-  it('keeps sendThrough when tunAutoRoute is off (PowerShell fallback)', () => {
     const config = XrayConfigCompiler.compile(
       makeServer({ security: 'tls', sni: 'example.com' }),
       {
         logPath: '/tmp/xray.log',
         connectionMode: 'tun',
-        sendThrough: '192.168.1.10',
-        tunAutoRoute: false,
+        outboundInterface: 'Беспроводная сеть',
       },
     );
-
     const tunInbound = config.inbounds?.find(
       (inbound) => inbound.protocol === 'tun',
     );
-    // Loop prevention must stay on even when PowerShell owns the route table.
     expect(tunInbound?.settings).toMatchObject({
-      autoOutboundsInterface: 'auto',
+      autoOutboundsInterface: 'Беспроводная сеть',
     });
-    expect(tunInbound?.settings).not.toHaveProperty('autoSystemRoutingTable');
-    expect(config.outbounds[0].sendThrough).toBe('192.168.1.10');
-    const direct = config.outbounds.find(
-      (outbound) => outbound.tag === 'direct',
-    );
-    expect(direct?.sendThrough).toBe('192.168.1.10');
   });
 
   describe('TUN DNS leak block', () => {
@@ -566,7 +531,6 @@ describe('XrayConfigCompiler', () => {
         const config = XrayConfigCompiler.compile(server, {
           logPath: '/tmp/xray.log',
           connectionMode: 'tun',
-          tunAutoRoute: true,
           blockDnsLeaks: true,
         });
 
@@ -588,31 +552,11 @@ describe('XrayConfigCompiler', () => {
         const config = XrayConfigCompiler.compile(server, {
           logPath: '/tmp/xray.log',
           connectionMode: 'tun',
-          tunAutoRoute: true,
         });
 
         expect(tunSettings(config)).not.toHaveProperty(
           'autoSystemWfpBlockLeak',
         );
-      }
-    });
-
-    it('never adds them without autoSystemRoutingTable (PowerShell routing)', () => {
-      for (const server of [
-        makeServer({ security: 'tls', sni: 'example.com' }),
-        rawServer(),
-      ]) {
-        const config = XrayConfigCompiler.compile(server, {
-          logPath: '/tmp/xray.log',
-          connectionMode: 'tun',
-          sendThrough: '192.168.1.10',
-          tunAutoRoute: false,
-          blockDnsLeaks: true,
-        });
-
-        const settings = tunSettings(config);
-        expect(settings).not.toHaveProperty('autoSystemRoutingTable');
-        expect(settings).not.toHaveProperty('autoSystemWfpBlockLeak');
       }
     });
 
@@ -622,7 +566,6 @@ describe('XrayConfigCompiler', () => {
         {
           logPath: '/tmp/xray.log',
           connectionMode: 'proxy',
-          tunAutoRoute: true,
           blockDnsLeaks: true,
         },
       );
@@ -1373,7 +1316,6 @@ describe('XrayConfigCompiler routing modes', () => {
       {
         logPath: '/tmp/xray.log',
         connectionMode: 'tun',
-        tunAutoRoute: true,
         performanceSettings: {
           ...DEFAULT_PERFORMANCE_SETTINGS,
           routingMode: 'apps',

@@ -11,8 +11,6 @@ import { XrayConfigPipeline } from './XrayConfigPipeline';
 export interface XrayRuntimeContext {
   logPath: string;
   connectionMode: ConnectionMode;
-  sendThrough?: string;
-  tunAutoRoute?: boolean;
   outboundInterface?: string;
   blockDnsLeaks?: boolean;
   tunIpv6?: boolean;
@@ -48,8 +46,6 @@ export class XrayConfigCompiler {
       runtime.logPath,
       runtime.connectionMode,
       {
-        sendThrough: runtime.sendThrough,
-        tunAutoRoute: runtime.tunAutoRoute,
         outboundInterface: runtime.outboundInterface,
         blockDnsLeaks: runtime.blockDnsLeaks,
         tunIpv6: runtime.tunIpv6,

@@ -148,7 +148,6 @@ export function createElectronApiMock(
       blockAds: false,
       blockBittorrent: false,
       domainStrategy: 'AsIs',
-      windowsTunRouting: 'xray',
       tunOutboundInterface: '',
       tunMtu: 1400,
       tunDnsQueryStrategy: 'UseIPv4',
