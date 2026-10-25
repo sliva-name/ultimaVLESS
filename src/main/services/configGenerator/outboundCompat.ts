@@ -174,7 +174,8 @@ function defaultStructuredStreamSecurity(
   return 'none';
 }
 
-function readRawOutboundAddress(settings: unknown): string | undefined {
+/** Server address of a raw outbound: flat `address`, `vnext[0]` or `servers[0]`. */
+export function readRawOutboundAddress(settings: unknown): string | undefined {
   if (!settings || typeof settings !== 'object') return undefined;
   const record = settings as Record<string, unknown>;
   if (typeof record.address === 'string' && record.address) {
@@ -193,7 +194,7 @@ function readRawOutboundAddress(settings: unknown): string | undefined {
   return undefined;
 }
 
-function readRawVlessEncryption(settings: unknown): string | undefined {
+export function readRawVlessEncryption(settings: unknown): string | undefined {
   if (!settings || typeof settings !== 'object') return undefined;
   const record = settings as Record<string, unknown>;
   if (typeof record.encryption === 'string') return record.encryption;

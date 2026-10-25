@@ -18,7 +18,6 @@ import {
 import {
   createLocalProxyInbounds,
   createTunInbound,
-  ensureLocalProxyInbounds,
 } from './configGenerator/inbounds';
 import {
   assertAllowInsecureNotUsed,
@@ -28,6 +27,8 @@ import {
   hasUdpMask,
   migrateLegacyUdpHop,
   normalizeVmessSecurity,
+  readRawOutboundAddress,
+  readRawVlessEncryption,
   requiresPublicTrojanMux,
   wireGuardTargetStrategy,
 } from './configGenerator/outboundCompat';
@@ -195,16 +196,12 @@ export class XrayConfigPipeline {
     }
 
     this.stripUntrustedInbounds(cfg);
-    ensureLocalProxyInbounds(
-      cfg.inbounds,
+    cfg.inbounds = createLocalProxyInbounds(
       perf.sniffingRouteOnly,
       options.ports,
     );
-    const hasTun = cfg.inbounds.some(
-      (ib) => ib?.protocol === 'tun' || ib?.tag === 'tun-in',
-    );
 
-    if (connectionMode === 'tun' && !hasTun) {
+    if (connectionMode === 'tun') {
       cfg.inbounds.unshift(
         createTunInbound({
           ...options,
@@ -267,7 +264,7 @@ export class XrayConfigPipeline {
    * Inbounds are owned by the client, never by the subscription: a raw config
    * could otherwise publish a listener on 0.0.0.0 (an open relay into the user's
    * LAN, running elevated in TUN mode) or supply its own `tun` settings.
-   * Local SOCKS/HTTP are recreated by `ensureLocalProxyInbounds`.
+   * Local SOCKS/HTTP are recreated by `createLocalProxyInbounds`.
    */
   private static stripUntrustedInbounds(cfg: XrayConfig): void {
     if (!Array.isArray(cfg.inbounds) || cfg.inbounds.length === 0) return;
@@ -519,7 +516,7 @@ export class XrayConfigPipeline {
       // Always rewrite Vision mux: raw subs often leave XUDP mux on, and TUN
       // DNS (udp/53) then waits on the mux client → ~12s cold-start stall.
       if (!outbound.mux || hasVisionFlow) {
-        const address = this.readOutboundAddress(outbound);
+        const address = readRawOutboundAddress(outbound.settings);
         const forceMux =
           outbound.protocol === 'trojan' &&
           !!address &&
@@ -566,59 +563,16 @@ export class XrayConfigPipeline {
         protocol === 'trojan' ||
         protocol === 'hysteria'
       ) {
-        const address = this.readOutboundAddress(outbound);
+        const address = readRawOutboundAddress(outbound.settings);
         if (!address) continue;
         assertEncryptedPublicOutbound({
           protocol,
           address,
           streamSecurity,
-          vlessEncryption: this.readVlessEncryption(outbound),
+          vlessEncryption: readRawVlessEncryption(outbound.settings),
         });
       }
     }
-  }
-
-  private static readOutboundAddress(
-    outbound: MutableOutbound,
-  ): string | undefined {
-    const settings = outbound.settings;
-    if (!settings) return undefined;
-    if (typeof settings.address === 'string' && settings.address) {
-      return settings.address;
-    }
-    const vnext = settings.vnext;
-    if (Array.isArray(vnext) && vnext[0] && typeof vnext[0] === 'object') {
-      const address = (vnext[0] as Record<string, unknown>).address;
-      if (typeof address === 'string' && address) return address;
-    }
-    const servers = settings.servers;
-    if (
-      Array.isArray(servers) &&
-      servers[0] &&
-      typeof servers[0] === 'object'
-    ) {
-      const address = (servers[0] as Record<string, unknown>).address;
-      if (typeof address === 'string' && address) return address;
-    }
-    return undefined;
-  }
-
-  private static readVlessEncryption(
-    outbound: MutableOutbound,
-  ): string | undefined {
-    const settings = outbound.settings;
-    if (!settings) return undefined;
-    if (typeof settings.encryption === 'string') return settings.encryption;
-    const vnext = settings.vnext;
-    if (!Array.isArray(vnext) || !vnext[0] || typeof vnext[0] !== 'object') {
-      return undefined;
-    }
-    const users = (vnext[0] as Record<string, unknown>).users;
-    if (!Array.isArray(users) || !users[0] || typeof users[0] !== 'object') {
-      return undefined;
-    }
-    const encryption = (users[0] as Record<string, unknown>).encryption;
-    return typeof encryption === 'string' ? encryption : undefined;
   }
 
   private static readShadowsocksMethod(
@@ -1420,16 +1374,12 @@ export class XrayConfigPipeline {
     maxConnections: number,
   ): void {
     const mutable = streamSettings as MutableStreamSettings;
-    const transport = mutable.method ?? mutable.network;
     const xhttpKey = mutable.xhttpSettings
       ? 'xhttpSettings'
       : mutable.splithttpSettings
         ? 'splithttpSettings'
         : null;
-    if (!xhttpKey) {
-      if (transport !== 'xhttp' && transport !== 'splithttp') return;
-      return;
-    }
+    if (!xhttpKey) return;
     const xhttp = mutable[xhttpKey];
     if (!xhttp || typeof xhttp !== 'object' || Array.isArray(xhttp)) return;
 

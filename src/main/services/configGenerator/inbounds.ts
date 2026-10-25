@@ -93,62 +93,6 @@ export function createLocalProxyInbounds(
   ];
 }
 
-export function ensureLocalProxyInbounds(
-  inbounds: MutableInbound[],
-  sniffingRouteOnly = true,
-  ports: { socks: number; http: number } = {
-    socks: APP_CONSTANTS.PORTS.SOCKS,
-    http: APP_CONSTANTS.PORTS.HTTP,
-  },
-): void {
-  let hasSocks = false;
-  let hasHttp = false;
-
-  const ensureSniffing = (inbound: MutableInbound) => {
-    if (!inbound.sniffing) {
-      inbound.sniffing = createSniffing(sniffingRouteOnly);
-    } else {
-      inbound.sniffing.routeOnly = sniffingRouteOnly;
-    }
-  };
-
-  for (const inbound of inbounds) {
-    if (inbound.protocol === 'socks') {
-      inbound.tag ??= 'socks';
-      inbound.port = ports.socks;
-      inbound.listen = '127.0.0.1';
-      inbound.settings = {
-        auth: 'noauth',
-        ...inbound.settings,
-        udp: true,
-      };
-      ensureSniffing(inbound);
-      hasSocks = true;
-    }
-    if (inbound.protocol === 'http') {
-      inbound.tag ??= 'http';
-      inbound.port = ports.http;
-      inbound.listen = '127.0.0.1';
-      inbound.settings = {
-        allowTransparent: false,
-        ...inbound.settings,
-      };
-      ensureSniffing(inbound);
-      hasHttp = true;
-    }
-  }
-
-  if (!hasSocks || !hasHttp) {
-    const defaults = createLocalProxyInbounds(sniffingRouteOnly, ports);
-    if (!hasSocks) {
-      inbounds.push(defaults[0] as MutableInbound);
-    }
-    if (!hasHttp) {
-      inbounds.push(defaults[1] as MutableInbound);
-    }
-  }
-}
-
 export function createTunInbound(options: TunInboundOptions): XrayInbound {
   const ipv6 = options.ipv6 !== false;
   const dnsServers =
