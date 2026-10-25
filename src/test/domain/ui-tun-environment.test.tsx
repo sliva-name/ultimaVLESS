@@ -53,6 +53,7 @@ const ADAPTERS: NetworkAdapterView[] = [
 function renderNetworkTab(
   tunOutboundInterface = '',
   overrides: Partial<PerformanceSettings> = {},
+  isConnected = false,
 ) {
   const electronApi = createElectronApiMock();
   electronApi.getPerformanceSettings.mockResolvedValue({
@@ -67,7 +68,11 @@ function renderNetworkTab(
   installElectronApiMock(electronApi);
   render(
     <AppSnapshotProvider>
-      <SettingsNetworkTab isOpen isConnected={false} isConnectionBusy={false} />
+      <SettingsNetworkTab
+        isOpen
+        isConnected={isConnected}
+        isConnectionBusy={false}
+      />
     </AppSnapshotProvider>,
   );
   return electronApi;
@@ -156,6 +161,25 @@ describe('TUN DNS leak block', () => {
       expect(electronApi.setPerformanceSettings).toHaveBeenCalledWith(
         expect.objectContaining({ tunBlockDnsLeaks: true }),
       ),
+    );
+  });
+});
+
+describe('connection mode while connected', () => {
+  it('changes the mode instead of asking to disconnect first', async () => {
+    const electronApi = renderNetworkTab('', {}, true);
+
+    expect(
+      screen.getByText(
+        'При выборе другого режима подключение к тому же серверу перезапустится в нём.',
+      ),
+    ).toBeInTheDocument();
+    const tun = await screen.findByRole('button', { name: /^Режим TUN/ });
+    await waitFor(() => expect(tun).toBeEnabled());
+    fireEvent.click(tun);
+
+    await waitFor(() =>
+      expect(electronApi.setConnectionMode).toHaveBeenCalledWith('tun'),
     );
   });
 });

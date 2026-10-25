@@ -491,6 +491,28 @@ export class ConnectionManager extends EventEmitter {
     );
   }
 
+  /**
+   * Brings a connected session up again with the current settings, e.g. in
+   * the connection mode just picked. Goes through the normal connect path, so
+   * TUN still asks for its privileges. No-op unless connected.
+   */
+  public reconnect(): Promise<void> {
+    if (this.state.type !== 'connected') {
+      return Promise.resolve();
+    }
+    const serverId = this.state.serverId;
+    this.abortCurrentOperation();
+    return this.enqueue(
+      () => ({
+        type: 'starting',
+        serverId,
+        mode: this.deps.configService.getConnectionMode(),
+        generation: this.nextGeneration(),
+      }),
+      (signal) => this.connectUnsafe(serverId, signal),
+    );
+  }
+
   public disconnect(
     options: { preservePendingTunReconnect?: boolean } = {},
   ): Promise<void> {

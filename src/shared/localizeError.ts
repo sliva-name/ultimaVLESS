@@ -113,8 +113,8 @@ const RU_PHRASES: PhraseTable = [
     'Не удалось получить IP-адрес сервера: ',
   ],
   [
-    /Disconnect before changing connection mode\./g,
-    'Отключитесь перед изменением режима сети.',
+    /Wait for the connection to finish before changing connection mode\./g,
+    'Дождитесь окончания подключения, прежде чем менять режим сети.',
   ],
   [
     /Linux system proxy control currently requires a GNOME-compatible desktop with gsettings available\./g,

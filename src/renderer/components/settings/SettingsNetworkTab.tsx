@@ -72,7 +72,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
 
   const handleConnectionModeChange = useCallback(
     async (mode: ConnectionMode) => {
-      if (isConnected || isConnectionBusy) {
+      if (isConnectionBusy) {
         setModeError(t('settings.network.disconnectHintError'));
         return;
       }
@@ -95,14 +95,7 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
         );
       }
     },
-    [
-      isConnected,
-      isConnectionBusy,
-      setConnectionMode,
-      setModeError,
-      tunCapability,
-      t,
-    ],
+    [isConnectionBusy, setConnectionMode, setModeError, tunCapability, t],
   );
 
   const [perfError, setPerfError] = useState<string | null>(null);
@@ -140,7 +133,8 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
     !!tunCapability && tunCapability.supported && !tunCapability.hasPrivileges;
   const tunButtonDisabled = tunUnavailable;
   const networkLocked = isConnected || isConnectionBusy;
-  const modeLockedByConnection = networkLocked;
+  // A connected session reconnects in the picked mode; only in-flight work locks.
+  const modeLockedByConnection = isConnectionBusy;
 
   const modeButtonClass = (active: boolean, disabled: boolean) =>
     clsx(
@@ -196,9 +190,11 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
         </button>
       </div>
 
-      <p className="text-sm text-gray-500 leading-relaxed">
-        {t('settings.network.disconnectHint')}
-      </p>
+      {isConnected && (
+        <p className="text-sm text-gray-500 leading-relaxed">
+          {t('settings.network.modeReconnectHint')}
+        </p>
+      )}
       {tunUnavailable && (
         <p className="text-sm text-orange-400 leading-relaxed">
           {tunCapability?.platform === 'darwin'

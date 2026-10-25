@@ -130,9 +130,10 @@ const resources = {
           proxyDesc: 'System proxy for typical desktop apps.',
           tunMode: 'TUN mode',
           tunDesc: 'Full system traffic. May require elevated privileges.',
-          disconnectHint:
-            'Disconnect before changing mode. The choice applies on the next connection.',
-          disconnectHintError: 'Disconnect before changing connection mode.',
+          modeReconnectHint:
+            'Picking the other mode reconnects to the same server in it.',
+          disconnectHintError:
+            'Wait for the connection to finish before changing connection mode.',
           tunUnavailable: 'TUN mode is not supported on this operating system.',
           tunUnsupportedDarwin:
             'TUN mode is currently supported only on Windows and Linux by the bundled Xray core.',
@@ -461,9 +462,10 @@ const resources = {
           tunMode: 'Режим TUN',
           tunDesc:
             'Весь системный трафик. Могут потребоваться права администратора.',
-          disconnectHint:
-            'Отключитесь перед сменой режима. Изменения применятся при следующем подключении.',
-          disconnectHintError: 'Отключитесь перед изменением режима сети.',
+          modeReconnectHint:
+            'При выборе другого режима подключение к тому же серверу перезапустится в нём.',
+          disconnectHintError:
+            'Дождитесь окончания подключения, прежде чем менять режим сети.',
           tunUnavailable:
             'Режим TUN не поддерживается в данной операционной системе.',
           tunUnsupportedDarwin:

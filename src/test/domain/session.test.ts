@@ -437,6 +437,44 @@ describe('session lifecycle', () => {
     });
   });
 
+  it('reconnects a connected session in the newly picked mode', async () => {
+    let mode: ConnectionMode = 'proxy';
+    const { session, server, start, deps } = createSession({
+      configService: {
+        getConnectionMode: vi.fn(() => mode),
+        setSelectedServerId: vi.fn(),
+        setPendingTunReconnect: vi.fn(),
+        clearPendingTunReconnect: vi.fn(),
+      },
+    });
+
+    await session.connect(server.uuid);
+    start.mockClear();
+    mode = 'tun';
+    await session.reconnect();
+
+    // The normal connect path: TUN privileges are checked again.
+    expect(deps.hasTunPrivileges).toHaveBeenCalled();
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ server, mode: 'tun' }),
+      expect.any(AbortSignal),
+    );
+    expect(session.getConnectionState()).toEqual({
+      type: 'connected',
+      serverId: server.uuid,
+      mode: 'tun',
+    });
+  });
+
+  it('does not reconnect a session that is not connected', async () => {
+    const { session, start } = createSession();
+
+    await session.reconnect();
+
+    expect(start).not.toHaveBeenCalled();
+    expect(session.getConnectionState()).toEqual({ type: 'disconnected' });
+  });
+
   it('auto-switches on a blocking health failure', async () => {
     const next = makeServer({ uuid: 'server-2', security: 'tls' });
     const { session, server, switchRuntime, deps } = createSession({
