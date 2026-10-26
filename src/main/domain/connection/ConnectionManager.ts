@@ -183,11 +183,6 @@ export class ConnectionManager extends EventEmitter {
     return this.state;
   }
 
-  /** Mode of the session being started, switched or running. */
-  public getActiveMode(): ConnectionMode | null {
-    return 'mode' in this.state ? this.state.mode : null;
-  }
-
   public getPhase(): SessionPhase {
     return connectionStateToSessionPhase(this.state);
   }
@@ -469,15 +464,12 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public connect(serverId: string): Promise<void> {
-    if (this.state.type === 'connected' && this.runtime.status().xrayRunning) {
-      if (this.state.serverId === serverId) {
-        return Promise.resolve();
-      }
-      // Another server picked while connected: switch without a disconnect.
-      const server = this.servers.get(serverId);
-      if (server) {
-        return this.switchToServer(server, { stopOnFailure: true });
-      }
+    if (
+      this.state.type === 'connected' &&
+      this.state.serverId === serverId &&
+      this.runtime.status().xrayRunning
+    ) {
+      return Promise.resolve();
     }
     this.abortCurrentOperation();
     return this.enqueue(
@@ -536,15 +528,7 @@ export class ConnectionManager extends EventEmitter {
     );
   }
 
-  /**
-   * `stopOnFailure` drops the session when the switch fails. A proxy switch
-   * that fails on the staging ports otherwise leaves the previous server
-   * running behind a session reported as failed.
-   */
-  public switchToServer(
-    server: VlessConfig,
-    options: { stopOnFailure?: boolean } = {},
-  ): Promise<void> {
+  public switchToServer(server: VlessConfig): Promise<void> {
     this.abortCurrentOperation();
     return this.enqueue(
       () => ({
@@ -555,14 +539,7 @@ export class ConnectionManager extends EventEmitter {
         generation: this.nextGeneration(),
       }),
       async (signal) => {
-        try {
-          await this.runtime.switch(this.buildSpec(server), signal);
-        } catch (error) {
-          if (options.stopOnFailure && !signal.aborted) {
-            await this.runtime.stop();
-          }
-          throw error;
-        }
+        await this.runtime.switch(this.buildSpec(server), signal);
         this.deps.configService.setSelectedServerId(server.uuid);
         this.deps.connectionMonitorService.startMonitoring(server);
       },

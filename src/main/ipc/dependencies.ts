@@ -98,7 +98,6 @@ export function getPingRefreshRunner(): PingRefreshRunner {
       isPingUnsafePhase(
         connectionManager.getPhase(),
         connectionManager.isBusy(),
-        connectionManager.getActiveMode(),
       ),
   });
   return pingRefreshSingleton;
