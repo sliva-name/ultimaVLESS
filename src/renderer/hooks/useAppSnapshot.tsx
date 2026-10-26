@@ -295,14 +295,12 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
 
   const selectServer = useCallback(
     (server: VlessConfig) => {
-      // In-flight sessions keep their server so the tunnel is not retargeted
-      // from under a live operation; a connected one switches to the pick.
+      // Allow picks while idle or after a failed connect. In-flight and
+      // connected sessions keep the current server so the tunnel is not
+      // retargeted from under a live operation.
       if (!isSessionPhaseSelectable(snapshot.session.phase)) {
         return;
       }
-      const switchSession =
-        snapshot.session.phase === 'connected' &&
-        snapshot.session.activeServerId !== server.uuid;
       const version = ++selectVersionRef.current;
       const row: ServerRowIdentity = {
         uuid: server.uuid,
@@ -320,15 +318,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       });
       void window.electronAPI
         .setSelectedServerId(server.uuid)
-        .then(async () => {
-          if (switchSession) {
-            // Main reports a failed switch through the session's last error.
-            await window.electronAPI.connect(server.uuid).catch((error) => {
-              console.error('Server switch failed', error);
-            });
-          }
-          await refreshSnapshot();
-        })
+        .then(() => refreshSnapshot())
         .catch((error) => {
           console.error('Failed to persist selected server', error);
           if (pendingSelectionRef.current?.version === version) {
@@ -344,7 +334,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
           setClientError('Failed to persist selected server');
         });
     },
-    [refreshSnapshot, snapshot.session.phase, snapshot.session.activeServerId],
+    [refreshSnapshot, snapshot.session.phase],
   );
 
   const value = useMemo<AppSnapshotContextValue>(

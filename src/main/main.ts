@@ -118,12 +118,25 @@ async function stopNetworkStack(reason: QuitReason): Promise<void> {
 }
 
 /**
- * Undoes what a crashed or killed session left behind (system proxy on, TUN
- * routes pinned). Runs in the background once the window is up; anything that
- * mutates the network stack waits on `startupRecovery` before proceeding.
+ * Undoes what a crashed or killed session left behind (system proxy on, its
+ * Xray still running, TUN routes pinned by earlier versions). Runs in the
+ * background once the window is up; anything that mutates the network stack
+ * waits on `startupRecovery` before proceeding.
  */
 async function recoverOrphanedNetworkState(): Promise<void> {
   const recoveryTimer = new PerfTimer('Startup', 'recoverOrphanedNetworkState');
+  try {
+    const { stopOrphanedXrayCores } =
+      await import('./services/xray/orphanedCores');
+    const stopped = await stopOrphanedXrayCores();
+    if (stopped.length > 0) {
+      logStartupStep('Stopped Xray left by an earlier instance', {
+        count: stopped.length,
+      });
+    }
+  } catch (error) {
+    logger.error('Main', 'Failed to stop orphaned Xray on startup', error);
+  }
   try {
     const { systemProxyService } =
       await import('./services/SystemProxyService');

@@ -24,9 +24,7 @@ interface SidebarProps {
   subscriptions: Subscription[];
   selectedServer: VlessConfig | null;
   isConnected: boolean;
-  /** Pings would run through the tunnel of a connected TUN session. */
-  pingBlockedWhileConnected?: boolean;
-  /** True while a connect or switch is in flight. */
+  /** True while connected or in-flight — idle and failed sessions can still pick a server. */
   selectionLocked?: boolean;
   isRefreshingPings?: boolean;
   onSelectServer: (server: VlessConfig) => void;
@@ -41,7 +39,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   subscriptions,
   selectedServer,
   isConnected,
-  pingBlockedWhileConnected = true,
   selectionLocked = false,
   isRefreshingPings = false,
   onSelectServer,
@@ -65,8 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   useRenderPerf('Sidebar', [servers.length, subscriptions.length]);
   const pingInProgress = isPinging || isRefreshingPings;
-  const pingLocked =
-    selectionLocked || (isConnected && pingBlockedWhileConnected);
+  const pingLocked = selectionLocked || isConnected;
   const pingAllDisabled = pingInProgress ? !onStopPing : pingLocked;
   const pingSelectedDisabled = !selectedServer || pingInProgress || pingLocked;
 
