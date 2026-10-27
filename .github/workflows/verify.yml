@@ -60,3 +60,51 @@ jobs:
 
       - name: Build the WebView bundle
         run: npm --prefix mobile run build:web
+
+  android:
+    name: Android APK (debug)
+    # A release builds and signs its own APKs; no second build there.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install dependencies
+        run: |
+          npm install --no-audit --no-fund
+          npm --prefix mobile ci --no-audit --no-fund
+
+      - name: Fetch the Android Xray core
+        run: npm --prefix mobile run fetch:core
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build debug APKs
+        run: npm --prefix mobile run apk:debug
+
+      - name: Upload APKs for testing
+        uses: actions/upload-artifact@v7
+        with:
+          name: UltimaVLESS-Android-debug
+          path: |
+            mobile/android/app/build/outputs/apk/debug/*-arm64-v8a-debug.apk
+            mobile/android/app/build/outputs/apk/debug/*-universal-debug.apk
+          if-no-files-found: error
+          retention-days: 7

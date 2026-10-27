@@ -61,6 +61,35 @@ npm run test:mobile
 
 `test:mobile` гоняет бэкенд и интерфейс в jsdom с поддельным нативным плагином (`mobile/test/fakeCore.ts`): подключение, переподключение к другому серверу, отключение из уведомления, перехват VPN другим приложением, маршрутизация по приложениям, пинг без сессии и его блокировка во время сессии. `mobile/src/platform/conformance.ts` на этапе проверки типов следит, чтобы Android-замены покрывали всё, что десктопный код вызывает у оригинальных модулей.
 
+## CI и релизы
+
+- **Pull request** (`verify.yml`): задача `mobile` проверяет типы, гоняет тесты и собирает WebView-бандл; задача `android` собирает отладочные APK. APK для `arm64-v8a` и универсальный прикладываются к запуску как артефакт `UltimaVLESS-Android-debug` на 7 дней — их можно скачать со страницы проверок и поставить на телефон.
+- **Релиз** (`release.yml`): задача `build-android` собирает APK, подписывает их ключом из секретов и выкладывает в релиз вместе с `SHA256SUMS-android.txt`. Без ключа релиз выходит без APK, а в запуске остаётся предупреждение.
+
+Ключ подписи нужен один на всё время жизни приложения: Android ставит обновление поверх установленного APK, только если подписи совпадают. Потеряете ключ — пользователям придётся удалить приложение и поставить его заново. Создать ключ и добавить секреты:
+
+```bash
+keytool -genkeypair -v -keystore ultimavless-release.jks -alias ultimavless -keyalg RSA -keysize 4096 -validity 36500
+```
+
+```bash
+base64 -w0 ultimavless-release.jks | gh secret set ANDROID_KEYSTORE_BASE64
+```
+
+```bash
+gh secret set ANDROID_KEYSTORE_PASSWORD
+```
+
+```bash
+gh secret set ANDROID_KEY_ALIAS --body ultimavless
+```
+
+```bash
+gh secret set ANDROID_KEY_PASSWORD
+```
+
+Сам `.jks` храните вне репозитория, с резервной копией.
+
 ## Обновления
 
 Приложение проверяет последний релиз на GitHub и ищет в нём `UltimaVLESS-Android-<версия>-<abi>.apk` (или `-universal.apk`). Новая версия скачивается в фоне, кнопка установки открывает системный установщик.
