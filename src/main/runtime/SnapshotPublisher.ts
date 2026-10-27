@@ -69,8 +69,12 @@ export class SnapshotPublisher {
 
   constructor(private readonly options: SnapshotPublisherOptions) {
     this.coalesceMs = options.coalesceMs ?? SNAPSHOT_COALESCE_MS;
-    this.schedule = options.schedule ?? setTimeout;
-    this.cancelSchedule = options.cancelSchedule ?? clearTimeout;
+    // Wrapped: browsers (the Android WebView) reject timer functions called
+    // as methods of another object ("Illegal invocation").
+    this.schedule =
+      options.schedule ?? ((callback, ms) => setTimeout(callback, ms));
+    this.cancelSchedule =
+      options.cancelSchedule ?? ((handle) => clearTimeout(handle));
   }
 
   public push(

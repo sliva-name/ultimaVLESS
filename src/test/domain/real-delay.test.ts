@@ -331,13 +331,13 @@ describe('createServerLatencyProbe', () => {
 });
 
 describe('pingMethod setting', () => {
-  it('defaults to TCP and keeps only known methods', () => {
-    expect(normalizePerformanceSettings({}).pingMethod).toBe('tcp');
+  it('defaults to real delay and keeps only known methods', () => {
+    expect(normalizePerformanceSettings({}).pingMethod).toBe('real');
     expect(
       normalizePerformanceSettings({ pingMethod: 'bogus' }).pingMethod,
-    ).toBe('tcp');
-    expect(
-      normalizePerformanceSettings({ pingMethod: 'real' }).pingMethod,
     ).toBe('real');
+    expect(normalizePerformanceSettings({ pingMethod: 'tcp' }).pingMethod).toBe(
+      'tcp',
+    );
   });
 });

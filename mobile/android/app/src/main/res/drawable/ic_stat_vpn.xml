@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status bar, notification and tile icon: the logo's shield, white on clear. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <path
+        android:pathData="M256,64 L412,128 L412,258 C412,346 326,412 256,448 C186,412 100,346 100,258 L100,128 Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="40"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M184,196 L184,292 C184,334 222,354 256,354 C290,354 328,334 328,292 L328,196"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="44"
+        android:strokeLineCap="round" />
+</vector>

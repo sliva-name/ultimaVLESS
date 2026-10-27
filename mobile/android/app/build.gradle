@@ -1,0 +1,125 @@
+import groovy.json.JsonSlurper
+
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+// The Android app ships with the desktop version number (root package.json).
+def appVersion = new JsonSlurper().parse(file('../../../package.json')).version as String
+def versionParts = appVersion.tokenize('.').collect { it.replaceAll(/\D.*$/, '') as int }
+def appVersionCode = versionParts[0] * 1_000_000 + versionParts[1] * 1_000 + versionParts[2]
+
+/** Release signing: gradle properties or environment, never committed files. */
+def signingValue = { String name ->
+    project.findProperty(name) ?: System.getenv(name)
+}
+def releaseKeystore = signingValue('ULTIMA_KEYSTORE_FILE')
+
+android {
+    namespace = "com.ultima.vless"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.ultima.vless"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode appVersionCode
+        versionName appVersion
+        ndk {
+            // libv2ray also carries 32-bit x86, which no current device needs.
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        if (releaseKeystore) {
+            release {
+                storeFile file(releaseKeystore)
+                storePassword signingValue('ULTIMA_KEYSTORE_PASSWORD')
+                keyAlias signingValue('ULTIMA_KEY_ALIAS')
+                keyPassword signingValue('ULTIMA_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Without a keystore the release APK is debug-signed so it still
+            // installs; such builds cannot update one another across machines.
+            signingConfig releaseKeystore ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            universalApk true
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    buildFeatures {
+        buildConfig true
+    }
+    packaging {
+        jniLibs {
+            // Compressed in the APK: the Go core is large, and sideloaded
+            // updates are downloaded whole.
+            useLegacyPackaging true
+        }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
+    }
+}
+
+// UltimaVLESS-Android-7.19.0-arm64-v8a.apk; the updater picks the APK by ABI.
+android.applicationVariants.configureEach { variant ->
+    variant.outputs.configureEach { output ->
+        def abi = output.getFilter(com.android.build.OutputFile.ABI) ?: 'universal'
+        def suffix = variant.buildType.name == 'release' ? '' : "-${variant.buildType.name}"
+        output.outputFileName = "UltimaVLESS-Android-${appVersion}-${abi}${suffix}.apk"
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // Xray-core for Android (2dust/AndroidLibXrayLite), fetched by `npm run fetch:core`.
+    implementation files('libs/libv2ray.aar')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-ktx:$androidxCoreVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

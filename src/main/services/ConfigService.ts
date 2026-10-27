@@ -26,7 +26,28 @@ export class ConfigService {
   constructor() {
     this.store = getAppStore();
     this.migrateLegacyPerformanceDefaults();
+    this.migrateToRealDelayDefault();
     logger.info('ConfigService', 'Initialized', { path: this.store.path });
+  }
+
+  /**
+   * Real delay replaced TCP as the default ping method. The store holds the
+   * old default verbatim (written on first launch), so a stored `tcp` almost
+   * never was a choice: move it once. A later switch back to TCP stays.
+   */
+  private migrateToRealDelayDefault(): void {
+    if (this.store.get('realDelayDefaultApplied')) {
+      return;
+    }
+    const stored = this.store.get('performanceSettings');
+    if (stored && stored.pingMethod === 'tcp') {
+      this.store.set('performanceSettings', {
+        ...stored,
+        pingMethod: 'real',
+      });
+      logger.info('ConfigService', 'Moved the ping method to real delay');
+    }
+    this.store.set('realDelayDefaultApplied', true);
   }
 
   /**

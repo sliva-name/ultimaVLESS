@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["../src/*"],
+      "@desktop/*": ["../src/*"]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "vite.config.mts",
+    "capacitor.config.ts",
+    "../src/renderer/preload.d.ts",
+    "../src/renderer/vite-env.d.ts"
+  ],
+  "exclude": ["node_modules", "dist", "android"]
+}

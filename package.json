@@ -14,6 +14,8 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
+    "typecheck:mobile": "tsc --noEmit -p mobile/tsconfig.json",
+    "test:mobile": "vitest run --config mobile/vitest.config.mts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "build:renderer": "vite build",

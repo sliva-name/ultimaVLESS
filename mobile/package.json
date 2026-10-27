@@ -1,0 +1,22 @@
+{
+  "name": "ultima-vless-mobile",
+  "private": true,
+  "description": "Android build of UltimaVLESS: the desktop UI and main-process logic in a Capacitor WebView over a native Xray VpnService",
+  "license": "MIT",
+  "scripts": {
+    "build:web": "node ../node_modules/vite/bin/vite.js build --config vite.config.mts",
+    "dev": "node ../node_modules/vite/bin/vite.js --config vite.config.mts",
+    "fetch:core": "node scripts/fetch-core.mjs",
+    "sync": "npm run build:web && cap sync android",
+    "apk:debug": "npm run sync && node scripts/gradle.mjs assembleDebug",
+    "apk:release": "npm run sync && node scripts/gradle.mjs assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "buffer": "6.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

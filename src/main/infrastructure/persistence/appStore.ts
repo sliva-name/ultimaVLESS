@@ -36,6 +36,8 @@ export interface AppStoreSchema {
   performanceSettings: PerformanceSettings;
   uiLanguage?: 'ru' | 'en';
   autoSwitchingEnabled?: boolean;
+  /** Set once the stored ping method has been moved to real delay. */
+  realDelayDefaultApplied?: boolean;
 }
 
 let appStore: Store<AppStoreSchema> | null = null;

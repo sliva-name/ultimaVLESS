@@ -26,6 +26,9 @@ interface AppListEditorProps {
   disabled?: boolean;
 }
 
+/** Android names apps by package; there are no executables to pick on disk. */
+const CAN_BROWSE_FILES = import.meta.env.VITE_TARGET !== 'android';
+
 /**
  * Editor for a list of executables. Names can be picked from the running
  * programs, typed, or chosen on disk; either way only the file name is stored,
@@ -165,15 +168,17 @@ export const AppListEditor: React.FC<AppListEditorProps> = ({
           <Plus className="w-4 h-4" />
           {t('settings.network.splitTunnelAdd')}
         </button>
-        <button
-          type="button"
-          onClick={() => void handleBrowse()}
-          disabled={disabled || picking || atLimit}
-          className={buttonClass}
-        >
-          <FolderOpen className="w-4 h-4" />
-          {t('settings.network.routingAppsBrowse')}
-        </button>
+        {CAN_BROWSE_FILES && (
+          <button
+            type="button"
+            onClick={() => void handleBrowse()}
+            disabled={disabled || picking || atLimit}
+            className={buttonClass}
+          >
+            <FolderOpen className="w-4 h-4" />
+            {t('settings.network.routingAppsBrowse')}
+          </button>
+        )}
       </div>
 
       {error && (

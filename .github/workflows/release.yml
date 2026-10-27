@@ -390,9 +390,108 @@ jobs:
             release/**/*.exe.blockmap
             release/SHA256SUMS-windows.txt
 
+  build-android:
+    name: Build & Publish Android
+    needs: create-release
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.create-release.outputs.tag_name }}
+    steps:
+      # The in-app updater installs a new APK over the old one only when both
+      # carry the same signature, so releases are signed with one long-lived
+      # key. Without it the release goes out without Android APKs.
+      - name: Restore the signing key
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning title=No Android APK::ANDROID_KEYSTORE_BASE64 is not set, so this release has no APK. See mobile/README.md."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.create-release.outputs.tag_name }}
+
+      - name: Setup Node
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+
+      - name: Setup Java
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install dependencies
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          npm install --no-audit --no-fund
+          npm --prefix mobile ci --no-audit --no-fund
+
+      - name: Validate tag matches package version
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          TAG_VERSION="${RELEASE_TAG#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json version ($PACKAGE_VERSION)"
+            exit 1
+          fi
+
+      - name: Fetch the Android Xray core
+        if: steps.signing.outputs.enabled == 'true'
+        run: npm --prefix mobile run fetch:core
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build signed APKs
+        if: steps.signing.outputs.enabled == 'true'
+        run: npm --prefix mobile run apk:release
+        env:
+          ULTIMA_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          ULTIMA_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ULTIMA_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ULTIMA_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Build SHA256 checksums
+        if: steps.signing.outputs.enabled == 'true'
+        working-directory: mobile/android/app/build/outputs/apk/release
+        run: |
+          if ! ls UltimaVLESS-Android-*.apk >/dev/null 2>&1; then
+            echo "No APK artifacts were produced"
+            exit 1
+          fi
+          sha256sum UltimaVLESS-Android-*.apk > SHA256SUMS-android.txt
+
+      - name: Upload Android artifacts to draft release
+        if: steps.signing.outputs.enabled == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: true
+          files: |
+            mobile/android/app/build/outputs/apk/release/UltimaVLESS-Android-*.apk
+            mobile/android/app/build/outputs/apk/release/SHA256SUMS-android.txt
+
   publish-release:
     name: Publish GitHub Release
-    needs: [create-release, build-linux, build-macos, build-windows]
+    needs:
+      [create-release, build-linux, build-macos, build-windows, build-android]
     runs-on: ubuntu-latest
     steps:
       - name: Publish draft as latest after all artifacts are uploaded
