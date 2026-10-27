@@ -332,14 +332,14 @@ export const SettingsNetworkTab: React.FC<SettingsNetworkTabProps> = ({
             onChange={(v) => updatePerfField('pingMethod', v as PingMethod)}
             options={[
               {
-                value: 'tcp',
-                label: t('settings.network.pingMethodTcp'),
-                description: t('settings.network.pingMethodTcpDesc'),
-              },
-              {
                 value: 'real',
                 label: t('settings.network.pingMethodReal'),
                 description: t('settings.network.pingMethodRealDesc'),
+              },
+              {
+                value: 'tcp',
+                label: t('settings.network.pingMethodTcp'),
+                description: t('settings.network.pingMethodTcpDesc'),
               },
             ]}
           />

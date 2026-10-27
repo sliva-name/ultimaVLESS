@@ -333,5 +333,7 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   proxyIps: [],
   proxyApps: [],
   directApps: [],
-  pingMethod: 'tcp',
+  // A TCP connect only shows that the port answers: behind DPI, or another
+  // VPN's own TCP stack, servers that pass no traffic still look alive.
+  pingMethod: 'real',
 };
