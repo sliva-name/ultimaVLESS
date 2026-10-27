@@ -1,0 +1,67 @@
+@import '../../../src/renderer/index.css';
+
+/* The desktop renderer's classes live outside this package. */
+@source '../../../src/renderer';
+@source '.';
+
+/*
+ * Capacitor's SystemBars plugin injects the system bar insets as
+ * --safe-area-inset-*; a browser preview falls back to env().
+ */
+:root {
+  --mobile-inset-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --mobile-inset-bottom: var(
+    --safe-area-inset-bottom,
+    env(safe-area-inset-bottom, 0px)
+  );
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+  background-color: #121212;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.mobile-shell {
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+
+.mobile-top-bar {
+  padding-top: calc(var(--mobile-inset-top) + 0.75rem);
+}
+
+.mobile-bottom-nav {
+  padding-bottom: var(--mobile-inset-bottom);
+}
+
+/*
+ * A large server group scrolls inside itself; on a phone let it take the
+ * screen between the top bar, the group header, the connect bar and the tabs.
+ */
+.mobile-shell [data-testid='virtualized-server-list'] {
+  max-height: calc(
+    100dvh - 23rem - var(--mobile-inset-top) - var(--mobile-inset-bottom)
+  );
+}
+
+/* Scrollbars are an overlay on Android; the desktop gutters only take room. */
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}

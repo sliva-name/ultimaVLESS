@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed icon (Android 13+): the logo's shapes in one color. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <group
+        android:pivotX="256"
+        android:pivotY="256"
+        android:scaleX="0.72"
+        android:scaleY="0.72">
+        <path
+            android:pathData="M256,80 L400,140 L400,260 C400,340 320,400 256,432 C192,400 112,340 112,260 L112,140 Z"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="24"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M180,200 L180,300 C180,340 220,360 256,360 C292,360 332,340 332,300 L332,200"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="28"
+            android:strokeLineCap="round" />
+    </group>
+</vector>

@@ -100,6 +100,21 @@ const RU_PHRASES: PhraseTable = [
     /TUN mode requires elevated privileges, but the authorization request was declined or dismissed\./g,
     'Для режима TUN нужны повышенные права, но запрос был отклонён или закрыт.',
   ],
+
+  // Android VpnService
+  [
+    /VPN permission was denied/g,
+    'Нет разрешения на VPN: подтвердите запрос Android при подключении',
+  ],
+  [
+    /VPN was turned off by another VPN app/g,
+    'VPN отключён: туннель занял другой VPN-клиент',
+  ],
+  [/VPN service stopped/g, 'Служба VPN остановлена системой'],
+  [
+    /Xray did not open the local proxy on 127\.0\.0\.1:(?<port>\d+)/g,
+    'Xray не открыл локальный прокси на 127.0.0.1:$<port>',
+  ],
   [
     /Network adapter "(?<name>[^"]*)" selected for TUN has no IPv4 default gateway \(disconnected, or not an internet connection\)\. Choose another adapter in Settings → Network or set it to Automatic\./g,
     'У адаптера «$<name>», выбранного для TUN, нет IPv4-шлюза по умолчанию (он отключён или не выходит в интернет). Выберите другой адаптер в «Настройки → Сеть» или «Автоматически».',

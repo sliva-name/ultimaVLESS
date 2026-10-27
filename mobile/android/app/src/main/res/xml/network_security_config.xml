@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The connection checks are plain HTTP on purpose, as on desktop
+  (connectivitycheck.gstatic.com/generate_204, 1.1.1.1, captive.apple.com, …),
+  sent directly and through Xray's local proxy. Subscriptions stay HTTPS-only,
+  enforced by the subscription service itself.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

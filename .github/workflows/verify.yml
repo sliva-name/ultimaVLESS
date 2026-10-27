@@ -30,3 +30,33 @@ jobs:
 
       - name: Verify CI gates
         run: npm run verify:ci
+
+  mobile:
+    name: Android app (shared TypeScript layer)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm install --no-audit --no-fund
+          npm --prefix mobile ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck:mobile
+
+      - name: Test
+        run: npm run test:mobile
+
+      - name: Build the WebView bundle
+        run: npm --prefix mobile run build:web
