@@ -151,7 +151,8 @@ class UltimaVpnService : VpnService() {
             ensureChannel(request.text.channelName)
             enterForeground(buildNotification(request, null))
             mainHandler.removeCallbacks(speedRefresh)
-            mainHandler.postDelayed(speedRefresh, SPEED_REFRESH_MS)
+            // Proxy-only sessions show the ports, not the speed.
+            if (request.isTun) mainHandler.postDelayed(speedRefresh, SPEED_REFRESH_MS)
         }
     }
 
@@ -203,10 +204,17 @@ class UltimaVpnService : VpnService() {
             .build()
     }
 
+    /**
+     * Server name as the title; the text says the mode. VPN sessions show the
+     * speed, download first; proxy-only sessions show the local ports.
+     */
     private fun buildNotification(request: SessionRequest, speed: Pair<Long, Long>?): Notification {
-        val summary = if (request.isTun) request.text.connected else request.text.proxyOnly
-        val text = if (speed == null) summary else
-            "$summary · ↑ ${formatRate(speed.first)} ↓ ${formatRate(speed.second)}"
+        val labels = request.text
+        val text = when {
+            !request.isTun -> labels.proxyOnly
+            speed == null -> labels.vpn
+            else -> "${labels.vpn} · ↓ ${formatRate(speed.second, labels)} · ↑ ${formatRate(speed.first, labels)}"
+        }
         val stopIntent = PendingIntent.getService(
             this,
             1,
@@ -234,12 +242,16 @@ class UltimaVpnService : VpnService() {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
-    private fun formatRate(bytesPerSecond: Long): String {
-        val value = bytesPerSecond.coerceAtLeast(0).toDouble()
-        return when {
-            value >= 1024 * 1024 -> String.format(Locale.ROOT, "%.1f MB/s", value / (1024 * 1024))
-            value >= 1024 -> String.format(Locale.ROOT, "%.0f KB/s", value / 1024)
-            else -> String.format(Locale.ROOT, "%.0f B/s", value)
+    /** "3,2 МБ/с", "140 КБ/с": one decimal below 10, as in the app's own stats. */
+    private fun formatRate(bytesPerSecond: Long, labels: NotificationText): String {
+        var value = bytesPerSecond.coerceAtLeast(0).toDouble()
+        var unit = 0
+        while (value >= 1024 && unit < labels.rateUnits.lastIndex) {
+            value /= 1024
+            unit += 1
         }
+        val pattern = if (unit == 0 || value >= 10) "%.0f" else "%.1f"
+        val number = String.format(Locale.ROOT, pattern, value).replace(".", labels.decimalSeparator)
+        return "$number ${labels.rateUnits[unit]}"
     }
 }

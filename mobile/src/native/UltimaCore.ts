@@ -25,9 +25,14 @@ export interface VpnOptions {
 /** Localized text for the foreground-service notification and the tile. */
 export interface NotificationText {
   channelName: string;
-  connected: string;
+  /** Text in VPN mode; the native side appends the speed. */
+  vpn: string;
+  /** Text in proxy-only mode, with the local ports. */
   proxyOnly: string;
   disconnect: string;
+  /** Bytes, kilobytes and megabytes per second. */
+  rateUnits: [string, string, string];
+  decimalSeparator: string;
 }
 
 export interface CoreStartOptions {
