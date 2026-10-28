@@ -5,6 +5,56 @@
 @source '.';
 
 /*
+ * Android palette (dark). Tailwind reads every token as a variable, so a
+ * light palette would only have to redefine them.
+ */
+@theme {
+  --color-canvas: #0e0f11;
+  --color-s1: #151619;
+  --color-s2: #1b1d21;
+  --color-s3: #23262b;
+  --color-line: #2a2d33;
+  --color-line2: #363a41;
+  --color-fg: #ecedef;
+  --color-fg2: #a9adb6;
+  --color-fg3: #80858f;
+  --color-dim: #363a41;
+  --color-acc: #8fa3ff;
+  --color-acc-fill: #4a63e7;
+  --color-acc-soft: #1c2340;
+  --color-acc-line: #34407a;
+  --color-acc-nav: #b4c1ff;
+  --color-ok: #4ade9a;
+  --color-ok-soft: #0f2a1f;
+  --color-ok-line: #1f5a40;
+  --color-warn: #f5b544;
+  --color-warn-soft: #2b2110;
+  --color-warn-line: #5e4718;
+  --color-bad: #ff7a7a;
+  --color-bad-soft: #2e1416;
+  --color-bad-line: #6a2a2e;
+  --color-violet: #c4b5fd;
+  --color-violet-soft: #241d3a;
+  --color-teal: #5eead4;
+  --color-teal-soft: #0f2a2a;
+  --color-thumb: #2e3238;
+  --color-tile: #202328;
+  --color-scrim: rgb(0 0 0 / 0.6);
+  --color-flag-ring: rgb(255 255 255 / 0.14);
+  /* Latency badges: < 100, < 200, < 300 ms, slower. */
+  --color-lat1: #4ade9a;
+  --color-lat1-soft: rgb(74 222 154 / 0.12);
+  --color-lat2: #facc15;
+  --color-lat2-soft: rgb(250 204 21 / 0.12);
+  --color-lat3: #fb923c;
+  --color-lat3-soft: rgb(251 146 60 / 0.13);
+  --color-lat4: #ff7a7a;
+  --color-lat4-soft: rgb(255 122 122 / 0.13);
+  --shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-float: 0 8px 24px rgb(0 0 0 / 0.45);
+}
+
+/*
  * Capacitor's SystemBars plugin injects the system bar insets as
  * --safe-area-inset-*; a browser preview falls back to env().
  */
@@ -21,7 +71,7 @@ html,
 body {
   height: 100%;
   overscroll-behavior: none;
-  background-color: #121212;
+  background-color: var(--color-canvas);
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
@@ -35,26 +85,51 @@ textarea,
 }
 
 .mobile-shell {
+  font-size: 14px;
+  line-height: 20px;
   padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
 }
 
-.mobile-top-bar {
-  padding-top: calc(var(--mobile-inset-top) + 0.75rem);
+.mobile-inset-top {
+  padding-top: var(--mobile-inset-top);
 }
 
-.mobile-bottom-nav {
+.mobile-inset-bottom {
   padding-bottom: var(--mobile-inset-bottom);
 }
 
-/*
- * A large server group scrolls inside itself; on a phone let it take the
- * screen between the top bar, the group header, the connect bar and the tabs.
- */
-.mobile-shell [data-testid='virtualized-server-list'] {
-  max-height: calc(
-    100dvh - 23rem - var(--mobile-inset-top) - var(--mobile-inset-bottom)
-  );
+/* Connection dial: the arc turns while a session starts or switches. */
+@keyframes dial-spin {
+  from {
+    transform: rotate(var(--dial-base, -90deg));
+  }
+  to {
+    transform: rotate(calc(var(--dial-base, -90deg) + 360deg));
+  }
+}
+
+.dial-arc {
+  transform-origin: 120px 120px;
+  transform: rotate(var(--dial-base, -90deg));
+  transition:
+    stroke-dasharray 420ms cubic-bezier(0.2, 0, 0, 1),
+    stroke 420ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 220ms;
+}
+
+.dial-arc[data-spin='connecting'] {
+  animation: dial-spin 1400ms linear infinite;
+}
+
+.dial-arc[data-spin='switching'] {
+  animation: dial-spin 1000ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dial-arc[data-spin] {
+    animation: none;
+  }
 }
 
 /* Scrollbars are an overlay on Android; the desktop gutters only take room. */
