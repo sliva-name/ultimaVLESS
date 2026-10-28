@@ -1,23 +1,15 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React from 'react';
 import clsx from 'clsx';
 import { AlertTriangle, Route } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { AppOption } from '@/shared/appRouting';
 import type {
   ConnectionMode,
   PerformanceSettings,
   RoutingMode,
 } from '@/shared/types';
+import { useKnownApps } from '@/renderer/hooks/useKnownApps';
 import { AppListEditor } from './AppListEditor';
 import { SplitTunnelEditor } from './SplitTunnelEditor';
-
-const RUNNING_APPS_REFRESH_MS = 10_000;
 
 interface RoutingRulesSectionProps {
   settings: PerformanceSettings;
@@ -63,59 +55,8 @@ export const RoutingRulesSection: React.FC<RoutingRulesSectionProps> = ({
   locked,
 }) => {
   const { t } = useTranslation();
-  const [runningApps, setRunningApps] = useState<AppOption[]>([]);
-  const [pickedApps, setPickedApps] = useState<AppOption[]>([]);
-  const [appsLoading, setAppsLoading] = useState(true);
-  const lastFetchRef = useRef(0);
-  const mountedRef = useRef(true);
-
-  const loadRunningApps = useCallback(() => {
-    lastFetchRef.current = Date.now();
-    return window.electronAPI
-      .listRunningApps()
-      .then(
-        (apps) => {
-          if (mountedRef.current) setRunningApps(apps);
-        },
-        (err) => console.error('Failed to list running apps:', err),
-      )
-      .finally(() => {
-        if (mountedRef.current) setAppsLoading(false);
-      });
-  }, []);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    void loadRunningApps();
-    return () => {
-      mountedRef.current = false;
-    };
-  }, [loadRunningApps]);
-
-  // Programs started after the settings opened appear the next time a list
-  // opens; the throttle keeps PowerShell from running on every click.
-  const refreshRunningApps = useCallback(() => {
-    if (appsLoading) return;
-    if (Date.now() - lastFetchRef.current < RUNNING_APPS_REFRESH_MS) return;
-    setAppsLoading(true);
-    void loadRunningApps();
-  }, [appsLoading, loadRunningApps]);
-
-  const rememberPicked = useCallback((apps: AppOption[]) => {
-    setPickedApps((prev) => [
-      ...prev.filter((known) => !apps.some((app) => app.name === known.name)),
-      ...apps,
-    ]);
-  }, []);
-
-  // Picked files keep their icon in the chips even when they are not running.
-  const knownApps = useMemo(() => {
-    const running = new Set(runningApps.map((app) => app.name));
-    return [
-      ...runningApps,
-      ...pickedApps.filter((app) => !running.has(app.name)),
-    ];
-  }, [pickedApps, runningApps]);
+  const { knownApps, appsLoading, refreshRunningApps, rememberPicked } =
+    useKnownApps();
 
   const mode = settings.routingMode;
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
   RefreshCw,
   AlertTriangle,
@@ -16,6 +16,7 @@ import { ConnectionMonitorEvent, type AppSnapshot } from '@/shared/ipc';
 import { Toggle } from '@/renderer/components/ui';
 import { ConflictingAppsPanel } from '@/renderer/components/ConflictingAppsPanel';
 import { useConflictingApps } from '@/renderer/hooks/useConflictingApps';
+import { useDiagnosticsActions } from '@/renderer/hooks/useDiagnosticsActions';
 
 interface SettingsDiagnosticsTabProps {
   servers: VlessConfig[];
@@ -36,8 +37,14 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const localize = (message: string) => localizeError(message, i18n.language);
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState<string | null>(null);
+  const {
+    copied,
+    copyError,
+    toggleAutoSwitching: handleToggleAutoSwitching,
+    clearBlocked: handleClearBlocked,
+    copyLogs: handleCopyLogs,
+    openLogFolder: handleOpenFolder,
+  } = useDiagnosticsActions();
   const conflicts = useConflictingApps();
   const { runScan: scanConflicts } = conflicts;
   const { session, health, process, recovery, autoSwitchingEnabled } = snapshot;
@@ -55,42 +62,6 @@ export const SettingsDiagnosticsTab: React.FC<SettingsDiagnosticsTabProps> = ({
   const healthStateLabel = health.lastHealthState
     ? capitalize(health.lastHealthState)
     : null;
-
-  const handleToggleAutoSwitching = useCallback(async (enabled: boolean) => {
-    try {
-      await window.electronAPI.setAutoSwitching(enabled);
-    } catch (err) {
-      console.error('Failed to toggle auto-switching:', err);
-    }
-  }, []);
-
-  const handleClearBlocked = useCallback(async () => {
-    try {
-      await window.electronAPI.clearBlockedServers();
-    } catch (err) {
-      console.error('Failed to clear blocked servers:', err);
-    }
-  }, []);
-
-  const handleCopyLogs = useCallback(async () => {
-    setCopyError(null);
-    try {
-      const logs = await window.electronAPI.getLogs();
-      await navigator.clipboard.writeText(logs);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error('Failed to copy logs', error);
-      setCopyError(t('settings.diagnostics.copyLogsFailed'));
-      setCopied(false);
-    }
-  }, [t]);
-
-  const handleOpenFolder = useCallback(() => {
-    void window.electronAPI.openLogFolder().catch((error) => {
-      console.error('Failed to open log folder', error);
-    });
-  }, []);
 
   return (
     <div className="space-y-6">

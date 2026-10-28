@@ -1,12 +1,8 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { FolderOpen, Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import {
-  MAX_APP_ROUTING_ENTRIES,
-  classifyAppEntry,
-  matchKnownAppName,
-  type AppOption,
-} from '@/shared/appRouting';
+import type { AppOption } from '@/shared/appRouting';
+import { useAppListEditor } from '@/renderer/hooks/useAppListEditor';
 import { AppIcon, AppPicker } from './AppPicker';
 
 interface AppListEditorProps {
@@ -46,75 +42,19 @@ export const AppListEditor: React.FC<AppListEditorProps> = ({
   disabled = false,
 }) => {
   const { t } = useTranslation();
-  const [draft, setDraft] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
-
-  const atLimit = apps.length >= MAX_APP_ROUTING_ENTRIES;
-  const knownNames = useMemo(
-    () => knownApps.map((option) => option.name),
-    [knownApps],
-  );
-  const iconByName = useMemo(
-    () => new Map(knownApps.map((option) => [option.name, option.icon])),
-    [knownApps],
-  );
-
-  /** Adds names to the list; returns the inputs that were not names. */
-  const addNames = useCallback(
-    (candidates: string[]): string[] => {
-      const next = [...apps];
-      const rejected: string[] = [];
-      let full = false;
-      for (const candidate of candidates) {
-        if (next.length >= MAX_APP_ROUTING_ENTRIES) {
-          full = true;
-          break;
-        }
-        const entry = classifyAppEntry(candidate);
-        if (!entry) {
-          rejected.push(candidate);
-          continue;
-        }
-        const name = matchKnownAppName(entry, knownNames);
-        if (!next.includes(name)) next.push(name);
-      }
-      if (full) {
-        setError(t('settings.network.splitTunnelLimit'));
-      } else if (rejected.length > 0) {
-        setError(
-          t('settings.network.routingAppsInvalid', {
-            entries: rejected.slice(0, 3).join(', '),
-          }),
-        );
-      }
-      if (next.length !== apps.length) onChange(next);
-      return rejected;
-    },
-    [apps, knownNames, onChange, t],
-  );
-
-  const handleAdd = useCallback(() => {
-    setError(null);
-    // Names may contain spaces, so only commas, semicolons and line breaks
-    // separate a pasted list.
-    const candidates = draft
-      .split(/[,;\r\n]+/)
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0);
-    if (candidates.length === 0) return;
-    const rejected = addNames(candidates);
-    setDraft(rejected.join(', '));
-  }, [addNames, draft]);
-
-  const handlePick = useCallback(
-    (name: string) => {
-      setError(null);
-      addNames([name]);
-      setDraft('');
-    },
-    [addNames],
-  );
+  const {
+    draft,
+    setDraft,
+    error,
+    setError,
+    atLimit,
+    iconByName,
+    addNames,
+    add: handleAdd,
+    pick: handlePick,
+    remove: handleRemove,
+  } = useAppListEditor({ apps, onChange, knownApps });
 
   const handleBrowse = useCallback(async () => {
     setError(null);
@@ -130,15 +70,7 @@ export const AppListEditor: React.FC<AppListEditorProps> = ({
     } finally {
       setPicking(false);
     }
-  }, [addNames, onPicked]);
-
-  const handleRemove = useCallback(
-    (value: string) => {
-      setError(null);
-      onChange(apps.filter((app) => app !== value));
-    },
-    [apps, onChange],
-  );
+  }, [addNames, onPicked, setError]);
 
   const buttonClass =
     'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-200 border border-gray-700/50 hover:border-gray-600/70 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors';

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Loader2,
   Link2,
@@ -10,8 +10,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import { localizeError } from '@/shared/localizeError';
 import { Subscription } from '@/shared/types';
-import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '@/shared/subscriptionUrls';
 import { PrimaryButton, Toggle } from '@/renderer/components/ui';
+import { useSourcesSettings } from '@/renderer/hooks/useSourcesSettings';
 
 interface SettingsSourcesTabProps {
   subscriptions: Subscription[];
@@ -23,150 +23,43 @@ export const SettingsSourcesTab: React.FC<SettingsSourcesTabProps> = ({
   isOpen,
 }) => {
   const { t, i18n } = useTranslation();
-
-  const [manualLinks, setManualLinks] = useState('');
   const [isManualExpanded, setIsManualExpanded] = useState(false);
-  const [manualSaveError, setManualSaveError] = useState<string | null>(null);
-  const [isSavingManual, setIsSavingManual] = useState(false);
-
   const [isAddFormExpanded, setIsAddFormExpanded] = useState(false);
-  const [newSubName, setNewSubName] = useState('');
-  const [newSubUrl, setNewSubUrl] = useState('');
-  const [addError, setAddError] = useState<string | null>(null);
-  const [isAdding, setIsAdding] = useState(false);
-
-  const [importingMobileList, setImportingMobileList] = useState(false);
-  const [importMobileError, setImportMobileError] = useState<string | null>(
-    null,
-  );
-
-  useEffect(() => {
-    if (!isOpen) return;
-    let disposed = false;
-
-    window.electronAPI
-      .getManualLinks()
-      .then((links) => {
-        if (!disposed) setManualLinks(links || '');
-      })
-      .catch((err) => console.error('Failed to load manual links:', err));
-
-    return () => {
-      disposed = true;
-    };
-  }, [isOpen]);
-
-  const handleToggleSubscription = useCallback(async (sub: Subscription) => {
-    try {
-      await window.electronAPI.updateSubscription({
-        id: sub.id,
-        patch: { enabled: !sub.enabled },
-      });
-    } catch (err) {
-      console.error('Failed to toggle subscription', err);
-    }
-  }, []);
-
-  const handleDeleteSubscription = useCallback(async (id: string) => {
-    try {
-      await window.electronAPI.deleteSubscription(id);
-    } catch (err) {
-      console.error('Failed to delete subscription', err);
-    }
-  }, []);
+  const {
+    manualLinks,
+    setManualLinks,
+    manualSaveError,
+    isSavingManual,
+    saveManualLinks,
+    newSubName,
+    setNewSubName,
+    newSubUrl,
+    setNewSubUrl,
+    addError,
+    setAddError,
+    isAdding,
+    addSubscription,
+    importingMobileList,
+    importMobileError,
+    importMobileList: handleOpenYandexTranslatedList,
+    toggleSubscription: handleToggleSubscription,
+    deleteSubscription: handleDeleteSubscription,
+  } = useSourcesSettings(isOpen);
 
   const handleAddSubscription = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      setAddError(null);
-      const name = newSubName.trim();
-      const url = newSubUrl.trim();
-      if (!name) {
-        setAddError(t('settings.sources.errors.nameRequired'));
-        return;
-      }
-      if (!url) {
-        setAddError(t('settings.sources.errors.urlRequired'));
-        return;
-      }
-
-      setIsAdding(true);
-      try {
-        const result = await window.electronAPI.addSubscription({ name, url });
-        if (!result.ok) {
-          setAddError(result.error || t('settings.sources.errors.fetchFailed'));
-        } else {
-          setNewSubName('');
-          setNewSubUrl('');
-          setIsAddFormExpanded(false);
-        }
-      } catch (err) {
-        setAddError(
-          err instanceof Error
-            ? err.message
-            : t('settings.sources.errors.addFailed'),
-        );
-      } finally {
-        setIsAdding(false);
-      }
+      if (await addSubscription()) setIsAddFormExpanded(false);
     },
-    [newSubName, newSubUrl, t],
+    [addSubscription],
   );
 
-  const handleOpenYandexTranslatedList = useCallback(async () => {
-    setImportMobileError(null);
-    setImportingMobileList(true);
-    try {
-      const [openResult, importResult] = await Promise.allSettled([
-        window.electronAPI.openExternalUrl(YANDEX_TRANSLATED_MOBILE_LIST_URL),
-        window.electronAPI.importMobileWhiteListSubscription(),
-      ]);
-      if (openResult.status === 'rejected') {
-        console.error(
-          'Failed to open translated list in browser',
-          openResult.reason,
-        );
-      }
-      if (importResult.status === 'rejected') {
-        const msg =
-          importResult.reason instanceof Error
-            ? importResult.reason.message
-            : String(importResult.reason);
-        setImportMobileError(msg);
-        return;
-      }
-      const data = importResult.value;
-      if (!data.ok) {
-        setImportMobileError(
-          data.error || t('settings.sources.errors.loadFailed'),
-        );
-      }
-    } finally {
-      setImportingMobileList(false);
-    }
-  }, [t]);
-
   const handleSaveManualLinks = useCallback(
-    async (e: React.FormEvent) => {
+    (e: React.FormEvent) => {
       e.preventDefault();
-      setManualSaveError(null);
-      setIsSavingManual(true);
-      try {
-        const result = await window.electronAPI.saveManualLinks(manualLinks);
-        if (!result.ok && result.error) {
-          setManualSaveError(result.error);
-        }
-      } catch (err) {
-        setManualSaveError(
-          err instanceof Error
-            ? err.message
-            : t('settings.sources.errors.saveManualFailed'),
-        );
-      } finally {
-        setIsSavingManual(false);
-      }
+      void saveManualLinks();
     },
-    [manualLinks, t],
+    [saveManualLinks],
   );
 
   return (
