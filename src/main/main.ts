@@ -9,6 +9,7 @@ import { initMainSentry } from './services/SentryService';
 import { trayService } from './services/TrayService';
 import { appUpdaterService } from './services/AppUpdaterService';
 import { getAppIconPath } from './utils/runtimePaths';
+import { TITLE_BAR_OVERLAY, WINDOW_BACKGROUND } from './utils/windowChrome';
 import { rotateFileSync } from './utils/logRotation';
 import {
   activateRunningInstance,
@@ -434,7 +435,7 @@ async function buildWindow(): Promise<BrowserWindow> {
     width: 900,
     height: 700,
     show: false,
-    backgroundColor: '#121212',
+    backgroundColor: WINDOW_BACKGROUND,
     icon: getAppIconPath(process.platform),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -447,10 +448,8 @@ async function buildWindow(): Promise<BrowserWindow> {
       sandbox: false,
     },
     titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#1e1e1e',
-      symbolColor: '#ffffff',
-    },
+    // The renderer switches the colors when the light theme is on.
+    titleBarOverlay: TITLE_BAR_OVERLAY.dark,
   });
   mainWindow = windowInstance;
   const wc = windowInstance.webContents;

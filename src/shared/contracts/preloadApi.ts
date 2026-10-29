@@ -27,6 +27,8 @@ import type {
 import type { PerformanceSettings } from '@/shared/types';
 import type { AppOption } from '@/shared/appRouting';
 
+export type WindowTheme = 'dark' | 'light';
+
 export interface IElectronAPI {
   connect: (serverId: string) => Promise<ConnectResult>;
   disconnect: () => Promise<DisconnectResult>;
@@ -82,6 +84,8 @@ export interface IElectronAPI {
 
   getUiLanguage: () => Promise<'en' | 'ru'>;
   setUiLanguage: (language: 'en' | 'ru') => Promise<boolean>;
+  /** Recolors the native window buttons to match the renderer's theme. */
+  setWindowTheme: (theme: WindowTheme) => Promise<boolean>;
 
   getUpdateStatus: () => Promise<UpdateStatus>;
   checkForUpdates: () => Promise<UpdateStatus>;

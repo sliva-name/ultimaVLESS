@@ -91,6 +91,8 @@ export const mobileElectronApi: IElectronAPI = {
   listRunningApps: () => invoke(C.listRunningApps),
   getUiLanguage: () => invoke(C.getUiLanguage),
   setUiLanguage: (language) => invoke(C.setUiLanguage, language),
+  // Android draws no window buttons.
+  setWindowTheme: async () => true,
   getUpdateStatus: () => invoke(C.getUpdateStatus),
   checkForUpdates: () => invoke(C.checkForUpdates),
   installUpdate: () => invoke(C.installUpdate),

@@ -189,6 +189,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       IPC_INVOKE_CHANNELS.setUiLanguage,
       language,
     ) as Promise<boolean>,
+  setWindowTheme: (theme: 'dark' | 'light') =>
+    ipcRenderer.invoke(
+      IPC_INVOKE_CHANNELS.setWindowTheme,
+      theme,
+    ) as Promise<boolean>,
 
   getUpdateStatus: () =>
     ipcRenderer.invoke(

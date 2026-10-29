@@ -31,6 +31,7 @@ export const IPC_INVOKE_CHANNELS = {
   listRunningApps: 'list-running-apps',
   getUiLanguage: 'get-ui-language',
   setUiLanguage: 'set-ui-language',
+  setWindowTheme: 'set-window-theme',
   getUpdateStatus: 'get-update-status',
   checkForUpdates: 'check-for-updates',
   installUpdate: 'install-update',

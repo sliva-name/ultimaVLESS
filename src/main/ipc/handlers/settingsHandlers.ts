@@ -12,6 +12,7 @@ import { IPC_INVOKE_CHANNELS, TunCapabilityStatus } from '@/shared/ipc';
 import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { assertConnectionMode } from '@/main/ipc/validators';
+import { TITLE_BAR_OVERLAY, isWindowTheme } from '@/main/utils/windowChrome';
 
 interface RegisterSettingsHandlersParams {
   deps: IpcDependencies;
@@ -219,6 +220,23 @@ export function registerSettingsHandlers({
         throw new Error(`Unsupported UI language: ${String(language)}`);
       }
       deps.mainLocaleService.setLanguage(language);
+      return true;
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.setWindowTheme,
+    (event: IpcMainInvokeEvent, theme: unknown) => {
+      assertTrustedSender(event);
+      if (!isWindowTheme(theme)) {
+        throw new Error(`Unsupported window theme: ${String(theme)}`);
+      }
+      // The overlay exists on Windows and Linux; macOS keeps its traffic lights.
+      if (process.platform === 'darwin') return false;
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (!window || window.isDestroyed()) return false;
+      window.setTitleBarOverlay(TITLE_BAR_OVERLAY[theme]);
+      window.setBackgroundColor(theme === 'light' ? '#f3f3f0' : '#0e0f11');
       return true;
     },
   );

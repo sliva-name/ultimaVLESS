@@ -5,6 +5,61 @@
   --color-surface: #1e1e1e;
   --color-primary: #3b82f6;
   --color-secondary: #64748b;
+
+  /*
+   * Design tokens of the 2026 redesign, dark «Графит» palette. Utilities read
+   * them as variables, so the desktop light theme only redefines the values
+   * (desktop.css); the Android bundle repeats the same dark values.
+   */
+  --color-canvas: #0e0f11;
+  --color-bar: #121315;
+  --color-bar-seg: #1b1d21;
+  --color-bar-line: #2a2d33;
+  --color-s1: #151619;
+  --color-s2: #1b1d21;
+  --color-s3: #23262b;
+  --color-line: #2a2d33;
+  --color-line2: #363a41;
+  --color-fg: #ecedef;
+  --color-fg2: #a9adb6;
+  --color-fg3: #80858f;
+  --color-dim: #363a41;
+  --color-acc: #8fa3ff;
+  --color-acc-fill: #4a63e7;
+  --color-acc-soft: #1c2340;
+  --color-acc-line: #34407a;
+  --color-acc-nav: #b4c1ff;
+  --color-ok: #4ade9a;
+  --color-ok-soft: #0f2a1f;
+  --color-ok-line: #1f5a40;
+  --color-warn: #f5b544;
+  --color-warn-soft: #2b2110;
+  --color-warn-line: #5e4718;
+  --color-bad: #ff7a7a;
+  --color-bad-soft: #2e1416;
+  --color-bad-line: #6a2a2e;
+  --color-bad-fill: #c93838;
+  --color-violet: #c4b5fd;
+  --color-violet-soft: #241d3a;
+  --color-teal: #5eead4;
+  --color-teal-soft: #0f2a2a;
+  --color-thumb: #2e3238;
+  --color-tile: #202328;
+  --color-track-off: #363a41;
+  --color-thumb-off: #a9adb6;
+  --color-flag-ring: rgb(255 255 255 / 0.14);
+  /* Latency badges: < 100, < 200, < 300 ms, slower. */
+  --color-lat1: #4ade9a;
+  --color-lat1-soft: rgb(74 222 154 / 0.12);
+  --color-lat2: #facc15;
+  --color-lat2-soft: rgb(250 204 21 / 0.12);
+  --color-lat3: #fb923c;
+  --color-lat3-soft: rgb(251 146 60 / 0.13);
+  --color-lat4: #ff7a7a;
+  --color-lat4-soft: rgb(255 122 122 / 0.13);
+  --shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-float: 0 8px 24px rgb(0 0 0 / 0.45);
+  --shadow-panel: 0 0 #0000;
 }
 
 body {
