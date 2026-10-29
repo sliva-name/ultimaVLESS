@@ -24,6 +24,10 @@ export function useNetworkSettings(isOpen: boolean) {
   const [perfSettings, setPerfSettings] = useState<PerformanceSettings>(
     DEFAULT_PERFORMANCE_SETTINGS,
   );
+  /** The settings as main last stored them; edits are measured against it. */
+  const [perfBaseline, setPerfBaseline] = useState<PerformanceSettings>(
+    DEFAULT_PERFORMANCE_SETTINGS,
+  );
   const [perfDirty, setPerfDirty] = useState(false);
   const [perfSaving, setPerfSaving] = useState(false);
   const [adapterList, setAdapterList] = useState<NetworkAdapterList | null>(
@@ -70,6 +74,7 @@ export function useNetworkSettings(isOpen: boolean) {
       .then((settings) => {
         if (disposed) return;
         setPerfSettings(settings);
+        setPerfBaseline(settings);
         setPerfDirty(false);
       })
       .catch((err) =>
@@ -118,6 +123,7 @@ export function useNetworkSettings(isOpen: boolean) {
     setPerfSaving(true);
     try {
       await window.electronAPI.setPerformanceSettings(perfSettings);
+      setPerfBaseline(perfSettings);
       setPerfDirty(false);
     } finally {
       setPerfSaving(false);
@@ -131,11 +137,18 @@ export function useNetworkSettings(isOpen: boolean) {
       await window.electronAPI.setPerformanceSettings(
         DEFAULT_PERFORMANCE_SETTINGS,
       );
+      setPerfBaseline(DEFAULT_PERFORMANCE_SETTINGS);
       setPerfDirty(false);
     } finally {
       setPerfSaving(false);
     }
   }, []);
+
+  /** Drops unsaved edits. */
+  const revertPerfSettings = useCallback(() => {
+    setPerfSettings(perfBaseline);
+    setPerfDirty(false);
+  }, [perfBaseline]);
 
   return {
     connectionMode,
@@ -144,11 +157,13 @@ export function useNetworkSettings(isOpen: boolean) {
     modeError,
     setModeError,
     perfSettings,
+    perfBaseline,
     perfDirty,
     perfSaving,
     updatePerfField,
     savePerfSettings,
     resetPerfDefaults,
+    revertPerfSettings,
     adapterList,
     adaptersLoading,
     adaptersError,
@@ -156,3 +171,5 @@ export function useNetworkSettings(isOpen: boolean) {
     session: snapshot.session,
   };
 }
+
+export type NetworkSettings = ReturnType<typeof useNetworkSettings>;

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Base application theme: dark, matching the WebView UI (#121212). -->
+    <!-- Base application theme: dark, matching the WebView UI (#0E0F11). -->
     <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
-        <item name="colorPrimary">#3B82F6</item>
-        <item name="colorPrimaryDark">#121212</item>
-        <item name="colorAccent">#3B82F6</item>
+        <item name="colorPrimary">#4A63E7</item>
+        <item name="colorPrimaryDark">#0E0F11</item>
+        <item name="colorAccent">#4A63E7</item>
         <item name="android:windowBackground">@color/app_background</item>
     </style>
 
@@ -23,5 +23,5 @@
         <item name="android:windowBackground">@color/app_background</item>
     </style>
 
-    <color name="app_background">#121212</color>
+    <color name="app_background">#0E0F11</color>
 </resources>

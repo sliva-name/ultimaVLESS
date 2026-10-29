@@ -9,6 +9,7 @@ import { mainLocaleService } from '@/main/services/MainLocaleService';
 import { probeTcpPort } from '@/main/services/networkProbe';
 import { app } from '../electron';
 import { logger } from './LoggerService';
+import { buildNotificationText } from './notificationText';
 import { UltimaCore, type CoreEvent } from '../native/UltimaCore';
 import {
   adaptConfigForAndroid,
@@ -131,14 +132,11 @@ export class XrayService extends EventEmitter {
           sessionName: config.name,
           vpn:
             connectionMode === 'tun' ? buildVpnOptions(perf, plan) : undefined,
-          text: {
-            channelName: 'VPN',
-            connected: mainLocaleService.t('tray.connectedTo', {
-              name: config.name,
-            }),
-            proxyOnly: `${mainLocaleService.t('tray.connected')} · SOCKS5 127.0.0.1:${ports.socks} · HTTP 127.0.0.1:${ports.http}`,
-            disconnect: mainLocaleService.t('tray.disconnect'),
-          },
+          text: buildNotificationText(
+            mainLocaleService.getLanguage(),
+            ports,
+            mainLocaleService.t('tray.disconnect'),
+          ),
         }),
       );
     } catch (e) {

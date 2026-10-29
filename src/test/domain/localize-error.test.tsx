@@ -1,9 +1,9 @@
 /* @vitest-environment jsdom */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import i18n from '@/renderer/i18n';
-import { ConnectionStatus } from '@/renderer/components/ConnectionStatus';
+import { Stage } from '@/renderer/components/home/Stage';
 import {
   assertAllowInsecureNotUsed,
   assertEncryptedPublicOutbound,
@@ -15,7 +15,7 @@ import {
   createElectronApiMock,
   installElectronApiMock,
 } from '@/test/electronApiMock';
-import { makeServer } from '@/test/factories';
+import { makeAppSnapshot, makeServer } from '@/test/factories';
 
 function thrownMessage(fn: () => void): string {
   try {
@@ -116,7 +116,7 @@ describe('localizeError', () => {
   });
 });
 
-describe('ConnectionStatus error', () => {
+describe('error card under the ring', () => {
   beforeAll(async () => {
     installElectronApiMock(createElectronApiMock());
     await i18n.changeLanguage('ru');
@@ -126,19 +126,63 @@ describe('ConnectionStatus error', () => {
     await i18n.changeLanguage('en');
   });
 
-  it('shows a main-process error in the UI language', () => {
+  const failed = (connectionMode: 'tun' | 'proxy') =>
+    makeAppSnapshot({
+      connectionMode,
+      session: {
+        phase: 'failed',
+        activeServerId: null,
+        lastError: null,
+        blockedServerIds: [],
+      },
+    });
+
+  it('shows a main-process error in the UI language and offers proxy mode', () => {
+    const onModeChange = vi.fn();
     render(
-      <ConnectionStatus
-        phase="failed"
+      <Stage
+        snapshot={failed('tun')}
         selectedServer={makeServer()}
         connectionError="TUN mode requires Administrator rights. Please approve UAC prompt or run UltimaVLESS as Administrator."
+        isConnectionBusy={false}
         onToggleConnection={() => undefined}
+        onModeChange={onModeChange}
+        onOpenRouting={() => undefined}
+        onOpenDiagnostics={() => undefined}
       />,
     );
     expect(
       screen.getByText(
         'Для режима TUN нужны права администратора. Подтвердите запрос UAC или запустите UltimaVLESS от имени администратора.',
       ),
+    ).toBeInTheDocument();
+    // The ring and the card's primary action both connect again.
+    expect(
+      screen.getAllByRole('button', { name: 'Подключить снова' }),
+    ).toHaveLength(2);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Перейти на «Прокси»' }),
+    );
+    expect(onModeChange).toHaveBeenCalledWith('proxy');
+  });
+
+  it('turns the ring into "no network" instead of a card when there is no route', () => {
+    render(
+      <Stage
+        snapshot={failed('proxy')}
+        selectedServer={makeServer()}
+        connectionError="Could not get default route. Check network connection."
+        isConnectionBusy={false}
+        onToggleConnection={() => undefined}
+        onModeChange={() => undefined}
+        onOpenRouting={() => undefined}
+        onOpenDiagnostics={() => undefined}
+      />,
+    );
+    expect(screen.getByText('Нет сети')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Подключить' }),
     ).toBeInTheDocument();
   });
 });

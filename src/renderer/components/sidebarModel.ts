@@ -62,10 +62,10 @@ export const MANUAL_GROUP_COLOR: GroupColor = {
 /** Servers per group above which we window the DOM list. */
 export const SERVER_LIST_VIRTUALIZE_THRESHOLD = 40;
 /**
- * Fixed row pitch in the virtualized list: ~72px card + 8px gap rendered as
- * `pb-2` on a fixed-height row wrapper, so spacer math matches the DOM.
+ * Fixed row pitch in the virtualized list: a 48 px row + 2 px gap rendered as
+ * `pb-0.5` on a fixed-height row wrapper, so spacer math matches the DOM.
  */
-export const SERVER_ITEM_ESTIMATED_HEIGHT_PX = 80;
+export const SERVER_ITEM_ESTIMATED_HEIGHT_PX = 50;
 
 /**
  * Returns a stable colour slot for a subscription id.

@@ -25,6 +25,8 @@ export interface SelectProps {
   className?: string;
   /** Min width of the trigger; dropdown matches trigger width by default. */
   triggerClassName?: string;
+  /** Repeats the chosen option's description in the trigger. */
+  showDescription?: boolean;
 }
 
 export type MenuPlacement = {
@@ -64,6 +66,7 @@ export const Select: React.FC<SelectProps> = ({
   ariaLabel,
   className,
   triggerClassName,
+  showDescription = false,
 }) => {
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -190,9 +193,8 @@ export const Select: React.FC<SelectProps> = ({
           maxHeight: placement.maxHeight,
         }}
         className={clsx(
-          'z-[9999] overflow-y-auto rounded-xl border border-gray-700/70',
-          'bg-gray-950/95 backdrop-blur-md shadow-2xl shadow-black/50',
-          'py-1.5 animate-[fadeIn_0.12s_ease-out]',
+          'z-[9999] overflow-y-auto rounded-xl border border-line2 bg-s3 shadow-float',
+          'p-1 menu-in',
         )}
       >
         {options.map((opt, index) => {
@@ -207,33 +209,22 @@ export const Select: React.FC<SelectProps> = ({
               onMouseEnter={() => setActiveIndex(index)}
               onClick={() => handleSelect(opt.value)}
               className={clsx(
-                'w-full flex items-start gap-2.5 px-3 py-2 text-left transition-colors',
-                isActive && 'bg-white/5',
-                isSelected && 'bg-primary/10',
-                !isSelected && !isActive && 'hover:bg-white/5',
+                'w-full flex items-start gap-2.5 px-2.5 py-1.5 rounded-md text-left text-fg transition-colors',
+                isActive && 'bg-thumb',
               )}
             >
-              <span
+              <Check
+                aria-hidden
+                strokeWidth={2}
                 className={clsx(
-                  'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
-                  isSelected
-                    ? 'border-primary bg-primary/20 text-primary'
-                    : 'border-gray-600 text-transparent',
+                  'mt-0.5 h-4 w-4 shrink-0',
+                  isSelected ? 'text-acc' : 'text-transparent',
                 )}
-              >
-                <Check className="h-2.5 w-2.5" strokeWidth={3} />
-              </span>
+              />
               <span className="min-w-0 flex-1">
-                <span
-                  className={clsx(
-                    'block text-sm font-medium leading-snug',
-                    isSelected ? 'text-white' : 'text-gray-200',
-                  )}
-                >
-                  {opt.label}
-                </span>
+                <span className="block text-[13px] leading-5">{opt.label}</span>
                 {opt.description ? (
-                  <span className="mt-0.5 block text-xs text-gray-500 leading-relaxed">
+                  <span className="block text-xs leading-4 text-fg3">
                     {opt.description}
                   </span>
                 ) : null}
@@ -257,30 +248,25 @@ export const Select: React.FC<SelectProps> = ({
         aria-controls={open ? listboxId : undefined}
         onClick={toggleMenu}
         className={clsx(
-          'group flex min-w-[9.5rem] max-w-[16rem] items-center gap-2 rounded-xl border px-2.5 py-1.5',
-          'bg-black/40 text-sm text-white transition-all duration-200',
-          'border-gray-600/50 hover:border-gray-500/70',
-          'focus:outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20',
+          'group flex w-56 h-8 items-center gap-2 rounded-lg border border-line2 bg-s2 pl-3 pr-2',
+          'text-fg text-left transition-colors duration-150 hover:border-fg3',
           'disabled:cursor-not-allowed disabled:opacity-50',
-          open && 'border-primary/50 ring-2 ring-primary/15',
+          open && 'border-acc-fill',
           triggerClassName,
         )}
       >
-        <span className="min-w-0 flex-1 text-left">
-          <span className="block truncate font-medium leading-snug">
-            {selected?.label ?? value}
-          </span>
-          {selected?.description ? (
-            <span className="block truncate text-[11px] text-gray-500 leading-tight">
-              {selected.description}
-            </span>
+        <span className="min-w-0 flex-1 truncate text-[13px] leading-5">
+          {selected?.label ?? value}
+          {showDescription && selected?.description ? (
+            <span className="text-fg3"> · {selected.description}</span>
           ) : null}
         </span>
         <ChevronDown
+          aria-hidden
+          strokeWidth={1.75}
           className={clsx(
-            'h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform duration-200',
-            'group-hover:text-gray-300',
-            open && 'rotate-180 text-primary',
+            'h-4 w-4 shrink-0 text-fg3 transition-transform duration-200',
+            open && 'rotate-180',
           )}
         />
       </button>

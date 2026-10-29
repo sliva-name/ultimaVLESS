@@ -78,6 +78,8 @@ interface AppSnapshotContextValue {
   toggleConnection: () => Promise<void>;
   pingAllServers: () => Promise<void>;
   pingSelectedServer: () => Promise<void>;
+  /** Checks the given servers only (a group of the list). */
+  pingServers: (serverIds: string[]) => Promise<void>;
   stopPing: () => Promise<void>;
   refreshSnapshot: () => Promise<void>;
 }
@@ -272,6 +274,10 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       await refreshPings([selectedServer.uuid]);
     }
   }, [selectedServer, refreshPings]);
+  const pingServers = useCallback(
+    (serverIds: string[]) => refreshPings(serverIds),
+    [refreshPings],
+  );
 
   const stopPing = useCallback(async () => {
     if (pingStopInFlightRef.current) return;
@@ -349,6 +355,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       toggleConnection,
       pingAllServers,
       pingSelectedServer,
+      pingServers,
       stopPing,
       refreshSnapshot,
     }),
@@ -363,6 +370,7 @@ export function AppSnapshotProvider({ children }: { children: ReactNode }) {
       toggleConnection,
       pingAllServers,
       pingSelectedServer,
+      pingServers,
       stopPing,
       refreshSnapshot,
     ],
@@ -397,6 +405,7 @@ export function useServers() {
     isRefreshingPings,
     pingAllServers,
     pingSelectedServer,
+    pingServers,
     stopPing,
   } = useAppSnapshotContext();
   return {
@@ -407,6 +416,7 @@ export function useServers() {
     selectServer,
     pingAllServers,
     pingSelectedServer,
+    pingServers,
     stopPing,
   };
 }

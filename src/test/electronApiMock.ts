@@ -169,6 +169,7 @@ export function createElectronApiMock(
 
     getUiLanguage: vi.fn(async (): Promise<'en' | 'ru'> => 'en'),
     setUiLanguage: vi.fn(async (_language: 'en' | 'ru') => true),
+    setWindowTheme: vi.fn(async (_theme: 'dark' | 'light') => true),
     getUpdateStatus: vi.fn(async (): Promise<UpdateStatus> => ({
       stage: 'disabled',
       version: null,

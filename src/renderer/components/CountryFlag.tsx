@@ -119,6 +119,12 @@ const flagRegistry: Record<string, FlagComponent> = {
   ZA,
 };
 
+/** Whether {@link CountryFlag} draws a flag rather than the globe fallback. */
+export function hasCountryFlag(server: { name: string; address: string }) {
+  const countryCode = getCountryCode(server);
+  return !!countryCode && countryCode in flagRegistry;
+}
+
 export const CountryFlag: React.FC<CountryFlagProps> = ({
   server,
   className = '',

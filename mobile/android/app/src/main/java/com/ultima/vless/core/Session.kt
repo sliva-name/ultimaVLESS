@@ -40,25 +40,39 @@ data class VpnOptions(
     }
 }
 
-/** Localized notification strings, supplied by the WebView. */
+/**
+ * Localized notification strings, supplied by the WebView: the VPN-mode text
+ * (the speed is appended here), the proxy-only text, and the rate units.
+ */
 data class NotificationText(
     val channelName: String,
-    val connected: String,
+    val vpn: String,
     val proxyOnly: String,
     val disconnect: String,
+    /** Bytes, kilobytes and megabytes per second. */
+    val rateUnits: List<String>,
+    val decimalSeparator: String,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("channelName", channelName)
-        .put("connected", connected)
+        .put("vpn", vpn)
         .put("proxyOnly", proxyOnly)
         .put("disconnect", disconnect)
+        .put("rateUnits", JSONArray(rateUnits))
+        .put("decimalSeparator", decimalSeparator)
 
     companion object {
+        private val DEFAULT_RATE_UNITS = listOf("B/s", "KB/s", "MB/s")
+
+        // A session saved by an older version has none of the new fields.
         fun fromJson(json: JSONObject?) = NotificationText(
             channelName = json?.optString("channelName").orEmpty().ifEmpty { "VPN" },
-            connected = json?.optString("connected").orEmpty().ifEmpty { "Connected" },
+            vpn = json?.optString("vpn").orEmpty().ifEmpty { "VPN" },
             proxyOnly = json?.optString("proxyOnly").orEmpty().ifEmpty { "Proxy" },
             disconnect = json?.optString("disconnect").orEmpty().ifEmpty { "Disconnect" },
+            rateUnits = json?.optJSONArray("rateUnits").strings()
+                .takeIf { it.size == DEFAULT_RATE_UNITS.size } ?: DEFAULT_RATE_UNITS,
+            decimalSeparator = json?.optString("decimalSeparator").orEmpty().ifEmpty { "." },
         )
     }
 }
