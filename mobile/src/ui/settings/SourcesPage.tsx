@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Layers, MoreVertical, Plus, Smartphone } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Layers, Plus, Smartphone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Subscription, VlessConfig } from '@/shared/types';
 import { localizeError } from '@/shared/localizeError';
 import { partitionServers } from '@/renderer/components/sidebarModel';
 import type { useSourcesSettings } from '@/renderer/hooks/useSourcesSettings';
+import { BottomSheet } from '../BottomSheet';
+import { PopupMenu } from '../PopupMenu';
 import { subscriptionColorIndex } from '../serverParts';
 import {
   ErrorText,
@@ -31,67 +33,26 @@ const SubscriptionMenu: React.FC<{
   onDelete: () => void;
 }> = ({ subscription, onToggle, onDelete }) => {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', close);
-    return () => document.removeEventListener('pointerdown', close);
-  }, [open]);
-
-  const item =
-    'w-full min-h-12 px-4 text-left text-[15px] leading-5 font-medium';
   return (
-    <div ref={ref} className="relative shrink-0 -mr-2.5">
-      <button
-        type="button"
-        aria-label={t('mobile.settings.sources.actions', {
-          name: subscription.name,
-        })}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="w-10 h-10 inline-flex items-center justify-center rounded-[20px] text-fg3"
-      >
-        <MoreVertical aria-hidden strokeWidth={2} className="w-5 h-5" />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-11 z-10 min-w-56 py-2 rounded-xl bg-s3 border border-line2 shadow-float"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onToggle();
-            }}
-            className={item}
-          >
-            {t(
-              subscription.enabled
-                ? 'settings.sources.disableSubscription'
-                : 'settings.sources.enableSubscription',
-            )}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onDelete();
-            }}
-            className={`${item} text-bad`}
-          >
-            {t('settings.sources.removeSubscription')}
-          </button>
-        </div>
-      )}
-    </div>
+    <PopupMenu
+      label={t('mobile.settings.sources.actions', { name: subscription.name })}
+      className="-mr-2.5"
+      items={[
+        {
+          label: t(
+            subscription.enabled
+              ? 'settings.sources.disableSubscription'
+              : 'settings.sources.enableSubscription',
+          ),
+          onSelect: onToggle,
+        },
+        {
+          label: t('settings.sources.removeSubscription'),
+          onSelect: onDelete,
+          danger: true,
+        },
+      ]}
+    />
   );
 };
 
@@ -242,93 +203,82 @@ export const SourcesPage: React.FC<SourcesPageProps> = ({
 
 /** Bottom sheet that adds a subscription and fetches it right away. */
 export const SubscriptionSheet: React.FC<{
+  open: boolean;
   sources: Sources;
   onClose: () => void;
-}> = ({ sources, onClose }) => {
+}> = ({ open, sources, onClose }) => {
   const { t, i18n } = useTranslation();
   const field =
     'h-12 px-3.5 rounded-xl border border-line2 bg-s2 text-fg text-[15px] leading-5 outline-none focus:border-2 focus:border-acc-fill';
   return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-scrim"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+    <BottomSheet
+      open={open}
+      label={t('mobile.settings.sources.sheetTitle')}
+      title={t('mobile.settings.sources.sheetTitle')}
+      description={t('mobile.settings.sources.sheetHint')}
+      onClose={onClose}
     >
-      <form
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('mobile.settings.sources.sheetTitle')}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void sources.addSubscription().then((added) => {
-            if (added) onClose();
-          });
-        }}
-        className="mobile-inset-bottom flex flex-col gap-4 pt-2 px-5 rounded-t-[28px] bg-s1 border-t border-line2"
-      >
-        <span
-          aria-hidden="true"
-          className="self-center w-8 h-1 mt-1.5 mb-1 rounded-sm bg-line2"
-        />
-        <div className="flex flex-col gap-1">
-          <h2 className="m-0 text-xl leading-[26px] font-semibold tracking-[-0.01em]">
-            {t('mobile.settings.sources.sheetTitle')}
-          </h2>
-          <p className="m-0 text-[13px] leading-[18px] text-fg3">
-            {t('mobile.settings.sources.sheetHint')}
-          </p>
-        </div>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[13px] leading-[18px] font-medium text-fg2">
-            {t('mobile.settings.sources.nameLabel')}
-          </span>
-          <input
-            type="text"
-            value={sources.newSubName}
-            onChange={(event) => sources.setNewSubName(event.target.value)}
-            placeholder={t('settings.sources.namePlaceholder')}
-            maxLength={100}
-            className={field}
-          />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[13px] leading-[18px] font-medium text-fg2">
-            {t('mobile.settings.sources.urlLabel')}
-          </span>
-          <input
-            type="url"
-            inputMode="url"
-            value={sources.newSubUrl}
-            onChange={(event) => sources.setNewSubUrl(event.target.value)}
-            placeholder={t('settings.sources.urlPlaceholder')}
-            className={`${field} font-mono text-sm`}
-          />
-        </label>
-        {sources.addError && (
-          <ErrorText>
-            {localizeError(sources.addError, i18n.language)}
-          </ErrorText>
-        )}
-        <div className="flex flex-col gap-1 pt-1 pb-3">
-          <button
-            type="submit"
-            disabled={sources.isAdding}
-            className="h-12 rounded-[14px] bg-acc-fill text-white text-[15px] leading-5 font-medium disabled:opacity-60"
-          >
-            {sources.isAdding
-              ? t('settings.sources.adding')
-              : t('settings.sources.addAndFetch')}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-12 rounded-[14px] text-fg2 text-[15px] leading-5 font-medium"
-          >
-            {t('mobile.settings.sources.cancel')}
-          </button>
-        </div>
-      </form>
-    </div>
+      {(close) => (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void sources.addSubscription().then((added) => {
+              if (added) close();
+            });
+          }}
+          className="flex flex-col gap-4"
+        >
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] leading-[18px] font-medium text-fg2">
+              {t('mobile.settings.sources.nameLabel')}
+            </span>
+            <input
+              type="text"
+              value={sources.newSubName}
+              onChange={(event) => sources.setNewSubName(event.target.value)}
+              placeholder={t('settings.sources.namePlaceholder')}
+              maxLength={100}
+              className={field}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] leading-[18px] font-medium text-fg2">
+              {t('mobile.settings.sources.urlLabel')}
+            </span>
+            <input
+              type="url"
+              inputMode="url"
+              value={sources.newSubUrl}
+              onChange={(event) => sources.setNewSubUrl(event.target.value)}
+              placeholder={t('settings.sources.urlPlaceholder')}
+              className={`${field} font-mono text-sm`}
+            />
+          </label>
+          {sources.addError && (
+            <ErrorText>
+              {localizeError(sources.addError, i18n.language)}
+            </ErrorText>
+          )}
+          <div className="flex flex-col gap-1 pt-1 pb-3">
+            <button
+              type="submit"
+              disabled={sources.isAdding}
+              className="h-12 rounded-[14px] bg-acc-fill text-white text-[15px] leading-5 font-medium disabled:opacity-60"
+            >
+              {sources.isAdding
+                ? t('settings.sources.adding')
+                : t('settings.sources.addAndFetch')}
+            </button>
+            <button
+              type="button"
+              onClick={close}
+              className="h-12 rounded-[14px] text-fg2 text-[15px] leading-5 font-medium"
+            >
+              {t('mobile.settings.sources.cancel')}
+            </button>
+          </div>
+        </form>
+      )}
+    </BottomSheet>
   );
 };

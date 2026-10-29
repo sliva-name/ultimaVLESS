@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { MoreHorizontal, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { anchorPopup, type PopupPosition } from './anchorPopup';
 
 export interface MenuItem {
   label: string;
@@ -29,6 +30,14 @@ interface MenuProps {
 
 const MENU_WIDTH = 248;
 
+/** Items are 32 px, separators 9 px, plus the padding and border. */
+function menuHeight(items: MenuEntry[]): number {
+  return (
+    items.reduce((sum, entry) => sum + (entry === MenuSeparator ? 9 : 32), 0) +
+    10
+  );
+}
+
 /**
  * "···" button with a popup menu: opens under the trigger, aligned to its
  * right edge; arrows move, Enter runs, Escape closes. An item with `confirm`
@@ -45,7 +54,7 @@ export const Menu: React.FC<MenuProps> = ({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<{ top: number; left: number }>();
+  const [position, setPosition] = useState<PopupPosition>();
   const [confirming, setConfirming] = useState<MenuItem | null>(null);
   const [active, setActive] = useState(0);
 
@@ -59,15 +68,18 @@ export const Menu: React.FC<MenuProps> = ({
     if (refocus) triggerRef.current?.focus();
   }, []);
 
+  // Opens up near the bottom of the window instead of running off it.
   const place = useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const left = Math.max(
-      8,
-      Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8),
+    setPosition(
+      anchorPopup(
+        rect,
+        { width: MENU_WIDTH, height: menuHeight(items) },
+        { width: window.innerWidth, height: window.innerHeight },
+      ),
     );
-    setPosition({ top: rect.bottom + 4, left });
-  }, []);
+  }, [items]);
 
   const toggle = () => {
     if (open) {
@@ -145,6 +157,7 @@ export const Menu: React.FC<MenuProps> = ({
         style={{
           position: 'fixed',
           top: position.top,
+          bottom: position.bottom,
           left: position.left,
           width: MENU_WIDTH,
         }}

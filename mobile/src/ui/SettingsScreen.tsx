@@ -297,8 +297,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       )}
       {page === 'apps' && <div className="mobile-inset-bottom shrink-0" />}
 
-      {route.sheet && page === 'sources' && (
-        <SubscriptionSheet sources={sources} onClose={onBack} />
+      {/* Stays mounted, so the system back closes it with its animation. */}
+      {page === 'sources' && (
+        <SubscriptionSheet
+          open={!!route.sheet}
+          sources={sources}
+          onClose={onBack}
+        />
       )}
     </div>
   );
