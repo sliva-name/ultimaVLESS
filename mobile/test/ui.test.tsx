@@ -189,6 +189,63 @@ describe('mobile UI', () => {
     ).toBeInTheDocument();
   });
 
+  it('closes the new-subscription sheet by the scrim, the system back and a swipe', async () => {
+    const addButton = screen.getByRole('button', { name: 'Добавить подписку' });
+    const sheetOpen = () =>
+      (history.state as { nav: { sheet?: boolean }[] }).nav.some(
+        (route) => route.sheet,
+      );
+    const openSheet = async () => {
+      // A tap focuses the button in Chromium; fireEvent.click alone does not.
+      addButton.focus();
+      fireEvent.click(addButton);
+      const sheet = await screen.findByRole('dialog', {
+        name: 'Новая подписка',
+      });
+      await waitFor(() =>
+        expect(within(sheet).getAllByRole('textbox')[0]).toHaveFocus(),
+      );
+      return sheet;
+    };
+    const closed = () =>
+      waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(sheetOpen()).toBe(false);
+      });
+
+    // A tap on the scrim; focus goes back to the button.
+    await openSheet();
+    fireEvent.click(document.querySelector('[data-sheet-scrim]')!);
+    await closed();
+    await waitFor(() => expect(addButton).toHaveFocus());
+
+    // The system back.
+    await openSheet();
+    history.back();
+    await closed();
+
+    // A short drag springs back; a long one follows the finger and closes.
+    const sheet = await openSheet();
+    Object.defineProperty(sheet, 'offsetHeight', {
+      configurable: true,
+      value: 400,
+    });
+    const handle = sheet.querySelector('[data-sheet-drag]')!;
+    fireEvent.pointerDown(handle, { pointerId: 1, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 150 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 150 });
+    expect(sheet).toHaveStyle({ transform: 'translateY(0px)' });
+    expect(sheetOpen()).toBe(true);
+
+    fireEvent.pointerDown(handle, { pointerId: 1, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 40 });
+    expect(sheet).toHaveStyle({ transform: 'translateY(0px)' });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 300 });
+    expect(sheet).toHaveStyle({ transform: 'translateY(200px)' });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 300 });
+    await closed();
+  });
+
   it('switches the interface to English', async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
     fireEvent.click(await screen.findByRole('radio', { name: 'EN' }));
