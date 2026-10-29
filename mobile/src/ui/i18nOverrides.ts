@@ -69,14 +69,6 @@ const OVERRIDES = {
       back: 'Назад',
       close: 'Закрыть',
       done: 'Готово',
-      units: {
-        bytes: ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'],
-        perSecond: '{{value}}/с',
-        seconds: '{{count}} с',
-        minutes: '{{count}} мин',
-        hours: '{{count}} ч',
-        days: '{{count}} дн.',
-      },
       count: {
         subscriptions_one: '{{count}} подписка',
         subscriptions_few: '{{count}} подписки',
@@ -326,14 +318,6 @@ const OVERRIDES = {
       back: 'Back',
       close: 'Close',
       done: 'Done',
-      units: {
-        bytes: ['B', 'KB', 'MB', 'GB', 'TB'],
-        perSecond: '{{value}}/s',
-        seconds: '{{count}} s',
-        minutes: '{{count}} min',
-        hours: '{{count}} h',
-        days: '{{count}} d',
-      },
       count: {
         subscriptions_one: '{{count}} subscription',
         subscriptions_other: '{{count}} subscriptions',

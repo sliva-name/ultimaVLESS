@@ -14,7 +14,7 @@ import type { ConnectionMode, Subscription, VlessConfig } from '@/shared/types';
 import type { SafeServerConfig } from '@/shared/serverView';
 import { isSessionPhaseInFlight, type SessionPhase } from '@/shared/ipc';
 import { buildSidebarServerBuckets } from '@/renderer/components/sidebarModel';
-import { useFormat } from './format';
+import { useFormat } from '@/renderer/hooks/useFormat';
 import {
   describeServer,
   PingBadge,

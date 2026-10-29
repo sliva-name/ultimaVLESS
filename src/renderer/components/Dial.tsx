@@ -5,12 +5,19 @@ import {
   Power,
   RefreshCw,
   ShieldCheck,
+  WifiOff,
   type LucideIcon,
 } from 'lucide-react';
 import type { SessionPhase } from '@/shared/ipc';
 
 /** Circumference of the progress arc (r = 96 in a 240 box). */
 const ARC = 603.2;
+
+/**
+ * The ring's forms: one per session phase, plus `offline` for a failed
+ * session whose error says the computer has no network at all.
+ */
+export type DialState = SessionPhase | 'offline';
 
 interface DialLook {
   minor: string;
@@ -19,15 +26,19 @@ interface DialLook {
   dash: string;
   arcOpacity: number;
   core: string;
+  /** Core outline under the pointer. */
+  hover: string;
   icon: LucideIcon;
   iconColor: string;
   /** Where the arc starts, degrees. */
   base: number;
+  /** Every other minor tick off and a dashed core: no network. */
+  sparse?: boolean;
 }
 
 const v = (token: string) => `var(--color-${token})`;
 
-const LOOKS: Record<SessionPhase, DialLook> = {
+const LOOKS: Record<DialState, DialLook> = {
   idle: {
     minor: v('line2'),
     major: v('fg3'),
@@ -35,6 +46,7 @@ const LOOKS: Record<SessionPhase, DialLook> = {
     dash: `0 ${ARC}`,
     arcOpacity: 0,
     core: v('line'),
+    hover: v('acc'),
     icon: Power,
     iconColor: v('acc'),
     base: -90,
@@ -46,6 +58,7 @@ const LOOKS: Record<SessionPhase, DialLook> = {
     dash: `150 ${ARC - 150}`,
     arcOpacity: 1,
     core: v('acc-line'),
+    hover: v('acc'),
     icon: Power,
     iconColor: v('acc'),
     base: -90,
@@ -57,6 +70,7 @@ const LOOKS: Record<SessionPhase, DialLook> = {
     dash: `${ARC} 0`,
     arcOpacity: 1,
     core: v('ok-line'),
+    hover: v('ok'),
     icon: ShieldCheck,
     iconColor: v('ok'),
     base: -90,
@@ -68,6 +82,7 @@ const LOOKS: Record<SessionPhase, DialLook> = {
     dash: '90 211.6',
     arcOpacity: 1,
     core: v('acc-line'),
+    hover: v('acc'),
     icon: RefreshCw,
     iconColor: v('acc'),
     base: -90,
@@ -79,6 +94,7 @@ const LOOKS: Record<SessionPhase, DialLook> = {
     dash: `36 ${ARC - 36}`,
     arcOpacity: 0.9,
     core: v('line'),
+    hover: v('line'),
     icon: Power,
     iconColor: v('fg3'),
     base: -90,
@@ -90,18 +106,33 @@ const LOOKS: Record<SessionPhase, DialLook> = {
     dash: `540 ${ARC - 540}`,
     arcOpacity: 1,
     core: v('warn-line'),
+    hover: v('warn'),
     icon: AlertTriangle,
     iconColor: v('warn'),
     base: -71,
   },
+  offline: {
+    minor: v('line2'),
+    major: v('fg3'),
+    arc: v('fg3'),
+    dash: `0 ${ARC}`,
+    arcOpacity: 0,
+    core: v('line2'),
+    hover: v('acc'),
+    icon: WifiOff,
+    iconColor: v('fg3'),
+    base: -90,
+    sparse: true,
+  },
 };
 
 /** 72 ticks around the ring, every sixth one longer. */
-function buildTicks(): { minor: string; major: string } {
+function buildTicks(sparse: boolean): { minor: string; major: string } {
   let minor = '';
   let major = '';
   for (let i = 0; i < 72; i++) {
     const isMajor = i % 6 === 0;
+    if (!isMajor && sparse && i % 2 === 1) continue;
     const angle = (i / 72) * Math.PI * 2 - Math.PI / 2;
     const r1 = isMajor ? 101 : 105;
     const r2 = 113;
@@ -114,10 +145,11 @@ function buildTicks(): { minor: string; major: string } {
   return { minor, major };
 }
 
-const TICKS = buildTicks();
+const TICKS = buildTicks(false);
+const SPARSE_TICKS = buildTicks(true);
 
 interface DialProps {
-  phase: SessionPhase;
+  phase: DialState;
   /** Ring diameter in px; the control takes 28 px more for the press area. */
   size?: number;
   label: string;
@@ -130,9 +162,9 @@ interface DialProps {
 }
 
 /**
- * The connection ring shared with the desktop redesign: ticks, a progress
- * arc that turns while the core starts or switches, and the state in the
- * middle. It only draws the session phase it is given.
+ * The connection ring shared by the desktop window and the Android app:
+ * ticks, a progress arc that turns while the core starts or switches, and the
+ * state in the middle. It only draws the session phase it is given.
  */
 export const Dial: React.FC<DialProps> = ({
   phase,
@@ -145,6 +177,7 @@ export const Dial: React.FC<DialProps> = ({
   onPress,
 }) => {
   const look = LOOKS[phase];
+  const ticks = look.sparse ? SPARSE_TICKS : TICKS;
   const Icon = look.icon;
   const spinning = phase === 'connecting' || phase === 'switching';
   const iconSize = Math.round(size * 0.1);
@@ -160,8 +193,8 @@ export const Dial: React.FC<DialProps> = ({
         disabled={disabled}
         onClick={onPress}
         className={clsx(
-          'relative p-0 border-0 rounded-full bg-transparent transition-transform duration-75',
-          !disabled && 'active:scale-[0.98]',
+          'group relative p-0 border-0 rounded-full bg-transparent transition-transform duration-75',
+          !disabled && 'cursor-pointer active:scale-[0.98]',
         )}
         style={{ width: size, height: size }}
       >
@@ -173,14 +206,14 @@ export const Dial: React.FC<DialProps> = ({
           className="absolute inset-0"
         >
           <path
-            d={TICKS.minor}
+            d={ticks.minor}
             stroke={look.minor}
             strokeWidth={2}
             strokeLinecap="round"
             style={{ transition: 'stroke 420ms cubic-bezier(.2,0,0,1)' }}
           />
           <path
-            d={TICKS.major}
+            d={ticks.major}
             stroke={look.major}
             strokeWidth={2.5}
             strokeLinecap="round"
@@ -207,7 +240,16 @@ export const Dial: React.FC<DialProps> = ({
             fill="var(--color-s1)"
             stroke={look.core}
             strokeWidth={1.5}
-            style={{ transition: 'stroke 220ms' }}
+            strokeDasharray={look.sparse ? '3 6' : undefined}
+            className={clsx(
+              !disabled && 'group-hover:[stroke:var(--dial-hover)]',
+            )}
+            style={
+              {
+                transition: 'stroke 220ms',
+                '--dial-hover': look.hover,
+              } as React.CSSProperties
+            }
           />
         </svg>
         <span

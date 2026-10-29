@@ -25,9 +25,10 @@ import {
 } from '@/shared/ipc';
 import { localizeError } from '@/shared/localizeError';
 import logoUrl from '@/renderer/assets/logo.svg';
-import { Dial } from './Dial';
+import { Dial } from '@/renderer/components/Dial';
 import { UpdateCard } from './UpdateCard';
-import { formatDuration, useFormat } from './format';
+import { formatDuration, useFormat } from '@/renderer/hooks/useFormat';
+import { useSessionDuration } from '@/renderer/hooks/useSessionDuration';
 import { describeServer, PingBadge, ServerFlag } from './serverParts';
 import type { MobileRoute, SettingsPage } from './useMobileNav';
 
@@ -104,22 +105,6 @@ const ModeSwitch: React.FC<{
     </div>
   );
 };
-
-/** Session length that ticks between the 1 s traffic samples. */
-function useSessionDuration(traffic: TrafficSnapshot | null): number {
-  const connectedAt = traffic?.connectedAt ?? 0;
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!connectedAt) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [connectedAt]);
-  if (!traffic) return 0;
-  return Math.max(
-    traffic.sessionDurationMs,
-    connectedAt ? now - connectedAt : 0,
-  );
-}
 
 /** Routing settings for the summary chip; read again on every connect. */
 function useRoutingSummary(phase: SessionPhase): PerformanceSettings | null {

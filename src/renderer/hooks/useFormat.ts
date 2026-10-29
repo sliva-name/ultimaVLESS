@@ -32,7 +32,7 @@ export function useFormat() {
 
   return useMemo(() => {
     const locale = language === 'ru' ? 'ru-RU' : 'en-US';
-    const units = t('mobile.units.bytes', { returnObjects: true }) as string[];
+    const units = t('units.bytes', { returnObjects: true }) as string[];
     const number = (value: number, digits: number) =>
       new Intl.NumberFormat(locale, {
         minimumFractionDigits: digits,
@@ -51,7 +51,7 @@ export function useFormat() {
     const rate = (bytesPerSecond: number) => {
       const { value, unit } = scaleBytes(bytesPerSecond);
       const digits = unit === 0 || value >= 10 ? 0 : 1;
-      return t('mobile.units.perSecond', {
+      return t('units.perSecond', {
         value: `${number(value, digits)} ${units[unit]}`,
       });
     };
@@ -66,12 +66,12 @@ export function useFormat() {
     /** 12 с · 40 мин · 3 ч — for "… ago" phrases. */
     const ago = (sinceMs: number) => {
       const seconds = Math.max(0, Math.round(sinceMs / 1000));
-      if (seconds < 60) return t('mobile.units.seconds', { count: seconds });
+      if (seconds < 60) return t('units.seconds', { count: seconds });
       const minutes = Math.round(seconds / 60);
-      if (minutes < 60) return t('mobile.units.minutes', { count: minutes });
+      if (minutes < 60) return t('units.minutes', { count: minutes });
       const hours = Math.round(minutes / 60);
-      if (hours < 24) return t('mobile.units.hours', { count: hours });
-      return t('mobile.units.days', { count: Math.round(hours / 24) });
+      if (hours < 24) return t('units.hours', { count: hours });
+      return t('units.days', { count: Math.round(hours / 24) });
     };
 
     return { bytes, rate, clock, ago, duration: formatDuration };

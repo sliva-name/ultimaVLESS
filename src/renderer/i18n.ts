@@ -8,6 +8,14 @@ const resources = {
         title: 'UltimaVLESS',
         subtitle: 'Xray VPN Client',
       },
+      units: {
+        bytes: ['B', 'KB', 'MB', 'GB', 'TB'],
+        perSecond: '{{value}}/s',
+        seconds: '{{count}} s',
+        minutes: '{{count}} min',
+        hours: '{{count}} h',
+        days: '{{count}} d',
+      },
       sidebar: {
         servers: 'Servers',
         pingAll: 'Ping all',
@@ -340,6 +348,14 @@ const resources = {
       app: {
         title: 'UltimaVLESS',
         subtitle: 'Xray VPN-клиент',
+      },
+      units: {
+        bytes: ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'],
+        perSecond: '{{value}}/с',
+        seconds: '{{count}} с',
+        minutes: '{{count}} мин',
+        hours: '{{count}} ч',
+        days: '{{count}} дн.',
       },
       sidebar: {
         servers: 'Серверы',

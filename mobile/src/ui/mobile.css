@@ -99,39 +99,6 @@ textarea,
   padding-bottom: var(--mobile-inset-bottom);
 }
 
-/* Connection dial: the arc turns while a session starts or switches. */
-@keyframes dial-spin {
-  from {
-    transform: rotate(var(--dial-base, -90deg));
-  }
-  to {
-    transform: rotate(calc(var(--dial-base, -90deg) + 360deg));
-  }
-}
-
-.dial-arc {
-  transform-origin: 120px 120px;
-  transform: rotate(var(--dial-base, -90deg));
-  transition:
-    stroke-dasharray 420ms cubic-bezier(0.2, 0, 0, 1),
-    stroke 420ms cubic-bezier(0.2, 0, 0, 1),
-    opacity 220ms;
-}
-
-.dial-arc[data-spin='connecting'] {
-  animation: dial-spin 1400ms linear infinite;
-}
-
-.dial-arc[data-spin='switching'] {
-  animation: dial-spin 1000ms linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dial-arc[data-spin] {
-    animation: none;
-  }
-}
-
 /* Scrollbars are an overlay on Android; the desktop gutters only take room. */
 * {
   scrollbar-width: none;

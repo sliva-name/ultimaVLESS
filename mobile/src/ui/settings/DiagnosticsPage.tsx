@@ -19,7 +19,7 @@ import type { AppSnapshot, ConnectionMonitorEvent } from '@/shared/ipc';
 import { PRIMARY_RUNTIME_PORTS } from '@/shared/constants';
 import { localizeError } from '@/shared/localizeError';
 import { useDiagnosticsActions } from '@/renderer/hooks/useDiagnosticsActions';
-import { useFormat } from '../format';
+import { useFormat } from '@/renderer/hooks/useFormat';
 import {
   ErrorText,
   Foot,
