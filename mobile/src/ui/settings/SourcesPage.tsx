@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Layers, MoreVertical, Plus, Smartphone } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Layers, Plus, Smartphone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Subscription, VlessConfig } from '@/shared/types';
 import { localizeError } from '@/shared/localizeError';
 import { partitionServers } from '@/renderer/components/sidebarModel';
 import type { useSourcesSettings } from '@/renderer/hooks/useSourcesSettings';
+import { PopupMenu } from '../PopupMenu';
 import { subscriptionColorIndex } from '../serverParts';
 import {
   ErrorText,
@@ -31,67 +32,26 @@ const SubscriptionMenu: React.FC<{
   onDelete: () => void;
 }> = ({ subscription, onToggle, onDelete }) => {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', close);
-    return () => document.removeEventListener('pointerdown', close);
-  }, [open]);
-
-  const item =
-    'w-full min-h-12 px-4 text-left text-[15px] leading-5 font-medium';
   return (
-    <div ref={ref} className="relative shrink-0 -mr-2.5">
-      <button
-        type="button"
-        aria-label={t('mobile.settings.sources.actions', {
-          name: subscription.name,
-        })}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="w-10 h-10 inline-flex items-center justify-center rounded-[20px] text-fg3"
-      >
-        <MoreVertical aria-hidden strokeWidth={2} className="w-5 h-5" />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-11 z-10 min-w-56 py-2 rounded-xl bg-s3 border border-line2 shadow-float"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onToggle();
-            }}
-            className={item}
-          >
-            {t(
-              subscription.enabled
-                ? 'settings.sources.disableSubscription'
-                : 'settings.sources.enableSubscription',
-            )}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onDelete();
-            }}
-            className={`${item} text-bad`}
-          >
-            {t('settings.sources.removeSubscription')}
-          </button>
-        </div>
-      )}
-    </div>
+    <PopupMenu
+      label={t('mobile.settings.sources.actions', { name: subscription.name })}
+      className="-mr-2.5"
+      items={[
+        {
+          label: t(
+            subscription.enabled
+              ? 'settings.sources.disableSubscription'
+              : 'settings.sources.enableSubscription',
+          ),
+          onSelect: onToggle,
+        },
+        {
+          label: t('settings.sources.removeSubscription'),
+          onSelect: onDelete,
+          danger: true,
+        },
+      ]}
+    />
   );
 };
 

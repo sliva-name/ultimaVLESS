@@ -157,6 +157,38 @@ describe('mobile UI', () => {
     expect(screen.queryByText('1 изменение')).not.toBeInTheDocument();
   });
 
+  it('opens a subscription menu outside the card that would clip it', async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Подписки и импорт/ }),
+    );
+    const trigger = await screen.findByRole('button', {
+      name: 'Действия: Off',
+    });
+    // The rounded card clips its content to keep the corners.
+    const card = trigger.closest('.overflow-hidden');
+    expect(card).not.toBeNull();
+
+    fireEvent.click(trigger);
+    const menu = screen.getByRole('menu', { name: 'Действия: Off' });
+    expect(menu.parentElement).toBe(document.body);
+    expect(card!.contains(menu)).toBe(false);
+    expect(menu.closest('.overflow-hidden')).toBeNull();
+    expect(menu).toHaveClass('fixed');
+    expect(
+      within(menu).getByRole('menuitem', { name: 'Включить подписку' }),
+    ).toBeInTheDocument();
+
+    // The system back closes the menu and stays on the page.
+    history.back();
+    await waitFor(() =>
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole('heading', { name: 'Подписки и импорт' }),
+    ).toBeInTheDocument();
+  });
+
   it('switches the interface to English', async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
     fireEvent.click(await screen.findByRole('radio', { name: 'EN' }));
