@@ -11,13 +11,15 @@ import {
   SERVER_ITEM_ESTIMATED_HEIGHT_PX,
   SERVER_LIST_VIRTUALIZE_THRESHOLD,
 } from '@/renderer/components/sidebarModel';
-import { ServerItem } from './ServerItem';
+import { ServerRow, type RowContext, type ServerRowData } from './ServerRow';
 
 interface VirtualizedServerListProps {
-  servers: VlessConfig[];
+  servers: ServerRowData[];
   selectedServer: VlessConfig | null;
   selectionLocked?: boolean;
   onSelectServer: (server: VlessConfig) => void;
+  rowContext: (server: ServerRowData) => RowContext;
+  isPending: (server: VlessConfig) => boolean;
 }
 
 const OVERSCAN_ROWS = 4;
@@ -29,6 +31,8 @@ export const VirtualizedServerList: React.FC<VirtualizedServerListProps> = ({
   selectedServer,
   selectionLocked = false,
   onSelectServer,
+  rowContext,
+  isPending,
 }) => {
   const shouldVirtualize = servers.length > SERVER_LIST_VIRTUALIZE_THRESHOLD;
 
@@ -152,19 +156,26 @@ export const VirtualizedServerList: React.FC<VirtualizedServerListProps> = ({
     [servers, startIndex, endIndex],
   );
 
+  const renderRow = (server: ServerRowData) => (
+    <ServerRow
+      server={server}
+      isSelected={
+        selectedServer != null && isSameServerRow(selectedServer, server)
+      }
+      selectionLocked={selectionLocked}
+      context={rowContext(server)}
+      pending={isPending(server)}
+      onSelect={onSelectServer}
+    />
+  );
+
   if (!shouldVirtualize) {
     return (
-      <div className="space-y-2">
+      <div className="flex flex-col gap-0.5">
         {servers.map((server, index) => (
-          <ServerItem
-            key={`${server.uuid}:${index}`}
-            server={server}
-            isSelected={
-              selectedServer != null && isSameServerRow(selectedServer, server)
-            }
-            selectionLocked={selectionLocked}
-            onSelect={onSelectServer}
-          />
+          <React.Fragment key={`${server.uuid}:${index}`}>
+            {renderRow(server)}
+          </React.Fragment>
         ))}
       </div>
     );
@@ -175,29 +186,21 @@ export const VirtualizedServerList: React.FC<VirtualizedServerListProps> = ({
   return (
     <div
       ref={scrollRef}
-      className="min-h-[12rem] max-h-[min(52vh,28rem)] overflow-y-auto -mx-1 px-1"
+      className="min-h-[12rem] max-h-[min(52vh,28rem)] overflow-y-auto"
       onScroll={onScroll}
       data-testid="virtualized-server-list"
     >
       <div style={{ height: totalHeight, position: 'relative' }}>
         <div style={{ height: topSpacer }} aria-hidden />
-        {/* No `space-y-*` here: each row carries its own fixed height with a
-            padding-bottom gap so windowing math matches the rendered DOM. */}
+        {/* No gap utilities here: each row carries its own fixed height with
+            a padding-bottom gap so windowing math matches the rendered DOM. */}
         {visibleServers.map((server, offset) => (
           <div
             key={`${server.uuid}:${startIndex + offset}`}
             style={{ height: SERVER_ITEM_ESTIMATED_HEIGHT_PX }}
-            className="pb-2"
+            className="pb-0.5"
           >
-            <ServerItem
-              server={server}
-              isSelected={
-                selectedServer != null &&
-                isSameServerRow(selectedServer, server)
-              }
-              selectionLocked={selectionLocked}
-              onSelect={onSelectServer}
-            />
+            {renderRow(server)}
           </div>
         ))}
         <div style={{ height: bottomSpacer }} aria-hidden />

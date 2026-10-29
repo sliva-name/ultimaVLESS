@@ -171,3 +171,5 @@ export function useNetworkSettings(isOpen: boolean) {
     session: snapshot.session,
   };
 }
+
+export type NetworkSettings = ReturnType<typeof useNetworkSettings>;

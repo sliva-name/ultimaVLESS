@@ -12,7 +12,7 @@ const NO_IDS: ReadonlySet<string> = new Set();
 
 /**
  * Other VPN/proxy software found by the check main runs on every TUN connect
- * attempt. Shown as a banner above the main view so it cannot scroll out of
+ * attempt. Shown as a banner above the stage so it cannot scroll out of
  * sight under the session stats once the tunnel is (nominally) up.
  */
 export const TunConflictNotice: React.FC<TunConflictNoticeProps> = ({
@@ -89,7 +89,7 @@ export const TunConflictNotice: React.FC<TunConflictNoticeProps> = ({
       onCloseApp={(appId) => void closeApp(appId)}
       onRescan={() => void rescan()}
       onDismiss={() => setDismissedId(checkId)}
-      className="z-20 shrink-0 mx-3 mt-2 max-h-[45vh] overflow-y-auto animate-[fadeIn_0.3s_ease-out]"
+      className="shrink-0 w-full max-w-[560px] mx-auto max-h-[45vh] overflow-y-auto page-in"
     />
   );
 };

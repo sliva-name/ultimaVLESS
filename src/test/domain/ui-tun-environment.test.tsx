@@ -2,6 +2,7 @@
 import React from 'react';
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -10,9 +11,12 @@ import {
 } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import i18n from '@/renderer/i18n';
-import { AppSnapshotProvider } from '@/renderer/hooks/useAppSnapshot';
-import { SettingsNetworkTab } from '@/renderer/components/settings/SettingsNetworkTab';
+import { NetworkPage } from '@/renderer/pages/settings/NetworkPage';
+import { DnsPage } from '@/renderer/pages/settings/DnsPage';
+import { CorePage } from '@/renderer/pages/settings/CorePage';
 import { TunConflictNotice } from '@/renderer/components/TunConflictNotice';
+import { useModeChange } from '@/renderer/hooks/useModeChange';
+import type { NetworkSettings } from '@/renderer/hooks/useNetworkSettings';
 import type { NetworkAdapterView, TunConflictCheck } from '@/shared/ipc';
 import {
   DEFAULT_PERFORMANCE_SETTINGS,
@@ -22,6 +26,8 @@ import {
   createElectronApiMock,
   installElectronApiMock,
 } from '@/test/electronApiMock';
+import { makeAppSnapshot } from '@/test/factories';
+import { renderWithNetwork } from '@/test/renderPage';
 
 const ADAPTERS: NetworkAdapterView[] = [
   {
@@ -50,10 +56,19 @@ const ADAPTERS: NetworkAdapterView[] = [
   },
 ];
 
-function renderNetworkTab(
+/** The network page wired to the title-bar mode switch, as in the shell. */
+const NetworkPageWithModes: React.FC<{ net: NetworkSettings }> = ({ net }) => {
+  const changeMode = useModeChange(net, false);
+  return (
+    <NetworkPage net={net} onModeChange={(mode) => void changeMode(mode)} />
+  );
+};
+
+function renderNetworkPage(
   tunOutboundInterface = '',
   overrides: Partial<PerformanceSettings> = {},
   isConnected = false,
+  page: 'network' | 'dns' | 'core' = 'network',
 ) {
   const electronApi = createElectronApiMock();
   electronApi.getPerformanceSettings.mockResolvedValue({
@@ -65,15 +80,27 @@ function renderNetworkTab(
     supported: true,
     adapters: ADAPTERS,
   });
+  if (isConnected) {
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        session: {
+          phase: 'connected',
+          activeServerId: 'server-1',
+          lastError: null,
+          blockedServerIds: [],
+        },
+      }),
+    );
+  }
   installElectronApiMock(electronApi);
-  render(
-    <AppSnapshotProvider>
-      <SettingsNetworkTab
-        isOpen
-        isConnected={isConnected}
-        isConnectionBusy={false}
-      />
-    </AppSnapshotProvider>,
+  renderWithNetwork((net) =>
+    page === 'dns' ? (
+      <DnsPage net={net} />
+    ) : page === 'core' ? (
+      <CorePage net={net} />
+    ) : (
+      <NetworkPageWithModes net={net} />
+    ),
   );
   return electronApi;
 }
@@ -84,7 +111,7 @@ beforeAll(async () => {
 
 describe('TUN adapter picker', () => {
   it('shows what automatic picks and saves a manual choice', async () => {
-    const electronApi = renderNetworkTab();
+    const electronApi = renderNetworkPage();
 
     const trigger = await screen.findByRole('button', {
       name: 'Сетевой адаптер для TUN',
@@ -117,7 +144,7 @@ describe('TUN adapter picker', () => {
   });
 
   it('keeps a saved adapter that is gone and warns about it', async () => {
-    renderNetworkTab('Ethernet 5');
+    renderNetworkPage('Ethernet 5');
 
     expect(
       await screen.findByText(
@@ -130,7 +157,7 @@ describe('TUN adapter picker', () => {
   });
 
   it('warns when the chosen adapter has no gateway', async () => {
-    renderNetworkTab('VirtualBox Host-Only Network');
+    renderNetworkPage('VirtualBox Host-Only Network');
 
     expect(
       await screen.findByText(
@@ -142,7 +169,7 @@ describe('TUN adapter picker', () => {
 
 describe('TUN DNS leak block', () => {
   it('is off by default and saves when switched on', async () => {
-    const electronApi = renderNetworkTab();
+    const electronApi = renderNetworkPage();
 
     const toggle = await screen.findByRole('switch', {
       name: 'Блокировать утечки DNS',
@@ -165,36 +192,81 @@ describe('TUN DNS leak block', () => {
   });
 });
 
-describe('network settings layout', () => {
-  it('keeps the everyday settings in view and the Xray internals folded away', async () => {
-    renderNetworkTab();
+describe('settings pages', () => {
+  it('splits mode, DNS and the Xray internals into their own pages', async () => {
+    renderNetworkPage();
 
     expect(await screen.findByText('Способ пинга')).toBeInTheDocument();
-    expect(screen.getByText('Удалённый DNS')).toBeInTheDocument();
-    expect(screen.getByText('Блокировка рекламы')).toBeInTheDocument();
+    expect(screen.queryByText('Удалённый DNS')).toBeNull();
     expect(screen.queryByText('MTU туннеля')).toBeNull();
-    expect(screen.queryByText('TCP Mux')).toBeNull();
+    cleanup();
 
-    const advanced = screen.getByRole('button', { name: 'Дополнительно' });
-    expect(advanced).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(advanced);
+    renderNetworkPage('', {}, false, 'dns');
+    expect(
+      await screen.findByRole('radiogroup', { name: 'Удалённый DNS' }),
+    ).toBeInTheDocument();
+    // Explanations come verbatim from the translations.
+    expect(
+      screen.getByText(
+        'Резолверы Xray (без localhost). В режиме TUN системный DNS на порту 53 перехватывается и идёт через прокси. Полная защита от утечек — только в TUN.',
+      ),
+    ).toBeInTheDocument();
+    cleanup();
 
-    expect(advanced).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('MTU туннеля')).toBeInTheDocument();
+    renderNetworkPage('', {}, false, 'core');
+    expect(await screen.findByText('MTU туннеля')).toBeInTheDocument();
     expect(screen.getByText('TCP Mux')).toBeInTheDocument();
+  });
+
+  it('resets only the core page and leaves it for the save bar', async () => {
+    const electronApi = renderNetworkPage(
+      '',
+      { tunMtu: 1280, bypassDomains: ['vk.com'] },
+      false,
+      'core',
+    );
+
+    const mtu = await screen.findByRole('textbox', { name: 'MTU туннеля' });
+    await waitFor(() => expect(mtu).toHaveValue('1280'));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Сбросить по умолчанию' }),
+    );
+    expect(mtu).toHaveValue(String(DEFAULT_PERFORMANCE_SETTINGS.tunMtu));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Сохранить' }));
+    await waitFor(() =>
+      expect(electronApi.setPerformanceSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tunMtu: DEFAULT_PERFORMANCE_SETTINGS.tunMtu,
+          bypassDomains: ['vk.com'],
+        }),
+      ),
+    );
+  });
+
+  it('is read-only while connected, with the reason and a way out', async () => {
+    renderNetworkPage('', {}, true, 'dns');
+
+    expect(
+      await screen.findByText(
+        'Отключите VPN, чтобы изменить настройки производительности.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Google/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Отключить' })).toBeEnabled();
   });
 });
 
 describe('connection mode while connected', () => {
   it('changes the mode instead of asking to disconnect first', async () => {
-    const electronApi = renderNetworkTab('', {}, true);
+    const electronApi = renderNetworkPage('', {}, true);
 
     expect(
       screen.getByText(
         'При выборе другого режима подключение к тому же серверу перезапустится в нём.',
       ),
     ).toBeInTheDocument();
-    const tun = await screen.findByRole('button', { name: /^Режим TUN/ });
+    const tun = await screen.findByRole('radio', { name: /^Режим TUN/ });
     await waitFor(() => expect(tun).toBeEnabled());
     fireEvent.click(tun);
 

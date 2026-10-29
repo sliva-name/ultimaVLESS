@@ -1,16 +1,9 @@
 /* @vitest-environment jsdom */
 import React from 'react';
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import i18n from '@/renderer/i18n';
-import { AppSnapshotProvider } from '@/renderer/hooks/useAppSnapshot';
-import { SettingsNetworkTab } from '@/renderer/components/settings/SettingsNetworkTab';
+import { RoutingPage } from '@/renderer/pages/RoutingPage';
 import type { AppOption } from '@/shared/appRouting';
 import {
   DEFAULT_PERFORMANCE_SETTINGS,
@@ -20,6 +13,8 @@ import {
   createElectronApiMock,
   installElectronApiMock,
 } from '@/test/electronApiMock';
+import { makeAppSnapshot } from '@/test/factories';
+import { renderWithNetwork } from '@/test/renderPage';
 
 const CHROME_ICON = 'data:image/png;base64,Q0hST01F';
 const DISCORD_ICON = 'data:image/png;base64,RElTQ09SRA==';
@@ -47,7 +42,7 @@ const RUNNING: AppOption[] = [
   },
 ];
 
-function renderNetworkTab(
+function renderRoutingPage(
   settings: Partial<PerformanceSettings> = {},
   isConnected = false,
 ) {
@@ -57,16 +52,20 @@ function renderNetworkTab(
     ...settings,
   });
   electronApi.listRunningApps.mockResolvedValue(RUNNING);
+  if (isConnected) {
+    electronApi.getAppSnapshot.mockResolvedValue(
+      makeAppSnapshot({
+        session: {
+          phase: 'connected',
+          activeServerId: 'server-1',
+          lastError: null,
+          blockedServerIds: [],
+        },
+      }),
+    );
+  }
   installElectronApiMock(electronApi);
-  render(
-    <AppSnapshotProvider>
-      <SettingsNetworkTab
-        isOpen
-        isConnected={isConnected}
-        isConnectionBusy={false}
-      />
-    </AppSnapshotProvider>,
-  );
+  renderWithNetwork((net) => <RoutingPage net={net} />);
   return electronApi;
 }
 
@@ -82,7 +81,7 @@ beforeAll(async () => {
 
 describe('Routing rules section', () => {
   it('shows only the lists the selected mode uses', async () => {
-    renderNetworkTab();
+    renderRoutingPage();
 
     const allMode = await screen.findByRole('radio', {
       name: /Весь трафик через VPN/,
@@ -110,7 +109,7 @@ describe('Routing rules section', () => {
   });
 
   it('offers running programs with icons in a scrollable list', async () => {
-    const electronApi = renderNetworkTab();
+    const electronApi = renderRoutingPage();
     await waitFor(() => expect(electronApi.listRunningApps).toHaveBeenCalled());
 
     const input = await screen.findByRole('combobox', {
@@ -151,7 +150,7 @@ describe('Routing rules section', () => {
   });
 
   it('adds apps from the list, by keyboard, by name and from a file', async () => {
-    const electronApi = renderNetworkTab();
+    const electronApi = renderRoutingPage();
     electronApi.pickApplications.mockResolvedValue([
       { name: 'steam.exe', description: null, icon: STEAM_ICON, system: false },
     ]);
@@ -222,7 +221,7 @@ describe('Routing rules section', () => {
   });
 
   it('locks the rules while connected', async () => {
-    renderNetworkTab({ routingMode: 'sites' }, true);
+    renderRoutingPage({ routingMode: 'sites' }, true);
 
     expect(
       await screen.findByText(
@@ -232,5 +231,36 @@ describe('Routing rules section', () => {
     expect(
       screen.getByRole('radio', { name: /Только выбранные сайты/ }),
     ).toBeDisabled();
+    expect(
+      screen.getByRole('switch', { name: 'Блокировка рекламы' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Отключить' }),
+    ).toBeInTheDocument();
+  });
+
+  it('counts unsaved changes in one bar and drops them on discard', async () => {
+    const electronApi = renderRoutingPage();
+
+    fireEvent.click(
+      await screen.findByRole('radio', { name: /Только выбранные сайты/ }),
+    );
+    fireEvent.click(
+      screen.getByRole('switch', { name: 'Блокировка BitTorrent' }),
+    );
+
+    expect(await screen.findByText('2 изменения')).toBeInTheDocument();
+    expect(
+      screen.getByText(/применятся при следующем подключении/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Отменить' }));
+    await waitFor(() =>
+      expect(screen.queryByText('2 изменения')).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole('radio', { name: /Весь трафик через VPN/ }),
+    ).toHaveAttribute('aria-checked', 'true');
+    expect(electronApi.setPerformanceSettings).not.toHaveBeenCalled();
   });
 });

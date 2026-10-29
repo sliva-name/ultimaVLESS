@@ -30,7 +30,8 @@ export const AppIcon: React.FC<{
   ) : (
     <AppWindow
       aria-hidden="true"
-      className={clsx('shrink-0 text-gray-500', className)}
+      strokeWidth={1.75}
+      className={clsx('shrink-0 text-fg3', className)}
     />
   );
 
@@ -180,13 +181,12 @@ export const AppPicker: React.FC<AppPickerProps> = ({
           maxHeight: placement.maxHeight,
         }}
         className={clsx(
-          'z-[9999] overflow-y-auto overscroll-contain rounded-xl border border-gray-700/70',
-          'bg-gray-950/95 backdrop-blur-md shadow-2xl shadow-black/50',
-          'py-1.5 animate-[fadeIn_0.12s_ease-out]',
+          'z-[9999] overflow-y-auto overscroll-contain rounded-xl border border-line2',
+          'bg-s3 shadow-float p-1 menu-in',
         )}
       >
         {filtered.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-gray-500 leading-relaxed">
+          <p className="m-0 px-2.5 py-2 text-xs leading-4 text-fg3">
             {emptyText}
           </p>
         ) : (
@@ -195,7 +195,7 @@ export const AppPicker: React.FC<AppPickerProps> = ({
               {option.system && !filtered[index - 1]?.system && (
                 <div
                   role="presentation"
-                  className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wide text-gray-500"
+                  className="px-2.5 pt-2 pb-1 text-[11px] leading-4 font-semibold uppercase tracking-[0.06em] text-fg3"
                 >
                   {t('settings.network.routingAppsSystemGroup')}
                 </div>
@@ -208,17 +208,17 @@ export const AppPicker: React.FC<AppPickerProps> = ({
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => pick(option.name)}
                 className={clsx(
-                  'flex cursor-pointer items-center gap-2.5 px-3 py-1.5 transition-colors',
-                  index === active ? 'bg-white/5' : 'hover:bg-white/5',
+                  'flex cursor-pointer items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-colors',
+                  index === active && 'bg-thumb',
                 )}
               >
                 <AppIcon icon={option.icon} className="h-5 w-5" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-gray-200">
+                  <span className="block truncate text-[13px] leading-5 text-fg">
                     {option.description ?? option.name}
                   </span>
                   {option.description && (
-                    <span className="block truncate font-mono text-[11px] text-gray-500">
+                    <span className="block truncate font-mono text-[11px] leading-4 text-fg3">
                       {option.name}
                     </span>
                   )}
@@ -256,7 +256,7 @@ export const AppPicker: React.FC<AppPickerProps> = ({
         onClick={openMenu}
         onBlur={() => setOpen(false)}
         onKeyDown={handleKeyDown}
-        className="w-full bg-black/40 border border-gray-600/50 rounded-lg pl-3 pr-8 py-2 text-sm text-white placeholder:text-gray-600 focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none font-mono"
+        className="w-full h-8 box-border rounded-lg border border-line2 bg-s2 pl-3 pr-8 text-[13px] leading-5 text-fg placeholder:text-fg3 outline-none focus:border-acc-fill disabled:opacity-55"
       />
       <button
         type="button"
@@ -272,12 +272,13 @@ export const AppPicker: React.FC<AppPickerProps> = ({
           inputRef.current?.focus();
           openMenu();
         }}
-        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-200 disabled:opacity-40"
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-fg3 hover:text-fg disabled:opacity-40"
       >
         <ChevronDown
+          strokeWidth={1.75}
           className={clsx(
             'h-4 w-4 transition-transform duration-200',
-            open && 'rotate-180 text-primary',
+            open && 'rotate-180',
           )}
         />
       </button>

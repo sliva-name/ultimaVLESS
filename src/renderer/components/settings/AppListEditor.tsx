@@ -1,9 +1,10 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { FolderOpen, Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AppOption } from '@/shared/appRouting';
 import { useAppListEditor } from '@/renderer/hooks/useAppListEditor';
-import { AppIcon, AppPicker } from './AppPicker';
+import { Button, Tile } from '@/renderer/components/ui';
+import { AppPicker } from './AppPicker';
 
 interface AppListEditorProps {
   apps: string[];
@@ -26,9 +27,10 @@ interface AppListEditorProps {
 const CAN_BROWSE_FILES = import.meta.env.VITE_TARGET !== 'android';
 
 /**
- * Editor for a list of executables. Names can be picked from the running
- * programs, typed, or chosen on disk; either way only the file name is stored,
- * because that is what Xray's `process` rule compares.
+ * Editor for a list of executables: one row per program with its icon on the
+ * left, then a row to add more. Names can be picked from the running
+ * programs, typed, or chosen on disk; either way only the file name is
+ * stored, because that is what Xray's `process` rule compares.
  */
 export const AppListEditor: React.FC<AppListEditorProps> = ({
   apps,
@@ -56,6 +58,16 @@ export const AppListEditor: React.FC<AppListEditorProps> = ({
     remove: handleRemove,
   } = useAppListEditor({ apps, onChange, knownApps });
 
+  const descriptionByName = useMemo(
+    () =>
+      new Map(
+        knownApps
+          .filter((option) => option.description)
+          .map((option) => [option.name, option.description]),
+      ),
+    [knownApps],
+  );
+
   const handleBrowse = useCallback(async () => {
     setError(null);
     setPicking(true);
@@ -72,79 +84,88 @@ export const AppListEditor: React.FC<AppListEditorProps> = ({
     }
   }, [addNames, onPicked, setError]);
 
-  const buttonClass =
-    'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-200 border border-gray-700/50 hover:border-gray-600/70 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors';
-
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <AppPicker
-          value={draft}
-          onValueChange={setDraft}
-          options={knownApps}
-          exclude={apps}
-          onPick={handlePick}
-          onSubmit={handleAdd}
-          onOpen={onOpenList}
-          loading={loading}
-          disabled={disabled || atLimit}
-          ariaLabel={ariaLabel}
-          placeholder={t('settings.network.routingAppsPlaceholder')}
-        />
-        <button
-          type="button"
-          onClick={handleAdd}
-          disabled={disabled || draft.trim().length === 0 || atLimit}
-          className={buttonClass}
-        >
-          <Plus className="w-4 h-4" />
-          {t('settings.network.splitTunnelAdd')}
-        </button>
-        {CAN_BROWSE_FILES && (
-          <button
-            type="button"
-            onClick={() => void handleBrowse()}
-            disabled={disabled || picking || atLimit}
-            className={buttonClass}
-          >
-            <FolderOpen className="w-4 h-4" />
-            {t('settings.network.routingAppsBrowse')}
-          </button>
-        )}
-      </div>
-
-      {error && (
-        <p className="text-xs text-orange-400 leading-relaxed">{error}</p>
-      )}
-
-      {apps.length === 0 ? (
-        <p className="text-xs text-gray-500 leading-relaxed">{emptyText}</p>
-      ) : (
-        <ul className="flex flex-wrap gap-1.5">
-          {apps.map((app) => (
-            <li
-              key={app}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-700/50 bg-gray-800/40 pl-2 pr-1.5 py-1"
-            >
-              <AppIcon icon={iconByName.get(app)} className="h-4 w-4" />
-              <span className="text-xs text-gray-200 font-mono break-all">
-                {app}
-              </span>
-              <button
-                type="button"
-                onClick={() => handleRemove(app)}
-                disabled={disabled}
-                aria-label={t('settings.network.splitTunnelRemove', {
-                  entry: app,
-                })}
-                className="p-0.5 rounded text-gray-500 hover:text-orange-300 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+    <div className="rounded-xl bg-s1 border border-line shadow-panel">
+      <ul className="m-0 p-0 list-none divide-y divide-line">
+        {apps.length === 0 ? (
+          <li className="px-4 py-3 text-xs leading-4 text-fg3">{emptyText}</li>
+        ) : (
+          apps.map((app) => {
+            const icon = iconByName.get(app);
+            return (
+              <li
+                key={app}
+                className="min-h-[52px] box-border flex items-center gap-3 px-4 py-2.5"
               >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+                <Tile
+                  image={icon}
+                  letter={icon ? undefined : app.charAt(0).toUpperCase()}
+                  tone={icon ? undefined : 'info'}
+                />
+                <span className="flex-1 min-w-0 flex flex-col">
+                  <span className="text-[13px] leading-5 font-medium break-all">
+                    {app}
+                  </span>
+                  {descriptionByName.get(app) && (
+                    <span className="mt-0.5 text-xs leading-[18px] text-fg3 truncate">
+                      {descriptionByName.get(app)}
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(app)}
+                  disabled={disabled}
+                  aria-label={t('settings.network.splitTunnelRemove', {
+                    entry: app,
+                  })}
+                  title={t('settings.network.splitTunnelRemove', {
+                    entry: app,
+                  })}
+                  className="w-7 h-7 shrink-0 inline-flex items-center justify-center rounded-md text-fg3 hover:bg-s3 hover:text-fg disabled:opacity-40"
+                >
+                  <X aria-hidden strokeWidth={1.75} className="w-4 h-4" />
+                </button>
+              </li>
+            );
+          })
+        )}
+      </ul>
+
+      <div className="flex flex-col gap-2 px-4 py-2.5 border-t border-line">
+        <div className="flex flex-wrap items-center gap-2">
+          <Tile icon={Plus} dashed />
+          <AppPicker
+            value={draft}
+            onValueChange={setDraft}
+            options={knownApps}
+            exclude={apps}
+            onPick={handlePick}
+            onSubmit={handleAdd}
+            onOpen={onOpenList}
+            loading={loading}
+            disabled={disabled || atLimit}
+            ariaLabel={ariaLabel}
+            placeholder={t('settings.network.routingAppsPlaceholder')}
+          />
+          <Button
+            onClick={handleAdd}
+            disabled={disabled || draft.trim().length === 0 || atLimit}
+          >
+            {t('settings.network.splitTunnelAdd')}
+          </Button>
+          {CAN_BROWSE_FILES && (
+            <Button
+              icon={FolderOpen}
+              onClick={() => void handleBrowse()}
+              disabled={disabled || picking || atLimit}
+            >
+              {t('settings.network.routingAppsBrowse')}
+            </Button>
+          )}
+        </div>
+        {error && <p className="m-0 text-xs leading-4 text-warn">{error}</p>}
+      </div>
     </div>
   );
 };

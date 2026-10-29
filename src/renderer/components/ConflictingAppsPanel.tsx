@@ -29,7 +29,7 @@ function uniqueImages(app: ConflictingAppView): string {
 
 /**
  * Other VPN/proxy software that breaks TUN, with a per-app "Close" action.
- * Shared by the main-screen notice and the diagnostics tab.
+ * Shared by the banner over the home stage and the diagnostics page.
  */
 export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
   scan,
@@ -52,7 +52,7 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
   if (apps.length === 0) {
     if (error) {
       return (
-        <p className={clsx('text-sm text-orange-400', className)}>
+        <p className={clsx('m-0 text-xs leading-[18px] text-warn', className)}>
           {t('conflicts.scanFailed', {
             error: localizeError(error, i18n.language),
           })}
@@ -63,11 +63,11 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
       return scanning && showEmptyState ? (
         <div
           className={clsx(
-            'flex items-center gap-2 text-sm text-gray-400',
+            'flex items-center gap-2 text-xs leading-4 text-fg2',
             className,
           )}
         >
-          <Loader2 className="w-4 h-4 animate-spin" />
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
           {t('conflicts.scanning')}
         </div>
       ) : null;
@@ -76,12 +76,12 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
       <div
         role="status"
         className={clsx(
-          'flex items-center gap-2.5 rounded-xl border border-green-500/25 bg-green-500/10 px-3 py-2 text-sm text-green-300',
+          'flex items-center gap-2.5 rounded-lg border border-ok-line bg-ok-soft px-3 py-2 text-xs leading-4 text-fg',
           className,
         )}
       >
-        <Check className="w-4 h-4 shrink-0" />
-        <span className="flex-1 min-w-0 leading-relaxed">
+        <Check className="w-4 h-4 shrink-0 text-ok" />
+        <span className="flex-1 min-w-0">
           {resolved ? t('conflicts.resolved') : t('conflicts.none')}
         </span>
         {onDismiss ? (
@@ -101,17 +101,20 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
     <div
       role="alert"
       className={clsx(
-        'rounded-xl border border-orange-500/30 bg-orange-500/10 p-4 space-y-3 text-left',
+        'rounded-xl border border-warn-line bg-warn-soft p-4 flex flex-col gap-3 text-left',
         className,
       )}
     >
-      <div className="flex items-start gap-2.5">
-        <AlertTriangle className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+      <div className="flex items-start gap-3">
+        <AlertTriangle
+          strokeWidth={2}
+          className="w-4 h-4 text-warn shrink-0 mt-0.5"
+        />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-orange-200">
+          <div className="text-sm leading-5 font-semibold text-fg">
             {t('conflicts.title')}
           </div>
-          <div className="text-xs text-orange-200/80 leading-relaxed mt-0.5">
+          <div className="mt-1 text-[13px] leading-5 text-fg2">
             {t('conflicts.hint')}
           </div>
         </div>
@@ -120,39 +123,39 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
         )}
       </div>
 
-      <ul className="space-y-2">
+      <ul className="m-0 p-0 list-none flex flex-col gap-1.5">
         {apps.map((app) => {
           const closing = closingIds.has(app.id);
           const failed = failedIds.has(app.id);
           return (
             <li
               key={app.id}
-              className="flex items-start justify-between gap-3 rounded-lg border border-gray-700/40 bg-black/25 px-3 py-2"
+              className="flex items-center justify-between gap-3 rounded-lg border border-line bg-s1 px-3 py-2"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-gray-100">
+                  <span className="text-[13px] leading-5 font-medium text-fg">
                     {app.name}
                   </span>
-                  <span className="rounded bg-gray-700/50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-300">
+                  <span className="h-5 box-border inline-flex items-center rounded border border-line bg-s2 px-1.5 text-[11px] leading-4 font-medium text-fg3">
                     {t(`conflicts.category.${app.category}`)}
                   </span>
                 </div>
                 <div
-                  className="mt-0.5 truncate font-mono text-xs text-gray-500"
+                  className="truncate font-mono text-[11px] leading-4 text-fg3"
                   title={uniqueImages(app)}
                 >
                   {uniqueImages(app)}
                 </div>
                 {app.services.length > 0 && (
-                  <div className="mt-1 text-xs leading-relaxed text-gray-400">
+                  <div className="mt-1 text-xs leading-4 text-fg2">
                     {app.processes.length > 0
                       ? t('conflicts.serviceKeepsRunning')
                       : t('conflicts.serviceOnly')}
                   </div>
                 )}
                 {failed && (
-                  <div className="mt-1 text-xs leading-relaxed text-orange-300">
+                  <div className="mt-1 text-xs leading-4 text-warn">
                     {t('conflicts.closeFailed')}
                   </div>
                 )}
@@ -162,7 +165,7 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
                   type="button"
                   onClick={() => onCloseApp(app.id)}
                   disabled={closing}
-                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-orange-500/40 px-3 py-1.5 text-xs font-medium text-orange-100 transition-colors hover:bg-orange-500/15 disabled:cursor-wait disabled:opacity-60"
+                  className="flex shrink-0 items-center gap-1.5 h-7 rounded-md bg-acc-fill px-2.5 text-xs leading-4 font-normal text-white hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
                 >
                   {closing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   {closing ? t('conflicts.closing') : t('conflicts.close')}
@@ -174,7 +177,7 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
       </ul>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs leading-relaxed text-gray-400">
+        <p className="m-0 text-xs leading-4 text-fg2">
           {t('conflicts.reconnectHint')}
         </p>
         <RescanButton
@@ -184,7 +187,7 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
         />
       </div>
       {error && (
-        <p className="text-xs text-orange-300">
+        <p className="m-0 text-xs leading-4 text-warn">
           {t('conflicts.scanFailed', {
             error: localizeError(error, i18n.language),
           })}
@@ -203,7 +206,7 @@ const DismissButton: React.FC<{ label: string; onClick: () => void }> = ({
     onClick={onClick}
     aria-label={label}
     title={label}
-    className="shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-white/5 hover:text-gray-200"
+    className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded-md text-fg3 transition-colors hover:bg-s3 hover:text-fg"
   >
     <X className="w-4 h-4" />
   </button>
@@ -218,7 +221,7 @@ const RescanButton: React.FC<{
     type="button"
     onClick={onClick}
     disabled={scanning}
-    className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-primary transition-colors hover:text-blue-400 disabled:opacity-50"
+    className="flex shrink-0 items-center gap-1.5 h-7 rounded-md border border-line2 bg-s1 px-2.5 text-xs leading-4 font-normal text-fg transition-colors hover:bg-s2 disabled:opacity-50"
   >
     <RefreshCw className={clsx('w-3.5 h-3.5', scanning && 'animate-spin')} />
     {label}

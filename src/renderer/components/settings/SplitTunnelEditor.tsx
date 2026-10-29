@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
-import { Plus, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSplitTunnelEditor } from '@/renderer/hooks/useSplitTunnelEditor';
+import { Button, TextField } from '@/renderer/components/ui';
 
 interface SplitTunnelEditorProps {
   domains: string[];
@@ -56,10 +57,11 @@ export const SplitTunnelEditor: React.FC<SplitTunnelEditorProps> = ({
   );
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
+    <div className="flex flex-col gap-3 p-4 rounded-xl bg-s1 border border-line shadow-panel">
+      <div className="flex gap-2">
+        <TextField
+          mono
+          className="flex-1"
           value={draft}
           disabled={disabled}
           placeholder={t('settings.network.splitTunnelPlaceholder')}
@@ -70,58 +72,52 @@ export const SplitTunnelEditor: React.FC<SplitTunnelEditorProps> = ({
             e.preventDefault();
             handleAdd();
           }}
-          className="flex-1 min-w-0 bg-black/40 border border-gray-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 focus:border-primary/60 focus:ring-1 focus:ring-primary/20 outline-none font-mono"
         />
-        <button
-          type="button"
+        <Button
           onClick={handleAdd}
           disabled={disabled || draft.trim().length === 0 || atLimit}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-200 border border-gray-700/50 hover:border-gray-600/70 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          <Plus className="w-4 h-4" />
           {t('settings.network.splitTunnelAdd')}
-        </button>
+        </Button>
       </div>
 
-      {error && <p className="text-xs text-orange-400 leading-relaxed">{error}</p>}
+      {error && <p className="m-0 text-xs leading-4 text-warn">{error}</p>}
 
       {total === 0 ? (
-        <p className="text-xs text-gray-500 leading-relaxed">
+        <p className="m-0 text-xs leading-4 text-fg3">
           {emptyText ?? t('settings.network.splitTunnelEmpty')}
         </p>
       ) : (
-        <div className="space-y-3">
-          {groups.map((group) => (
-            <div key={group.kind} className="space-y-1.5">
-              <div className="text-xs uppercase tracking-wide text-gray-500">
+        groups.map((group) => (
+          <div key={group.kind} className="flex flex-col gap-1.5">
+            {groups.length > 1 && (
+              <span className="text-[11px] leading-4 font-semibold tracking-[0.06em] uppercase text-fg3">
                 {group.label}
-              </div>
-              <ul className="flex flex-wrap gap-1.5">
-                {group.values.map((value) => (
-                  <li
-                    key={value}
-                    className="flex items-center gap-1.5 rounded-lg border border-gray-700/50 bg-gray-800/40 pl-2.5 pr-1.5 py-1"
+              </span>
+            )}
+            <ul className="m-0 p-0 list-none flex flex-wrap gap-1.5">
+              {group.values.map((value) => (
+                <li
+                  key={value}
+                  className="h-7 box-border inline-flex items-center gap-1 pl-2.5 pr-1 rounded-md bg-s2 border border-line font-mono text-xs leading-4 text-fg"
+                >
+                  <span className="break-all">{value}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(group.kind, value)}
+                    disabled={disabled}
+                    aria-label={t('settings.network.splitTunnelRemove', {
+                      entry: value,
+                    })}
+                    className="w-5 h-5 inline-flex items-center justify-center rounded text-fg3 hover:bg-s3 hover:text-fg disabled:opacity-40"
                   >
-                    <span className="text-xs text-gray-200 font-mono break-all">
-                      {value}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(group.kind, value)}
-                      disabled={disabled}
-                      aria-label={t('settings.network.splitTunnelRemove', {
-                        entry: value,
-                      })}
-                      className="p-0.5 rounded text-gray-500 hover:text-orange-300 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+                    <X aria-hidden strokeWidth={2.25} className="w-3 h-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
       )}
     </div>
   );
