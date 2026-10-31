@@ -21,6 +21,8 @@ export class FakeCore {
     sessionName: null,
     startedAt: null,
   };
+  /** The request the running session was started with. */
+  session: CoreStartOptions | null = null;
   starts: CoreStartOptions[] = [];
   stops = 0;
   /** Hosts of every TCP probe, loopback readiness checks included. */
@@ -68,6 +70,14 @@ export class FakeCore {
       JSON.parse(options.config);
       if (this.startError) throw this.startError;
       this.starts.push(options);
+      // Like `CoreRuntime`: starting the session that runs keeps it running.
+      if (
+        this.status.running &&
+        JSON.stringify(options) === JSON.stringify(this.session)
+      ) {
+        return { ...this.status };
+      }
+      this.session = options;
       this.status = {
         running: true,
         mode: options.mode,
@@ -79,6 +89,7 @@ export class FakeCore {
     },
     stopCore: async () => {
       this.stops += 1;
+      this.session = null;
       this.status = {
         running: false,
         mode: null,

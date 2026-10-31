@@ -2,6 +2,7 @@ import { EventEmitter } from '../node/events';
 import type { TrafficSnapshot } from '@/shared/views/traffic';
 import { logger } from './LoggerService';
 import { UltimaCore } from '../native/UltimaCore';
+import { xrayService } from './XrayService';
 
 export type { TrafficSnapshot };
 
@@ -13,6 +14,9 @@ const IDLE_EMIT_INTERVAL_MS = 2000;
  * Desktop polls Xray's gRPC StatsService; on Android the core runs in-process
  * and the plugin reads the `proxy` outbound counters directly. Snapshots and
  * their throttling match the desktop service.
+ *
+ * The session clock follows the native session: one that outlived an earlier
+ * WebView keeps counting from when it really started.
  */
 export class TrafficStatsService extends EventEmitter {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -26,18 +30,19 @@ export class TrafficStatsService extends EventEmitter {
 
   public start(connectedAt = Date.now()): void {
     this.stop();
-    this.connectedAt = connectedAt;
+    this.connectedAt = xrayService.getAdoptedStartedAt() ?? connectedAt;
     this.timer = setInterval(() => {
       void this.tick();
     }, POLL_INTERVAL_MS);
+    const now = Date.now();
     const initial: TrafficSnapshot = {
       uploadBytes: 0,
       downloadBytes: 0,
       uploadBps: 0,
       downloadBps: 0,
-      sessionDurationMs: 0,
-      connectedAt,
-      sampledAt: Date.now(),
+      sessionDurationMs: Math.max(0, now - this.connectedAt),
+      connectedAt: this.connectedAt,
+      sampledAt: now,
     };
     this.lastSnapshot = initial;
     this.emitSnapshot(initial);
