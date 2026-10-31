@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { makeServer } from '@/test/factories';
+import { ConnectionOperationAbortedError } from '@/main/domain/connection/abort';
 import { createConnectionRuntime } from '@/main/domain/connection/ConnectionRuntime';
 import type { ConnectionSpec } from '@/main/domain/connection/ConnectionSpec';
 import type {
@@ -56,6 +57,37 @@ describe('ConnectionRuntime', () => {
     // The proxy path was engaged by prepare(); TUN was never touched.
     expect(proxy.deactivate).toHaveBeenCalled();
     expect(tun.deactivate).not.toHaveBeenCalled();
+    expect(xrayStop).toHaveBeenCalled();
+  });
+
+  it('hands its signal to the Xray start and reports a cancelled start as aborted', async () => {
+    const tun = fakeNetwork('tun');
+    const xrayStop = vi.fn();
+    const start = vi.fn(
+      (_server: unknown, _mode: unknown, options?: { signal?: AbortSignal }) =>
+        new Promise<void>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () =>
+            reject(new Error('Xray start was cancelled')),
+          );
+        }),
+    );
+    const runtime = createConnectionRuntime({
+      xray: { start, stop: xrayStop, isRunning: () => false },
+      proxy: fakeNetwork('proxy'),
+      tun,
+    });
+    const abort = new AbortController();
+
+    const started = runtime.start(spec('tun'), abort.signal);
+    await vi.waitFor(() => expect(start).toHaveBeenCalled());
+    abort.abort();
+
+    await expect(started).rejects.toBeInstanceOf(
+      ConnectionOperationAbortedError,
+    );
+    expect(start.mock.calls[0][2]).toMatchObject({ signal: abort.signal });
+    expect(tun.activate).not.toHaveBeenCalled();
+    expect(tun.deactivate).toHaveBeenCalled();
     expect(xrayStop).toHaveBeenCalled();
   });
 

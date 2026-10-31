@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { spawn } from 'child_process';
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -14,6 +16,8 @@ vi.mock('@/main/services/platform/commandRunner', () => ({
 import { runProcessWithOutput } from '@/main/services/platform/commandRunner';
 import {
   buildElevatedXrayCommand,
+  describeElevatedWrapperExit,
+  ELEVATED_WRAPPER_EXIT,
   findPkexecPath,
   isElevatedOnWindows,
   isPkexecAvailable,
@@ -147,7 +151,7 @@ describe('shouldElevateXray', () => {
 });
 
 describe('buildElevatedXrayCommand', () => {
-  it('runs Xray via pkexec + sh with positional bin/config/asset args', () => {
+  it('runs Xray via pkexec + sh with positional bin/config/asset/hash args', () => {
     const { command, args } = buildElevatedXrayCommand(
       '/usr/bin/pkexec',
       '/opt/app/bin/xray',
@@ -158,28 +162,133 @@ describe('buildElevatedXrayCommand', () => {
     expect(command).toBe('/usr/bin/pkexec');
     expect(args[0]).toBe('/bin/sh');
     expect(args[1]).toBe('-c');
-    // sh -c SCRIPT $0 $1 $2 => bin, config, asset
+    // sh -c SCRIPT $0 $1 $2 $3 => bin, config, asset, hash ('' = in place)
     expect(args.slice(3)).toEqual([
       '/opt/app/bin/xray',
       '/home/u/.config/UltimaVLESS/config.json',
       '/opt/app/bin',
+      '',
     ]);
   });
 
-  it('ties the root process lifetime to stdin EOF and forwards the asset dir', () => {
+  it('passes the expected hash of a staged binary', () => {
     const { args } = buildElevatedXrayCommand(
       '/usr/bin/pkexec',
-      'xray',
+      '/home/u/.config/UltimaVLESS/elevated-core/xray',
       'c',
-      'a',
+      '/home/u/.config/UltimaVLESS/elevated-core',
+      'ab12',
     );
-    const script = args[2];
-    expect(script).toContain('XRAY_LOCATION_ASSET="$2"');
-    expect(script).toContain('"$0" -c "$1"');
-    // Blocks until the parent closes stdin, then terminates Xray.
-    expect(script).toContain('cat >/dev/null');
-    expect(script).toContain('kill "$xray_pid"');
-    expect(script).toContain('trap terminate TERM INT EXIT');
+    expect(args[6]).toBe('ab12');
+  });
+});
+
+describe('describeElevatedWrapperExit', () => {
+  it('names the root wrapper failures', () => {
+    expect(
+      describeElevatedWrapperExit(ELEVATED_WRAPPER_EXIT.COPY_FAILED),
+    ).toMatch(/root-owned copy/);
+    expect(
+      describeElevatedWrapperExit(ELEVATED_WRAPPER_EXIT.CHECKSUM_MISMATCH),
+    ).toMatch(/does not match/);
+    expect(describeElevatedWrapperExit(ELEVATED_WRAPPER_EXIT.EXEC_FAILED)).toBe(
+      'TUN mode could not run Xray as root',
+    );
+  });
+
+  it('leaves Xray and pkexec exit codes alone', () => {
+    for (const code of [null, 0, 1, 23, 126, 127]) {
+      expect(describeElevatedWrapperExit(code)).toBeNull();
+    }
+  });
+});
+
+// The wrapper is what pkexec runs as root; run it for real (minus pkexec).
+const canRunWrapper =
+  process.platform === 'linux' &&
+  fs.existsSync('/bin/sh') &&
+  fs.existsSync('/usr/bin/env');
+
+describe.runIf(canRunWrapper)('root wrapper under /bin/sh', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xray-wrapper-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function fakeXray(body: string, mode = 0o755): string {
+    const file = path.join(tmpDir, 'xray');
+    fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode });
+    return file;
+  }
+
+  function runWrapper(binPath: string, binSha256: string | null = null) {
+    const { command, args } = buildElevatedXrayCommand(
+      '/usr/bin/env',
+      binPath,
+      path.join(tmpDir, 'config.json'),
+      tmpDir,
+      binSha256,
+    );
+    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    const exited = new Promise<number | null>((resolve) =>
+      child.on('close', (code) => resolve(code)),
+    );
+    return { child, exited, stdout: () => stdout };
+  }
+
+  it("exits with Xray's code as soon as Xray fails, stdin still open", async () => {
+    const { child, exited } = runWrapper(fakeXray('exit 23'));
+
+    await expect(exited).resolves.toBe(23);
+    expect(child.stdin.writableEnded).toBe(false);
+  });
+
+  it('stops Xray when the parent closes stdin', async () => {
+    const run = runWrapper(
+      fakeXray("trap 'exit 0' TERM\necho up\nwhile :; do sleep 0.1; done"),
+    );
+    await vi.waitFor(() => expect(run.stdout()).toContain('up'));
+
+    run.child.stdin.end();
+
+    await expect(run.exited).resolves.toBe(0);
+  });
+
+  it('reports a binary sh cannot execute as its own code, not as a pkexec one', async () => {
+    const { exited } = runWrapper(fakeXray('exit 0', 0o644));
+
+    await expect(exited).resolves.toBe(ELEVATED_WRAPPER_EXIT.EXEC_FAILED);
+  });
+
+  it('runs a staged binary only from its own copy, and only when it matches', async () => {
+    const binPath = fakeXray('echo "$0 $XRAY_LOCATION_ASSET"\nexit 7');
+    const sha256 = crypto
+      .createHash('sha256')
+      .update(fs.readFileSync(binPath))
+      .digest('hex');
+
+    const matching = runWrapper(binPath, sha256);
+    await expect(matching.exited).resolves.toBe(7);
+    const [ranFrom, assetDir] = matching.stdout().trim().split(' ');
+    expect(ranFrom).not.toBe(binPath);
+    expect(ranFrom).toMatch(/\/xray$/);
+    expect(fs.existsSync(ranFrom)).toBe(false);
+    expect(assetDir).toBe(tmpDir);
+
+    const tampered = runWrapper(binPath, '0'.repeat(64));
+    await expect(tampered.exited).resolves.toBe(
+      ELEVATED_WRAPPER_EXIT.CHECKSUM_MISMATCH,
+    );
+    expect(tampered.stdout()).toBe('');
   });
 });
 

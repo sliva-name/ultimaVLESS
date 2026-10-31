@@ -100,10 +100,17 @@ export function createConnectionRuntime(deps: {
     engaged[spec.mode] = true;
     const prepared = await network.prepare(spec);
     throwIfAborted(signal);
-    await xray.start(prepared.server, spec.mode, {
-      ...prepared.xrayOptions,
-      ports: spec.ports,
-    });
+    try {
+      await xray.start(prepared.server, spec.mode, {
+        ...prepared.xrayOptions,
+        ports: spec.ports,
+        signal,
+      });
+    } catch (error) {
+      // A start cancelled by `signal` fails like any other aborted step.
+      throwIfAborted(signal);
+      throw error;
+    }
     throwIfAborted(signal);
     await network.activate(prepared);
     throwIfAborted(signal);

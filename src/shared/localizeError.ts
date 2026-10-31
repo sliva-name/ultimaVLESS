@@ -116,6 +116,22 @@ const RU_PHRASES: PhraseTable = [
     'Xray не открыл локальный прокси на 127.0.0.1:$<port>',
   ],
   [
+    /TUN mode could not prepare Xray for root: /g,
+    'Режиму TUN не удалось подготовить Xray для запуска от root: ',
+  ],
+  [
+    /TUN mode could not make a root-owned copy of Xray/g,
+    'Режиму TUN не удалось сделать копию Xray, принадлежащую root',
+  ],
+  [
+    /TUN mode refused to run Xray: its copy does not match the one shipped with UltimaVLESS/g,
+    'Режим TUN не запустил Xray: копия не совпадает с поставляемой с UltimaVLESS',
+  ],
+  [
+    /TUN mode could not run Xray as root/g,
+    'Режиму TUN не удалось запустить Xray от root',
+  ],
+  [
     /Network adapter "(?<name>[^"]*)" selected for TUN has no IPv4 default gateway \(disconnected, or not an internet connection\)\. Choose another adapter in Settings → Network or set it to Automatic\./g,
     'У адаптера «$<name>», выбранного для TUN, нет IPv4-шлюза по умолчанию (он отключён или не выходит в интернет). Выберите другой адаптер в «Настройки → Сеть» или «Автоматически».',
   ],
