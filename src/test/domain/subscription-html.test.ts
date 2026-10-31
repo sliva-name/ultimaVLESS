@@ -2,6 +2,7 @@ import dns from 'dns';
 import { encode } from 'js-base64';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SubscriptionService } from '@/main/services/SubscriptionService';
+import { HAPP_ENCRYPTED_LINK_ERROR } from '@/main/services/subscription/linkParsing';
 import {
   decodeHtmlEntities,
   htmlToText,
@@ -237,5 +238,21 @@ describe('SubscriptionService with HTML-wrapped responses', () => {
     const result = await parse(encode(`${VLESS_A}\n${VLESS_B}`));
 
     expect(result.extractedLinks).toEqual([VLESS_A, VLESS_B]);
+  });
+
+  it('explains an encrypted Happ link instead of asking for HTTPS', async () => {
+    await expect(
+      service.fetchAndParseDetailed('happ://crypt5/QUJD+ZGVm/Z2hp=SktM=bW5v'),
+    ).rejects.toThrow(HAPP_ENCRYPTED_LINK_ERROR);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('still fetches an HTTPS subscription that mentions a Happ link', async () => {
+    const result = await parse(
+      encode(VLESS_A),
+      'https://raw.githack.com/sub.txt?from=happ://crypt5/QUJD',
+    );
+
+    expect(result.extractedLinks).toEqual([VLESS_A]);
   });
 });

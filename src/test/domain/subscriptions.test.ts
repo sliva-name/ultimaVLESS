@@ -1,9 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { parseDirectLinksFromText } from '@/main/services/subscription/linkParsing';
+import {
+  containsHappEncryptedLink,
+  parseDirectLinksFromText,
+} from '@/main/services/subscription/linkParsing';
 import { parseJsonConfigs } from '@/main/services/subscription/jsonParsing';
 import { uniqueCatalogServers } from '@/shared/serverIdentity';
 
 describe('subscription parsing', () => {
+  it('recognizes encrypted Happ links of every version', () => {
+    for (const text of [
+      'happ://crypt/QUJD',
+      'happ://crypt3/QUJD+ZGVm=',
+      'HAPP://CRYPT5/QUJD',
+      'vless://user-id@example.com:443#A\nhapp://crypt4/QUJD',
+    ]) {
+      expect([text, containsHappEncryptedLink(text)]).toEqual([text, true]);
+    }
+    for (const text of [
+      'happ://add/https://example.com/sub',
+      'https://example.com/sub?from=happ://crypt5/QUJD',
+      'vless://user-id@example.com:443#A',
+    ]) {
+      expect([text, containsHappEncryptedLink(text)]).toEqual([text, false]);
+    }
+  });
+
   it('extracts VLESS links from mixed clipboard text', () => {
     const configs = parseDirectLinksFromText(
       'hello vless://user-id@example.com:443?security=reality&sni=example.com&pbk=key#Demo',

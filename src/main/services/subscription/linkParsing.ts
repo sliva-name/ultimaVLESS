@@ -211,6 +211,21 @@ export function isSupportedLink(link: string): boolean {
   );
 }
 
+/**
+ * Happ's encrypted subscription links (`happ://crypt/…` up to `crypt5`) carry
+ * the subscription URL encrypted with a key only the Happ app holds, so they
+ * cannot be imported here. Matched at the start of the text or of a line, not
+ * inside another URL.
+ */
+const HAPP_ENCRYPTED_LINK = /(?:^|\s)happ:\/\/crypt\d*\//i;
+
+export const HAPP_ENCRYPTED_LINK_ERROR =
+  'This is an encrypted Happ link (happ://crypt…): only the Happ app can open it. Ask your provider for a regular subscription link starting with https://';
+
+export function containsHappEncryptedLink(input: string): boolean {
+  return HAPP_ENCRYPTED_LINK.test(input);
+}
+
 export function extractSupportedLinks(input: string): string[] {
   // Stop before common HTML delimiters so links embedded in markup are still valid.
   const matches = input.match(

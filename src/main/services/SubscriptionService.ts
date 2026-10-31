@@ -5,6 +5,8 @@ import { VlessConfig } from '@/shared/types';
 import { logger } from './LoggerService';
 import { parseJsonConfigs } from './subscription/jsonParsing';
 import {
+  HAPP_ENCRYPTED_LINK_ERROR,
+  containsHappEncryptedLink,
   extractSupportedLinks,
   parseDirectLinksFromText,
 } from './subscription/linkParsing';
@@ -116,6 +118,10 @@ export class SubscriptionService {
   }
 
   private async validateRemoteSubscriptionUrl(rawUrl: string): Promise<URL> {
+    if (containsHappEncryptedLink(rawUrl)) {
+      throw new Error(HAPP_ENCRYPTED_LINK_ERROR);
+    }
+
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(rawUrl);
