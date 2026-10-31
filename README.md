@@ -1,5 +1,12 @@
 # Ultima VLESS Client
 
+*Язык / Language*:
+
+[![Русский](https://img.shields.io/badge/🇷🇺_Русский-green?style=flat-square)](README.md)
+[![English](https://img.shields.io/badge/🇬🇧_English-lightgrey?style=flat-square)](README_EN.md)
+
+---
+
 [![GitHub stars](https://img.shields.io/github/stars/sliva-name/ultimaVLESS?style=for-the-badge)](https://github.com/sliva-name/ultimaVLESS/stargazers)
 [![GitHub downloads](https://img.shields.io/github/downloads/sliva-name/ultimaVLESS/total?style=for-the-badge)](https://github.com/sliva-name/ultimaVLESS/releases)
 [![Visits](https://hits.sh/github.com/sliva-name/ultimaVLESS.svg?style=for-the-badge&label=visits)](https://hits.sh/github.com/sliva-name/ultimaVLESS/)
