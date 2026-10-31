@@ -303,6 +303,10 @@ const RU_PHRASES: PhraseTable = [
     /Only HTTPS subscription URLs are allowed/g,
     'Разрешены только адреса подписок с HTTPS',
   ],
+  [
+    /This is an encrypted Happ link \(happ:\/\/crypt…\): only the Happ app can open it\. Ask your provider for a regular subscription link starting with https:\/\//g,
+    'Это зашифрованная ссылка Happ (happ://crypt…): открыть её может только приложение Happ. Попросите у провайдера обычную ссылку на подписку, начинающуюся с https://',
+  ],
   [/Invalid subscription URL/g, 'Некорректный адрес подписки'],
   [/Subscription name is required/g, 'Укажите название подписки'],
   [/Subscription URL is required/g, 'Укажите адрес подписки'],

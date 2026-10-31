@@ -6,6 +6,10 @@ import {
 } from '@/shared/ipc';
 import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '@/shared/subscriptionUrls';
 import { logger } from '@/main/services/LoggerService';
+import {
+  HAPP_ENCRYPTED_LINK_ERROR,
+  containsHappEncryptedLink,
+} from '@/main/services/subscription/linkParsing';
 import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import {
@@ -194,6 +198,14 @@ export function registerSubscriptionHandlers({
       const result = await queueRefreshAllSubscriptions(manualLinks);
       restartAutoRefreshTimer();
 
+      // The other links in the text still apply; only the Happ one cannot.
+      if (containsHappEncryptedLink(manualLinks)) {
+        return {
+          ok: false,
+          configCount: result.configCount,
+          error: HAPP_ENCRYPTED_LINK_ERROR,
+        } as SaveManualLinksResult;
+      }
       if (result.configCount === 0 && !!manualLinks.trim()) {
         return {
           ok: false,

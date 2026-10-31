@@ -9,6 +9,7 @@ import {
   assertEncryptedPublicOutbound,
   assertSupportedShadowsocksMethod,
 } from '@/main/services/configGenerator/outboundCompat';
+import { HAPP_ENCRYPTED_LINK_ERROR } from '@/main/services/subscription/linkParsing';
 import { summarizeStartupFailure } from '@/main/services/xray/startupFailure';
 import { localizeError } from '@/shared/localizeError';
 import {
@@ -109,6 +110,15 @@ describe('localizeError', () => {
       "Error invoking remote method 'scan-conflicting-apps': Error: Subscription URL is required";
     expect(localizeError(message, 'en')).toBe('Subscription URL is required');
     expect(localizeError(message, 'ru')).toBe('Укажите адрес подписки');
+  });
+
+  it('translates the encrypted Happ link error', () => {
+    const localized = localizeError(
+      `Provider: ${HAPP_ENCRYPTED_LINK_ERROR}`,
+      'ru',
+    );
+    expect(localized).toMatch(/^Provider: Это зашифрованная ссылка Happ/);
+    expect(localized).not.toMatch(ENGLISH_PROSE);
   });
 
   it('passes through text it does not know', () => {
