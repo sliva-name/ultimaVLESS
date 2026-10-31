@@ -10,7 +10,11 @@ import { probeTcpPort } from '@/main/services/networkProbe';
 import { app } from '../electron';
 import { logger } from './LoggerService';
 import { buildNotificationText } from './notificationText';
-import { UltimaCore, type CoreEvent } from '../native/UltimaCore';
+import {
+  UltimaCore,
+  type CoreEvent,
+  type CoreStatus,
+} from '../native/UltimaCore';
 import {
   adaptConfigForAndroid,
   buildVpnOptions,
@@ -44,12 +48,14 @@ const READINESS_PROBE_TIMEOUT_MS = 200;
  *
  * Starting while the native core already runs the same session adopts it:
  * that is how the WebView picks up a session the tile, Always-on VPN or an
- * earlier WebView started.
+ * earlier WebView started. Such a session keeps its native start time.
  */
 export class XrayService extends EventEmitter {
   private running = false;
   private activePorts: RuntimePorts = { ...PRIMARY_RUNTIME_PORTS };
   private currentServer: VlessConfig | null = null;
+  /** When the adopted native session began; null for one started here. */
+  private adoptedStartedAt: number | null = null;
   private nativeQueue: Promise<unknown> = Promise.resolve();
   private healthStatus: XrayHealthStatus = {
     state: 'stopped',
@@ -79,11 +85,13 @@ export class XrayService extends EventEmitter {
     this.stop();
     this.activePorts = ports;
     this.currentServer = config;
+    this.adoptedStartedAt = null;
+    const requestedAt = Date.now();
     this.setHealthStatus({
       state: 'starting',
       ready: false,
       xrayRunning: false,
-      lastStartAt: Date.now(),
+      lastStartAt: requestedAt,
       localProxyReachable: null,
       lastReadinessCheckAt: null,
       lastReadinessError: null,
@@ -123,8 +131,9 @@ export class XrayService extends EventEmitter {
       throw error;
     }
 
+    let status: CoreStatus;
     try {
-      await this.enqueue(() =>
+      status = await this.enqueue(() =>
         UltimaCore.startCore({
           config: compiled,
           mode: connectionMode,
@@ -146,6 +155,11 @@ export class XrayService extends EventEmitter {
       throw new Error(message);
     }
     this.running = true;
+    // The native side keeps the session it already runs, and its start time:
+    // a session that began before this request was adopted, not started.
+    if (status.startedAt !== null && status.startedAt < requestedAt) {
+      this.adoptedStartedAt = status.startedAt;
+    }
 
     const ready = await this.waitForLocalProxy(ports);
     if (!ready) {
@@ -158,6 +172,7 @@ export class XrayService extends EventEmitter {
       state: 'running',
       ready: true,
       xrayRunning: true,
+      lastStartAt: this.adoptedStartedAt ?? requestedAt,
       lastReadyAt: Date.now(),
       lastReadinessCheckAt: Date.now(),
       localProxyReachable: true,
@@ -235,6 +250,14 @@ export class XrayService extends EventEmitter {
 
   public isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * When the running session began, if it began before this WebView: the
+   * session was adopted from the native side. Null for one started here.
+   */
+  public getAdoptedStartedAt(): number | null {
+    return this.running ? this.adoptedStartedAt : null;
   }
 
   public getActivePorts(): RuntimePorts {
