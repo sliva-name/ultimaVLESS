@@ -1,5 +1,7 @@
 import { EventEmitter } from 'events';
 import { spawn } from 'child_process';
+import fsPromises from 'fs/promises';
+import path from 'path';
 import {
   afterEach,
   beforeAll,
@@ -16,6 +18,14 @@ import {
   sendConsoleBreak,
 } from '@/main/services/xray/windowsConsoleBreak';
 import { findBusyLoopbackPort } from '@/main/services/xray/loopbackPorts';
+import { prepareElevatedCore } from '@/main/services/xray/elevatedCore';
+import {
+  buildElevatedXrayCommand,
+  ELEVATED_WRAPPER_EXIT,
+  findPkexecPath,
+  shouldElevateXray,
+} from '@/main/services/PrivilegeService';
+import { logger } from '@/main/services/LoggerService';
 import { makeServer } from '@/test/factories';
 
 vi.mock('child_process', async (importOriginal) => ({
@@ -25,6 +35,7 @@ vi.mock('child_process', async (importOriginal) => ({
 vi.mock('fs/promises', () => ({
   default: {
     writeFile: vi.fn(async () => undefined),
+    appendFile: vi.fn(async () => undefined),
     access: vi.fn(async () => undefined),
     chmod: vi.fn(async () => undefined),
   },
@@ -45,11 +56,17 @@ vi.mock('@/main/services/xray/loopbackPorts', () => ({
 vi.mock('@/main/utils/runtimePaths', () => ({
   getBinResourcesPath: () => '/resources/bin',
 }));
-vi.mock('@/main/services/PrivilegeService', () => ({
+vi.mock('@/main/services/PrivilegeService', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/main/services/PrivilegeService')
+  >()),
   buildElevatedXrayCommand: vi.fn(),
-  findPkexecPath: () => null,
+  findPkexecPath: vi.fn(() => null),
   isProcessRoot: () => false,
-  shouldElevateXray: () => false,
+  shouldElevateXray: vi.fn(() => false),
+}));
+vi.mock('@/main/services/xray/elevatedCore', () => ({
+  prepareElevatedCore: vi.fn(),
 }));
 vi.mock('@/main/services/xray/windowsConsoleBreak', async (importOriginal) => ({
   ...(await importOriginal<
@@ -309,6 +326,148 @@ describe('XrayService on Windows', () => {
       expect(child.kill).toHaveBeenCalledTimes(1);
       expect(sendConsoleBreak).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('XrayService on Linux TUN via pkexec', () => {
+  const STAGED = {
+    binPath: '/home/u/.config/app/elevated-core/xray',
+    assetDir: '/home/u/.config/app/elevated-core',
+    sha256: 'ab12',
+  };
+  let child: FakeChild;
+  let stdin: {
+    end: ReturnType<typeof vi.fn>;
+    destroy: ReturnType<typeof vi.fn>;
+  };
+  let listenersUp: boolean;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    setPlatform('linux');
+    stdin = { end: vi.fn(), destroy: vi.fn() };
+    child = Object.assign(fakeChild(), { stdin }) as unknown as FakeChild;
+    listenersUp = false;
+    vi.mocked(spawn).mockReset();
+    vi.mocked(spawn).mockReturnValue(child as never);
+    vi.mocked(probeTcpPort).mockReset();
+    vi.mocked(probeTcpPort).mockImplementation(async () => listenersUp);
+    vi.mocked(shouldElevateXray).mockReturnValue(true);
+    vi.mocked(findPkexecPath).mockReturnValue('/usr/bin/pkexec');
+    vi.mocked(buildElevatedXrayCommand).mockReturnValue({
+      command: '/usr/bin/pkexec',
+      args: ['/bin/sh', '-c', 'wrapper'],
+    });
+    vi.mocked(prepareElevatedCore).mockResolvedValue(STAGED);
+    vi.mocked(fsPromises.appendFile).mockClear();
+    vi.mocked(logger.warn).mockClear();
+  });
+
+  afterEach(() => {
+    vi.mocked(shouldElevateXray).mockReturnValue(false);
+    vi.mocked(findPkexecPath).mockReturnValue(null);
+    Object.defineProperty(process, 'platform', originalPlatform);
+    vi.useRealTimers();
+  });
+
+  it('runs the core prepared for root and creates the log as the user first', async () => {
+    listenersUp = true;
+    const service = new XrayService();
+    const started = service.start(makeServer(), 'tun');
+    await vi.advanceTimersByTimeAsync(0);
+    await started;
+
+    expect(prepareElevatedCore).toHaveBeenCalledWith(
+      '/resources/bin',
+      path.join('/tmp', 'elevated-core'),
+    );
+    expect(buildElevatedXrayCommand).toHaveBeenCalledWith(
+      '/usr/bin/pkexec',
+      STAGED.binPath,
+      path.join('/tmp', 'config.json'),
+      STAGED.assetDir,
+      STAGED.sha256,
+    );
+    expect(fsPromises.appendFile).toHaveBeenCalledWith(
+      path.join('/tmp', 'xray.log'),
+      '',
+    );
+    expect(
+      vi.mocked(fsPromises.appendFile).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(spawn).mock.invocationCallOrder[0]);
+  });
+
+  it('fails at once with the reason when the root wrapper gives up', async () => {
+    const service = new XrayService();
+    const started = service.start(makeServer(), 'tun');
+    const failure = expect(started).rejects.toThrow(
+      'TUN mode could not run Xray as root',
+    );
+
+    await vi.advanceTimersByTimeAsync(500);
+    child.stderr.emit(
+      'data',
+      Buffer.from(
+        '/home/u/.config/app/elevated-core/xray: Permission denied\n',
+      ),
+    );
+    exitChild(child, ELEVATED_WRAPPER_EXIT.EXEC_FAILED);
+    await vi.advanceTimersByTimeAsync(0);
+    await failure;
+
+    expect(service.getHealthStatus().state).toBe('failed');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'XrayService',
+      'Xray runtime warning',
+      expect.objectContaining({
+        stream: 'stderr',
+        data: expect.stringContaining('Permission denied'),
+      }),
+    );
+  });
+
+  it('still reads 126 as a declined PolicyKit prompt', async () => {
+    const service = new XrayService();
+    const started = service.start(makeServer(), 'tun');
+    const failure = expect(started).rejects.toThrow(
+      'the authorization request was declined or dismissed',
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    exitChild(child, 126);
+    await vi.advanceTimersByTimeAsync(0);
+    await failure;
+  });
+
+  it('stops waiting and closes the root pipe when the start is cancelled', async () => {
+    const service = new XrayService();
+    const abort = new AbortController();
+    const started = service.start(makeServer(), 'tun', {
+      signal: abort.signal,
+    });
+    const failure = expect(started).rejects.toThrow('Xray start was cancelled');
+
+    // PolicyKit prompt still open: well inside the 120 s budget.
+    await vi.advanceTimersByTimeAsync(5_000);
+    abort.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    await failure;
+
+    expect(stdin.end).toHaveBeenCalled();
+    expect(service.getHealthStatus().state).toBe('stopped');
+  });
+
+  it('does not spawn when the core cannot be prepared for root', async () => {
+    vi.mocked(prepareElevatedCore).mockRejectedValueOnce(
+      new Error('ENOSPC: no space left on device'),
+    );
+    const service = new XrayService();
+
+    await expect(service.start(makeServer(), 'tun')).rejects.toThrow(
+      'TUN mode could not prepare Xray for root: ENOSPC',
+    );
+    expect(spawn).not.toHaveBeenCalled();
+    expect(service.getHealthStatus().state).toBe('failed');
   });
 });
 

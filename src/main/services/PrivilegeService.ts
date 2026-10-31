@@ -186,34 +186,101 @@ export function shouldElevateXray(ctx: XrayElevationContext): boolean {
 }
 
 /**
+ * Exit codes of the root wrapper itself. Xray exits with 0, 1, 2 or 23, and
+ * pkexec reports a failed or dismissed authorization as 126/127.
+ */
+export const ELEVATED_WRAPPER_EXIT = {
+  /** The root-owned copy of Xray could not be made. */
+  COPY_FAILED: 90,
+  /** That copy does not match the binary shipped with the app. */
+  CHECKSUM_MISMATCH: 91,
+  /** sh could not execute Xray (its own 126/127, remapped). */
+  EXEC_FAILED: 92,
+} as const;
+
+/** Why the root wrapper gave up, or `null` for any other exit code. */
+export function describeElevatedWrapperExit(
+  code: number | null,
+): string | null {
+  switch (code) {
+    case ELEVATED_WRAPPER_EXIT.COPY_FAILED:
+      return 'TUN mode could not make a root-owned copy of Xray';
+    case ELEVATED_WRAPPER_EXIT.CHECKSUM_MISMATCH:
+      return 'TUN mode refused to run Xray: its copy does not match the one shipped with UltimaVLESS';
+    case ELEVATED_WRAPPER_EXIT.EXEC_FAILED:
+      return 'TUN mode could not run Xray as root';
+    default:
+      return null;
+  }
+}
+
+/**
  * Builds the `pkexec` command that runs Xray as root while keeping the GUI
  * unprivileged. A non-root parent cannot signal a root child, so the wrapper
  * ties Xray's lifetime to this process's stdin: a normal disconnect closes the
  * pipe explicitly and an app crash closes it via fd cleanup, and in both cases
  * the root wrapper reacts to EOF by terminating Xray. This avoids orphaning the
- * tunnel and avoids a second PolicyKit prompt on disconnect.
+ * tunnel and avoids a second PolicyKit prompt on disconnect. The wrapper also
+ * exits as soon as Xray does, with Xray's exit code, so a core that fails to
+ * start is reported at once instead of after the readiness timeout.
+ *
+ * With `binSha256`, `binPath` is a copy the user can rewrite (see
+ * `prepareElevatedCore`): root copies it into a directory of its own and runs
+ * it only if the copy matches the shipped binary.
  */
 export function buildElevatedXrayCommand(
   pkexecPath: string,
   binPath: string,
   configPath: string,
   assetPath: string,
+  binSha256: string | null = null,
 ): { command: string; args: string[] } {
+  const { COPY_FAILED, CHECKSUM_MISMATCH, EXEC_FAILED } = ELEVATED_WRAPPER_EXIT;
   const wrapper = [
+    // fd 3 keeps the parent's pipe: background jobs get /dev/null as stdin.
+    'exec 3<&0',
+    'xray="$0"',
+    "private=''",
+    'if [ -n "$3" ]; then',
+    `  private=$(mktemp -d) || exit ${COPY_FAILED}`,
+    '  if ! cp "$0" "$private/xray" || ! chmod 700 "$private/xray"; then',
+    '    rm -rf "$private"',
+    `    exit ${COPY_FAILED}`,
+    '  fi',
+    '  if [ "$(sha256sum "$private/xray" | cut -d " " -f 1)" != "$3" ]; then',
+    '    rm -rf "$private"',
+    `    exit ${CHECKSUM_MISMATCH}`,
+    '  fi',
+    '  xray="$private/xray"',
+    'fi',
     'export XRAY_LOCATION_ASSET="$2"',
-    '"$0" -c "$1" &',
+    '"$xray" -c "$1" 3<&- &',
     'xray_pid=$!',
-    'terminate() { kill "$xray_pid" 2>/dev/null || true; }',
-    'trap terminate TERM INT EXIT',
-    // Block until the parent closes our stdin (disconnect or app exit), then
-    // tear Xray down as root.
-    'cat >/dev/null 2>&1 || true',
-    'terminate',
-    'wait "$xray_pid" 2>/dev/null || true',
+    // Reads until the parent closes our stdin (disconnect or app exit), then
+    // tears Xray down as root.
+    '{ while read -r _; do :; done; kill "$xray_pid"; } <&3 >/dev/null 2>&1 &',
+    'watcher_pid=$!',
+    'exec 3<&-',
+    'trap \'kill "$xray_pid" 2>/dev/null\' HUP INT TERM',
+    'wait "$xray_pid"',
+    'status=$?',
+    'kill "$watcher_pid" 2>/dev/null',
+    'if [ -n "$private" ]; then rm -rf "$private"; fi',
+    // pkexec uses 126/127 for authorization failures.
+    `case "$status" in 126|127) status=${EXEC_FAILED} ;; esac`,
+    'exit "$status"',
   ].join('\n');
   return {
     command: pkexecPath,
-    args: ['/bin/sh', '-c', wrapper, binPath, configPath, assetPath],
+    args: [
+      '/bin/sh',
+      '-c',
+      wrapper,
+      binPath,
+      configPath,
+      assetPath,
+      binSha256 ?? '',
+    ],
   };
 }
 

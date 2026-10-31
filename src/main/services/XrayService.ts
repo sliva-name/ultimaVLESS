@@ -19,10 +19,12 @@ import { getBinResourcesPath } from '@/main/utils/runtimePaths';
 import { resolveSystemBinary } from './platform/systemBinaries';
 import {
   buildElevatedXrayCommand,
+  describeElevatedWrapperExit,
   findPkexecPath,
   isProcessRoot,
   shouldElevateXray,
 } from './PrivilegeService';
+import { prepareElevatedCore, type ElevatedCore } from './xray/elevatedCore';
 import { waitForProcessExit as awaitChildExit } from './xray/waitForProcessExit';
 import { trackOwnedXrayProcess } from './xray/ownedProcesses';
 import { sendConsoleBreak } from './xray/windowsConsoleBreak';
@@ -48,6 +50,11 @@ export interface XrayStartOptions {
   ports?: RuntimePorts;
   /** `staging` starts a second process without stopping the active one. */
   slot?: 'active' | 'staging';
+  /**
+   * Gives up waiting for readiness and stops the new process, e.g. on
+   * disconnect while the PolicyKit prompt of a Linux TUN start is still open.
+   */
+  signal?: AbortSignal;
 }
 
 function withCause(message: string, cause: string | null): string {
@@ -277,14 +284,46 @@ export class XrayService extends EventEmitter {
         pkexecAvailable: pkexecPath !== null,
       }) && pkexecPath !== null;
 
+    let elevatedCore: ElevatedCore | null = null;
+    if (elevate) {
+      try {
+        elevatedCore = await prepareElevatedCore(
+          this.resourcesPath,
+          path.join(userDataPath, 'elevated-core'),
+        );
+      } catch (e) {
+        const cause = e instanceof Error ? e.message : String(e);
+        const error = new Error(
+          `TUN mode could not prepare Xray for root: ${cause}`,
+        );
+        if (slot === 'active') {
+          this.markFailed(error.message);
+        }
+        logger.error('XrayService', 'Failed to prepare Xray for root', error);
+        throw error;
+      }
+      // Root would create the log as root:root 0600, which the app and every
+      // later unprivileged Xray then cannot open; an existing file keeps its
+      // owner.
+      try {
+        await fsPromises.appendFile(logPath, '');
+      } catch (error) {
+        logger.warn('XrayService', 'Failed to create Xray log before pkexec', {
+          logPath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     let spawnedProcess: ChildProcess;
     try {
-      if (elevate && pkexecPath) {
+      if (elevate && pkexecPath && elevatedCore) {
         const { command, args } = buildElevatedXrayCommand(
           pkexecPath,
-          binPath,
+          elevatedCore.binPath,
           configPath,
-          this.resourcesPath,
+          elevatedCore.assetDir,
+          elevatedCore.sha256,
         );
         // stdin is the kill channel for the root wrapper — keep it a pipe.
         spawnedProcess = spawn(command, args, {
@@ -339,7 +378,7 @@ export class XrayService extends EventEmitter {
       for (const line of lines) {
         recentOutput.push(line);
         if (recentOutput.length > 20) recentOutput.shift();
-        this.logXrayLine(stream, line, config);
+        this.logXrayLine(stream, line, config, elevate);
       }
     };
     spawnedProcess.stdout?.on('data', (data: Buffer) =>
@@ -418,6 +457,7 @@ export class XrayService extends EventEmitter {
           timeoutMs: readinessTimeoutMs,
           elevated: elevate,
           startupFailure,
+          signal: options.signal,
         },
       );
       if (!readiness.reachable) {
@@ -463,9 +503,18 @@ export class XrayService extends EventEmitter {
         this.dropSpawnedProcess(spawnedProcess, slot);
       }
       if (slot === 'active' && this.healthStatus.state === 'starting') {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        this.markFailed(errorMessage);
+        if (options.signal?.aborted) {
+          this.setHealthStatus({
+            state: 'stopped',
+            ready: false,
+            xrayRunning: false,
+            localProxyReachable: false,
+          });
+        } else {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          this.markFailed(errorMessage);
+        }
       }
       throw error;
     }
@@ -777,6 +826,7 @@ export class XrayService extends EventEmitter {
       timeoutMs?: number;
       elevated?: boolean;
       startupFailure?: () => string | null;
+      signal?: AbortSignal;
     } = {},
   ): Promise<{ reachable: boolean; reason: string | null }> {
     const readinessTimeoutMs =
@@ -804,6 +854,13 @@ export class XrayService extends EventEmitter {
         );
         return;
       }
+      const wrapperFailure = elevated
+        ? describeElevatedWrapperExit(code)
+        : null;
+      if (wrapperFailure) {
+        exitReject?.(new Error(wrapperFailure));
+        return;
+      }
       exitReject?.(
         new Error(
           withCause(
@@ -816,6 +873,13 @@ export class XrayService extends EventEmitter {
     const onErrorDuringStartup = (error: Error) => {
       exitReject?.(error);
     };
+    const onAbort = () => {
+      exitReject?.(new Error('Xray start was cancelled'));
+    };
+    if (options.signal?.aborted) {
+      onAbort();
+    }
+    options.signal?.addEventListener('abort', onAbort, { once: true });
 
     const withOnce = processRef as ChildProcess & {
       once?: (event: string, listener: ProcessEventHandler) => ChildProcess;
@@ -829,6 +893,7 @@ export class XrayService extends EventEmitter {
     withOnce.once?.('error', onErrorDuringStartup);
 
     const detachExitWatchers = (): void => {
+      options.signal?.removeEventListener('abort', onAbort);
       if (typeof withOnce.off === 'function') {
         withOnce.off('close', onCloseDuringStartup);
         withOnce.off('error', onErrorDuringStartup);
@@ -903,6 +968,7 @@ export class XrayService extends EventEmitter {
     stream: 'stdout' | 'stderr',
     line: string,
     config: VlessConfig,
+    elevated = false,
   ): void {
     const normalized = line.toLowerCase();
     const metadata = {
@@ -920,7 +986,13 @@ export class XrayService extends EventEmitter {
       return;
     }
 
-    if (normalized.includes('[warning]') || normalized.includes('deprecated')) {
+    // Elevated stderr also carries the root wrapper's sh and cp errors (e.g.
+    // `Permission denied`), the only trace of why a root start failed.
+    if (
+      normalized.includes('[warning]') ||
+      normalized.includes('deprecated') ||
+      (elevated && stream === 'stderr')
+    ) {
       logger.warn('XrayService', 'Xray runtime warning', metadata);
       return;
     }
