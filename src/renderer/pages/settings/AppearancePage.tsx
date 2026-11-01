@@ -8,7 +8,7 @@ interface AppearancePageProps {
   onTheme: (theme: ThemePreference) => void;
 }
 
-type Language = 'ru' | 'en';
+type Language = 'ru' | 'en' | 'zh' | 'fa' | 'es' | 'tr';
 
 /** «Оформление»: theme and language, applied at once. */
 export const AppearancePage: React.FC<AppearancePageProps> = ({
@@ -16,7 +16,8 @@ export const AppearancePage: React.FC<AppearancePageProps> = ({
   onTheme,
 }) => {
   const { t, i18n } = useTranslation();
-  const language: Language = i18n.language === 'ru' ? 'ru' : 'en';
+  
+  const language = i18n.language as Language;
 
   return (
     <Page title={t('pages.appearance.title')} lead={t('pages.appearance.lead')}>
@@ -64,6 +65,26 @@ export const AppearancePage: React.FC<AppearancePageProps> = ({
               value: 'en',
               label: 'English',
               desc: t('pages.appearance.languageEnDesc'),
+            },
+            {
+              value: 'zh',
+              label: '简体中文',
+              desc: t('pages.appearance.languageZhDesc'),
+            },
+            {
+              value: 'fa',
+              label: 'فارسی',
+              desc: t('pages.appearance.languageFaDesc'),
+            },
+            {
+              value: 'es',
+              label: 'Español',
+              desc: t('pages.appearance.languageEsDesc'),
+            },
+            {
+              value: 'tr',
+              label: 'Türkçe',
+              desc: t('pages.appearance.languageTrDesc'),
             },
           ]}
         />
