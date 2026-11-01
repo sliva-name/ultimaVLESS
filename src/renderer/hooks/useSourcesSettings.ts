@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Subscription } from '@/shared/types';
-import { YANDEX_TRANSLATED_MOBILE_LIST_URL } from '@/shared/subscriptionUrls';
+import {
+  YANDEX_TRANSLATED_MOBILE_LIST_URL,
+  wrapInYandexTranslate,
+} from '@/shared/subscriptionUrls';
 
 /**
  * Server sources: subscriptions, the manual links and the mobile white-list
@@ -16,6 +19,8 @@ export function useSourcesSettings(isOpen: boolean) {
 
   const [newSubName, setNewSubName] = useState('');
   const [newSubUrl, setNewSubUrl] = useState('');
+  // Off by default: Yandex sees the link and every server in the list.
+  const [newSubViaYandex, setNewSubViaYandex] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
 
@@ -63,7 +68,9 @@ export function useSourcesSettings(isOpen: boolean) {
   const addSubscription = useCallback(async (): Promise<boolean> => {
     setAddError(null);
     const name = newSubName.trim();
-    const url = newSubUrl.trim();
+    const url = newSubViaYandex
+      ? wrapInYandexTranslate(newSubUrl)
+      : newSubUrl.trim();
     if (!name) {
       setAddError(t('settings.sources.errors.nameRequired'));
       return false;
@@ -82,6 +89,7 @@ export function useSourcesSettings(isOpen: boolean) {
       }
       setNewSubName('');
       setNewSubUrl('');
+      setNewSubViaYandex(false);
       return true;
     } catch (err) {
       setAddError(
@@ -93,7 +101,7 @@ export function useSourcesSettings(isOpen: boolean) {
     } finally {
       setIsAdding(false);
     }
-  }, [newSubName, newSubUrl, t]);
+  }, [newSubName, newSubUrl, newSubViaYandex, t]);
 
   const importMobileList = useCallback(async () => {
     setImportMobileError(null);
@@ -157,6 +165,8 @@ export function useSourcesSettings(isOpen: boolean) {
     setNewSubName,
     newSubUrl,
     setNewSubUrl,
+    newSubViaYandex,
+    setNewSubViaYandex,
     addError,
     setAddError,
     isAdding,
