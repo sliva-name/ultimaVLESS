@@ -82,8 +82,8 @@ export interface IElectronAPI {
   /** Running programs with icons (Windows; `[]` elsewhere). */
   listRunningApps: () => Promise<AppOption[]>;
 
-  getUiLanguage: () => Promise<'en' | 'ru'>;
-  setUiLanguage: (language: 'en' | 'ru') => Promise<boolean>;
+  getUiLanguage: () => Promise<string>;
+  setUiLanguage: (language: string) => Promise<boolean>;
   /** Recolors the native window buttons to match the renderer's theme. */
   setWindowTheme: (theme: WindowTheme) => Promise<boolean>;
 
