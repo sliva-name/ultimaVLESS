@@ -355,6 +355,10 @@ const resources = {
           urlPlaceholder: 'https://example.com/sub',
           addAndFetch: 'Add and fetch',
           adding: 'Adding...',
+          viaYandex: 'Fetch through Yandex Translate',
+          viaYandexHint:
+            'Helps under white lists, when the subscription site is unreachable. Yandex sees the link and the server list, so use it for public lists only.',
+          viaYandexNote: 'via Yandex Translate',
           openPreview: 'Open preview and import mobile list',
           manualConfigs: 'Manual configs (multi-paste)',
           manualPlaceholder:
@@ -949,6 +953,10 @@ const resources = {
           urlPlaceholder: 'https://example.com/sub',
           addAndFetch: 'Добавить и загрузить',
           adding: 'Добавление...',
+          viaYandex: 'Загружать через Яндекс Переводчик',
+          viaYandexHint:
+            'Помогает при белых списках, когда сайт подписки недоступен. Яндекс увидит ссылку и список серверов — включайте только для публичных списков.',
+          viaYandexNote: 'через Яндекс Переводчик',
           openPreview: 'Открыть превью и импортировать мобильный список',
           manualConfigs: 'Ручные конфигурации',
           manualPlaceholder:
