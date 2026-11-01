@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PERFORMANCE_SETTINGS } from '@/shared/types';
 import type { XrayConfig } from '@/shared/xray-types';
+import { TUN_IPV6_ADDRESS } from '@/main/services/tunRoute/constants';
 import {
   adaptConfigForAndroid,
+  buildVpnOptions,
   planAndroidRouting,
 } from '../src/backend/androidConfig';
 
@@ -84,5 +86,25 @@ describe('adaptConfigForAndroid', () => {
     expect(adapted.inbounds?.[1]).toEqual(config.inbounds?.[1]);
     // The input stays untouched.
     expect(config.api).toBeDefined();
+  });
+});
+
+describe('buildVpnOptions', () => {
+  it('keeps IPv6 off the tunnel with the default IPv4-only DNS', () => {
+    // Telegram's IPv6 connects would otherwise hang on a server without IPv6.
+    const options = buildVpnOptions(perf, planAndroidRouting(perf, 'tun'));
+    expect(options.ipv6Address).toBeNull();
+    expect(options.dnsServers).toEqual(['1.1.1.1', '1.0.0.1']);
+  });
+
+  it('routes IPv6 through the tunnel when DNS hands out AAAA', () => {
+    for (const strategy of ['UseIP', 'UseIPv6', 'UseSystem'] as const) {
+      const settings = { ...perf, tunDnsQueryStrategy: strategy };
+      const options = buildVpnOptions(
+        settings,
+        planAndroidRouting(settings, 'tun'),
+      );
+      expect(options.ipv6Address).toBe(TUN_IPV6_ADDRESS);
+    }
   });
 });

@@ -102,15 +102,25 @@ export function adaptConfigForAndroid(config: XrayConfig): XrayConfig {
   return adapted;
 }
 
+/**
+ * IPv6 enters the tunnel only when the DNS strategy hands out AAAA records.
+ * An IPv6 tunnel to a server without IPv6 swallows connections: the TUN stack
+ * takes the handshake and then nothing answers. Telegram turns to IPv6 after
+ * a few failed connects and then hangs on "Connecting…" for its 4–16 s
+ * timeout each time. Without an IPv6 address, route or resolver (the remote
+ * resolvers are IPv4 only) the VpnService blocks the family instead, and
+ * apps fall back to IPv4 at once.
+ */
 export function buildVpnOptions(
   perf: PerformanceSettings,
   plan: AndroidRoutingPlan,
 ): VpnOptions {
+  const ipv6 = perf.tunDnsQueryStrategy !== 'UseIPv4';
   return {
     mtu: perf.tunMtu,
     ipv4Address: TUN_ADDRESS,
     ipv4Prefix: TUN_PREFIX,
-    ipv6Address: TUN_IPV6_ADDRESS,
+    ipv6Address: ipv6 ? TUN_IPV6_ADDRESS : null,
     ipv6Prefix: TUN_IPV6_PREFIX,
     dnsServers:
       perf.remoteDnsServers.length > 0
