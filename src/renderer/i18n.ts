@@ -172,8 +172,6 @@ const resources = {
           themeDark: 'Dark',
           themeDarkDesc: 'Graphite',
           language: 'Language',
-          languageRuDesc: 'Интерфейс, трей и уведомления',
-          languageEnDesc: 'Interface, tray and notifications',
         },
         about: {
           title: 'About',
@@ -765,8 +763,6 @@ const resources = {
           themeDark: 'Тёмная',
           themeDarkDesc: 'Графит',
           language: 'Язык',
-          languageRuDesc: 'Интерфейс, трей и уведомления',
-          languageEnDesc: 'Interface, tray and notifications',
         },
         about: {
           title: 'О программе',
@@ -1356,8 +1352,6 @@ const resources = {
           themeDark: '深色',
           themeDarkDesc: '石墨',
           language: '语言',
-          languageRuDesc: '界面、系统托盘和通知',
-          languageEnDesc: '界面、系统托盘和通知',
         },
         about: {
           title: '关于',
@@ -1890,8 +1884,6 @@ const resources = {
           themeDark: 'تیره',
           themeDarkDesc: 'گرافیتی',
           language: 'زبان',
-          languageRuDesc: 'رابط کاربری، نوار وظیفه و اعلان‌ها',
-          languageEnDesc: 'رابط کاربری، نوار وظیفه و اعلان‌ها',
         },
         about: {
           title: 'درباره',
@@ -2427,8 +2419,6 @@ const resources = {
           themeDark: 'Oscuro',
           themeDarkDesc: 'Grafito',
           language: 'Idioma',
-          languageRuDesc: 'Interfaz, bandeja del sistema y notificaciones',
-          languageEnDesc: 'Interfaz, bandeja del sistema y notificaciones',
         },
         about: {
           title: 'Acerca de',
@@ -3011,8 +3001,6 @@ const resources = {
           themeDark: 'Koyu',
           themeDarkDesc: 'Grafit',
           language: 'Dil',
-          languageRuDesc: 'Arayüz, sistem tepsisi ve bildirimler',
-          languageEnDesc: 'Arayüz, sistem tepsisi ve bildirimler',
         },
         about: {
           title: 'Hakkında',
