@@ -3427,42 +3427,87 @@ const resources = {
   }
 };
 
-const savedLanguage = localStorage.getItem('language') || 'ru';
+const supportedLanguages = ['en', 'ru', 'zh', 'fa', 'es', 'tr'] as const;
+type SupportedLanguage = (typeof supportedLanguages)[number];
+
+function isSupportedLanguage(
+  language: string | null | undefined,
+): language is SupportedLanguage {
+  return supportedLanguages.includes(language as SupportedLanguage);
+}
+
+function getSystemLanguage(): SupportedLanguage {
+  if (typeof navigator === 'undefined') return 'en';
+
+  const systemLocales = navigator.languages?.length
+    ? navigator.languages
+    : [navigator.language];
+
+  for (const locale of systemLocales) {
+    // Convert locale codes such as "zh-CN" or "es-MX" to "zh" or "es".
+    const baseLanguage = locale.split('-')[0].toLowerCase();
+
+    if (isSupportedLanguage(baseLanguage)) {
+      return baseLanguage;
+    }
+  }
+
+  // Use English if the system language is not supported.
+  return 'en';
+}
+
+const storedLanguage = localStorage.getItem('language');
+const initialLanguage = isSupportedLanguage(storedLanguage)
+  ? storedLanguage
+  : getSystemLanguage();
 
 i18n.use(initReactI18next).init({
   resources,
-  lng: savedLanguage,
+  lng: initialLanguage,
   fallbackLng: 'en',
+  supportedLngs: supportedLanguages,
   interpolation: {
-    escapeValue: false, // React already escapes values
+    escapeValue: false, // React already escapes values.
   },
 });
 
-// Hydrate from the main-process stored language (if available) and keep both
-// persisted stores in sync so the tray, window title, and native notifications
-// can use the same locale without the renderer being open.
+function updateDocumentLanguage(language: string) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = language;
+    document.documentElement.dir = i18n.dir(language);
+  }
+}
+
+updateDocumentLanguage(i18n.language || initialLanguage);
+
+// Load a manually saved language from the main process, if one exists.
 if (typeof window !== 'undefined' && window.electronAPI?.getUiLanguage) {
   void window.electronAPI
     .getUiLanguage()
-    .then((mainLang) => {
-      if (mainLang && mainLang !== i18n.language) {
-        void i18n.changeLanguage(mainLang);
+    .then((mainLanguage) => {
+      if (
+        isSupportedLanguage(mainLanguage) &&
+        mainLanguage !== i18n.language
+      ) {
+        void i18n.changeLanguage(mainLanguage);
       }
     })
     .catch(() => {
-      /* ignore — renderer already has a sensible default */
+      // Keep the language already selected by the renderer.
     });
 }
 
-i18n.on('languageChanged', (lng) => {
-  localStorage.setItem('language', lng);
+i18n.on('languageChanged', (language) => {
+  localStorage.setItem('language', language);
+  updateDocumentLanguage(language);
+
   if (
     typeof window !== 'undefined' &&
     window.electronAPI?.setUiLanguage &&
-    (lng === 'en' || lng === 'ru')
+    isSupportedLanguage(language)
   ) {
-    void window.electronAPI.setUiLanguage(lng).catch(() => {
-      /* non-fatal: main process will pick up the language on next launch */
+    void window.electronAPI.setUiLanguage(language).catch(() => {
+      // The main process can pick up the language on the next launch.
     });
   }
 });
