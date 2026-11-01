@@ -35,19 +35,23 @@ describe('outboundCompat', () => {
   });
 
   it('matches exactly the addresses Xray treats as private', () => {
+    // Checked against `xray run -test` of v26.10.31.
     const cases: Array<[string, boolean]> = [
-      ['192.0.2.10', true],
-      ['192.0.5.1', false],
-      ['192.88.99.1', true],
-      ['198.51.100.7', true],
-      ['203.0.113.5', true],
-      ['198.19.255.1', true],
-      ['198.20.0.1', false],
-      ['255.255.255.255', true],
-      ['::', true],
+      ['172.16.5.5', true],
+      ['172.32.0.1', false],
+      ['169.254.1.1', true],
+      ['100.64.0.1', false],
+      ['198.18.0.1', false],
+      ['192.0.2.10', false],
+      ['0.0.0.0', false],
+      ['224.0.0.1', false],
+      ['255.255.255.255', false],
+      ['::', false],
       ['::2', false],
       ['fd00::1', true],
-      ['ff02::1', true],
+      ['fe80::1', true],
+      ['ff02::1', false],
+      ['64:ff9b::101:101', false],
       ['::ffff:a00:1', true],
       ['::ffff:8.8.8.8', false],
       ['fe80::1%eth0', false],

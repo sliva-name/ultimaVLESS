@@ -272,7 +272,8 @@ export interface PerformanceSettings {
   tunDnsQueryStrategy: TunDnsQueryStrategy;
   /**
    * Windows TUN with Xray auto-route only: Xray's `autoSystemWfpBlockLeak:
-   * ["dns"]` keeps port 53 of every program but Xray inside the TUN. Off by
+   * ["dns"]` keeps DNS of every program but Xray inside the TUN: port 53 and,
+   * since Xray v26.10.31, DNS over TLS/QUIC on port 853. Off by
    * default, as in Xray: it breaks local resolvers on 127.0.0.1:53, another
    * VPN's DNS, VMs resolving through the host's NAT and captive portals.
    */

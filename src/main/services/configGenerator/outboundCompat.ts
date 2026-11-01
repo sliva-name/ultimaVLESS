@@ -8,30 +8,23 @@ const REMOVED_SS_METHODS = new Set(['none', 'plain']);
 const REMOVED_VMESS_SECURITY = new Set(['none', 'zero']);
 
 /**
- * Xray's own private matchers. Without TLS, REALITY or VLESS encryption Xray
- * refuses VLESS/Trojan unless the server address matches one of them.
- * @see https://github.com/XTLS/Xray-core/blob/main/common/geodata/consts.go
+ * Addresses Xray lets VLESS/Trojan reach without TLS, REALITY or VLESS
+ * encryption: for IPs Go's `IsPrivate`, `IsLoopback` and `IsLinkLocalUnicast`
+ * (since v26.10.31, no longer the wider built-in `geoip:private`), for names
+ * Xray's private domain matcher.
  * @see https://github.com/XTLS/Xray-core/blob/main/infra/conf/xray.go (`requiresTransportSecurity`)
+ * @see https://github.com/XTLS/Xray-core/blob/main/common/geodata/consts.go (`privateDomainMatcher`)
+ * @see https://github.com/XTLS/Xray-core/pull/7249
  */
 const XRAY_PRIVATE_SUBNETS: ReadonlyArray<[string, number, 'ipv4' | 'ipv6']> = [
-  ['0.0.0.0', 8, 'ipv4'],
   ['10.0.0.0', 8, 'ipv4'],
-  ['100.64.0.0', 10, 'ipv4'],
+  ['172.16.0.0', 12, 'ipv4'],
+  ['192.168.0.0', 16, 'ipv4'],
   ['127.0.0.0', 8, 'ipv4'],
   ['169.254.0.0', 16, 'ipv4'],
-  ['172.16.0.0', 12, 'ipv4'],
-  ['192.0.0.0', 24, 'ipv4'],
-  ['192.0.2.0', 24, 'ipv4'],
-  ['192.88.99.0', 24, 'ipv4'],
-  ['192.168.0.0', 16, 'ipv4'],
-  ['198.18.0.0', 15, 'ipv4'],
-  ['198.51.100.0', 24, 'ipv4'],
-  ['203.0.113.0', 24, 'ipv4'],
-  ['224.0.0.0', 3, 'ipv4'],
-  ['::', 127, 'ipv6'],
   ['fc00::', 7, 'ipv6'],
+  ['::1', 128, 'ipv6'],
   ['fe80::', 10, 'ipv6'],
-  ['ff00::', 8, 'ipv6'],
 ];
 
 const xrayPrivateIps = new net.BlockList();

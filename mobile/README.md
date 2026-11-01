@@ -16,7 +16,7 @@
                         │ плагин UltimaCore (Kotlin)
 ┌───────────────────────┴──────────────────────────────┐
 │  UltimaVpnService   VPN-туннель, уведомление, Always-on│
-│  CoreRuntime        Xray (libv2ray v26.10.21)         │
+│  CoreRuntime        Xray (libv2ray v26.10.31)         │
 │  NetProbes          сокеты для пинга и проверок        │
 └──────────────────────────────────────────────────────┘
 ```
