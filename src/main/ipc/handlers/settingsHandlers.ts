@@ -216,11 +216,17 @@ export function registerSettingsHandlers({
     IPC_INVOKE_CHANNELS.setUiLanguage,
     (event: IpcMainInvokeEvent, language: unknown) => {
       assertTrustedSender(event);
-      if (language !== 'en' && language !== 'ru') {
-        throw new Error(`Unsupported UI language: ${String(language)}`);
+      
+      if (typeof language !== 'string') {
+        throw new Error('Language must be a string');
       }
-      deps.mainLocaleService.setLanguage(language);
-      return true;
+
+      try {
+        deps.mainLocaleService.setLanguage(language as any);
+        return true;
+      } catch (error) {
+        throw new Error(`Failed to set UI language: ${String(language)}. Error: ${String(error)}`);
+      }
     },
   );
 

@@ -42,20 +42,22 @@ const lowerFirst = (text: string) =>
     ? text.charAt(0).toLocaleLowerCase() + text.slice(1)
     : text;
 
-/** RU / EN; the main process keeps the choice for the notification. */
+/** The main process keeps the choice for the notification. */
 export const LanguageSwitch: React.FC = () => {
   const { t, i18n } = useTranslation();
+  
+  // Supported languages
+  const languages = ['en', 'ru', 'zh', 'fa', 'es', 'tr'] as const;
+
   return (
     <div
       role="radiogroup"
       aria-label={t('mobile.settings.languageAria')}
-      className="h-10 shrink-0 flex p-[3px] rounded-xl bg-s2 border border-line"
+      className="h-10 shrink-0 flex p-[3px] rounded-xl bg-s2 border border-line overflow-x-auto" 
     >
-      {(['ru', 'en'] as const).map((code) => {
-        const on =
-          code === 'ru'
-            ? i18n.language === 'ru'
-            : i18n.language.startsWith('en');
+      {languages.map((code) => {
+        const on = i18n.language.startsWith(code);
+        
         return (
           <button
             key={code}
@@ -64,7 +66,7 @@ export const LanguageSwitch: React.FC = () => {
             aria-checked={on}
             onClick={() => void i18n.changeLanguage(code)}
             className={clsx(
-              'h-8 px-3 rounded-[9px] text-[13px] leading-4 font-medium',
+              'h-8 px-3 rounded-[9px] text-[13px] leading-4 font-medium shrink-0',
               on ? 'bg-thumb text-fg shadow-thumb' : 'text-fg2',
             )}
           >

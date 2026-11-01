@@ -181,10 +181,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     >,
 
   getUiLanguage: () =>
-    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getUiLanguage) as Promise<
-      'en' | 'ru'
-    >,
-  setUiLanguage: (language: 'en' | 'ru') =>
+    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getUiLanguage) as Promise<string>,
+  setUiLanguage: (language: string) =>
     ipcRenderer.invoke(
       IPC_INVOKE_CHANNELS.setUiLanguage,
       language,

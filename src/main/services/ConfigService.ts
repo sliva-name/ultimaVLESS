@@ -14,7 +14,9 @@ import {
 } from '@/main/infrastructure/persistence/appStore';
 import { logger } from './LoggerService';
 
-export type UiLanguage = 'en' | 'ru';
+// Supported languages
+export type UiLanguage = 'en' | 'ru' | 'zh' | 'fa' | 'es' | 'tr';
+const SUPPORTED_UI_LANGUAGES: UiLanguage[] = ['en', 'ru', 'zh', 'fa', 'es', 'tr'];
 
 /**
  * Persistent session/settings store. Server catalog and subscriptions live in
@@ -154,8 +156,13 @@ export class ConfigService {
   }
 
   public getUiLanguage(): UiLanguage {
-    const stored = this.store.get('uiLanguage');
-    return stored === 'en' || stored === 'ru' ? stored : 'ru';
+    const stored = this.store.get('uiLanguage') as string;
+    
+    if (SUPPORTED_UI_LANGUAGES.includes(stored as UiLanguage)) {
+      return stored as UiLanguage;
+    }
+
+    return 'en'; 
   }
 
   public setUiLanguage(language: UiLanguage): void {
