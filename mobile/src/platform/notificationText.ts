@@ -1,5 +1,4 @@
-import type { RuntimePorts } from '@/shared/constants';
-import type { UiLanguage } from '@/main/services/ConfigService';
+import type { UiLanguage, RuntimePorts } from '@/shared/constants';
 import type { NotificationText } from '../native/UltimaCore';
 
 /**
