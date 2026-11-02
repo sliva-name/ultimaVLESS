@@ -14,6 +14,7 @@ import {
 } from '@/shared/types';
 import { redactUrl } from '@/main/utils/redactUrl';
 import { logger } from '@/main/services/LoggerService';
+import { type UiLanguage } from '@/shared/constants';
 
 const LEGACY_DEFAULT_SUBSCRIPTION_URL = MOBILE_WHITE_LIST_RAW_URL;
 const DEFAULT_SUBSCRIPTION_URL = YANDEX_TRANSLATED_MOBILE_LIST_URL;
@@ -34,7 +35,7 @@ export interface AppStoreSchema {
     createdAt: number;
   } | null;
   performanceSettings: PerformanceSettings;
-  uiLanguage?: 'ru' | 'en';
+  uiLanguage?: UiLanguage;
   autoSwitchingEnabled?: boolean;
   /** Set once the stored ping method has been moved to real delay. */
   realDelayDefaultApplied?: boolean;

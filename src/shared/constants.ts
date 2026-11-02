@@ -1,6 +1,15 @@
 /** Bundled Xray-core release (see scripts/prepare-xray-assets.mjs). */
 export const BUNDLED_XRAY_VERSION = 'v26.10.31';
 
+/** List of all supported languages **/
+export const SUPPORTED_LANGUAGES = ['en', 'ru', 'zh', 'fa', 'es', 'tr'] as const;
+
+export type UiLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+
+export function isSupportedLanguage(lang: string | null | undefined): lang is UiLanguage {
+  return SUPPORTED_LANGUAGES.includes(lang as UiLanguage);
+}
+
 /**
  * Passed to the instance that UltimaVLESS starts for itself when it needs
  * Administrator rights. It marks a launch that must keep booting instead of

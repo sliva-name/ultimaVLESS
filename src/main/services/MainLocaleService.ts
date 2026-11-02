@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
-import { configService, UiLanguage } from './ConfigService';
+import { configService } from './ConfigService';
+import { type UiLanguage } from '@/shared/constants';
 
 export type MainTranslationKey =
   | 'tray.show'

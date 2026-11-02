@@ -29,6 +29,7 @@ import {
   Tile,
   type Tone,
 } from './kit';
+import { SUPPORTED_LANGUAGES } from '@/shared/constants'; 
 
 const DNS_NAMES: Record<string, string> = {
   cloudflare: 'Cloudflare',
@@ -45,9 +46,6 @@ const lowerFirst = (text: string) =>
 /** The main process keeps the choice for the notification. */
 export const LanguageSwitch: React.FC = () => {
   const { t, i18n } = useTranslation();
-  
-  // Supported languages
-  const languages = ['en', 'ru', 'zh', 'fa', 'es', 'tr'] as const;
 
   return (
     <div
@@ -55,7 +53,7 @@ export const LanguageSwitch: React.FC = () => {
       aria-label={t('mobile.settings.languageAria')}
       className="h-10 shrink-0 flex p-[3px] rounded-xl bg-s2 border border-line overflow-x-auto" 
     >
-      {languages.map((code) => {
+      {SUPPORTED_LANGUAGES.map((code) => {
         const on = i18n.language.startsWith(code);
         
         return (
