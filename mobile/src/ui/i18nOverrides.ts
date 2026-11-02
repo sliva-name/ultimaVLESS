@@ -25,7 +25,7 @@ const OVERRIDES = {
           'Если в режиме «Только прокси» сайты открываются, а через VPN на медленном сервере — нет, уменьшите значение. 1400 по умолчанию; 1280 — безопаснее на плохой линии.',
         tunDnsQueryStrategy: 'DNS в VPN',
         tunDnsQueryStrategyHint:
-          'Только для VPN: прокси всегда ходит по IPv4. «Только IPv4» — по умолчанию, страницы открываются быстрее. «IPv4 и IPv6» или «Как в системе» — если нужны сайты, доступные только по IPv6.',
+          'Только для VPN: прокси всегда ходит по IPv4. «Только IPv4» — по умолчанию: IPv6 в VPN не пускается, и страницы и Telegram не ждут сервер без IPv6. «IPv4 и IPv6» или «Как в системе» — если нужны сайты, доступные только по IPv6, и сервер поддерживает IPv6.',
         tunDnsUseIPv4Desc: 'Рекомендуется. Страницы открываются быстрее',
         routingModeAppsDesc:
           'Выбранные приложения — через VPN, остальные напрямую.',
@@ -274,7 +274,7 @@ const OVERRIDES = {
           'If sites open in proxy-only mode but not through the VPN on a slow server, lower this. Default 1400; 1280 is safer on a bad line.',
         tunDnsQueryStrategy: 'VPN DNS query strategy',
         tunDnsQueryStrategyHint:
-          'VPN only — proxy always uses IPv4. IPv4-only is the default so pages open faster. Pick IPv4 and IPv6 or Follow the OS only if you need IPv6-only sites.',
+          'VPN only — proxy always uses IPv4. IPv4-only is the default: IPv6 stays out of the VPN, so pages and Telegram never wait on a server without IPv6. Pick IPv4 and IPv6 or Follow the OS only if you need IPv6-only sites and the server supports IPv6.',
         tunDnsUseIPv4Desc: 'Recommended. Pages open faster',
         routingModeAppsDesc:
           'The chosen apps go through the VPN, everything else direct.',

@@ -198,6 +198,36 @@ describe('app shell', () => {
     expect(screen.getByText('Здесь появятся серверы')).toBeInTheDocument();
   });
 
+  it('adds a subscription through Yandex Translate when asked', async () => {
+    const electronApi = renderApp(makeAppSnapshot());
+    const sub = 'https://example.com/sub?token=abc&format=base64';
+
+    fireEvent.change(await screen.findByLabelText('Адрес подписки'), {
+      target: { value: sub },
+    });
+    fireEvent.change(screen.getByLabelText('Название'), {
+      target: { value: 'Белый список' },
+    });
+    const viaYandex = screen.getByRole('switch', {
+      name: 'Загружать через Яндекс Переводчик',
+    });
+    expect(viaYandex).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(viaYandex);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Добавить и загрузить' }),
+    );
+
+    await waitFor(() =>
+      expect(electronApi.addSubscription).toHaveBeenCalledWith({
+        name: 'Белый список',
+        url: `https://translate.yandex.ru/translate?url=${encodeURIComponent(sub)}&lang=de-de`,
+      }),
+    );
+    await waitFor(() =>
+      expect(viaYandex).toHaveAttribute('aria-checked', 'false'),
+    );
+  });
+
   it('offers a downloaded update in the title bar', async () => {
     const electronApi = renderApp(snapshotWith('idle'));
     await waitFor(() => expect(electronApi.getUpdateStatus).toHaveBeenCalled());

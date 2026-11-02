@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { localizeError } from '@/shared/localizeError';
+import { unwrapYandexTranslate } from '@/shared/subscriptionUrls';
 import { useServers } from '@/renderer/hooks/useAppSnapshot';
 import { useSourcesSettings } from '@/renderer/hooks/useSourcesSettings';
 import { useRefreshSubscriptions } from '@/renderer/hooks/useRefreshSubscriptions';
@@ -16,6 +17,7 @@ import {
   SUBSCRIPTION_COLORS,
   getSubscriptionColor,
 } from '@/renderer/components/sidebarModel';
+import { ViaYandexToggle } from '@/renderer/components/ViaYandexToggle';
 import {
   Button,
   ErrorText,
@@ -138,6 +140,10 @@ export const SubscriptionsPage: React.FC = () => {
               onChange={(e) => sources.setNewSubName(e.target.value)}
             />
           </div>
+          <ViaYandexToggle
+            checked={sources.newSubViaYandex}
+            onChange={sources.setNewSubViaYandex}
+          />
           {sources.addError && (
             <ErrorText>{localize(sources.addError)}</ErrorText>
           )}
@@ -171,6 +177,7 @@ export const SubscriptionsPage: React.FC = () => {
             {subscriptions.map((subscription) => {
               const count = counts.get(subscription.id)?.length ?? 0;
               const state = status(subscription.enabled, count);
+              const viaYandex = unwrapYandexTranslate(subscription.url);
               return (
                 <Row
                   key={subscription.id}
@@ -188,8 +195,9 @@ export const SubscriptionsPage: React.FC = () => {
                   hint={
                     <>
                       {state.hint}
+                      {viaYandex && ` · ${t('settings.sources.viaYandexNote')}`}
                       <span className="block font-mono text-[11px] leading-4 text-fg3 truncate">
-                        {subscription.url}
+                        {viaYandex ?? subscription.url}
                       </span>
                     </>
                   }

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { localizeError } from '@/shared/localizeError';
 import { useSourcesSettings } from '@/renderer/hooks/useSourcesSettings';
 import { Button, ErrorText, TextField } from '@/renderer/components/ui';
+import { ViaYandexToggle } from '@/renderer/components/ViaYandexToggle';
 
 interface EmptyStageProps {
   onOpenSources: () => void;
@@ -60,6 +61,10 @@ export const EmptyStage: React.FC<EmptyStageProps> = ({ onOpenSources }) => {
               placeholder={t('settings.sources.namePlaceholder')}
             />
           </label>
+          <ViaYandexToggle
+            checked={sources.newSubViaYandex}
+            onChange={sources.setNewSubViaYandex}
+          />
           {sources.addError && (
             <ErrorText>{localize(sources.addError)}</ErrorText>
           )}

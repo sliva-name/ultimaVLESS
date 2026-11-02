@@ -16,6 +16,7 @@ import {
   Panel,
   Row,
   RowGroup,
+  Switch,
   Tile,
   WideButton,
   type Tone,
@@ -254,6 +255,21 @@ export const SubscriptionSheet: React.FC<{
               className={`${field} font-mono text-sm`}
             />
           </label>
+          <div className="flex items-center gap-3.5">
+            <span className="flex-1 min-w-0 flex flex-col">
+              <span className="text-[15px] leading-5 font-medium">
+                {t('settings.sources.viaYandex')}
+              </span>
+              <span className="mt-0.5 text-[13px] leading-[18px] text-fg3">
+                {t('settings.sources.viaYandexHint')}
+              </span>
+            </span>
+            <Switch
+              checked={sources.newSubViaYandex}
+              onChange={sources.setNewSubViaYandex}
+              label={t('settings.sources.viaYandex')}
+            />
+          </div>
           {sources.addError && (
             <ErrorText>
               {localizeError(sources.addError, i18n.language)}
