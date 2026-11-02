@@ -6,6 +6,7 @@ import type { NotificationText } from '../native/UltimaCore';
  * Notification wording the native side cannot localize itself: it only
  * formats the numbers. Same words and units as the UI.
  */
+// Supported Languages
 const STRINGS: Record<
   UiLanguage,
   Pick<NotificationText, 'rateUnits' | 'decimalSeparator'> & {
@@ -21,6 +22,26 @@ const STRINGS: Record<
     proxyOnly: 'Proxy only',
     rateUnits: ['B/s', 'KB/s', 'MB/s'],
     decimalSeparator: '.',
+  },
+  zh: {
+    proxyOnly: '仅代理',
+    rateUnits: ['B/s', 'KB/s', 'MB/s'],
+    decimalSeparator: '.',
+  },
+  fa: {
+    proxyOnly: 'فقط پروکسی',
+    rateUnits: ['بایت/ثانیه', 'کیلوبایت/ثانیه', 'مگابایت/ثانیه'],
+    decimalSeparator: '٫',
+  },
+  es: {
+    proxyOnly: 'Solo proxy',
+    rateUnits: ['B/s', 'KB/s', 'MB/s'],
+    decimalSeparator: ',',
+  },
+  tr: {
+    proxyOnly: 'Yalnızca proxy',
+    rateUnits: ['B/s', 'KB/s', 'MB/s'],
+    decimalSeparator: ',',
   },
 };
 
