@@ -20,12 +20,20 @@
     },
     "count": {
       "servers_one": "{{count}} сервер",
+      "servers_few": "{{count}} сервера",
+      "servers_many": "{{count}} серверов",
       "servers_other": "{{count}} сервера",
       "subscriptions_one": "{{count}} подписка",
+      "subscriptions_few": "{{count}} подписки",
+      "subscriptions_many": "{{count}} подписок",
       "subscriptions_other": "{{count}} подписки",
       "exclusions_one": "{{count}} исключение",
+      "exclusions_few": "{{count}} исключения",
+      "exclusions_many": "{{count}} исключений",
       "exclusions_other": "{{count}} исключения",
       "changes_one": "{{count}} изменение",
+      "changes_few": "{{count}} изменения",
+      "changes_many": "{{count}} изменений",
       "changes_other": "{{count}} изменения"
     },
     "shell": {
