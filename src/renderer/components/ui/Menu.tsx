@@ -223,7 +223,7 @@ export const Menu: React.FC<MenuProps> = ({
                 onMouseEnter={() => itemIndex >= 0 && setActive(itemIndex)}
                 onClick={() => run(entry)}
                 className={clsx(
-                  'w-full h-8 flex items-center gap-2.5 px-2.5 rounded-md text-left text-[13px] leading-5 outline-none',
+                  'w-full h-8 flex items-center gap-2.5 px-2.5 rounded-md text-start text-[13px] leading-5 outline-none',
                   'disabled:opacity-45',
                   entry.danger ? 'text-bad' : 'text-fg',
                   itemIndex === active && 'bg-thumb',

@@ -297,7 +297,7 @@ export const Stage: React.FC<StageProps> = ({
                   className="h-8 flex items-center justify-between gap-3 border-b border-line"
                 >
                   <dt className="text-xs leading-4 text-fg3">{row.k}</dt>
-                  <dd className="m-0 text-xs leading-4 font-medium text-fg text-right truncate">
+                  <dd className="m-0 text-xs leading-4 font-medium text-fg text-end truncate">
                     {row.v}
                   </dd>
                 </div>

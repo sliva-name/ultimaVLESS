@@ -67,7 +67,7 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
               aria-current={on ? 'page' : undefined}
               onClick={() => onPage(id)}
               className={clsx(
-                'h-[30px] flex items-center gap-2 px-2.5 rounded-md text-left text-[13px] leading-4 whitespace-nowrap',
+                'h-[30px] flex items-center gap-2 px-2.5 rounded-md text-start text-[13px] leading-4 whitespace-nowrap',
                 'transition-colors duration-150',
                 on
                   ? 'bg-acc-soft text-fg font-medium'

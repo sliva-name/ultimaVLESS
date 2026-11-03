@@ -185,7 +185,7 @@ export const Panel: React.FC<PanelProps> = ({
           {title}
         </h2>
         {note && (
-          <span className="text-xs leading-4 text-fg3 text-right">{note}</span>
+          <span className="text-xs leading-4 text-fg3 text-end">{note}</span>
         )}
       </div>
     )}
@@ -425,7 +425,7 @@ export const Row: React.FC<RowProps> = ({
     </>
   );
   const className = clsx(
-    'w-full min-h-[52px] flex items-center gap-3 px-4 py-2.5 text-left',
+    'w-full min-h-[52px] flex items-center gap-3 px-4 py-2.5 text-start',
     disabled && 'opacity-55',
   );
   return onClick ? (
@@ -516,7 +516,7 @@ export const NumberField: React.FC<NumberFieldProps> = ({
       onKeyDown={(e) => {
         if (e.key === 'Enter') e.currentTarget.blur();
       }}
-      className="shrink-0 w-20 h-8 px-2.5 rounded-lg border border-line2 bg-s2 text-fg text-[13px] leading-5 text-right tabular-nums outline-none focus:border-acc-fill"
+      className="shrink-0 w-20 h-8 px-2.5 rounded-lg border border-line2 bg-s2 text-fg text-[13px] leading-5 text-end tabular-nums outline-none focus:border-acc-fill"
     />
   );
 };
@@ -582,7 +582,7 @@ export function ChoiceCards<T extends string>({
             disabled={off}
             onClick={() => onChange(option.value)}
             className={clsx(
-              'flex flex-col gap-1.5 pt-3.5 px-4 pb-4 rounded-xl border text-left shadow-panel',
+              'flex flex-col gap-1.5 pt-3.5 px-4 pb-4 rounded-xl border text-start shadow-panel',
               'transition-colors duration-150 disabled:opacity-55',
               on
                 ? 'border-acc-line bg-acc-soft'

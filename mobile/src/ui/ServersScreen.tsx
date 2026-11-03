@@ -264,7 +264,7 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
                 onClick={() =>
                   setClosed((prev) => ({ ...prev, [group.id]: open }))
                 }
-                className="h-10 flex items-center gap-2 pl-3 pr-2 rounded-[10px] text-fg3 text-left"
+                className="h-10 flex items-center gap-2 pl-3 pr-2 rounded-[10px] text-fg3 text-start"
               >
                 <span
                   className={clsx('w-2 h-2 rounded-full shrink-0', group.dot)}
@@ -300,7 +300,7 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
                         if (!selectionLocked) onSelectServer(server);
                       }}
                       className={clsx(
-                        'h-16 flex items-center gap-3.5 px-3 rounded-xl text-left transition-[background-color,opacity] duration-200',
+                        'h-16 flex items-center gap-3.5 px-3 rounded-xl text-start transition-[background-color,opacity] duration-200',
                         selected
                           ? 'bg-acc-soft shadow-[inset_0_0_0_1px_var(--color-acc-line)]'
                           : 'bg-transparent',

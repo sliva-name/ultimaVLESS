@@ -56,7 +56,7 @@ export const ServerRow = React.memo<ServerRowProps>(
         data-server-uuid={server.uuid}
         data-server-row
         className={clsx(
-          'w-full h-12 flex items-center gap-2.5 px-2.5 rounded-lg text-left',
+          'w-full h-12 flex items-center gap-2.5 px-2.5 rounded-lg text-start',
           'transition-[background-color,opacity] duration-150',
           isSelected
             ? 'bg-acc-soft shadow-[inset_0_0_0_1px_var(--color-acc-line)]'
