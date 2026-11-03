@@ -159,7 +159,7 @@ export class ConfigService {
       return stored;
     }
 
-    return 'en'; 
+    return 'ru'; 
   }
 
   public setUiLanguage(language: UiLanguage): void {

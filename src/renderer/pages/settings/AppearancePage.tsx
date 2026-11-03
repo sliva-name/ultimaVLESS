@@ -2,14 +2,11 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ThemePreference } from '@/renderer/hooks/useTheme';
 import { ChoiceCards, Page, Panel } from '@/renderer/components/ui';
-
+import { type UiLanguage, SUPPORTED_LANGUAGES, isSupportedLanguage } from '@/shared/constants';
 interface AppearancePageProps {
   theme: ThemePreference;
   onTheme: (theme: ThemePreference) => void;
 }
-
-// Supported languages
-type Language = 'en' | 'ru' | 'zh' | 'fa' | 'es' | 'tr';
 
 export const AppearancePage: React.FC<AppearancePageProps> = ({
   theme,
@@ -18,9 +15,10 @@ export const AppearancePage: React.FC<AppearancePageProps> = ({
   const { t, i18n } = useTranslation();
   
   const currentLang = i18n.language.split('-')[0].toLowerCase();
-  const language: Language = ['en', 'ru', 'zh', 'fa', 'es', 'tr'].includes(currentLang)
-    ? (currentLang as Language)
-    : 'en';
+  
+  const language: UiLanguage = isSupportedLanguage(currentLang) 
+    ? currentLang 
+    : 'ru';
 
   return (
     <Page title={t('pages.appearance.title')} lead={t('pages.appearance.lead')}>
@@ -54,7 +52,7 @@ export const AppearancePage: React.FC<AppearancePageProps> = ({
       </Panel>
 
       <Panel title={t('pages.appearance.language')}>
-        <ChoiceCards<Language>
+        <ChoiceCards<UiLanguage>
           label={t('pages.appearance.language')}
           columns={3} 
           value={language}
@@ -63,7 +61,7 @@ export const AppearancePage: React.FC<AppearancePageProps> = ({
             { value: 'ru', label: 'Русский', desc: 'Интерфейс, трей и уведомления' },
             { value: 'en', label: 'English', desc: 'Interface, tray and notifications' },
             { value: 'zh', label: '中文', desc: '界面、托盘和通知' },
-            { value: 'fa', label: 'فارسی', desc: 'رابط، سینی и اعلان‌ها' },
+            { value: 'fa', label: 'فارسی', desc: 'رابط، سینی و اعلان‌ها' },
             { value: 'es', label: 'Español', desc: 'Interfaz, bandeja y notificaciones' },
             { value: 'tr', label: 'Türkçe', desc: 'Arayüz, tepsi ve bildirimler' },
           ]}

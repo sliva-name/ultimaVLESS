@@ -12,23 +12,29 @@ import tr from './locales/tr.json';
 const resources = { en, ru, zh, fa, es, tr } as const;
 
 function getSystemLanguage(): UiLanguage {
-  if (typeof navigator === 'undefined') return 'en';
+  if (typeof navigator === 'undefined') return 'ru';
 
   const systemLocales = navigator.languages?.length
     ? navigator.languages
     : [navigator.language];
 
   for (const locale of systemLocales) {
+    if (!locale) continue;
+
     // Convert locale codes such as "zh-CN" or "es-MX" to "zh" or "es".
     const baseLanguage = locale.split('-')[0].toLowerCase();
+
+    // Only simplify
+    if (baseLanguage === 'zh' && !locale.toLowerCase().startsWith('zh-cn')) {
+      continue;
+    }
 
     if (isSupportedLanguage(baseLanguage)) {
       return baseLanguage;
     }
   }
 
-  // Use English if the system language is not supported.
-  return 'en';
+  return 'ru';
 }
 
 const storedLanguage = localStorage.getItem('language');
@@ -36,10 +42,10 @@ const initialLanguage = isSupportedLanguage(storedLanguage)
   ? storedLanguage
   : getSystemLanguage();
 
-i18n.use(initReactI18next).init({
+void i18n.use(initReactI18next).init({
   resources,
   lng: initialLanguage,
-  fallbackLng: 'en',
+  fallbackLng: 'ru',
   supportedLngs: SUPPORTED_LANGUAGES,
   interpolation: {
     escapeValue: false, // React already escapes values.
@@ -60,6 +66,11 @@ if (typeof window !== 'undefined' && window.electronAPI?.getUiLanguage) {
   void window.electronAPI
     .getUiLanguage()
     .then((mainLanguage) => {
+      if (!mainLanguage) {
+        void window.electronAPI.setUiLanguage(i18n.language).catch(() => {});
+        return;
+      }
+
       if (
         isSupportedLanguage(mainLanguage) &&
         mainLanguage !== i18n.language
