@@ -20,12 +20,16 @@
     },
     "count": {
       "servers_one": "{{count}} servidor",
+      "servers_many": "{{count}} servidores",
       "servers_other": "{{count}} servidores",
       "subscriptions_one": "{{count}} suscripción",
+      "subscriptions_many": "{{count}} suscripciones",
       "subscriptions_other": "{{count}} suscripciones",
       "exclusions_one": "{{count}} exclusión",
+      "exclusions_many": "{{count}} exclusiones",
       "exclusions_other": "{{count}} exclusiones",
       "changes_one": "{{count}} cambio",
+      "changes_many": "{{count}} cambios",
       "changes_other": "{{count}} cambios"
     },
     "shell": {

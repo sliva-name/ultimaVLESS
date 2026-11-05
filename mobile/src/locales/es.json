@@ -1,0 +1,231 @@
+{
+  "translation": {
+    "settings": {
+      "subtitle": "Fuentes de servidores, modo de red y diagnóstico.",
+      "network": {
+        "proxyMode": "Solo proxy",
+        "proxyDesc": "Sin VPN: SOCKS5 local 127.0.0.1:10808 y HTTP 127.0.0.1:10809 para las aplicaciones en las que configures el proxy a mano.",
+        "tunMode": "VPN",
+        "tunDesc": "Todo el tráfico del teléfono pasa por la VPN. Android pedirá permiso en la primera conexión.",
+        "modeReconnectHint": "Al elegir otro modo, la conexión al mismo servidor se reinicia en ese modo.",
+        "remoteDnsHint": "Resolutores de Xray. En modo VPN, las consultas DNS de las aplicaciones se interceptan y pasan por el proxy.",
+        "tunMtu": "MTU de la VPN",
+        "tunMtuHint": "Si los sitios abren en modo «Solo proxy» pero no a través de la VPN en un servidor lento, baja este valor. 1400 por defecto; 1280 es más seguro en una línea mala.",
+        "tunDnsQueryStrategy": "DNS en la VPN",
+        "tunDnsQueryStrategyHint": "Solo para la VPN: el proxy siempre usa IPv4. «Solo IPv4» es el valor por defecto: IPv6 no entra en la VPN, así que las páginas y Telegram no esperan a un servidor sin IPv6. Elige «IPv4 e IPv6» o «Seguir al SO» solo si necesitas sitios accesibles únicamente por IPv6 y el servidor admite IPv6.",
+        "tunDnsUseIPv4Desc": "Recomendado. Las páginas abren más rápido",
+        "routingModeAppsDesc": "Las aplicaciones elegidas van por la VPN; el resto, directo.",
+        "routingProxyAppsHint": "Todas las conexiones de estas aplicaciones van por la VPN, salvo la red local y las exclusiones.",
+        "routingDirectAppsHint": "Estas aplicaciones siempre usan la conexión normal, sin pasar por la VPN.",
+        "routingAppsPlaceholder": "Busca una aplicación o escribe el nombre del paquete",
+        "routingAppsInvalid": "No parece un nombre de paquete: {{entries}}",
+        "routingAppsShowList": "Mostrar aplicaciones instaladas",
+        "routingAppsLoading": "Cargando la lista de aplicaciones…",
+        "routingAppsNoMatches": "No hay coincidencias. Enter añadirá el nombre del paquete tal cual.",
+        "routingAppsNoRunning": "No se encontraron aplicaciones: escribe un nombre de paquete, por ejemplo org.telegram.messenger.",
+        "routingAppsSystemGroup": "Sistema",
+        "routingAppsCaseNote": "Las aplicaciones se identifican por el nombre del paquete (por ejemplo, org.telegram.messenger); elígelas de la lista de instaladas.",
+        "routingAppsProxyNote": "En modo «Solo proxy» las reglas por aplicación no se aplican: Android no indica qué aplicación se conectó al proxy. Para elegir aplicaciones, usa el modo VPN."
+      },
+      "diagnostics": {
+        "openFolder": "Compartir registros"
+      }
+    },
+    "mobile": {
+      "tabs": {
+        "home": "Inicio",
+        "servers": "Servidores",
+        "settings": "Ajustes"
+      },
+      "navAria": "Secciones",
+      "modeAria": "Modo de conexión",
+      "modeVpn": "VPN",
+      "modeProxy": "Proxy",
+      "connect": "Conectar",
+      "disconnect": "Desconectar",
+      "idle": "Sin conexión",
+      "proxyEndpoints": "SOCKS5 127.0.0.1:10808 · HTTP 127.0.0.1:10809",
+      "startFailed": "No se pudo iniciar la aplicación",
+      "back": "Atrás",
+      "close": "Cerrar",
+      "done": "Listo",
+      "count": {
+        "subscriptions_one": "{{count}} suscripción",
+        "subscriptions_many": "{{count}} suscripciones",
+        "subscriptions_other": "{{count}} suscripciones",
+        "servers_one": "{{count}} servidor",
+        "servers_many": "{{count}} servidores",
+        "servers_other": "{{count}} servidores",
+        "exclusions_one": "{{count}} exclusión",
+        "exclusions_many": "{{count}} exclusiones",
+        "exclusions_other": "{{count}} exclusiones",
+        "apps_one": "{{count}} aplicación",
+        "apps_many": "{{count}} aplicaciones",
+        "apps_other": "{{count}} aplicaciones",
+        "changes_one": "{{count}} cambio",
+        "changes_many": "{{count}} cambios",
+        "changes_other": "{{count}} cambios",
+        "appsShort": "{{count}} apps"
+      },
+      "update": {
+        "available": "Versión {{version}} disponible",
+        "downloading": "Descargando la versión {{version}} · {{percent}}%",
+        "ready": "Versión {{version}} descargada",
+        "install": "Instalar",
+        "installHint": "Abre el instalador de paquetes de Android"
+      },
+      "dial": {
+        "idle": "Conectar",
+        "connecting": "Conectando",
+        "connected": "Protegido",
+        "switching": "Cambiando",
+        "disconnecting": "Desconectando",
+        "failed": "Error",
+        "subIdle": "sin protección",
+        "subStarting": "iniciando el núcleo…",
+        "subVerifying": "comprobando el túnel…",
+        "subSwitching": "cambiando de servidor…",
+        "subDisconnecting": "limpiando rutas",
+        "subFailed": "inténtalo de nuevo",
+        "ariaCancel": "Cancelar la conexión",
+        "ariaCancelSwitch": "Cancelar el cambio"
+      },
+      "steps": {
+        "aria": "Etapas de la conexión",
+        "core": "Inicio del núcleo",
+        "tunnel": "Comprobación del túnel",
+        "secure": "Protegido"
+      },
+      "empty": {
+        "title": "Aún no hay servidores",
+        "body": "Añade una suscripción por su enlace o pega enlaces vless://, trojan://, ss://; cualquier otro texto se descarta.",
+        "pasteLinks": "Pegar enlaces"
+      },
+      "home": {
+        "serverAria": "Servidor: {{name}}. Abrir la lista de servidores",
+        "since": "desde las {{time}}",
+        "retry": "Conectar de nuevo",
+        "otherServer": "Otro servidor"
+      },
+      "servers": {
+        "check": "Comprobar",
+        "stop": "Detener",
+        "progressAria": "Comprobación de latencia",
+        "locked": "Desconéctate para elegir otro servidor",
+        "manualGroup": "Añadidos a mano",
+        "noAnswer": "No respondió a la comprobación",
+        "measuredAgo": "Medido hace {{ago}}",
+        "noTls": "Xray lo rechaza: sin TLS"
+      },
+      "settings": {
+        "languageAria": "Idioma",
+        "groupServers": "Servidores",
+        "groupConnection": "Conexión",
+        "groupApp": "Aplicación",
+        "network": "Modo y DNS",
+        "routing": "Enrutamiento",
+        "core": "Núcleo Xray",
+        "about": "Acerca de",
+        "tileNote": "El mosaico de UltimaVLESS en Ajustes rápidos conecta el último servidor en el último modo. Para la VPN siempre activa, elige UltimaVLESS en los ajustes de VPN de Android.",
+        "discardChanges": "Descartar cambios",
+        "muxOn": "Mux activado",
+        "muxOff": "Mux desactivado",
+        "routingAll": "Todo el tráfico",
+        "routingSites": "Sitios elegidos",
+        "routingApps": "Aplicaciones elegidas",
+        "coreState": {
+          "starting": "Iniciando el núcleo",
+          "running": "Núcleo en marcha",
+          "degraded": "Núcleo en marcha con errores",
+          "stopping": "Deteniendo el núcleo",
+          "stopped": "Núcleo detenido",
+          "failed": "Fallo del núcleo"
+        },
+        "autoSwitchOn": "cambio automático activado",
+        "autoSwitchOff": "cambio automático desactivado",
+        "aboutUpdate": {
+          "available": "versión {{version}} disponible",
+          "downloading": "descargando la versión {{version}}",
+          "downloaded": "versión {{version}} descargada"
+        },
+        "sources": {
+          "lead": "De dónde vienen los servidores. Las suscripciones se actualizan todas a la vez.",
+          "subscriptionsTitle": "Suscripciones",
+          "refreshAll": "Actualizar todas las suscripciones",
+          "disabled": "Desactivada",
+          "actions": "Acciones: {{name}}",
+          "importTitle": "Lista blanca móvil",
+          "importLabel": "Importar la lista móvil",
+          "sheetTitle": "Nueva suscripción",
+          "sheetHint": "Los servidores se cargan en cuanto se añade.",
+          "nameLabel": "Nombre",
+          "urlLabel": "Enlace de la suscripción",
+          "cancel": "Cancelar"
+        },
+        "modeNote": "Se puede cambiar con la conexión activa",
+        "tunnel": "Túnel",
+        "routingMode": "Modo de enrutamiento",
+        "splitTunnel": "Exclusiones del túnel",
+        "blocking": "Bloqueo",
+        "priority": "Prioridad de las reglas",
+        "priorityNote": "Se aplica la primera que coincide",
+        "prioritySteps": [
+          "Aplicaciones directas",
+          "Aplicaciones por la VPN",
+          "Anuncios y BitTorrent",
+          "Sitios y direcciones",
+          "Red local directa",
+          "El modo elegido"
+        ],
+        "priorityFoot": "Entre sitios y direcciones gana la regla más precisa: music.example.com gana a example.com; en caso de empate gana la exclusión.",
+        "pickApps": "Elegir entre las instaladas",
+        "selectedApps": "Elegidas: {{count}}",
+        "installedApps": "Instaladas",
+        "appsTypeHint": "¿No está la aplicación? Escribe el nombre del paquete en la búsqueda; Enter lo añadirá tal cual.",
+        "mux": "Multiplexación",
+        "nextConnection": "En la próxima conexión",
+        "udp": "UDP y QUIC",
+        "transport": "Transporte y enrutamiento",
+        "fingerprintLogs": "Huella y registros",
+        "diag": {
+          "lead": "Estado del núcleo, supervisión de la conexión y registros.",
+          "state": "Estado",
+          "localProxy": "Proxy local",
+          "recovery": "Recuperación",
+          "startedAt": "Iniciado a las {{time}}",
+          "checkedAgo": "Internet a través del túnel: hace {{ago}}",
+          "notChecked": "Aún no comprobado",
+          "attempts": "Intentos: {{count}}",
+          "xray": {
+            "starting": "Iniciando",
+            "running": "En marcha",
+            "degraded": "Con errores",
+            "stopping": "Deteniendo",
+            "stopped": "Detenido",
+            "failed": "Error"
+          },
+          "health": {
+            "idle": "Sin datos",
+            "healthy": "Correcto",
+            "degraded": "Con errores",
+            "failed": "Fallo"
+          },
+          "proxyReachable": "Accesible",
+          "proxyUnreachable": "Inaccesible",
+          "recoveryIdle": "No hace falta",
+          "recoveryRunning": "En curso",
+          "recoveryPaused": "En pausa",
+          "blocked": "Bloqueados: {{count}}",
+          "blockedHint": "{{names}}: se omite en el cambio automático",
+          "logs": "Registros",
+          "copyHint": "Al portapapeles",
+          "shareHint": "Con el menú «Compartir» de Android"
+        },
+        "aboutTitle": "UltimaVLESS para Android",
+        "installedVersion": "Versión instalada",
+        "sourceCode": "Código fuente",
+        "updatesNote": "Las actualizaciones llegan desde las versiones de GitHub: la aplicación descarga en segundo plano el APK para tu procesador. Android solo la instala encima si la firma coincide."
+      }
+    }
+  }
+}

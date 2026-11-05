@@ -256,7 +256,7 @@ export const AppPicker: React.FC<AppPickerProps> = ({
         onClick={openMenu}
         onBlur={() => setOpen(false)}
         onKeyDown={handleKeyDown}
-        className="w-full h-8 box-border rounded-lg border border-line2 bg-s2 pl-3 pr-8 text-[13px] leading-5 text-fg placeholder:text-fg3 outline-none focus:border-acc-fill disabled:opacity-55"
+        className="w-full h-8 box-border rounded-lg border border-line2 bg-s2 ps-3 pe-8 text-[13px] leading-5 text-fg placeholder:text-fg3 outline-none focus:border-acc-fill disabled:opacity-55"
       />
       <button
         type="button"
@@ -272,7 +272,7 @@ export const AppPicker: React.FC<AppPickerProps> = ({
           inputRef.current?.focus();
           openMenu();
         }}
-        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-fg3 hover:text-fg disabled:opacity-40"
+        className="absolute end-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-fg3 hover:text-fg disabled:opacity-40"
       >
         <ChevronDown
           strokeWidth={1.75}

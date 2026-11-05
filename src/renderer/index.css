@@ -149,10 +149,6 @@ body {
   animation: dial-spin 1000ms linear infinite;
 }
 
-[dir='rtl'] .rtl-flip {
-  transform: rotate(180deg);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .dial-arc[data-spin] {
     animation: dial-breathe 1400ms ease-in-out infinite;

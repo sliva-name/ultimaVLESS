@@ -1,6 +1,10 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import { SUPPORTED_LANGUAGES, isSupportedLanguage, type UiLanguage } from '@/shared/constants';
+import {
+  DEFAULT_LANGUAGE,
+  SUPPORTED_LANGUAGES,
+  isSupportedLanguage,
+} from '@/shared/constants';
 
 import en from './locales/en.json';
 import ru from './locales/ru.json';
@@ -9,91 +13,66 @@ import fa from './locales/fa.json';
 import es from './locales/es.json';
 import tr from './locales/tr.json';
 
-const resources = { en, ru, zh, fa, es, tr } as const;
+const resources = { en, ru, zh, fa, es, tr };
 
-function getSystemLanguage(): UiLanguage {
-  if (typeof navigator === 'undefined') return 'ru';
-
-  const systemLocales = navigator.languages?.length
-    ? navigator.languages
-    : [navigator.language];
-
-  for (const locale of systemLocales) {
-    if (!locale) continue;
-
-    // Convert locale codes such as "zh-CN" or "es-MX" to "zh" or "es".
-    const baseLanguage = locale.split('-')[0].toLowerCase();
-
-    // Only simplify
-    if (baseLanguage === 'zh' && !locale.toLowerCase().startsWith('zh-cn')) {
-      continue;
-    }
-
-    if (isSupportedLanguage(baseLanguage)) {
-      return baseLanguage;
-    }
+function readSavedLanguage() {
+  try {
+    const saved = localStorage.getItem('language');
+    return isSupportedLanguage(saved) ? saved : DEFAULT_LANGUAGE;
+  } catch {
+    return DEFAULT_LANGUAGE;
   }
-
-  return 'ru';
 }
 
-const storedLanguage = localStorage.getItem('language');
-const initialLanguage = isSupportedLanguage(storedLanguage)
-  ? storedLanguage
-  : getSystemLanguage();
+/** `lang` for fonts and screen readers, `dir` for Farsi. */
+function applyDocumentLanguage(language: string) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = language;
+  document.documentElement.dir = i18n.dir(language);
+}
 
 void i18n.use(initReactI18next).init({
   resources,
-  lng: initialLanguage,
-  fallbackLng: 'ru',
+  lng: readSavedLanguage(),
+  fallbackLng: 'en',
   supportedLngs: SUPPORTED_LANGUAGES,
   interpolation: {
-    escapeValue: false, // React already escapes values.
+    escapeValue: false, // React already escapes values
   },
 });
 
-function updateDocumentLanguage(language: string) {
-  if (typeof document !== 'undefined') {
-    document.documentElement.lang = language;
-    document.documentElement.dir = i18n.dir(language);
-  }
-}
+applyDocumentLanguage(i18n.language);
 
-updateDocumentLanguage(i18n.language || initialLanguage);
-
-// Load a manually saved language from the main process, if one exists.
+// Hydrate from the main-process stored language (if available) and keep both
+// persisted stores in sync so the tray, window title, and native notifications
+// can use the same locale without the renderer being open.
 if (typeof window !== 'undefined' && window.electronAPI?.getUiLanguage) {
   void window.electronAPI
     .getUiLanguage()
-    .then((mainLanguage) => {
-      if (!mainLanguage) {
-        void window.electronAPI.setUiLanguage(i18n.language).catch(() => {});
-        return;
-      }
-
-      if (
-        isSupportedLanguage(mainLanguage) &&
-        mainLanguage !== i18n.language
-      ) {
-        void i18n.changeLanguage(mainLanguage);
+    .then((mainLang) => {
+      if (isSupportedLanguage(mainLang) && mainLang !== i18n.language) {
+        void i18n.changeLanguage(mainLang);
       }
     })
     .catch(() => {
-      // Keep the language already selected by the renderer.
+      /* ignore — renderer already has a sensible default */
     });
 }
 
-i18n.on('languageChanged', (language) => {
-  localStorage.setItem('language', language);
-  updateDocumentLanguage(language);
-
+i18n.on('languageChanged', (lng) => {
+  try {
+    localStorage.setItem('language', lng);
+  } catch {
+    /* the main process keeps the choice anyway */
+  }
+  applyDocumentLanguage(lng);
   if (
     typeof window !== 'undefined' &&
     window.electronAPI?.setUiLanguage &&
-    isSupportedLanguage(language)
+    isSupportedLanguage(lng)
   ) {
-    void window.electronAPI.setUiLanguage(language).catch(() => {
-      // The main process can pick up the language on the next launch.
+    void window.electronAPI.setUiLanguage(lng).catch(() => {
+      /* non-fatal: main process will pick up the language on next launch */
     });
   }
 });

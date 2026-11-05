@@ -68,7 +68,10 @@ export const ServerRow = React.memo<ServerRowProps>(
       >
         <ServerFlag server={server} size={20} />
         <span className="flex-1 min-w-0 flex flex-col">
-          <span className="text-[13px] leading-[18px] font-medium truncate">
+          <span
+            dir="auto"
+            className="text-[13px] leading-[18px] font-medium truncate text-left rtl:text-right"
+          >
             {server.name}
           </span>
           <span

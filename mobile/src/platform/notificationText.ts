@@ -5,7 +5,6 @@ import type { NotificationText } from '../native/UltimaCore';
  * Notification wording the native side cannot localize itself: it only
  * formats the numbers. Same words and units as the UI.
  */
-// Supported Languages
 const STRINGS: Record<
   UiLanguage,
   Pick<NotificationText, 'rateUnits' | 'decimalSeparator'> & {

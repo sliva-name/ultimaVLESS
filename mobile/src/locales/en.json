@@ -1,0 +1,226 @@
+{
+  "translation": {
+    "settings": {
+      "subtitle": "Server sources, network mode and diagnostics.",
+      "network": {
+        "proxyMode": "Proxy only",
+        "proxyDesc": "No VPN: local SOCKS5 127.0.0.1:10808 and HTTP 127.0.0.1:10809 for apps you point at them.",
+        "tunMode": "VPN",
+        "tunDesc": "All phone traffic through the VPN. Android asks for permission on the first connect.",
+        "modeReconnectHint": "Picking another mode restarts the connection to the same server in it.",
+        "remoteDnsHint": "Resolvers used by Xray. In VPN mode apps' DNS queries are intercepted and sent through the proxy.",
+        "tunMtu": "VPN MTU",
+        "tunMtuHint": "If sites open in proxy-only mode but not through the VPN on a slow server, lower this. Default 1400; 1280 is safer on a bad line.",
+        "tunDnsQueryStrategy": "VPN DNS query strategy",
+        "tunDnsQueryStrategyHint": "VPN only — proxy always uses IPv4. IPv4-only is the default: IPv6 stays out of the VPN, so pages and Telegram never wait on a server without IPv6. Pick IPv4 and IPv6 or Follow the OS only if you need IPv6-only sites and the server supports IPv6.",
+        "tunDnsUseIPv4Desc": "Recommended. Pages open faster",
+        "routingModeAppsDesc": "The chosen apps go through the VPN, everything else direct.",
+        "routingProxyAppsHint": "All connections of these apps go through the VPN, except the local network and excluded sites.",
+        "routingDirectAppsHint": "These apps always use your normal connection, past the VPN.",
+        "routingAppsPlaceholder": "Search apps or type a package name",
+        "routingAppsInvalid": "Not a package name: {{entries}}",
+        "routingAppsShowList": "Show installed apps",
+        "routingAppsLoading": "Loading installed apps…",
+        "routingAppsNoMatches": "No installed app matches. Press Enter to add the package name as typed.",
+        "routingAppsNoRunning": "No apps found — type a package name such as org.telegram.messenger.",
+        "routingAppsSystemGroup": "System",
+        "routingAppsCaseNote": "Apps are matched by package name (e.g. org.telegram.messenger) — pick them from the installed apps.",
+        "routingAppsProxyNote": "App rules do not apply in proxy-only mode: Android does not tell which app connected to the proxy. Use VPN mode to choose apps."
+      },
+      "diagnostics": {
+        "openFolder": "Share logs"
+      }
+    },
+    "mobile": {
+      "tabs": {
+        "home": "Home",
+        "servers": "Servers",
+        "settings": "Settings"
+      },
+      "navAria": "Sections",
+      "modeAria": "Connection mode",
+      "modeVpn": "VPN",
+      "modeProxy": "Proxy",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "idle": "Not connected",
+      "proxyEndpoints": "SOCKS5 127.0.0.1:10808 · HTTP 127.0.0.1:10809",
+      "startFailed": "The app failed to start",
+      "back": "Back",
+      "close": "Close",
+      "done": "Done",
+      "count": {
+        "subscriptions_one": "{{count}} subscription",
+        "subscriptions_other": "{{count}} subscriptions",
+        "servers_one": "{{count}} server",
+        "servers_other": "{{count}} servers",
+        "exclusions_one": "{{count}} exclusion",
+        "exclusions_other": "{{count}} exclusions",
+        "apps_one": "{{count}} app",
+        "apps_other": "{{count}} apps",
+        "changes_one": "{{count}} change",
+        "changes_other": "{{count}} changes",
+        "appsShort": "{{count}} apps"
+      },
+      "update": {
+        "available": "Version {{version}} available",
+        "downloading": "Downloading version {{version}} · {{percent}}%",
+        "ready": "Version {{version}} downloaded",
+        "install": "Install",
+        "installHint": "Opens the Android package installer"
+      },
+      "dial": {
+        "idle": "Connect",
+        "connecting": "Connecting",
+        "connected": "Protected",
+        "switching": "Switching",
+        "disconnecting": "Disconnecting",
+        "failed": "Error",
+        "subIdle": "not protected",
+        "subStarting": "starting the core…",
+        "subVerifying": "checking the tunnel…",
+        "subSwitching": "changing server…",
+        "subDisconnecting": "cleaning up routes",
+        "subFailed": "try again",
+        "ariaCancel": "Cancel connecting",
+        "ariaCancelSwitch": "Cancel switching"
+      },
+      "steps": {
+        "aria": "Connection stages",
+        "core": "Starting the core",
+        "tunnel": "Checking the tunnel",
+        "secure": "Protected"
+      },
+      "empty": {
+        "title": "No servers yet",
+        "body": "Add a subscription by its link or paste vless://, trojan://, ss:// links — any other text is dropped.",
+        "pasteLinks": "Paste links"
+      },
+      "home": {
+        "serverAria": "Server: {{name}}. Open the server list",
+        "since": "since {{time}}",
+        "retry": "Connect again",
+        "otherServer": "Another server"
+      },
+      "servers": {
+        "check": "Check",
+        "stop": "Stop",
+        "progressAria": "Latency check",
+        "locked": "Disconnect to pick another server",
+        "manualGroup": "Added manually",
+        "noAnswer": "Did not answer the check",
+        "measuredAgo": "Measured {{ago}} ago",
+        "noTls": "Xray rejects it: no TLS"
+      },
+      "settings": {
+        "languageAria": "Language",
+        "groupServers": "Servers",
+        "groupConnection": "Connection",
+        "groupApp": "App",
+        "network": "Mode and DNS",
+        "routing": "Routing",
+        "core": "Xray core",
+        "about": "About",
+        "tileNote": "The UltimaVLESS tile in Quick Settings connects the last server in the last mode. For Always-on VPN pick UltimaVLESS in the Android VPN settings.",
+        "discardChanges": "Discard changes",
+        "muxOn": "Mux on",
+        "muxOff": "Mux off",
+        "routingAll": "All traffic",
+        "routingSites": "Selected sites",
+        "routingApps": "Selected apps",
+        "coreState": {
+          "starting": "Core starting",
+          "running": "Core running",
+          "degraded": "Core running with errors",
+          "stopping": "Core stopping",
+          "stopped": "Core stopped",
+          "failed": "Core failed"
+        },
+        "autoSwitchOn": "auto-switching on",
+        "autoSwitchOff": "auto-switching off",
+        "aboutUpdate": {
+          "available": "version {{version}} available",
+          "downloading": "downloading version {{version}}",
+          "downloaded": "version {{version}} downloaded"
+        },
+        "sources": {
+          "lead": "Where servers come from. Subscriptions are refreshed all at once.",
+          "subscriptionsTitle": "Subscriptions",
+          "refreshAll": "Refresh all subscriptions",
+          "disabled": "Off",
+          "actions": "Actions: {{name}}",
+          "importTitle": "Mobile white list",
+          "importLabel": "Import the mobile list",
+          "sheetTitle": "New subscription",
+          "sheetHint": "Servers are fetched as soon as it is added.",
+          "nameLabel": "Name",
+          "urlLabel": "Subscription link",
+          "cancel": "Cancel"
+        },
+        "modeNote": "Can be changed while connected",
+        "tunnel": "Tunnel",
+        "routingMode": "Routing mode",
+        "splitTunnel": "Bypass the tunnel",
+        "blocking": "Blocking",
+        "priority": "Rule priority",
+        "priorityNote": "First match wins",
+        "prioritySteps": [
+          "Apps that bypass the VPN",
+          "Apps through VPN",
+          "Ads and BitTorrent",
+          "Sites and addresses",
+          "Local network, direct",
+          "The selected mode"
+        ],
+        "priorityFoot": "Among sites and addresses the more specific entry wins: music.example.com beats example.com; on a tie the exclusion wins.",
+        "pickApps": "Choose from installed apps",
+        "selectedApps": "Selected: {{count}}",
+        "installedApps": "Installed",
+        "appsTypeHint": "App not listed? Type its package name in the search — Enter adds it as typed.",
+        "mux": "Multiplexing",
+        "nextConnection": "On the next connection",
+        "udp": "UDP and QUIC",
+        "transport": "Transport and routing",
+        "fingerprintLogs": "Fingerprint and logs",
+        "diag": {
+          "lead": "Core state, connection monitoring and logs.",
+          "state": "Status",
+          "localProxy": "Local proxy",
+          "recovery": "Recovery",
+          "startedAt": "Started at {{time}}",
+          "checkedAgo": "Internet through the tunnel — {{ago}} ago",
+          "notChecked": "Not checked yet",
+          "attempts": "Attempts: {{count}}",
+          "xray": {
+            "starting": "Starting",
+            "running": "Running",
+            "degraded": "Degraded",
+            "stopping": "Stopping",
+            "stopped": "Stopped",
+            "failed": "Failed"
+          },
+          "health": {
+            "idle": "No data",
+            "healthy": "Healthy",
+            "degraded": "Degraded",
+            "failed": "Failed"
+          },
+          "proxyReachable": "Reachable",
+          "proxyUnreachable": "Unreachable",
+          "recoveryIdle": "Not needed",
+          "recoveryRunning": "In progress",
+          "recoveryPaused": "Paused",
+          "blocked": "Blocked: {{count}}",
+          "blockedHint": "{{names}} — skipped by auto-switching",
+          "logs": "Logs",
+          "copyHint": "To the clipboard",
+          "shareHint": "Through the Android share sheet"
+        },
+        "aboutTitle": "UltimaVLESS for Android",
+        "installedVersion": "Installed version",
+        "sourceCode": "Source code",
+        "updatesNote": "Updates come from GitHub releases: the app downloads the APK for your processor in the background. Android installs it over the current one only if the signatures match."
+      }
+    }
+  }
+}

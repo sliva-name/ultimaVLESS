@@ -248,7 +248,7 @@ export const Select: React.FC<SelectProps> = ({
         aria-controls={open ? listboxId : undefined}
         onClick={toggleMenu}
         className={clsx(
-          'group flex w-56 h-8 items-center gap-2 rounded-lg border border-line2 bg-s2 pl-3 pr-2',
+          'group flex w-56 h-8 items-center gap-2 rounded-lg border border-line2 bg-s2 ps-3 pe-2',
           'text-fg text-start transition-colors duration-150 hover:border-fg3',
           'disabled:cursor-not-allowed disabled:opacity-50',
           open && 'border-acc-fill',

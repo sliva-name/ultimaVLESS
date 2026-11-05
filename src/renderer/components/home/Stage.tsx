@@ -205,6 +205,7 @@ export const Stage: React.FC<StageProps> = ({
           <div className="max-w-full flex items-center gap-2.5">
             <ServerFlag server={selectedServer} size={22} />
             <h1
+              dir="auto"
               className="m-0 min-w-0 text-[22px] leading-7 font-semibold tracking-[-0.02em] truncate"
               title={selectedServer.name}
             >
@@ -422,7 +423,7 @@ const SessionStats: React.FC<{
           key={label}
           className={clsx(
             'min-w-0 px-4 py-3 flex flex-col gap-1.5',
-            index > 0 && 'border-l border-line',
+            index > 0 && 'border-s border-line',
           )}
         >
           <span className="flex items-center gap-1.5 text-xs leading-4 text-fg3 whitespace-nowrap">
@@ -500,7 +501,7 @@ const StageCard: React.FC<{
                 <ChevronRight
                   aria-hidden
                   strokeWidth={2}
-                  className="w-3.5 h-3.5"
+                  className="w-3.5 h-3.5 rtl:-scale-x-100"
                 />
               </button>
             )}

@@ -206,7 +206,7 @@ const ErrorCard: React.FC<{
             <ChevronRight
               aria-hidden
               strokeWidth={2}
-              className="w-5 h-5 shrink-0 text-fg3 rtl-flip"
+              className="w-3.5 h-3.5 rtl:-scale-x-100"
             />
           </button>
         </div>
@@ -577,7 +577,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     <ServerFlag server={selectedServer} size={32} />
                   )}
                   <span className="flex-1 min-w-0 flex flex-col gap-0.5">
-                    <span className="text-base leading-[22px] font-semibold truncate">
+                    <span
+                      dir="auto"
+                      className="text-base leading-[22px] font-semibold truncate text-left rtl:text-right"
+                    >
                       {selectedServer?.name ?? t('status.selectServer')}
                     </span>
                     {selectedServer && (
@@ -590,7 +593,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <ChevronRight
                     aria-hidden
                     strokeWidth={2}
-                    className="w-3.5 h-3.5 rtl-flip"
+                    className="w-5 h-5 shrink-0 text-fg3 rtl:-scale-x-100"
                   />
                 </button>
 

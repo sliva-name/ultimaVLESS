@@ -102,7 +102,7 @@ const DestinationChips: React.FC<
           {entries.map(({ kind, value }) => (
             <li
               key={`${kind}:${value}`}
-              className="min-h-9 inline-flex items-center gap-0.5 pl-3 pr-0.5 rounded-[10px] bg-s2 border border-line font-mono text-[13px] leading-4 break-all"
+              className="min-h-9 inline-flex items-center gap-0.5 ps-3 pe-0.5 rounded-[10px] bg-s2 border border-line font-mono text-[13px] leading-4 break-all"
             >
               {value}
               <button
@@ -160,7 +160,7 @@ const AppList: React.FC<{
                     aria-label={t('settings.network.splitTunnelRemove', {
                       entry: name,
                     })}
-                    className="w-10 h-10 shrink-0 -mr-2 inline-flex items-center justify-center rounded-[20px] text-fg3"
+                    className="w-10 h-10 shrink-0 -me-2 inline-flex items-center justify-center rounded-[20px] text-fg3"
                   >
                     <X aria-hidden strokeWidth={2} className="w-5 h-5" />
                   </button>

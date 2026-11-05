@@ -13,7 +13,11 @@ import {
   type AppStoreSchema,
 } from '@/main/infrastructure/persistence/appStore';
 import { logger } from './LoggerService';
-import { isSupportedLanguage, type UiLanguage } from '@/shared/constants';
+import {
+  DEFAULT_LANGUAGE,
+  isSupportedLanguage,
+  type UiLanguage,
+} from '@/shared/constants';
 
 /**
  * Persistent session/settings store. Server catalog and subscriptions live in
@@ -154,12 +158,7 @@ export class ConfigService {
 
   public getUiLanguage(): UiLanguage {
     const stored = this.store.get('uiLanguage');
-    
-    if (isSupportedLanguage(stored)) {
-      return stored;
-    }
-
-    return 'ru'; 
+    return isSupportedLanguage(stored) ? stored : DEFAULT_LANGUAGE;
   }
 
   public setUiLanguage(language: UiLanguage): void {

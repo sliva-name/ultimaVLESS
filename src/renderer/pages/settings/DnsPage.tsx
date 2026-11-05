@@ -17,7 +17,7 @@ export const DnsPage: React.FC<{ net: NetworkSettings }> = ({ net }) => {
   const servers = perfSettings.remoteDnsServers;
 
   const customFields = (
-    <div className="flex flex-col gap-2 pl-11 pr-4 pb-3">
+    <div className="flex flex-col gap-2 ps-11 pe-4 pb-3">
       <label className="flex items-center justify-between gap-3">
         <span className="text-xs leading-4 text-fg2">
           {t('settings.network.remoteDnsPrimary')}

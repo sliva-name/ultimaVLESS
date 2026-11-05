@@ -60,14 +60,14 @@ export const SubHeader: React.FC<SubHeaderProps> = ({
   const { t } = useTranslation();
   const Icon = modal ? X : ArrowLeft;
   return (
-    <header className="h-16 shrink-0 flex items-center gap-1 pl-1 pr-2">
+    <header className="h-16 shrink-0 flex items-center gap-1 ps-1 pe-2">
       <button
         type="button"
         onClick={onBack}
         aria-label={t(modal ? 'mobile.close' : 'mobile.back')}
         className="w-12 h-12 inline-flex items-center justify-center rounded-3xl text-fg"
       >
-        <Icon aria-hidden strokeWidth={2} className="w-6 h-6" />
+        <Icon aria-hidden strokeWidth={2} className="w-6 h-6 rtl:-scale-x-100" />
       </button>
       <div className="flex-1 min-w-0 flex flex-col">
         <h1 className="m-0 text-xl leading-[26px] font-semibold tracking-[-0.01em] truncate">
@@ -344,7 +344,7 @@ export const NavChevron: React.FC = () => (
   <ChevronRight
     aria-hidden
     strokeWidth={2}
-    className="w-5 h-5 shrink-0 text-fg3"
+    className="w-5 h-5 shrink-0 text-fg3 rtl:-scale-x-100"
   />
 );
 
@@ -599,7 +599,7 @@ export function ChoiceCards<T extends string>({
                 {option.label}
               </span>
             </span>
-            <span className="pl-[30px] text-[13px] leading-[18px] text-fg3">
+            <span className="ps-[30px] text-[13px] leading-[18px] text-fg3">
               {option.desc}
             </span>
           </button>
@@ -679,7 +679,7 @@ export const LockBanner: React.FC<{
   return (
     <div
       role="status"
-      className="shrink-0 mx-4 mb-2 flex items-center gap-2.5 py-1 pr-1 pl-3.5 rounded-xl bg-ok-soft border border-ok-line"
+      className="shrink-0 mx-4 mb-2 flex items-center gap-2.5 py-1 pe-1 ps-3.5 rounded-xl bg-ok-soft border border-ok-line"
     >
       <Lock aria-hidden strokeWidth={2} className="w-4 h-4 shrink-0 text-ok" />
       <span className="flex-1 min-w-0 text-[13px] leading-[18px] text-fg">

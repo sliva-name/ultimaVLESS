@@ -47,7 +47,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))',
       }}
     >
-      <div className="flex-1 basis-0 min-w-0 flex items-center gap-2 pl-3">
+      <div className="flex-1 basis-0 min-w-0 flex items-center gap-2 ps-3">
         <img
           src={logoUrl}
           alt=""
@@ -87,7 +87,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         })}
       </div>
 
-      <div className="flex-1 basis-0 min-w-0 flex items-center justify-end gap-2 pr-2">
+      <div className="flex-1 basis-0 min-w-0 flex items-center justify-end gap-2 pe-2">
         <UpdateChip update={update} onInstall={onInstallUpdate} />
       </div>
     </header>

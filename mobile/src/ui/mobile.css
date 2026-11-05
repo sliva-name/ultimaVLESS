@@ -123,7 +123,3 @@ textarea,
 *::-webkit-scrollbar {
   display: none;
 }
-
-[dir='rtl'] .rtl-flip {
-  transform: rotate(180deg);
-}

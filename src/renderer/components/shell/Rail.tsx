@@ -66,7 +66,7 @@ export const Rail: React.FC<RailProps> = ({
   return (
     <nav
       aria-label={t('shell.rail.aria')}
-      className="w-24 shrink-0 box-border flex flex-col items-center gap-1 pt-2 px-1 pb-3 bg-canvas border-r border-line"
+      className="w-24 shrink-0 box-border flex flex-col items-center gap-1 pt-2 px-1 pb-3 bg-canvas border-e border-line"
     >
       {ITEMS.map(({ id, icon: Icon, label, title }) => {
         const on = id === active;
@@ -109,7 +109,7 @@ export const Rail: React.FC<RailProps> = ({
             {alert && (
               <span
                 aria-hidden="true"
-                className="absolute top-2 right-[30px] w-[7px] h-[7px] rounded-full bg-warn shadow-[0_0_0_2px_var(--color-canvas)]"
+                className="absolute top-2 end-[30px] w-[7px] h-[7px] rounded-full bg-warn shadow-[0_0_0_2px_var(--color-canvas)]"
               />
             )}
           </button>

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { ConnectionMode, VlessConfig } from '@/shared/types';
 import type { AppOption } from '@/shared/appRouting';
+import type { UiLanguage } from '@/shared/constants';
 import {
   AddSubscriptionPayload,
   AddSubscriptionResult,
@@ -181,8 +182,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     >,
 
   getUiLanguage: () =>
-    ipcRenderer.invoke(IPC_INVOKE_CHANNELS.getUiLanguage) as Promise<string>,
-  setUiLanguage: (language: string) =>
+    ipcRenderer.invoke(
+      IPC_INVOKE_CHANNELS.getUiLanguage,
+    ) as Promise<UiLanguage>,
+  setUiLanguage: (language: UiLanguage) =>
     ipcRenderer.invoke(
       IPC_INVOKE_CHANNELS.setUiLanguage,
       language,

@@ -2,23 +2,25 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ThemePreference } from '@/renderer/hooks/useTheme';
 import { ChoiceCards, Page, Panel } from '@/renderer/components/ui';
-import { type UiLanguage, SUPPORTED_LANGUAGES, isSupportedLanguage } from '@/shared/constants';
+import {
+  LANGUAGE_NAMES,
+  SUPPORTED_LANGUAGES,
+  toUiLanguage,
+  type UiLanguage,
+} from '@/shared/constants';
+
 interface AppearancePageProps {
   theme: ThemePreference;
   onTheme: (theme: ThemePreference) => void;
 }
 
+/** «Оформление»: theme and language, applied at once. */
 export const AppearancePage: React.FC<AppearancePageProps> = ({
   theme,
   onTheme,
 }) => {
   const { t, i18n } = useTranslation();
-  
-  const currentLang = i18n.language.split('-')[0].toLowerCase();
-  
-  const language: UiLanguage = isSupportedLanguage(currentLang) 
-    ? currentLang 
-    : 'ru';
+  const language = toUiLanguage(i18n.language);
 
   return (
     <Page title={t('pages.appearance.title')} lead={t('pages.appearance.lead')}>
@@ -54,17 +56,15 @@ export const AppearancePage: React.FC<AppearancePageProps> = ({
       <Panel title={t('pages.appearance.language')}>
         <ChoiceCards<UiLanguage>
           label={t('pages.appearance.language')}
-          columns={3} 
+          columns={3}
           value={language}
           onChange={(next) => void i18n.changeLanguage(next)}
-          options={[
-            { value: 'ru', label: 'Русский', desc: 'Интерфейс, трей и уведомления' },
-            { value: 'en', label: 'English', desc: 'Interface, tray and notifications' },
-            { value: 'zh', label: '中文', desc: '界面、托盘和通知' },
-            { value: 'fa', label: 'فارسی', desc: 'رابط، سینی و اعلان‌ها' },
-            { value: 'es', label: 'Español', desc: 'Interfaz, bandeja y notificaciones' },
-            { value: 'tr', label: 'Türkçe', desc: 'Arayüz, tepsi ve bildirimler' },
-          ]}
+          options={SUPPORTED_LANGUAGES.map((code) => ({
+            value: code,
+            label: LANGUAGE_NAMES[code].name,
+            desc: LANGUAGE_NAMES[code].desc,
+            lang: code,
+          }))}
         />
       </Panel>
     </Page>

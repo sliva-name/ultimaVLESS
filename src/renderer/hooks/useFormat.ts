@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { type UiLanguage, SUPPORTED_LANGUAGES, isSupportedLanguage} from '@/shared/constants'
+import { toUiLanguage, type UiLanguage } from '@/shared/constants';
 
+/** Decimal separator, digits and the 24-hour clock of each UI language. */
 const LOCALE_BY_LANGUAGE: Record<UiLanguage, string> = {
-  en: 'en-US',
   ru: 'ru-RU',
+  en: 'en-US',
   zh: 'zh-CN',
   fa: 'fa-IR',
   es: 'es-ES',
@@ -38,17 +39,11 @@ function scaleBytes(bytes: number): { value: number; unit: number } {
  */
 export function useFormat() {
   const { t, i18n } = useTranslation();
-
-  const languageTag = i18n.resolvedLanguage ?? i18n.language;
-  const languageCode = languageTag.toLowerCase().split(/[-_]/)[0];
-  const language: UiLanguage = isSupportedLanguage(languageCode)
-    ? languageCode
-    : 'en';
+  const language = toUiLanguage(i18n.language);
 
   return useMemo(() => {
     const locale = LOCALE_BY_LANGUAGE[language];
     const units = t('units.bytes', { returnObjects: true }) as string[];
-
     const number = (value: number, digits: number) =>
       new Intl.NumberFormat(locale, {
         minimumFractionDigits: digits,
@@ -56,37 +51,37 @@ export function useFormat() {
         useGrouping: false,
       }).format(value);
 
+    /** 1,24 ГБ · 86 МБ */
     const bytes = (amount: number) => {
       const { value, unit } = scaleBytes(amount);
       const digits = unit === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
       return `${number(value, digits)} ${units[unit]}`;
     };
 
+    /** 3,2 МБ/с · 140 КБ/с */
     const rate = (bytesPerSecond: number) => {
       const { value, unit } = scaleBytes(bytesPerSecond);
       const digits = unit === 0 || value >= 10 ? 0 : 1;
-
       return t('units.perSecond', {
         value: `${number(value, digits)} ${units[unit]}`,
       });
     };
 
+    /** 14:06 */
     const clock = (epochMs: number) =>
       new Date(epochMs).toLocaleTimeString(locale, {
         hour: '2-digit',
         minute: '2-digit',
       });
 
+    /** 12 с · 40 мин · 3 ч — for "… ago" phrases. */
     const ago = (sinceMs: number) => {
       const seconds = Math.max(0, Math.round(sinceMs / 1000));
       if (seconds < 60) return t('units.seconds', { count: seconds });
-
       const minutes = Math.round(seconds / 60);
       if (minutes < 60) return t('units.minutes', { count: minutes });
-
       const hours = Math.round(minutes / 60);
       if (hours < 24) return t('units.hours', { count: hours });
-
       return t('units.days', { count: Math.round(hours / 24) });
     };
 

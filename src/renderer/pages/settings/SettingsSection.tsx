@@ -53,7 +53,7 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
     <>
       <nav
         aria-label={t('settings.navAria')}
-        className="w-[184px] shrink-0 box-border flex flex-col gap-0.5 pt-6 px-2 pb-4 bg-s1 border-r border-line"
+        className="w-[184px] shrink-0 box-border flex flex-col gap-0.5 pt-6 px-2 pb-4 bg-s1 border-e border-line"
       >
         <span className="px-2.5 pb-3 text-[11px] leading-4 font-semibold tracking-[0.06em] uppercase text-fg3">
           {t('pages.settingsNav')}

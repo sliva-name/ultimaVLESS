@@ -19,13 +19,9 @@
       "days": "{{count}} 天"
     },
     "count": {
-      "servers_one": "{{count}} 个服务器",
       "servers_other": "{{count}} 个服务器",
-      "subscriptions_one": "{{count}} 个订阅",
       "subscriptions_other": "{{count}} 个订阅",
-      "exclusions_one": "{{count}} 个排除项",
       "exclusions_other": "{{count}} 个排除项",
-      "changes_one": "{{count}} 项更改",
       "changes_other": "{{count}} 项更改"
     },
     "shell": {

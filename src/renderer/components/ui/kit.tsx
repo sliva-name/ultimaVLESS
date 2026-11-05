@@ -253,7 +253,7 @@ export const LockBanner: React.FC<{
   return (
     <div
       role="status"
-      className="flex items-center gap-2.5 py-2 pr-2 pl-3 rounded-lg bg-ok-soft border border-ok-line"
+      className="flex items-center gap-2.5 py-2 pe-2 ps-3 rounded-lg bg-ok-soft border border-ok-line"
     >
       <Lock
         aria-hidden
@@ -285,7 +285,7 @@ export const SaveBar: React.FC<{
     <div className="h-14 shrink-0 flex items-center gap-2 px-8 border-t border-line bg-s1">
       <span
         aria-hidden="true"
-        className="w-1.5 h-1.5 mr-0.5 shrink-0 rounded-full bg-acc"
+        className="w-1.5 h-1.5 me-0.5 shrink-0 rounded-full bg-acc"
       />
       <span className="flex-1 min-w-0 text-[13px] leading-[18px] text-fg2">
         <span className="font-semibold text-fg">
@@ -541,6 +541,8 @@ export interface ChoiceOption<T extends string> {
   desc: string;
   /** Two-color swatch above the label (theme cards). */
   preview?: [string, string];
+  /** The card's own language when it differs from the UI (language cards). */
+  lang?: string;
 }
 
 /** Radio cards: network mode, ping method, theme, language. */
@@ -580,6 +582,7 @@ export function ChoiceCards<T extends string>({
             role="radio"
             aria-checked={on}
             disabled={off}
+            lang={option.lang}
             onClick={() => onChange(option.value)}
             className={clsx(
               'flex flex-col gap-1.5 pt-3.5 px-4 pb-4 rounded-xl border text-start shadow-panel',
@@ -612,7 +615,7 @@ export function ChoiceCards<T extends string>({
                 {option.label}
               </span>
             </span>
-            <span className="pl-[26px] text-xs leading-[18px] text-fg3">
+            <span className="ps-[26px] text-xs leading-[18px] text-fg3">
               {option.desc}
             </span>
           </button>
