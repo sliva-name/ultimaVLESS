@@ -309,7 +309,10 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
                     >
                       <ServerFlag server={server} size={28} />
                       <span className="flex-1 min-w-0 flex flex-col gap-0.5">
-                        <span className="text-base leading-[22px] font-medium truncate">
+                        <span
+                          dir="auto"
+                          className="text-left text-base leading-[22px] font-medium truncate"
+                        >
                           {server.name}
                         </span>
                         <span
@@ -342,7 +345,10 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
         <div className="shrink-0 mx-3 mb-3 h-[72px] flex items-center gap-3 pl-4 pr-3 rounded-[20px] bg-s1 border border-line2 shadow-float">
           <ServerFlag server={selectedServer} size={28} />
           <span className="flex-1 min-w-0 flex flex-col gap-0.5">
-            <span className="text-base leading-[22px] font-semibold truncate">
+            <span
+              dir="auto"
+              className="text-left text-base leading-[22px] font-semibold truncate"
+            >
               {selectedServer.name}
             </span>
             <span

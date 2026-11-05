@@ -205,6 +205,7 @@ export const Stage: React.FC<StageProps> = ({
           <div className="max-w-full flex items-center gap-2.5">
             <ServerFlag server={selectedServer} size={22} />
             <h1
+              dir="auto"
               className="m-0 min-w-0 text-[22px] leading-7 font-semibold tracking-[-0.02em] truncate"
               title={selectedServer.name}
             >

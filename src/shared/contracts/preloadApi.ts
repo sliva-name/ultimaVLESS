@@ -26,6 +26,7 @@ import type {
 } from '@/shared/views/tunEnvironment';
 import type { PerformanceSettings } from '@/shared/types';
 import type { AppOption } from '@/shared/appRouting';
+import type { UiLanguage } from '@/shared/constants';
 
 export type WindowTheme = 'dark' | 'light';
 
@@ -82,8 +83,8 @@ export interface IElectronAPI {
   /** Running programs with icons (Windows; `[]` elsewhere). */
   listRunningApps: () => Promise<AppOption[]>;
 
-  getUiLanguage: () => Promise<'en' | 'ru'>;
-  setUiLanguage: (language: 'en' | 'ru') => Promise<boolean>;
+  getUiLanguage: () => Promise<UiLanguage>;
+  setUiLanguage: (language: UiLanguage) => Promise<boolean>;
   /** Recolors the native window buttons to match the renderer's theme. */
   setWindowTheme: (theme: WindowTheme) => Promise<boolean>;
 

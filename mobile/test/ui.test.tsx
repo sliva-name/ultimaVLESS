@@ -248,7 +248,9 @@ describe('mobile UI', () => {
 
   it('switches the interface to English', async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
-    fireEvent.click(await screen.findByRole('radio', { name: 'EN' }));
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Язык' }), {
+      target: { value: 'en' },
+    });
     expect(
       await screen.findByRole('heading', { name: 'Settings' }),
     ).toBeInTheDocument();

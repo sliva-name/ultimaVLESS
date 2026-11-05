@@ -1,0 +1,226 @@
+{
+  "translation": {
+    "settings": {
+      "subtitle": "منابع سرور، حالت شبکه و عیب‌یابی.",
+      "network": {
+        "proxyMode": "فقط پراکسی",
+        "proxyDesc": "بدون VPN: SOCKS5 محلی 127.0.0.1:10808 و HTTP 127.0.0.1:10809 برای برنامه‌هایی که پراکسی را دستی در آن‌ها تنظیم کرده‌اید.",
+        "tunMode": "VPN",
+        "tunDesc": "همهٔ ترافیک گوشی از VPN عبور می‌کند. در اولین اتصال، Android اجازه می‌خواهد.",
+        "modeReconnectHint": "با انتخاب حالت دیگر، اتصال به همان سرور در آن حالت دوباره راه‌اندازی می‌شود.",
+        "remoteDnsHint": "حل‌کننده‌های Xray. در حالت VPN، پرس‌وجوهای DNS برنامه‌ها رهگیری می‌شوند و از پراکسی عبور می‌کنند.",
+        "tunMtu": "MTU برای VPN",
+        "tunMtuHint": "اگر سایت‌ها در حالت «فقط پراکسی» باز می‌شوند اما روی سرور کند از طریق VPN باز نمی‌شوند، این مقدار را کم کنید. پیش‌فرض 1400 است؛ روی خط ضعیف 1280 مطمئن‌تر است.",
+        "tunDnsQueryStrategy": "DNS در VPN",
+        "tunDnsQueryStrategyHint": "فقط برای VPN: پراکسی همیشه از IPv4 استفاده می‌کند. پیش‌فرض «فقط IPv4» است: IPv6 وارد VPN نمی‌شود، پس صفحه‌ها و Telegram منتظر سروری بدون IPv6 نمی‌مانند. «IPv4 و IPv6» یا «پیروی از سیستم عامل» را فقط وقتی انتخاب کنید که به سایت‌هایی نیاز دارید که فقط با IPv6 در دسترس‌اند و سرور از IPv6 پشتیبانی می‌کند.",
+        "tunDnsUseIPv4Desc": "توصیه می‌شود. صفحه‌ها سریع‌تر باز می‌شوند",
+        "routingModeAppsDesc": "برنامه‌های انتخاب‌شده از VPN و بقیه مستقیم.",
+        "routingProxyAppsHint": "همهٔ اتصال‌های این برنامه‌ها، به‌جز شبکهٔ محلی و استثناها، از VPN عبور می‌کنند.",
+        "routingDirectAppsHint": "این برنامه‌ها همیشه از اتصال عادی و بدون VPN استفاده می‌کنند.",
+        "routingAppsPlaceholder": "جست‌وجوی برنامه یا نام بسته",
+        "routingAppsInvalid": "شبیه نام بسته نیست: {{entries}}",
+        "routingAppsShowList": "نمایش برنامه‌های نصب‌شده",
+        "routingAppsLoading": "در حال بارگیری فهرست برنامه‌ها…",
+        "routingAppsNoMatches": "موردی پیدا نشد. Enter نام بسته را همان‌طور که نوشته شده اضافه می‌کند.",
+        "routingAppsNoRunning": "برنامه‌ای پیدا نشد — نام بسته را وارد کنید، مثلاً org.telegram.messenger.",
+        "routingAppsSystemGroup": "سیستمی",
+        "routingAppsCaseNote": "برنامه‌ها با نام بسته شناخته می‌شوند (مثلاً org.telegram.messenger) — آن‌ها را از فهرست برنامه‌های نصب‌شده انتخاب کنید.",
+        "routingAppsProxyNote": "در حالت «فقط پراکسی» قوانین برنامه‌ها اعمال نمی‌شوند: Android نمی‌گوید کدام برنامه به پراکسی وصل شده است. برای انتخاب برنامه‌ها از حالت VPN استفاده کنید."
+      },
+      "diagnostics": {
+        "openFolder": "اشتراک‌گذاری گزارش‌ها"
+      }
+    },
+    "mobile": {
+      "tabs": {
+        "home": "خانه",
+        "servers": "سرورها",
+        "settings": "تنظیمات"
+      },
+      "navAria": "بخش‌ها",
+      "modeAria": "حالت اتصال",
+      "modeVpn": "VPN",
+      "modeProxy": "پراکسی",
+      "connect": "اتصال",
+      "disconnect": "قطع اتصال",
+      "idle": "متصل نیست",
+      "proxyEndpoints": "SOCKS5 127.0.0.1:10808 · HTTP 127.0.0.1:10809",
+      "startFailed": "برنامه اجرا نشد",
+      "back": "بازگشت",
+      "close": "بستن",
+      "done": "تمام",
+      "count": {
+        "subscriptions_one": "{{count}} اشتراک",
+        "subscriptions_other": "{{count}} اشتراک",
+        "servers_one": "{{count}} سرور",
+        "servers_other": "{{count}} سرور",
+        "exclusions_one": "{{count}} استثنا",
+        "exclusions_other": "{{count}} استثنا",
+        "apps_one": "{{count}} برنامه",
+        "apps_other": "{{count}} برنامه",
+        "changes_one": "{{count}} تغییر",
+        "changes_other": "{{count}} تغییر",
+        "appsShort": "{{count}} برنامه"
+      },
+      "update": {
+        "available": "نسخهٔ {{version}} در دسترس است",
+        "downloading": "در حال دانلود نسخهٔ {{version}} · {{percent}}٪",
+        "ready": "نسخهٔ {{version}} دانلود شد",
+        "install": "نصب",
+        "installHint": "نصب‌کنندهٔ بستهٔ Android را باز می‌کند"
+      },
+      "dial": {
+        "idle": "اتصال",
+        "connecting": "در حال اتصال",
+        "connected": "محافظت‌شده",
+        "switching": "در حال تغییر",
+        "disconnecting": "در حال قطع اتصال",
+        "failed": "خطا",
+        "subIdle": "بدون محافظت",
+        "subStarting": "در حال راه‌اندازی هسته…",
+        "subVerifying": "در حال بررسی تونل…",
+        "subSwitching": "در حال تعویض سرور…",
+        "subDisconnecting": "در حال پاک‌سازی مسیرها",
+        "subFailed": "دوباره تلاش کنید",
+        "ariaCancel": "لغو اتصال",
+        "ariaCancelSwitch": "لغو تغییر"
+      },
+      "steps": {
+        "aria": "مراحل اتصال",
+        "core": "راه‌اندازی هسته",
+        "tunnel": "بررسی تونل",
+        "secure": "محافظت‌شده"
+      },
+      "empty": {
+        "title": "هنوز سروری نیست",
+        "body": "یک اشتراک را با پیوندش اضافه کنید یا پیوندهای vless://، trojan://، ss:// را جای‌گذاری کنید — هر متن دیگری نادیده گرفته می‌شود.",
+        "pasteLinks": "جای‌گذاری پیوندها"
+      },
+      "home": {
+        "serverAria": "سرور: {{name}}. باز کردن فهرست سرورها",
+        "since": "از {{time}}",
+        "retry": "اتصال دوباره",
+        "otherServer": "سرور دیگر"
+      },
+      "servers": {
+        "check": "بررسی",
+        "stop": "توقف",
+        "progressAria": "بررسی تأخیر",
+        "locked": "برای انتخاب سرور دیگر، اتصال را قطع کنید",
+        "manualGroup": "افزوده‌شده به‌صورت دستی",
+        "noAnswer": "به بررسی پاسخ نداد",
+        "measuredAgo": "{{ago}} پیش اندازه‌گیری شد",
+        "noTls": "Xray آن را رد می‌کند: بدون TLS"
+      },
+      "settings": {
+        "languageAria": "زبان",
+        "groupServers": "سرورها",
+        "groupConnection": "اتصال",
+        "groupApp": "برنامه",
+        "network": "حالت و DNS",
+        "routing": "مسیریابی",
+        "core": "هستهٔ Xray",
+        "about": "درباره",
+        "tileNote": "کاشی UltimaVLESS در تنظیمات سریع، آخرین سرور را در آخرین حالت وصل می‌کند. برای VPN همیشه روشن، UltimaVLESS را در تنظیمات VPN اندروید انتخاب کنید.",
+        "discardChanges": "لغو تغییرات",
+        "muxOn": "Mux روشن",
+        "muxOff": "Mux خاموش",
+        "routingAll": "همهٔ ترافیک",
+        "routingSites": "سایت‌های انتخاب‌شده",
+        "routingApps": "برنامه‌های انتخاب‌شده",
+        "coreState": {
+          "starting": "هسته در حال راه‌اندازی",
+          "running": "هسته در حال کار",
+          "degraded": "هسته با خطا کار می‌کند",
+          "stopping": "هسته در حال توقف",
+          "stopped": "هسته متوقف شد",
+          "failed": "خرابی هسته"
+        },
+        "autoSwitchOn": "تعویض خودکار روشن",
+        "autoSwitchOff": "تعویض خودکار خاموش",
+        "aboutUpdate": {
+          "available": "نسخهٔ {{version}} در دسترس است",
+          "downloading": "در حال دانلود نسخهٔ {{version}}",
+          "downloaded": "نسخهٔ {{version}} دانلود شد"
+        },
+        "sources": {
+          "lead": "سرورها از کجا می‌آیند. همهٔ اشتراک‌ها با هم به‌روز می‌شوند.",
+          "subscriptionsTitle": "اشتراک‌ها",
+          "refreshAll": "به‌روزرسانی همهٔ اشتراک‌ها",
+          "disabled": "خاموش",
+          "actions": "عملیات: {{name}}",
+          "importTitle": "فهرست سفید موبایل",
+          "importLabel": "وارد کردن فهرست موبایل",
+          "sheetTitle": "اشتراک جدید",
+          "sheetHint": "سرورها بلافاصله پس از افزودن بارگیری می‌شوند.",
+          "nameLabel": "نام",
+          "urlLabel": "پیوند اشتراک",
+          "cancel": "لغو"
+        },
+        "modeNote": "هنگام اتصال هم قابل تغییر است",
+        "tunnel": "تونل",
+        "routingMode": "حالت مسیریابی",
+        "splitTunnel": "استثناهای تونل",
+        "blocking": "مسدودسازی",
+        "priority": "اولویت قوانین",
+        "priorityNote": "اولین قانون منطبق اعمال می‌شود",
+        "prioritySteps": [
+          "برنامه‌های مستقیم",
+          "برنامه‌ها از طریق VPN",
+          "تبلیغات و BitTorrent",
+          "سایت‌ها و نشانی‌ها",
+          "شبکهٔ محلی مستقیم",
+          "حالت انتخاب‌شده"
+        ],
+        "priorityFoot": "در میان سایت‌ها و نشانی‌ها، قانون دقیق‌تر مهم‌تر است: music.example.com مهم‌تر از example.com است؛ در حالت برابر، استثنا برنده است.",
+        "pickApps": "انتخاب از برنامه‌های نصب‌شده",
+        "selectedApps": "انتخاب‌شده: {{count}}",
+        "installedApps": "نصب‌شده",
+        "appsTypeHint": "برنامهٔ مورد نظر نیست؟ نام بسته را در جست‌وجو بنویسید — Enter آن را همان‌طور اضافه می‌کند.",
+        "mux": "چندگانه‌سازی",
+        "nextConnection": "در اتصال بعدی",
+        "udp": "UDP و QUIC",
+        "transport": "انتقال و مسیریابی",
+        "fingerprintLogs": "اثر انگشت و گزارش‌ها",
+        "diag": {
+          "lead": "وضعیت هسته، پایش اتصال و گزارش‌ها.",
+          "state": "وضعیت",
+          "localProxy": "پراکسی محلی",
+          "recovery": "بازیابی",
+          "startedAt": "اجرا از {{time}}",
+          "checkedAgo": "اینترنت از طریق تونل — {{ago}} پیش",
+          "notChecked": "هنوز بررسی نشده",
+          "attempts": "تلاش‌ها: {{count}}",
+          "xray": {
+            "starting": "در حال راه‌اندازی",
+            "running": "در حال کار",
+            "degraded": "با خطا",
+            "stopping": "در حال توقف",
+            "stopped": "متوقف",
+            "failed": "خطا"
+          },
+          "health": {
+            "idle": "بدون داده",
+            "healthy": "سالم",
+            "degraded": "با خطا",
+            "failed": "خرابی"
+          },
+          "proxyReachable": "در دسترس",
+          "proxyUnreachable": "در دسترس نیست",
+          "recoveryIdle": "لازم نیست",
+          "recoveryRunning": "در جریان",
+          "recoveryPaused": "متوقف موقت",
+          "blocked": "مسدودشده‌ها: {{count}}",
+          "blockedHint": "{{names}} — در تعویض خودکار رد می‌شود",
+          "logs": "گزارش‌ها",
+          "copyHint": "به کلیپ‌بورد",
+          "shareHint": "از طریق منوی «اشتراک‌گذاری» Android"
+        },
+        "aboutTitle": "UltimaVLESS برای Android",
+        "installedVersion": "نسخهٔ نصب‌شده",
+        "sourceCode": "کد منبع",
+        "updatesNote": "به‌روزرسانی‌ها از انتشارهای GitHub می‌آیند: برنامه APK مناسب پردازندهٔ شما را در پس‌زمینه دانلود می‌کند. Android فقط وقتی امضا یکسان باشد، به‌روزرسانی را روی نسخهٔ فعلی نصب می‌کند."
+      }
+    }
+  }
+}

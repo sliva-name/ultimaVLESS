@@ -1,0 +1,226 @@
+{
+  "translation": {
+    "settings": {
+      "subtitle": "Sunucu kaynakları, ağ modu ve tanılama.",
+      "network": {
+        "proxyMode": "Yalnızca proxy",
+        "proxyDesc": "VPN yok: proxy'nin elle ayarlandığı uygulamalar için yerel SOCKS5 127.0.0.1:10808 ve HTTP 127.0.0.1:10809.",
+        "tunMode": "VPN",
+        "tunDesc": "Telefonun tüm trafiği VPN üzerinden geçer. İlk bağlantıda Android izin ister.",
+        "modeReconnectHint": "Başka bir mod seçildiğinde aynı sunucuya bağlantı o modda yeniden başlar.",
+        "remoteDnsHint": "Xray çözümleyicileri. VPN modunda uygulamaların DNS sorguları yakalanır ve proxy üzerinden gider.",
+        "tunMtu": "VPN MTU",
+        "tunMtuHint": "Siteler «Yalnızca proxy» modunda açılıyor ama yavaş bir sunucuda VPN üzerinden açılmıyorsa bu değeri düşürün. Varsayılan 1400; kötü bir hatta 1280 daha güvenlidir.",
+        "tunDnsQueryStrategy": "VPN'de DNS",
+        "tunDnsQueryStrategyHint": "Yalnızca VPN için: proxy her zaman IPv4 kullanır. Varsayılan «Yalnızca IPv4»: IPv6 VPN'e alınmaz, böylece sayfalar ve Telegram IPv6 desteklemeyen bir sunucuyu beklemez. «IPv4 ve IPv6» veya «İşletim sistemini takip et» seçeneğini yalnızca sadece IPv6 ile erişilebilen sitelere ihtiyacınız varsa ve sunucu IPv6 destekliyorsa seçin.",
+        "tunDnsUseIPv4Desc": "Önerilir. Sayfalar daha hızlı açılır",
+        "routingModeAppsDesc": "Seçilen uygulamalar VPN üzerinden, diğerleri doğrudan.",
+        "routingProxyAppsHint": "Bu uygulamaların tüm bağlantıları, yerel ağ ve istisnalar dışında VPN üzerinden gider.",
+        "routingDirectAppsHint": "Bu uygulamalar her zaman VPN'i atlayarak normal bağlantıyı kullanır.",
+        "routingAppsPlaceholder": "Uygulama arayın veya paket adı girin",
+        "routingAppsInvalid": "Paket adına benzemiyor: {{entries}}",
+        "routingAppsShowList": "Yüklü uygulamaları göster",
+        "routingAppsLoading": "Uygulama listesi yükleniyor…",
+        "routingAppsNoMatches": "Eşleşme yok. Enter, paket adını yazıldığı gibi ekler.",
+        "routingAppsNoRunning": "Uygulama bulunamadı — bir paket adı girin, örneğin org.telegram.messenger.",
+        "routingAppsSystemGroup": "Sistem",
+        "routingAppsCaseNote": "Uygulamalar paket adıyla tanınır (örneğin org.telegram.messenger) — onları yüklü uygulamalar listesinden seçin.",
+        "routingAppsProxyNote": "«Yalnızca proxy» modunda uygulama kuralları çalışmaz: Android, proxy'ye hangi uygulamanın bağlandığını bildirmez. Uygulama seçmek için VPN modunu kullanın."
+      },
+      "diagnostics": {
+        "openFolder": "Günlükleri paylaş"
+      }
+    },
+    "mobile": {
+      "tabs": {
+        "home": "Ana sayfa",
+        "servers": "Sunucular",
+        "settings": "Ayarlar"
+      },
+      "navAria": "Bölümler",
+      "modeAria": "Bağlantı modu",
+      "modeVpn": "VPN",
+      "modeProxy": "Proxy",
+      "connect": "Bağlan",
+      "disconnect": "Bağlantıyı kes",
+      "idle": "Bağlı değil",
+      "proxyEndpoints": "SOCKS5 127.0.0.1:10808 · HTTP 127.0.0.1:10809",
+      "startFailed": "Uygulama başlatılamadı",
+      "back": "Geri",
+      "close": "Kapat",
+      "done": "Bitti",
+      "count": {
+        "subscriptions_one": "{{count}} abonelik",
+        "subscriptions_other": "{{count}} abonelik",
+        "servers_one": "{{count}} sunucu",
+        "servers_other": "{{count}} sunucu",
+        "exclusions_one": "{{count}} istisna",
+        "exclusions_other": "{{count}} istisna",
+        "apps_one": "{{count}} uygulama",
+        "apps_other": "{{count}} uygulama",
+        "changes_one": "{{count}} değişiklik",
+        "changes_other": "{{count}} değişiklik",
+        "appsShort": "{{count}} uyg."
+      },
+      "update": {
+        "available": "{{version}} sürümü mevcut",
+        "downloading": "{{version}} sürümü indiriliyor · %{{percent}}",
+        "ready": "{{version}} sürümü indirildi",
+        "install": "Yükle",
+        "installHint": "Android paket yükleyicisini açar"
+      },
+      "dial": {
+        "idle": "Bağlan",
+        "connecting": "Bağlanıyor",
+        "connected": "Korunuyor",
+        "switching": "Değiştiriliyor",
+        "disconnecting": "Bağlantı kesiliyor",
+        "failed": "Hata",
+        "subIdle": "korunmuyor",
+        "subStarting": "çekirdek başlatılıyor…",
+        "subVerifying": "tünel kontrol ediliyor…",
+        "subSwitching": "sunucu değiştiriliyor…",
+        "subDisconnecting": "rotalar temizleniyor",
+        "subFailed": "tekrar deneyin",
+        "ariaCancel": "Bağlanmayı iptal et",
+        "ariaCancelSwitch": "Değiştirmeyi iptal et"
+      },
+      "steps": {
+        "aria": "Bağlantı aşamaları",
+        "core": "Çekirdeğin başlatılması",
+        "tunnel": "Tünelin kontrolü",
+        "secure": "Korunuyor"
+      },
+      "empty": {
+        "title": "Henüz sunucu yok",
+        "body": "Bağlantısıyla bir abonelik ekleyin veya vless://, trojan://, ss:// bağlantılarını yapıştırın — diğer metinler atılır.",
+        "pasteLinks": "Bağlantıları yapıştır"
+      },
+      "home": {
+        "serverAria": "Sunucu: {{name}}. Sunucu listesini aç",
+        "since": "{{time}} itibarıyla",
+        "retry": "Yeniden bağlan",
+        "otherServer": "Başka sunucu"
+      },
+      "servers": {
+        "check": "Kontrol et",
+        "stop": "Durdur",
+        "progressAria": "Gecikme kontrolü",
+        "locked": "Başka bir sunucu seçmek için bağlantıyı kesin",
+        "manualGroup": "Elle eklenenler",
+        "noAnswer": "Kontrole yanıt vermedi",
+        "measuredAgo": "{{ago}} önce ölçüldü",
+        "noTls": "Xray reddediyor: TLS yok"
+      },
+      "settings": {
+        "languageAria": "Dil",
+        "groupServers": "Sunucular",
+        "groupConnection": "Bağlantı",
+        "groupApp": "Uygulama",
+        "network": "Mod ve DNS",
+        "routing": "Yönlendirme",
+        "core": "Xray çekirdeği",
+        "about": "Hakkında",
+        "tileNote": "Hızlı Ayarlar'daki UltimaVLESS kutucuğu son sunucuya son modda bağlanır. Her zaman açık VPN için Android VPN ayarlarında UltimaVLESS'i seçin.",
+        "discardChanges": "Değişiklikleri at",
+        "muxOn": "Mux açık",
+        "muxOff": "Mux kapalı",
+        "routingAll": "Tüm trafik",
+        "routingSites": "Seçili siteler",
+        "routingApps": "Seçili uygulamalar",
+        "coreState": {
+          "starting": "Çekirdek başlatılıyor",
+          "running": "Çekirdek çalışıyor",
+          "degraded": "Çekirdek hatalarla çalışıyor",
+          "stopping": "Çekirdek durduruluyor",
+          "stopped": "Çekirdek durdu",
+          "failed": "Çekirdek arızası"
+        },
+        "autoSwitchOn": "otomatik geçiş açık",
+        "autoSwitchOff": "otomatik geçiş kapalı",
+        "aboutUpdate": {
+          "available": "{{version}} sürümü mevcut",
+          "downloading": "{{version}} sürümü indiriliyor",
+          "downloaded": "{{version}} sürümü indirildi"
+        },
+        "sources": {
+          "lead": "Sunucuların nereden geldiği. Abonelikler hep birlikte yenilenir.",
+          "subscriptionsTitle": "Abonelikler",
+          "refreshAll": "Tüm abonelikleri yenile",
+          "disabled": "Kapalı",
+          "actions": "İşlemler: {{name}}",
+          "importTitle": "Mobil beyaz liste",
+          "importLabel": "Mobil listeyi içe aktar",
+          "sheetTitle": "Yeni abonelik",
+          "sheetHint": "Sunucular eklendikten hemen sonra yüklenir.",
+          "nameLabel": "Ad",
+          "urlLabel": "Abonelik bağlantısı",
+          "cancel": "İptal"
+        },
+        "modeNote": "Bağlıyken de değiştirilebilir",
+        "tunnel": "Tünel",
+        "routingMode": "Yönlendirme modu",
+        "splitTunnel": "Tünel istisnaları",
+        "blocking": "Engelleme",
+        "priority": "Kural önceliği",
+        "priorityNote": "İlk eşleşen kural uygulanır",
+        "prioritySteps": [
+          "Doğrudan uygulamalar",
+          "VPN üzerinden uygulamalar",
+          "Reklamlar ve BitTorrent",
+          "Siteler ve adresler",
+          "Yerel ağ doğrudan",
+          "Seçili mod"
+        ],
+        "priorityFoot": "Siteler ve adresler arasında daha özel kural önceliklidir: music.example.com, example.com'dan önce gelir; eşitlikte istisna kazanır.",
+        "pickApps": "Yüklü uygulamalardan seç",
+        "selectedApps": "Seçilen: {{count}}",
+        "installedApps": "Yüklü",
+        "appsTypeHint": "Uygulama listede yok mu? Aramaya paket adını yazın — Enter onu yazıldığı gibi ekler.",
+        "mux": "Çoğullama",
+        "nextConnection": "Sonraki bağlantıda",
+        "udp": "UDP ve QUIC",
+        "transport": "Aktarım ve yönlendirme",
+        "fingerprintLogs": "Parmak izi ve günlükler",
+        "diag": {
+          "lead": "Çekirdek durumu, bağlantı izleme ve günlükler.",
+          "state": "Durum",
+          "localProxy": "Yerel proxy",
+          "recovery": "Kurtarma",
+          "startedAt": "{{time}} itibarıyla çalışıyor",
+          "checkedAgo": "Tünel üzerinden internet — {{ago}} önce",
+          "notChecked": "Henüz kontrol edilmedi",
+          "attempts": "Deneme: {{count}}",
+          "xray": {
+            "starting": "Başlatılıyor",
+            "running": "Çalışıyor",
+            "degraded": "Hatalı",
+            "stopping": "Durduruluyor",
+            "stopped": "Durdu",
+            "failed": "Hata"
+          },
+          "health": {
+            "idle": "Veri yok",
+            "healthy": "Sağlıklı",
+            "degraded": "Hatalı",
+            "failed": "Arıza"
+          },
+          "proxyReachable": "Erişilebilir",
+          "proxyUnreachable": "Erişilemiyor",
+          "recoveryIdle": "Gerekmiyor",
+          "recoveryRunning": "Sürüyor",
+          "recoveryPaused": "Duraklatıldı",
+          "blocked": "Engellenenler: {{count}}",
+          "blockedHint": "{{names}} — otomatik geçişte atlanır",
+          "logs": "Günlükler",
+          "copyHint": "Panoya",
+          "shareHint": "Android'in «Paylaş» menüsüyle"
+        },
+        "aboutTitle": "Android için UltimaVLESS",
+        "installedVersion": "Yüklü sürüm",
+        "sourceCode": "Kaynak kodu",
+        "updatesNote": "Güncellemeler GitHub sürümlerinden gelir: uygulama, işlemcinize uygun APK'yı arka planda indirir. Android, güncellemeyi yalnızca imza eşleşirse mevcut sürümün üzerine yükler."
+      }
+    }
+  }
+}

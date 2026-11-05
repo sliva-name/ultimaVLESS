@@ -1,9 +1,10 @@
 import React from 'react';
-import clsx from 'clsx';
 import {
   Activity,
+  ChevronDown,
   Cpu,
   Info,
+  Languages,
   Layers,
   Route,
   Shield,
@@ -29,6 +30,11 @@ import {
   Tile,
   type Tone,
 } from './kit';
+import {
+  LANGUAGE_NAMES,
+  SUPPORTED_LANGUAGES,
+  toUiLanguage,
+} from '@/shared/constants';
 
 const DNS_NAMES: Record<string, string> = {
   cloudflare: 'Cloudflare',
@@ -42,36 +48,32 @@ const lowerFirst = (text: string) =>
     ? text.charAt(0).toLocaleLowerCase() + text.slice(1)
     : text;
 
-/** RU / EN; the main process keeps the choice for the notification. */
+/**
+ * Six languages do not fit the header as a segmented control: the current
+ * code with the system's own picker over it. The main process keeps the
+ * choice for the notification.
+ */
 export const LanguageSwitch: React.FC = () => {
   const { t, i18n } = useTranslation();
+  const language = toUiLanguage(i18n.language);
+
   return (
-    <div
-      role="radiogroup"
-      aria-label={t('mobile.settings.languageAria')}
-      className="h-10 shrink-0 flex p-[3px] rounded-xl bg-s2 border border-line"
-    >
-      {(['ru', 'en'] as const).map((code) => {
-        const on =
-          code === 'ru'
-            ? i18n.language === 'ru'
-            : i18n.language.startsWith('en');
-        return (
-          <button
-            key={code}
-            type="button"
-            role="radio"
-            aria-checked={on}
-            onClick={() => void i18n.changeLanguage(code)}
-            className={clsx(
-              'h-8 px-3 rounded-[9px] text-[13px] leading-4 font-medium',
-              on ? 'bg-thumb text-fg shadow-thumb' : 'text-fg2',
-            )}
-          >
-            {code.toUpperCase()}
-          </button>
-        );
-      })}
+    <div className="relative h-10 shrink-0 flex items-center gap-1 pl-3 pr-2 rounded-xl bg-s2 border border-line text-[13px] leading-4 font-medium">
+      <Languages aria-hidden strokeWidth={2} className="w-4 h-4 text-fg3" />
+      <span className="ml-0.5">{language.toUpperCase()}</span>
+      <ChevronDown aria-hidden strokeWidth={2} className="w-4 h-4 text-fg3" />
+      <select
+        aria-label={t('mobile.settings.languageAria')}
+        value={language}
+        onChange={(event) => void i18n.changeLanguage(event.target.value)}
+        className="absolute inset-0 w-full h-full opacity-0"
+      >
+        {SUPPORTED_LANGUAGES.map((code) => (
+          <option key={code} value={code} lang={code}>
+            {LANGUAGE_NAMES[code].name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 };

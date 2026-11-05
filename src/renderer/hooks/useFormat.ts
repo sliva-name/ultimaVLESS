@@ -1,5 +1,16 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toUiLanguage, type UiLanguage } from '@/shared/constants';
+
+/** Decimal separator, digits and the 24-hour clock of each UI language. */
+const LOCALE_BY_LANGUAGE: Record<UiLanguage, string> = {
+  ru: 'ru-RU',
+  en: 'en-US',
+  zh: 'zh-CN',
+  fa: 'fa-IR',
+  es: 'es-ES',
+  tr: 'tr-TR',
+};
 
 const padZero = (value: number) => value.toString().padStart(2, '0');
 
@@ -28,10 +39,10 @@ function scaleBytes(bytes: number): { value: number; unit: number } {
  */
 export function useFormat() {
   const { t, i18n } = useTranslation();
-  const language = i18n.language;
+  const language = toUiLanguage(i18n.language);
 
   return useMemo(() => {
-    const locale = language === 'ru' ? 'ru-RU' : 'en-US';
+    const locale = LOCALE_BY_LANGUAGE[language];
     const units = t('units.bytes', { returnObjects: true }) as string[];
     const number = (value: number, digits: number) =>
       new Intl.NumberFormat(locale, {

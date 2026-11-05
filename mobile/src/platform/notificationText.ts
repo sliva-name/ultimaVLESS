@@ -1,5 +1,4 @@
-import type { RuntimePorts } from '@/shared/constants';
-import type { UiLanguage } from '@/main/services/ConfigService';
+import type { UiLanguage, RuntimePorts } from '@/shared/constants';
 import type { NotificationText } from '../native/UltimaCore';
 
 /**
@@ -21,6 +20,26 @@ const STRINGS: Record<
     proxyOnly: 'Proxy only',
     rateUnits: ['B/s', 'KB/s', 'MB/s'],
     decimalSeparator: '.',
+  },
+  zh: {
+    proxyOnly: '仅代理',
+    rateUnits: ['B/s', 'KB/s', 'MB/s'],
+    decimalSeparator: '.',
+  },
+  fa: {
+    proxyOnly: 'فقط پروکسی',
+    rateUnits: ['بایت/ثانیه', 'کیلوبایت/ثانیه', 'مگابایت/ثانیه'],
+    decimalSeparator: '٫',
+  },
+  es: {
+    proxyOnly: 'Solo proxy',
+    rateUnits: ['B/s', 'KB/s', 'MB/s'],
+    decimalSeparator: ',',
+  },
+  tr: {
+    proxyOnly: 'Yalnızca proxy',
+    rateUnits: ['B/s', 'KB/s', 'MB/s'],
+    decimalSeparator: ',',
   },
 };
 

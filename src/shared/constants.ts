@@ -1,6 +1,47 @@
 /** Bundled Xray-core release (see scripts/prepare-xray-assets.mjs). */
 export const BUNDLED_XRAY_VERSION = 'v26.10.31';
 
+/** Interface languages, in the order the language pickers list them. */
+export const SUPPORTED_LANGUAGES = [
+  'ru',
+  'en',
+  'zh',
+  'fa',
+  'es',
+  'tr',
+] as const;
+
+export type UiLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+
+/** Used until the user picks a language. */
+export const DEFAULT_LANGUAGE: UiLanguage = 'ru';
+
+export function isSupportedLanguage(lang: unknown): lang is UiLanguage {
+  return SUPPORTED_LANGUAGES.includes(lang as UiLanguage);
+}
+
+/** "es-MX" → "es"; anything unsupported → the default language. */
+export function toUiLanguage(tag: string | null | undefined): UiLanguage {
+  const base = tag?.split(/[-_]/)[0].toLowerCase();
+  return isSupportedLanguage(base) ? base : DEFAULT_LANGUAGE;
+}
+
+/**
+ * Each language under its own name, described in itself, so a user who
+ * cannot read the current interface still finds theirs.
+ */
+export const LANGUAGE_NAMES: Record<
+  UiLanguage,
+  { name: string; desc: string }
+> = {
+  ru: { name: 'Русский', desc: 'Интерфейс, трей и уведомления' },
+  en: { name: 'English', desc: 'Interface, tray and notifications' },
+  zh: { name: '中文', desc: '界面、托盘和通知' },
+  fa: { name: 'فارسی', desc: 'رابط، سینی و اعلان‌ها' },
+  es: { name: 'Español', desc: 'Interfaz, bandeja y notificaciones' },
+  tr: { name: 'Türkçe', desc: 'Arayüz, tepsi ve bildirimler' },
+};
+
 /**
  * Passed to the instance that UltimaVLESS starts for itself when it needs
  * Administrator rights. It marks a launch that must keep booting instead of

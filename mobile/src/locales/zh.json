@@ -1,0 +1,221 @@
+{
+  "translation": {
+    "settings": {
+      "subtitle": "服务器来源、网络模式和诊断。",
+      "network": {
+        "proxyMode": "仅代理",
+        "proxyDesc": "不使用 VPN：本地 SOCKS5 127.0.0.1:10808 和 HTTP 127.0.0.1:10809，供手动设置了代理的应用使用。",
+        "tunMode": "VPN",
+        "tunDesc": "手机的全部流量都经过 VPN。首次连接时 Android 会请求授权。",
+        "modeReconnectHint": "选择其他模式后，将以该模式重新连接到同一服务器。",
+        "remoteDnsHint": "Xray 使用的解析器。在 VPN 模式下，应用的 DNS 查询会被拦截并经由代理发送。",
+        "tunMtu": "VPN MTU",
+        "tunMtuHint": "如果在“仅代理”模式下网站能打开，而在慢速服务器上通过 VPN 打不开，请调低此值。默认 1400；线路较差时 1280 更稳妥。",
+        "tunDnsQueryStrategy": "VPN 中的 DNS",
+        "tunDnsQueryStrategyHint": "仅适用于 VPN：代理始终使用 IPv4。默认“仅 IPv4”：IPv6 不进入 VPN，网页和 Telegram 不会等待不支持 IPv6 的服务器。只有在需要仅支持 IPv6 的网站且服务器支持 IPv6 时，才选择“IPv4 和 IPv6”或“跟随操作系统”。",
+        "tunDnsUseIPv4Desc": "推荐。网页打开更快",
+        "routingModeAppsDesc": "所选应用经由 VPN，其余直连。",
+        "routingProxyAppsHint": "这些应用的所有连接都经由 VPN，本地网络和排除项除外。",
+        "routingDirectAppsHint": "这些应用始终使用普通连接，绕过 VPN。",
+        "routingAppsPlaceholder": "搜索应用或输入包名",
+        "routingAppsInvalid": "不像是包名：{{entries}}",
+        "routingAppsShowList": "显示已安装的应用",
+        "routingAppsLoading": "正在加载应用列表…",
+        "routingAppsNoMatches": "没有匹配项。按 Enter 将按原样添加该包名。",
+        "routingAppsNoRunning": "未找到应用——请输入包名，例如 org.telegram.messenger。",
+        "routingAppsSystemGroup": "系统",
+        "routingAppsCaseNote": "应用按包名识别（例如 org.telegram.messenger）——请从已安装的应用中选择。",
+        "routingAppsProxyNote": "在“仅代理”模式下应用规则不起作用：Android 不会告知是哪个应用连接了代理。要选择应用，请使用 VPN 模式。"
+      },
+      "diagnostics": {
+        "openFolder": "分享日志"
+      }
+    },
+    "mobile": {
+      "tabs": {
+        "home": "主页",
+        "servers": "服务器",
+        "settings": "设置"
+      },
+      "navAria": "版块",
+      "modeAria": "连接模式",
+      "modeVpn": "VPN",
+      "modeProxy": "代理",
+      "connect": "连接",
+      "disconnect": "断开",
+      "idle": "未连接",
+      "proxyEndpoints": "SOCKS5 127.0.0.1:10808 · HTTP 127.0.0.1:10809",
+      "startFailed": "应用启动失败",
+      "back": "返回",
+      "close": "关闭",
+      "done": "完成",
+      "count": {
+        "subscriptions_other": "{{count}} 个订阅",
+        "servers_other": "{{count}} 个服务器",
+        "exclusions_other": "{{count}} 个排除项",
+        "apps_other": "{{count}} 个应用",
+        "changes_other": "{{count}} 项更改",
+        "appsShort": "{{count}} 个应用"
+      },
+      "update": {
+        "available": "有新版本 {{version}}",
+        "downloading": "正在下载版本 {{version}} · {{percent}}%",
+        "ready": "版本 {{version}} 已下载",
+        "install": "安装",
+        "installHint": "打开 Android 软件包安装程序"
+      },
+      "dial": {
+        "idle": "连接",
+        "connecting": "正在连接",
+        "connected": "已受保护",
+        "switching": "正在切换",
+        "disconnecting": "正在断开",
+        "failed": "错误",
+        "subIdle": "未受保护",
+        "subStarting": "正在启动内核…",
+        "subVerifying": "正在检查隧道…",
+        "subSwitching": "正在更换服务器…",
+        "subDisconnecting": "正在清理路由",
+        "subFailed": "请重试",
+        "ariaCancel": "取消连接",
+        "ariaCancelSwitch": "取消切换"
+      },
+      "steps": {
+        "aria": "连接阶段",
+        "core": "启动内核",
+        "tunnel": "检查隧道",
+        "secure": "已受保护"
+      },
+      "empty": {
+        "title": "还没有服务器",
+        "body": "通过链接添加订阅，或粘贴 vless://、trojan://、ss:// 链接——其他文本会被忽略。",
+        "pasteLinks": "粘贴链接"
+      },
+      "home": {
+        "serverAria": "服务器：{{name}}。打开服务器列表",
+        "since": "自 {{time}} 起",
+        "retry": "重新连接",
+        "otherServer": "其他服务器"
+      },
+      "servers": {
+        "check": "检测",
+        "stop": "停止",
+        "progressAria": "延迟检测",
+        "locked": "断开连接后才能选择其他服务器",
+        "manualGroup": "手动添加",
+        "noAnswer": "检测无响应",
+        "measuredAgo": "{{ago}}前测得",
+        "noTls": "Xray 拒绝：没有 TLS"
+      },
+      "settings": {
+        "languageAria": "语言",
+        "groupServers": "服务器",
+        "groupConnection": "连接",
+        "groupApp": "应用",
+        "network": "模式和 DNS",
+        "routing": "路由",
+        "core": "Xray 内核",
+        "about": "关于",
+        "tileNote": "快捷设置中的 UltimaVLESS 磁贴会以上次的模式连接上次的服务器。要使用“始终开启的 VPN”，请在 Android 的 VPN 设置中选择 UltimaVLESS。",
+        "discardChanges": "放弃更改",
+        "muxOn": "Mux 已开启",
+        "muxOff": "Mux 已关闭",
+        "routingAll": "全部流量",
+        "routingSites": "所选网站",
+        "routingApps": "所选应用",
+        "coreState": {
+          "starting": "内核正在启动",
+          "running": "内核运行中",
+          "degraded": "内核运行出错",
+          "stopping": "内核正在停止",
+          "stopped": "内核已停止",
+          "failed": "内核故障"
+        },
+        "autoSwitchOn": "自动切换已开启",
+        "autoSwitchOff": "自动切换已关闭",
+        "aboutUpdate": {
+          "available": "有新版本 {{version}}",
+          "downloading": "正在下载版本 {{version}}",
+          "downloaded": "版本 {{version}} 已下载"
+        },
+        "sources": {
+          "lead": "服务器的来源。所有订阅会一起刷新。",
+          "subscriptionsTitle": "订阅",
+          "refreshAll": "刷新所有订阅",
+          "disabled": "已关闭",
+          "actions": "操作：{{name}}",
+          "importTitle": "移动白名单",
+          "importLabel": "导入移动白名单",
+          "sheetTitle": "新订阅",
+          "sheetHint": "添加后会立即加载服务器。",
+          "nameLabel": "名称",
+          "urlLabel": "订阅链接",
+          "cancel": "取消"
+        },
+        "modeNote": "连接时也可更改",
+        "tunnel": "隧道",
+        "routingMode": "路由模式",
+        "splitTunnel": "隧道排除项",
+        "blocking": "拦截",
+        "priority": "规则优先级",
+        "priorityNote": "首个匹配的规则生效",
+        "prioritySteps": [
+          "直连的应用",
+          "经由 VPN 的应用",
+          "广告和 BitTorrent",
+          "网站和地址",
+          "本地网络直连",
+          "所选模式"
+        ],
+        "priorityFoot": "在网站和地址中，更具体的规则优先：music.example.com 优先于 example.com；相同时排除项优先。",
+        "pickApps": "从已安装的应用中选择",
+        "selectedApps": "已选择：{{count}}",
+        "installedApps": "已安装",
+        "appsTypeHint": "找不到需要的应用？在搜索框中输入包名——按 Enter 将按原样添加。",
+        "mux": "多路复用",
+        "nextConnection": "下次连接时生效",
+        "udp": "UDP 和 QUIC",
+        "transport": "传输和路由",
+        "fingerprintLogs": "指纹和日志",
+        "diag": {
+          "lead": "内核状态、连接监控和日志。",
+          "state": "状态",
+          "localProxy": "本地代理",
+          "recovery": "恢复",
+          "startedAt": "启动于 {{time}}",
+          "checkedAgo": "经隧道的互联网——{{ago}}前",
+          "notChecked": "尚未检查",
+          "attempts": "尝试次数：{{count}}",
+          "xray": {
+            "starting": "正在启动",
+            "running": "运行中",
+            "degraded": "有错误",
+            "stopping": "正在停止",
+            "stopped": "已停止",
+            "failed": "错误"
+          },
+          "health": {
+            "idle": "无数据",
+            "healthy": "正常",
+            "degraded": "有错误",
+            "failed": "故障"
+          },
+          "proxyReachable": "可访问",
+          "proxyUnreachable": "不可访问",
+          "recoveryIdle": "无需恢复",
+          "recoveryRunning": "进行中",
+          "recoveryPaused": "已暂停",
+          "blocked": "已屏蔽：{{count}}",
+          "blockedHint": "{{names}}——自动切换时跳过",
+          "logs": "日志",
+          "copyHint": "复制到剪贴板",
+          "shareHint": "通过 Android 的“分享”菜单"
+        },
+        "aboutTitle": "UltimaVLESS for Android",
+        "installedVersion": "已安装版本",
+        "sourceCode": "源代码",
+        "updatesNote": "更新来自 GitHub 发布：应用会在后台下载适合你处理器的 APK。只有签名一致时，Android 才会覆盖安装。"
+      }
+    }
+  }
+}

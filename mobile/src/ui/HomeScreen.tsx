@@ -573,7 +573,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     <ServerFlag server={selectedServer} size={32} />
                   )}
                   <span className="flex-1 min-w-0 flex flex-col gap-0.5">
-                    <span className="text-base leading-[22px] font-semibold truncate">
+                    <span
+                      dir="auto"
+                      className="text-left text-base leading-[22px] font-semibold truncate"
+                    >
                       {selectedServer?.name ?? t('status.selectServer')}
                     </span>
                     {selectedServer && (

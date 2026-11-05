@@ -2,13 +2,17 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ThemePreference } from '@/renderer/hooks/useTheme';
 import { ChoiceCards, Page, Panel } from '@/renderer/components/ui';
+import {
+  LANGUAGE_NAMES,
+  SUPPORTED_LANGUAGES,
+  toUiLanguage,
+  type UiLanguage,
+} from '@/shared/constants';
 
 interface AppearancePageProps {
   theme: ThemePreference;
   onTheme: (theme: ThemePreference) => void;
 }
-
-type Language = 'ru' | 'en';
 
 /** «Оформление»: theme and language, applied at once. */
 export const AppearancePage: React.FC<AppearancePageProps> = ({
@@ -16,7 +20,7 @@ export const AppearancePage: React.FC<AppearancePageProps> = ({
   onTheme,
 }) => {
   const { t, i18n } = useTranslation();
-  const language: Language = i18n.language === 'ru' ? 'ru' : 'en';
+  const language = toUiLanguage(i18n.language);
 
   return (
     <Page title={t('pages.appearance.title')} lead={t('pages.appearance.lead')}>
@@ -50,22 +54,16 @@ export const AppearancePage: React.FC<AppearancePageProps> = ({
       </Panel>
 
       <Panel title={t('pages.appearance.language')}>
-        <ChoiceCards<Language>
+        <ChoiceCards<UiLanguage>
           label={t('pages.appearance.language')}
+          columns={3}
           value={language}
           onChange={(next) => void i18n.changeLanguage(next)}
-          options={[
-            {
-              value: 'ru',
-              label: 'Русский',
-              desc: t('pages.appearance.languageRuDesc'),
-            },
-            {
-              value: 'en',
-              label: 'English',
-              desc: t('pages.appearance.languageEnDesc'),
-            },
-          ]}
+          options={SUPPORTED_LANGUAGES.map((code) => ({
+            value: code,
+            label: LANGUAGE_NAMES[code].name,
+            desc: LANGUAGE_NAMES[code].desc,
+          }))}
         />
       </Panel>
     </Page>

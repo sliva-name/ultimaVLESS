@@ -13,6 +13,7 @@ import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
 import { IpcDependencies } from '@/main/ipc/dependencies';
 import { assertConnectionMode } from '@/main/ipc/validators';
 import { TITLE_BAR_OVERLAY, isWindowTheme } from '@/main/utils/windowChrome';
+import { isSupportedLanguage } from '@/shared/constants';
 
 interface RegisterSettingsHandlersParams {
   deps: IpcDependencies;
@@ -216,7 +217,7 @@ export function registerSettingsHandlers({
     IPC_INVOKE_CHANNELS.setUiLanguage,
     (event: IpcMainInvokeEvent, language: unknown) => {
       assertTrustedSender(event);
-      if (language !== 'en' && language !== 'ru') {
+      if (!isSupportedLanguage(language)) {
         throw new Error(`Unsupported UI language: ${String(language)}`);
       }
       deps.mainLocaleService.setLanguage(language);
