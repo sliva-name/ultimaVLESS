@@ -50,7 +50,7 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
 
   return (
     <section aria-label={title} className="flex flex-col gap-0.5">
-      <div className="sticky top-0 z-10 h-6 flex items-center gap-1.5 ps-2 pe-0.5 bg-s1">
+      <div className="sticky top-0 z-10 h-6 flex items-center gap-1.5 pl-2 pr-0.5 bg-s1">
         <button
           type="button"
           onClick={toggle}
@@ -68,7 +68,7 @@ export const ServerGroup: React.FC<ServerGroupProps> = ({
             strokeWidth={2}
             className={clsx(
               'w-3 h-3 shrink-0 transition-transform duration-200',
-              !expanded && '-rotate-90 rtl:rotate-90',
+              !expanded && '-rotate-90',
             )}
           />
         </button>

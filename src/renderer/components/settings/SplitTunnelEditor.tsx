@@ -99,7 +99,7 @@ export const SplitTunnelEditor: React.FC<SplitTunnelEditorProps> = ({
               {group.values.map((value) => (
                 <li
                   key={value}
-                  className="h-7 box-border inline-flex items-center gap-1 ps-2.5 pe-1 rounded-md bg-s2 border border-line font-mono text-xs leading-4 text-fg"
+                  className="h-7 box-border inline-flex items-center gap-1 pl-2.5 pr-1 rounded-md bg-s2 border border-line font-mono text-xs leading-4 text-fg"
                 >
                   <span className="break-all">{value}</span>
                   <button

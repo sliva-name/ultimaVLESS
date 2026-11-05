@@ -101,7 +101,7 @@ export const ConflictingAppsPanel: React.FC<ConflictingAppsPanelProps> = ({
     <div
       role="alert"
       className={clsx(
-        'rounded-xl border border-warn-line bg-warn-soft p-4 flex flex-col gap-3 text-start',
+        'rounded-xl border border-warn-line bg-warn-soft p-4 flex flex-col gap-3 text-left',
         className,
       )}
     >

@@ -141,7 +141,7 @@ export const PopupMenu: React.FC<PopupMenuProps> = ({
                 item.onSelect();
               }}
               className={clsx(
-                'w-full h-12 px-4 text-start text-[15px] leading-5 font-medium outline-none focus-visible:bg-thumb',
+                'w-full h-12 px-4 text-left text-[15px] leading-5 font-medium outline-none focus-visible:bg-thumb',
                 item.danger ? 'text-bad' : 'text-fg',
               )}
             >

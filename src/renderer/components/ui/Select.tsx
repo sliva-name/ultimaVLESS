@@ -209,7 +209,7 @@ export const Select: React.FC<SelectProps> = ({
               onMouseEnter={() => setActiveIndex(index)}
               onClick={() => handleSelect(opt.value)}
               className={clsx(
-                'w-full flex items-start gap-2.5 px-2.5 py-1.5 rounded-md text-start text-fg transition-colors',
+                'w-full flex items-start gap-2.5 px-2.5 py-1.5 rounded-md text-left text-fg transition-colors',
                 isActive && 'bg-thumb',
               )}
             >
@@ -248,8 +248,8 @@ export const Select: React.FC<SelectProps> = ({
         aria-controls={open ? listboxId : undefined}
         onClick={toggleMenu}
         className={clsx(
-          'group flex w-56 h-8 items-center gap-2 rounded-lg border border-line2 bg-s2 ps-3 pe-2',
-          'text-fg text-start transition-colors duration-150 hover:border-fg3',
+          'group flex w-56 h-8 items-center gap-2 rounded-lg border border-line2 bg-s2 pl-3 pr-2',
+          'text-fg text-left transition-colors duration-150 hover:border-fg3',
           'disabled:cursor-not-allowed disabled:opacity-50',
           open && 'border-acc-fill',
           triggerClassName,

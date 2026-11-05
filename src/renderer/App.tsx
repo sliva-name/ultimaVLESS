@@ -47,7 +47,7 @@ function AppShell() {
       {showModeError && net.modeError && (
         <div
           role="alert"
-          className="shrink-0 flex items-center gap-2.5 py-1.5 ps-4 pe-2 bg-warn-soft border-b border-warn-line"
+          className="shrink-0 flex items-center gap-2.5 py-1.5 pl-4 pr-2 bg-warn-soft border-b border-warn-line"
         >
           <AlertTriangle
             aria-hidden

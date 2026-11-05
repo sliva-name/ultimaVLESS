@@ -38,11 +38,9 @@ export const Toggle: React.FC<ToggleProps> = ({
     >
       <span
         className={clsx(
-          'absolute top-0.5 start-0.5 w-4 h-4 rounded-full shadow-[0_1px_2px_rgb(0_0_0/0.3)]',
+          'absolute top-0.5 left-0.5 w-4 h-4 rounded-full shadow-[0_1px_2px_rgb(0_0_0/0.3)]',
           'transition-transform duration-150 ease-[cubic-bezier(.3,1.3,.6,1)]',
-          checked
-            ? 'translate-x-4 rtl:-translate-x-4 bg-white'
-            : 'translate-x-0 bg-thumb-off',
+          checked ? 'translate-x-4 bg-white' : 'translate-x-0 bg-thumb-off',
         )}
       />
     </button>

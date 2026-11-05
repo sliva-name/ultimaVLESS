@@ -49,7 +49,7 @@ const DnsField: React.FC<{
         placeholder={placeholder}
         aria-label={label}
         onChange={(e) => onChange(e.target.value)}
-        className="shrink-0 w-36 h-10 px-3 rounded-[10px] border border-line2 bg-s2 text-fg font-mono text-sm text-end outline-none focus:border-acc-fill"
+        className="shrink-0 w-36 h-10 px-3 rounded-[10px] border border-line2 bg-s2 text-fg font-mono text-sm text-right outline-none focus:border-acc-fill"
       />
     }
   />

@@ -298,7 +298,7 @@ export const Stage: React.FC<StageProps> = ({
                   className="h-8 flex items-center justify-between gap-3 border-b border-line"
                 >
                   <dt className="text-xs leading-4 text-fg3">{row.k}</dt>
-                  <dd className="m-0 text-xs leading-4 font-medium text-fg text-end truncate">
+                  <dd className="m-0 text-xs leading-4 font-medium text-fg text-right truncate">
                     {row.v}
                   </dd>
                 </div>
@@ -423,7 +423,7 @@ const SessionStats: React.FC<{
           key={label}
           className={clsx(
             'min-w-0 px-4 py-3 flex flex-col gap-1.5',
-            index > 0 && 'border-s border-line',
+            index > 0 && 'border-l border-line',
           )}
         >
           <span className="flex items-center gap-1.5 text-xs leading-4 text-fg3 whitespace-nowrap">
@@ -501,7 +501,7 @@ const StageCard: React.FC<{
                 <ChevronRight
                   aria-hidden
                   strokeWidth={2}
-                  className="w-3.5 h-3.5 rtl:-scale-x-100"
+                  className="w-3.5 h-3.5"
                 />
               </button>
             )}

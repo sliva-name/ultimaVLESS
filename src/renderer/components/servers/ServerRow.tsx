@@ -56,7 +56,7 @@ export const ServerRow = React.memo<ServerRowProps>(
         data-server-uuid={server.uuid}
         data-server-row
         className={clsx(
-          'w-full h-12 flex items-center gap-2.5 px-2.5 rounded-lg text-start',
+          'w-full h-12 flex items-center gap-2.5 px-2.5 rounded-lg text-left',
           'transition-[background-color,opacity] duration-150',
           isSelected
             ? 'bg-acc-soft shadow-[inset_0_0_0_1px_var(--color-acc-line)]'
@@ -70,7 +70,7 @@ export const ServerRow = React.memo<ServerRowProps>(
         <span className="flex-1 min-w-0 flex flex-col">
           <span
             dir="auto"
-            className="text-[13px] leading-[18px] font-medium truncate text-left rtl:text-right"
+            className="text-left text-[13px] leading-[18px] font-medium truncate"
           >
             {server.name}
           </span>

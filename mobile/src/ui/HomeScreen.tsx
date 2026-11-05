@@ -203,11 +203,7 @@ const ErrorCard: React.FC<{
             className="shrink-0 h-5 inline-flex items-center gap-0.5 text-[13px] leading-4 font-medium text-acc whitespace-nowrap"
           >
             {t('settings.tabs.diagnostics')}
-            <ChevronRight
-              aria-hidden
-              strokeWidth={2}
-              className="w-3.5 h-3.5 rtl:-scale-x-100"
-            />
+            <ChevronRight aria-hidden strokeWidth={2} className="w-3.5 h-3.5" />
           </button>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -276,7 +272,7 @@ const SessionStats: React.FC<{
           key={label}
           className={clsx(
             'min-w-0 px-3.5 py-3 flex flex-col gap-1.5',
-            index > 0 && 'border-s border-line',
+            index > 0 && 'border-l border-line',
           )}
         >
           <span className="flex items-center gap-1.5 text-xs leading-4 text-fg3 whitespace-nowrap">
@@ -571,7 +567,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         })
                       : t('status.selectServer')
                   }
-                  className="h-[72px] flex items-center gap-3 ps-4 pe-2 rounded-2xl bg-s1 border border-line text-start"
+                  className="h-[72px] flex items-center gap-3 pl-4 pr-2 rounded-2xl bg-s1 border border-line text-left"
                 >
                   {selectedServer && (
                     <ServerFlag server={selectedServer} size={32} />
@@ -579,7 +575,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <span className="flex-1 min-w-0 flex flex-col gap-0.5">
                     <span
                       dir="auto"
-                      className="text-base leading-[22px] font-semibold truncate text-left rtl:text-right"
+                      className="text-left text-base leading-[22px] font-semibold truncate"
                     >
                       {selectedServer?.name ?? t('status.selectServer')}
                     </span>
@@ -593,7 +589,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <ChevronRight
                     aria-hidden
                     strokeWidth={2}
-                    className="w-5 h-5 shrink-0 text-fg3 rtl:-scale-x-100"
+                    className="w-5 h-5 shrink-0 text-fg3"
                   />
                 </button>
 

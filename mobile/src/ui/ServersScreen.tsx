@@ -168,7 +168,7 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <header className="h-16 shrink-0 flex items-center gap-2 ps-5 pe-3">
+      <header className="h-16 shrink-0 flex items-center gap-2 pl-5 pr-3">
         <h1 className="m-0 text-[22px] leading-7 font-semibold tracking-[-0.02em]">
           {t('sidebar.servers')}
         </h1>
@@ -181,7 +181,7 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
           onClick={() => (pingInProgress ? void onStopPing() : void runPing())}
           disabled={checkDisabled}
           className={clsx(
-            'h-10 inline-flex items-center gap-2 ps-3 pe-3.5 rounded-xl border text-sm leading-4 font-medium',
+            'h-10 inline-flex items-center gap-2 pl-3 pr-3.5 rounded-xl border text-sm leading-4 font-medium',
             pingInProgress
               ? 'bg-s2 border-line2 text-fg'
               : checkDisabled
@@ -228,7 +228,7 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
       {selectionLocked && (
         <div
           role="status"
-          className="shrink-0 mx-4 mb-2 flex items-center gap-2.5 py-1 pe-1 ps-3.5 rounded-xl bg-s2 border border-line"
+          className="shrink-0 mx-4 mb-2 flex items-center gap-2.5 py-1 pr-1 pl-3.5 rounded-xl bg-s2 border border-line"
         >
           <Lock
             aria-hidden
@@ -264,7 +264,7 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
                 onClick={() =>
                   setClosed((prev) => ({ ...prev, [group.id]: open }))
                 }
-                className="h-10 flex items-center gap-2 ps-3 pe-2 rounded-[10px] text-fg3 text-start"
+                className="h-10 flex items-center gap-2 pl-3 pr-2 rounded-[10px] text-fg3 text-left"
               >
                 <span
                   className={clsx('w-2 h-2 rounded-full shrink-0', group.dot)}
@@ -281,7 +281,7 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
                   strokeWidth={2}
                   className={clsx(
                     'w-5 h-5 transition-transform duration-200',
-                    !open && '-rotate-90 rtl:rotate-90',
+                    !open && '-rotate-90',
                   )}
                 />
               </button>
@@ -300,7 +300,7 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
                         if (!selectionLocked) onSelectServer(server);
                       }}
                       className={clsx(
-                        'h-16 flex items-center gap-3.5 px-3 rounded-xl text-start transition-[background-color,opacity] duration-200',
+                        'h-16 flex items-center gap-3.5 px-3 rounded-xl text-left transition-[background-color,opacity] duration-200',
                         selected
                           ? 'bg-acc-soft shadow-[inset_0_0_0_1px_var(--color-acc-line)]'
                           : 'bg-transparent',
@@ -311,7 +311,7 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
                       <span className="flex-1 min-w-0 flex flex-col gap-0.5">
                         <span
                           dir="auto"
-                          className="text-base leading-[22px] font-medium truncate text-left rtl:text-right"
+                          className="text-left text-base leading-[22px] font-medium truncate"
                         >
                           {server.name}
                         </span>
@@ -342,10 +342,13 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
       </div>
 
       {selectedServer && (
-        <div className="shrink-0 mx-3 mb-3 h-[72px] flex items-center gap-3 ps-4 pe-3 rounded-[20px] bg-s1 border border-line2 shadow-float">
+        <div className="shrink-0 mx-3 mb-3 h-[72px] flex items-center gap-3 pl-4 pr-3 rounded-[20px] bg-s1 border border-line2 shadow-float">
           <ServerFlag server={selectedServer} size={28} />
           <span className="flex-1 min-w-0 flex flex-col gap-0.5">
-            <span className="text-base leading-[22px] font-semibold truncate">
+            <span
+              dir="auto"
+              className="text-left text-base leading-[22px] font-semibold truncate"
+            >
               {selectedServer.name}
             </span>
             <span

@@ -185,7 +185,7 @@ export const Panel: React.FC<PanelProps> = ({
           {title}
         </h2>
         {note && (
-          <span className="text-xs leading-4 text-fg3 text-end">{note}</span>
+          <span className="text-xs leading-4 text-fg3 text-right">{note}</span>
         )}
       </div>
     )}
@@ -253,7 +253,7 @@ export const LockBanner: React.FC<{
   return (
     <div
       role="status"
-      className="flex items-center gap-2.5 py-2 pe-2 ps-3 rounded-lg bg-ok-soft border border-ok-line"
+      className="flex items-center gap-2.5 py-2 pr-2 pl-3 rounded-lg bg-ok-soft border border-ok-line"
     >
       <Lock
         aria-hidden
@@ -285,7 +285,7 @@ export const SaveBar: React.FC<{
     <div className="h-14 shrink-0 flex items-center gap-2 px-8 border-t border-line bg-s1">
       <span
         aria-hidden="true"
-        className="w-1.5 h-1.5 me-0.5 shrink-0 rounded-full bg-acc"
+        className="w-1.5 h-1.5 mr-0.5 shrink-0 rounded-full bg-acc"
       />
       <span className="flex-1 min-w-0 text-[13px] leading-[18px] text-fg2">
         <span className="font-semibold text-fg">
@@ -425,7 +425,7 @@ export const Row: React.FC<RowProps> = ({
     </>
   );
   const className = clsx(
-    'w-full min-h-[52px] flex items-center gap-3 px-4 py-2.5 text-start',
+    'w-full min-h-[52px] flex items-center gap-3 px-4 py-2.5 text-left',
     disabled && 'opacity-55',
   );
   return onClick ? (
@@ -516,7 +516,7 @@ export const NumberField: React.FC<NumberFieldProps> = ({
       onKeyDown={(e) => {
         if (e.key === 'Enter') e.currentTarget.blur();
       }}
-      className="shrink-0 w-20 h-8 px-2.5 rounded-lg border border-line2 bg-s2 text-fg text-[13px] leading-5 text-end tabular-nums outline-none focus:border-acc-fill"
+      className="shrink-0 w-20 h-8 px-2.5 rounded-lg border border-line2 bg-s2 text-fg text-[13px] leading-5 text-right tabular-nums outline-none focus:border-acc-fill"
     />
   );
 };
@@ -541,8 +541,6 @@ export interface ChoiceOption<T extends string> {
   desc: string;
   /** Two-color swatch above the label (theme cards). */
   preview?: [string, string];
-  /** The card's own language when it differs from the UI (language cards). */
-  lang?: string;
 }
 
 /** Radio cards: network mode, ping method, theme, language. */
@@ -582,10 +580,9 @@ export function ChoiceCards<T extends string>({
             role="radio"
             aria-checked={on}
             disabled={off}
-            lang={option.lang}
             onClick={() => onChange(option.value)}
             className={clsx(
-              'flex flex-col gap-1.5 pt-3.5 px-4 pb-4 rounded-xl border text-start shadow-panel',
+              'flex flex-col gap-1.5 pt-3.5 px-4 pb-4 rounded-xl border text-left shadow-panel',
               'transition-colors duration-150 disabled:opacity-55',
               on
                 ? 'border-acc-line bg-acc-soft'
@@ -615,7 +612,7 @@ export function ChoiceCards<T extends string>({
                 {option.label}
               </span>
             </span>
-            <span className="ps-[26px] text-xs leading-[18px] text-fg3">
+            <span className="pl-[26px] text-xs leading-[18px] text-fg3">
               {option.desc}
             </span>
           </button>

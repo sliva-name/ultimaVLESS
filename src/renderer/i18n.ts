@@ -24,11 +24,13 @@ function readSavedLanguage() {
   }
 }
 
-/** `lang` for fonts and screen readers, `dir` for Farsi. */
+/**
+ * `lang` for fonts and screen readers. The layout stays left-to-right in
+ * every language, Farsi included.
+ */
 function applyDocumentLanguage(language: string) {
   if (typeof document === 'undefined') return;
   document.documentElement.lang = language;
-  document.documentElement.dir = i18n.dir(language);
 }
 
 void i18n.use(initReactI18next).init({

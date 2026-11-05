@@ -63,7 +63,6 @@ export const AppearancePage: React.FC<AppearancePageProps> = ({
             value: code,
             label: LANGUAGE_NAMES[code].name,
             desc: LANGUAGE_NAMES[code].desc,
-            lang: code,
           }))}
         />
       </Panel>

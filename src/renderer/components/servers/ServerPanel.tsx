@@ -245,13 +245,13 @@ export const ServerPanel: React.FC<ServerPanelProps> = ({
   return (
     <aside
       aria-label={t('sidebar.servers')}
-      className="flex-[1_1_336px] min-w-0 flex flex-col bg-s1 border-e border-line"
+      className="flex-[1_1_336px] min-w-0 flex flex-col bg-s1 border-r border-line"
     >
-      <div className="h-12 shrink-0 box-border flex items-center gap-1 ps-4 pe-2">
+      <div className="h-12 shrink-0 box-border flex items-center gap-1 pl-4 pr-2">
         <h2 className="m-0 text-sm leading-5 font-semibold">
           {t('sidebar.servers')}
         </h2>
-        <span className="ms-1 min-w-5 h-[18px] box-border px-1.5 rounded-[9px] bg-s3 text-[11px] leading-[18px] font-semibold text-fg2 text-center tabular-nums">
+        <span className="ml-1 min-w-5 h-[18px] box-border px-1.5 rounded-[9px] bg-s3 text-[11px] leading-[18px] font-semibold text-fg2 text-center tabular-nums">
           {servers.length}
         </span>
         <span className="flex-1" />
@@ -277,7 +277,7 @@ export const ServerPanel: React.FC<ServerPanelProps> = ({
           {selectionLocked && (
             <div
               role="status"
-              className="flex items-center gap-2 py-1.5 pe-1.5 ps-2.5 rounded-lg bg-s2 border border-line"
+              className="flex items-center gap-2 py-1.5 pr-1.5 pl-2.5 rounded-lg bg-s2 border border-line"
             >
               <Lock
                 aria-hidden

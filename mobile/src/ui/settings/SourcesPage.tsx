@@ -37,7 +37,7 @@ const SubscriptionMenu: React.FC<{
   return (
     <PopupMenu
       label={t('mobile.settings.sources.actions', { name: subscription.name })}
-      className="-me-2.5"
+      className="-mr-2.5"
       items={[
         {
           label: t(
@@ -159,7 +159,7 @@ export const SourcesPage: React.FC<SourcesPageProps> = ({
             spellCheck={false}
             className="resize-none py-3 px-3.5 rounded-2xl border border-line2 bg-s1 text-fg font-mono text-[13px] leading-5 outline-none focus:border-acc-fill"
           />
-          <div className="flex justify-between items-center gap-3 ps-1">
+          <div className="flex justify-between items-center gap-3 pl-1">
             <span className="text-[13px] leading-[18px] text-fg3">
               {t('settings.sources.manualHint')}
             </span>

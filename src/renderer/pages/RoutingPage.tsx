@@ -212,7 +212,7 @@ export const RoutingPage: React.FC<{ net: NetworkSettings }> = ({ net }) => {
                   <ArrowRight
                     aria-hidden
                     strokeWidth={2}
-                    className="w-3.5 h-3.5 text-fg3 rtl:-scale-x-100"
+                    className="w-3.5 h-3.5 text-fg3"
                   />
                 )}
               </li>

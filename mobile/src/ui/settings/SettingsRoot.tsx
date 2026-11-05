@@ -58,9 +58,9 @@ export const LanguageSwitch: React.FC = () => {
   const language = toUiLanguage(i18n.language);
 
   return (
-    <div className="relative h-10 shrink-0 flex items-center gap-1 ps-3 pe-2 rounded-xl bg-s2 border border-line text-[13px] leading-4 font-medium">
+    <div className="relative h-10 shrink-0 flex items-center gap-1 pl-3 pr-2 rounded-xl bg-s2 border border-line text-[13px] leading-4 font-medium">
       <Languages aria-hidden strokeWidth={2} className="w-4 h-4 text-fg3" />
-      <span className="ms-0.5">{language.toUpperCase()}</span>
+      <span className="ml-0.5">{language.toUpperCase()}</span>
       <ChevronDown aria-hidden strokeWidth={2} className="w-4 h-4 text-fg3" />
       <select
         aria-label={t('mobile.settings.languageAria')}

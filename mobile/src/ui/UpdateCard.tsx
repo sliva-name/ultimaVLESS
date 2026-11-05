@@ -38,7 +38,7 @@ export const UpdateCard: React.FC<{ className?: string }> = ({ className }) => {
     <div
       role="status"
       className={clsx(
-        'shrink-0 flex items-center gap-3 py-2.5 pe-2.5 ps-3.5 rounded-xl bg-acc-soft border border-acc-line',
+        'shrink-0 flex items-center gap-3 py-2.5 pr-2.5 pl-3.5 rounded-xl bg-acc-soft border border-acc-line',
         className,
       )}
     >

@@ -155,7 +155,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const header =
     page === 'root' ? (
-      <header className="h-16 shrink-0 flex items-center gap-3 ps-5 pe-4">
+      <header className="h-16 shrink-0 flex items-center gap-3 pl-5 pr-4">
         <h1 className="flex-1 m-0 text-[22px] leading-7 font-semibold tracking-[-0.02em]">
           {titles.root}
         </h1>
