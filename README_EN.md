@@ -11,106 +11,190 @@
 [![GitHub downloads](https://img.shields.io/github/downloads/sliva-name/ultimaVLESS/total?style=for-the-badge)](https://github.com/sliva-name/ultimaVLESS/releases)
 [![Visits](https://hits.sh/github.com/sliva-name/ultimaVLESS.svg?style=for-the-badge&label=visits)](https://hits.sh/github.com/sliva-name/ultimaVLESS/)
 
-**Ultima VLESS Client** is a free desktop VPN client powered by Xray. It features a simple interface, subscription imports, and two connection modes: system proxy and TUN.
+**Ultima VLESS Client** is a free, open-source VPN client built on Xray-core for **Windows, macOS, Linux and Android**. It takes subscriptions and `vless://`, `trojan://`, `ss://`, `hy2://` links, checks servers by real delay, works through the system proxy or TUN, and can send only the sites and apps you choose through the VPN.
 
-The primary platform is **Windows**. Versions for macOS and Linux are also available, but some features may work differently or have limitations on these platforms.
+The primary platform is **Windows**. On macOS and Linux some features work differently or are limited — see [Connection modes](#connection-modes).
 
-## Download and Installation
+<p align="center">
+  <img src="docs/screenshots/desktop-home-en.png" width="860" alt="UltimaVLESS home screen: connected in TUN mode, server list with latency and session statistics">
+</p>
 
-1. Open the [latest release](https://github.com/sliva-name/ultimaVLESS/releases/latest).
-2. Download the file for your operating system:
-   - **Windows** — installer (`UltimaVLESS-Setup-*.exe`) or portable version (`UltimaVLESS-Portable-*.exe`)
-   - **macOS** — `.dmg` or `.zip`
-   - **Linux** — `.AppImage` or `.deb`
-3. Install or launch the application.
-4. Open **UltimaVLESS**.
+Project website: [sliva-name.github.io/ultimaVLESS](https://sliva-name.github.io/ultimaVLESS/)
 
-## Supported Protocols
+## Download
 
-| Protocol | How to Add |
+All files are in the [latest release](https://github.com/sliva-name/ultimaVLESS/releases/latest).
+
+| System | Which file to download |
 | --- | --- |
-| **VLESS** (including Reality and Vision) | `vless://` link, text subscription, or JSON subscription |
-| **Trojan** | `trojan://` link, text subscription, or JSON subscription |
-| **Shadowsocks** | `ss://` link, text subscription, or JSON subscription |
-| **Hysteria 2** | `hy2://` / `hysteria2://` link or JSON subscription |
-| **WireGuard** | JSON subscription only (ready-to-use Xray outbound) |
-| **VMess** | JSON subscription only (ready-to-use Xray configuration) |
+| **Windows 10/11** (x64) | `UltimaVLESS-Setup-<version>.exe` — installer, updates itself. `UltimaVLESS-Portable-<version>.exe` — no install, update by hand |
+| **macOS** | Apple Silicon (M1 and later): `UltimaVLESS-<version>-arm64.dmg`. Intel: `UltimaVLESS-<version>.dmg`. The same builds also come as `.zip` |
+| **Linux** (x64) | `UltimaVLESS-<version>.AppImage` or `ultima-vless-client_<version>_amd64.deb` |
+| **Android 7.0+** | `UltimaVLESS-Android-<version>-arm64-v8a.apk` — for most phones. If unsure, take `-universal.apk` |
 
-Reality and Vision are not separate protocols; they are VLESS configuration options.
+Checksums are next to them: `SHA256SUMS-windows.txt`, `-macos.txt`, `-linux.txt`, `-android.txt`.
 
-**Not supported:** TUIC, `vmess://` links, and other protocols outside the Xray ecosystem.
+> [!NOTE]
+> The builds are not signed with paid certificates. **Windows** may show "Windows protected your PC" — click "More info" → "Run anyway". **macOS** may refuse to open the app or call it damaged — allow it in "System Settings → Privacy & Security" or remove the quarantine flag with `xattr -dr com.apple.quarantine /Applications/UltimaVLESS.app`.
+
+## Quick start
+
+1. Install and open **UltimaVLESS**.
+2. Add servers — on first launch the fields are right on the home screen, later they live in **Sources**:
+   - **subscription** — an `https://…` link from your provider;
+   - **links by hand** — paste any text: `vless://`, `trojan://`, `ss://`, `hy2://` links are picked out of it;
+   - **no servers of your own** — click "Import the mobile list".
+3. Pick a server in the list. The chart button above the list checks the latency of all servers.
+4. Choose the mode at the top of the window — **Proxy** or **TUN**.
+5. Click the **Connect** ring.
+
+The mode can be switched while connected — the client reconnects to the same server in it. To change the server, disconnect first.
 
 ## Features
 
-- Import server lists using a **subscription URL** (text, Base64, or JSON).
-- **Manually add servers** by pasting text containing `vless://`, `trojan://`, `ss://`, `hy2://`, or `hysteria2://` links.
-- Separate server lists for **Subscriptions** and **Manual** entries.
-- Two connection modes:
-  - **Proxy** — traffic is routed through a local proxy. System settings are restored when disconnected.
-  - **TUN** — all traffic is routed through a virtual network adapter (UAC confirmation may be required on Windows).
-- **Routing rules (split tunneling)**: route all traffic through the VPN with exceptions, route only selected websites through the VPN, or route only selected applications through the VPN. You can also specify applications that should always bypass the VPN. See [docs/routing-rules.md](docs/routing-rules.md) for details.
-- **Server ping** — check individual servers or update latency for all servers. By default, the client uses **real latency**: an HTTP request is sent through each server, just like in v2rayN. This ensures that a server that responds but cannot actually route traffic is not incorrectly marked as working. Fast TCP ping can be enabled under **Settings → Network**.
-- **Automatic subscription updates** — refresh server lists from subscriptions.
-- **Automatic server switching** — switch to another server if the current one stops responding.
-- Display of **connection status**, errors, and **session traffic statistics**.
-- **Automatic application updates** via GitHub.
-- **System tray icon** — minimize the application to the background and quickly reopen its window.
-- Interface available in **Russian** and **English**.
+**Servers and subscriptions**
+- HTTPS subscriptions: plain text, Base64 or Xray JSON configs. Turn them off without deleting, refresh them all at once; the client also refreshes them every 10 minutes.
+- If the subscription site is unreachable (for example, under whitelist blocking), a subscription can be fetched **through Yandex Translate**.
+- Links by hand — paste any text, everything else is dropped.
+- Servers are grouped by subscription, each with a country flag, protocol and transport.
 
-## Quick Start
+**Connection**
+- Two modes: **Proxy** (system proxy) and **TUN** (all system traffic through a virtual adapter).
+- Connecting goes through "core start → tunnel check → protected": the client verifies that the tunnel actually reaches the internet.
+- Session statistics: duration, downloaded and uploaded, current speed.
+- **Auto switching**: if the current server stops passing traffic, the client moves to another one and restores the connection.
 
-1. Click **Settings** (the gear icon in the sidebar).
-2. Open the **Sources** tab and add a subscription URL or paste server links manually.
-3. Select a server from the list on the left.
-4. Open the **Network** tab and choose a connection mode — **Proxy** or **TUN**.
-5. Click **Connect**.
+**Server checks**
+- **Real delay** by default: each server gets a temporary Xray and an HTTP request goes through it, like in v2rayN. A server that answers but passes no traffic does not look alive.
+- Fast **TCP ping** — reachability only, under "Settings → Mode and network".
+- Check all servers or one subscription; a check can be stopped.
 
-To switch servers, **disconnect first**, then select another server and connect again.
+**Routing (split tunneling)** — the **Routes** section, details in [docs/routing-rules.md](docs/routing-rules.md) (Russian)
+- Three modes: all traffic through the VPN with exceptions, selected sites only, or selected apps only.
+- Sites and addresses: domains, IPs, subnets, `geosite:` and `geoip:` lists.
+- Apps through the VPN or always direct — pick a program from the list of running ones.
+- Ad and BitTorrent blocking.
 
-## Settings
+**Network, DNS and core**
+- Remote DNS: Cloudflare, Google, Quad9 or your own; a separate DNS strategy for TUN (IPv4 / IPv6).
+- Windows: DNS leak blocking in TUN and a choice of the network adapter the tunnel goes out through.
+- Xray tuning: Mux, XUDP, QUIC (UDP/443) policy, XHTTP connections, TUN MTU, TCP Fast Open, sniffing, TLS fingerprint, domain strategy, log level.
 
-| Tab | Description |
+**Diagnostics**
+- Xray state, the last tunnel check, local proxy reachability, connection recovery.
+- Blocked servers that auto switching skips, and recent events.
+- Windows: finds other VPNs, proxy clients and DPI bypass tools that break TUN — and closes them from the client.
+- Logs: copy them (personal data is stripped) or open the folder.
+
+**Interface**
+- Dark and light themes, or follow the system.
+- Six languages: Russian, English, Chinese, Persian, Spanish and Turkish.
+- Tray icon and auto-updates from GitHub.
+
+## Screenshots
+
+| Light theme | Routes |
 | --- | --- |
-| **Sources** | Subscriptions, manual links, and importing the built-in server list |
-| **Network** | Connection mode (Proxy / TUN), [routing rules](docs/routing-rules.md), and additional options |
-| **Diagnostics** | Automatic server switching, blocked servers, and log copying |
+| ![Home screen in the light theme](docs/screenshots/desktop-home-light-en.png) | ![Routes: routing mode and exclusions](docs/screenshots/desktop-routing-en.png) |
+| **Sources** | **Settings** |
+| ![Sources: subscriptions and manual links](docs/screenshots/desktop-subscriptions-en.png) | ![Mode and network settings: proxy or TUN, adapter for TUN](docs/screenshots/desktop-settings-en.png) |
+| **Xray core** | **Diagnostics** |
+| ![Xray core settings: Mux, UDP and QUIC, MTU](docs/screenshots/desktop-core-en.png) | ![Diagnostics: core state and monitoring](docs/screenshots/desktop-diagnostics-en.png) |
 
-You can switch the interface language using the **RU** / **EN** buttons in the header of the Settings window.
+## Supported protocols
 
-## Connection Modes
+| Protocol | How to add |
+| --- | --- |
+| **VLESS** (including REALITY, Vision, XHTTP) | `vless://` link, text or JSON subscription |
+| **Trojan** | `trojan://` link, text or JSON subscription |
+| **Shadowsocks** | `ss://` link, text or JSON subscription |
+| **Hysteria 2** | `hy2://` / `hysteria2://` link or JSON subscription |
+| **WireGuard** | JSON subscription only (a ready Xray outbound) |
+| **VMess** | JSON subscription only (a ready Xray config) |
 
-**Proxy** — suitable for most users. Does not require administrator privileges. Browsers and many applications automatically use the system proxy settings.
+Transports: RAW (TCP), XHTTP, WebSocket, gRPC, HTTPUpgrade, mKCP. REALITY and Vision are not separate protocols but VLESS settings.
 
-**TUN** — intercepts all network traffic. On **Windows**, the first connection may trigger a UAC prompt (Run as administrator). TUN mode is not available on **macOS** — use Proxy mode instead.
+**Not supported:** TUIC, `vmess://` links, protocols outside Xray, and encrypted Happ links (`happ://crypt…`) — only the Happ app can open them; ask your provider for a regular `https://` link.
 
-## Built-in Default Subscription
+## Connection modes
 
-The application allows you to import a ready-made server list (Mobile White List) with a single click.
+**Proxy** — fits most people. No administrator rights needed: the client turns on the system proxy and restores the previous settings on disconnect. Browsers and most programs pick it up on their own. Programs that ignore the system proxy can use the local SOCKS5 `127.0.0.1:10808` or HTTP `127.0.0.1:10809`.
 
-The button is located under **Settings → Sources**.
+**TUN** — captures all network traffic through a virtual adapter, including programs without proxy support.
+- **Windows** — a UAC prompt appears when connecting.
+- **Linux** — needs a PolicyKit agent (`pkexec`) so the client can ask for rights, or running as root.
+- **macOS** — TUN is not available, use Proxy.
+
+## Where things are
+
+| Section | What is there |
+| --- | --- |
+| **Home** | Server list, latency check, the connect button, session statistics |
+| **Routes** | Routing mode, sites and apps through the VPN or direct, ad and BitTorrent blocking |
+| **Sources** | Subscriptions, manual links, the mobile white list import |
+| **Settings → Mode and network** | Proxy / TUN, DNS leak blocking and the TUN adapter (Windows), ping method |
+| **Settings → DNS** | Remote DNS, DNS in TUN mode |
+| **Settings → Xray core** | Mux, UDP and QUIC, XHTTP, MTU, TLS fingerprint, logs |
+| **Settings → Appearance** | Theme and language |
+| **Settings → About** | Version, updates, source code |
+| **Diagnostics** | Core state, auto switching, events, other VPNs, logs |
+
+Changes in **Routes** and **Settings** are saved with the **Save** button at the bottom and apply on the next connection. While the VPN is connected these sections are read-only — the theme, language and connection mode can be changed at any time.
+
+## Built-in free list
+
+If you have no servers of your own, a public server list (Mobile White List) can be added as a subscription in one click: **Import the mobile list** on the empty home screen, or **Sources → Mobile white list → Open preview** — the list also opens in the browser.
 
 ## Troubleshooting
 
-| Problem | What to Try |
+| Problem | What to try |
 | --- | --- |
-| TUN requests administrator privileges | This is normal on Windows. Confirm the UAC prompt or switch to **Proxy** mode. |
-| TUN fails to start until unnecessary network adapters are disabled (Windows) | Go to **Settings → Network → TUN Network Adapter**. Select the adapter actually used for your internet connection (usually Wi-Fi or your primary Ethernet adapter), save the settings, and reconnect. |
-| Another VPN, proxy client, or DPI bypass tool is running (Windows) | When connecting in TUN mode, UltimaVLESS displays detected applications in the **Diagnostics** tab. Close them using the **Close** button and reconnect. Services (WireGuard, NordVPN, etc.) are not stopped automatically — disconnect the VPN in the corresponding application. |
-| Servers failed to load | Check the subscription URL in your browser and make sure you have an active internet connection. |
-| Ping is not displayed | The real latency check failed: no traffic is currently passing through the server (the server is unavailable or blocked by your ISP). Select a server with a displayed latency. |
-| Need help | Open **Settings → Diagnostics** and copy the logs or open the log folder. |
+| TUN asks for administrator rights | This is normal on Windows — confirm UAC or switch to **Proxy**. On Linux, install a PolicyKit agent (`pkexec`) |
+| TUN only comes up after disabling extra network adapters (Windows) | **Settings → Mode and network → "Network adapter for TUN"** — pick the adapter your internet actually goes through (usually Wi-Fi or the main Ethernet), save and reconnect |
+| Another VPN, proxy client or DPI bypass tool is running (Windows) | The client lists such programs when connecting in TUN and under **Diagnostics → "Other VPN and proxy apps"** — close them with **Close** and reconnect. Services (WireGuard, NordVPN, etc.) are not closed automatically — turn off the VPN in that program |
+| Sites open in Proxy but not in TUN on a slow server | Lower the **TUN MTU** in "Settings → Xray core" (for example, to 1280) |
+| A subscription does not load | Check the link in a browser and your internet. If the subscription site is blocked, turn on **"Fetch through Yandex Translate"** when adding it — only for public lists: Yandex sees the link and the servers |
+| "This is an encrypted Happ link" | Only Happ opens such links — ask your provider for a regular `https://` link |
+| A server shows no latency | Real delay failed: no traffic passes through the server right now (it is down or blocked by your ISP). Pick a server with a latency |
+| Need help | **Diagnostics → Logs** — copy the logs and attach them to an [issue](https://github.com/sliva-name/ultimaVLESS/issues) |
 
 ## Android
 
-The [`mobile/`](mobile/README.md) directory contains the Android version, featuring the same interface and connection logic: subscriptions, manual links, automatic server switching, ping, and routing rules.
+<p align="center">
+  <img src="docs/screenshots/android-home-en.png" width="250" alt="Android: home screen, connected">
+  &nbsp;
+  <img src="docs/screenshots/android-servers-en.png" width="250" alt="Android: server list with latency">
+  &nbsp;
+  <img src="docs/screenshots/android-settings-en.png" width="250" alt="Android: settings">
+</p>
 
-TUN mode is called **VPN** on Android and uses the system `VpnService`.
+The Android version is the same client: subscriptions, manual links, real delay, auto switching, routing rules and Xray tuning. APKs are in the [releases](https://github.com/sliva-name/ultimaVLESS/releases/latest), and updates arrive in the app: a new version downloads in the background and installs through the system installer.
 
-The **Proxy Only** mode opens local SOCKS5/HTTP proxies, while applications for routing rules are selected from the installed apps.
+How it differs from desktop:
+- **VPN** mode instead of TUN — the system `VpnService`; Android asks for permission on the first connection.
+- **Proxy only** mode — no VPN, local SOCKS5 `127.0.0.1:10808` and HTTP `127.0.0.1:10809` for apps where the proxy is set by hand.
+- Apps for routing are picked from the installed ones (by package name).
+- A notification with the server, mode, speed and a "Disconnect" button, a Quick Settings tile and Always-on VPN support.
 
-The Android version also supports a Quick Settings tile and Always-on VPN.
+How the mobile version works and how to build it — in [mobile/README.md](mobile/README.md) (Russian).
 
-Currently, the APK must be built from source. See the instructions in [mobile/README.md](mobile/README.md).
+## Building from source
+
+Requires Node.js 22.
+
+```bash
+npm ci
+```
+
+```bash
+npm run prepare:xray:win
+```
+
+```bash
+npm run dev
+```
+
+`prepare:xray:*` downloads Xray-core and `geoip.dat` / `geosite.dat` into `resources/bin` (for macOS and Linux — `prepare:xray:mac` and `prepare:xray:linux`). `npm run dev` starts the client in development mode. Installers are built with `npm run build` (Windows), `npm run build:mac`, `npm run build:linux`, and land in `release/<version>/`. The same checks as CI: `npm run verify:ci`.
 
 ## License
 
