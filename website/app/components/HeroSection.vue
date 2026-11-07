@@ -1,55 +1,93 @@
 <script setup lang="ts">
-defineProps<{
-  downloadUrl: string;
-}>();
+import { ArrowRight, Check, Download } from '@lucide/vue';
+import { heroHighlights, siteLinks } from '~/data/landing';
 
-const trustItems = ['Open source', 'Windows Setup и Portable', 'APK для Android', 'VLESS Reality/Vision'];
+const { release, platform, findAsset } = useRelease();
+
+/** Before hydration (and on iOS or unknown systems) the button leads to the platform list. */
+const primary = computed(() => {
+  if (!platform.value) {
+    return { href: '#download', label: 'Скачать бесплатно', external: false };
+  }
+  const file = platform.value.files[0]!;
+  const asset = findAsset(file);
+  return {
+    href: asset?.url ?? siteLinks.download,
+    label: `Скачать для ${platform.value.name}`,
+    external: !asset,
+  };
+});
+
+const caption = computed(() => {
+  if (!platform.value) return 'Windows · macOS · Linux · Android';
+  const file = platform.value.files[0]!;
+  const asset = findAsset(file);
+  if (!release.value || !asset) return `${file.label} · последняя версия на GitHub`;
+  return `${file.label} · ${formatSize(asset.size)} · версия ${release.value.version}`;
+});
 </script>
 
 <template>
-  <section class="mx-auto grid max-w-7xl items-center gap-10 px-4 pb-14 pt-10 sm:px-6 sm:pb-20 sm:pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(26rem,0.95fr)] lg:gap-12 lg:px-8 lg:pb-28 lg:pt-20">
-    <div class="min-w-0">
-      <p class="max-w-[19rem] text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300 sm:max-w-none sm:text-sm sm:tracking-[0.28em]">
-        Бесплатный Xray/VLESS VPN-клиент
-      </p>
-      <h1 class="mt-4 max-w-4xl text-4xl font-black tracking-tight text-white sm:mt-5 sm:text-6xl lg:text-7xl">
-        UltimaVLESS с готовыми бесплатными конфигами внутри
-      </h1>
-      <p class="mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:mt-6 sm:text-xl sm:leading-8">
-        Скачайте VPN-клиент для Windows, macOS, Linux и Android. Он умеет
-        импортировать подписки, работать через системный прокси или TUN (на
-        Android — через системный VPN) и сразу предлагает бесплатный список
-        конфигов для быстрого старта.
-      </p>
+  <section
+    id="top"
+    class="relative overflow-hidden bg-[radial-gradient(70%_55%_at_50%_0%,var(--color-acc-soft),transparent)]"
+  >
+    <div class="mx-auto max-w-6xl px-4 pt-14 pb-20 sm:px-6 sm:pt-20 sm:pb-28 lg:px-8">
+      <div class="mx-auto max-w-4xl text-center">
+        <ul
+          class="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[13px] font-medium text-fg2"
+          aria-label="Коротко о клиенте"
+        >
+          <li v-for="item in heroHighlights" :key="item" class="flex items-center gap-1.5">
+            <Check class="h-4 w-4 text-ok" aria-hidden="true" />
+            {{ item }}
+          </li>
+        </ul>
 
-      <div class="mt-8 flex flex-col gap-3 sm:mt-9 sm:flex-row">
-        <a
-          class="inline-flex w-full items-center justify-center rounded-full bg-emerald-400 px-5 py-3 text-center text-base font-bold text-slate-950 shadow-lg shadow-emerald-500/25 transition hover:bg-emerald-300 sm:w-auto sm:px-6"
-          :href="downloadUrl"
-          rel="noopener"
-          target="_blank"
+        <h1
+          class="mt-7 text-4xl leading-[1.08] font-semibold tracking-[-0.035em] text-balance text-fg sm:text-6xl"
         >
-          Скачать последнюю версию
-        </a>
-        <a
-          class="inline-flex w-full items-center justify-center rounded-full border border-white/15 bg-white/5 px-5 py-3 text-center text-base font-bold text-white transition hover:border-cyan-300/60 hover:bg-cyan-300/10 sm:w-auto sm:px-6"
-          href="#free-configs"
-        >
-          Как получить конфиги
-        </a>
+          Бесплатный <span class="whitespace-nowrap">VPN-клиент</span> на&nbsp;Xray с&nbsp;конфигами внутри
+        </h1>
+        <p class="mx-auto mt-6 max-w-2xl text-base leading-7 text-pretty text-fg2 sm:text-lg sm:leading-8">
+          UltimaVLESS принимает подписки и ссылки vless://, trojan://, ss://, hy2://, честно
+          проверяет серверы и работает через прокси или TUN. Своих серверов нет — импортируйте
+          бесплатный список прямо в приложении.
+        </p>
+
+        <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <a
+            class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-acc-fill px-6 text-base font-semibold text-white transition-colors hover:bg-acc-fill-hover sm:w-auto"
+            :href="primary.href"
+            :rel="primary.external ? 'noopener' : undefined"
+            :target="primary.external ? '_blank' : undefined"
+          >
+            <Download class="h-5 w-5" aria-hidden="true" />
+            {{ primary.label }}
+          </a>
+          <a
+            v-if="platform"
+            class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-line bg-s1 px-6 text-base font-medium text-fg transition-colors hover:border-line2 hover:bg-s2 sm:w-auto"
+            href="#download"
+          >
+            Все платформы
+            <ArrowRight class="h-4 w-4 text-fg3" aria-hidden="true" />
+          </a>
+          <a
+            v-else
+            class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-line bg-s1 px-6 text-base font-medium text-fg transition-colors hover:border-line2 hover:bg-s2 sm:w-auto"
+            :href="siteLinks.repository"
+            rel="noopener"
+            target="_blank"
+          >
+            <GithubMark class="h-4 w-4" />
+            Исходный код
+          </a>
+        </div>
+        <p class="mt-4 text-[13px] text-fg3">{{ caption }}</p>
       </div>
 
-      <ul class="mt-7 flex flex-wrap gap-2 text-sm text-slate-300 sm:mt-8 sm:gap-3" aria-label="Ключевые преимущества">
-        <li
-          v-for="item in trustItems"
-          :key="item"
-          class="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 sm:px-4"
-        >
-          {{ item }}
-        </li>
-      </ul>
+      <ProductShowcase class="mt-14 sm:mt-20" />
     </div>
-
-    <AppPreview />
   </section>
 </template>

@@ -1,26 +1,27 @@
 <script setup lang="ts">
-import { siteLinks } from '~/data/landing';
-
 useLandingSeo();
 </script>
 
 <template>
-  <div class="isolate min-h-screen overflow-hidden bg-slate-950 text-white">
-    <div
-      class="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.16),transparent_22rem),radial-gradient(circle_at_top_right,rgba(6,182,212,0.14),transparent_24rem)] sm:bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.18),transparent_32rem),radial-gradient(circle_at_top_right,rgba(6,182,212,0.16),transparent_28rem)]"
-    />
+  <div class="isolate min-h-screen bg-canvas text-fg">
+    <a
+      class="sr-only z-50 rounded-lg bg-acc-fill px-4 py-2 text-white focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+      href="#content"
+    >
+      Перейти к содержимому
+    </a>
+    <SiteHeader />
 
-    <SiteHeader :download-url="siteLinks.download" />
-
-    <main>
-      <HeroSection :download-url="siteLinks.download" />
-      <FreeConfigsSection />
+    <main id="content">
+      <HeroSection />
       <FeatureSection />
-      <QuickStartSection />
-      <DownloadSection :download-url="siteLinks.download" />
+      <StartSection />
+      <ScreensSection />
+      <DownloadSection />
       <FaqSection />
+      <StarSection />
     </main>
 
-    <SiteFooter :repository-url="siteLinks.repository" />
+    <SiteFooter />
   </div>
 </template>

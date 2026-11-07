@@ -4,7 +4,9 @@ export const useLandingSeo = () => {
   const config = useRuntimeConfig();
   const siteUrl = config.public.siteUrl.replace(/\/$/, '');
   const pageUrl = `${siteUrl}/`;
-  const ogImage = `${siteUrl}/og.svg`;
+  // PNG, not SVG: Telegram, VK and X do not show SVG previews.
+  const ogImage = `${siteUrl}/og.png`;
+  const ogImageAlt = 'UltimaVLESS — бесплатный VPN-клиент на Xray для Windows, macOS, Linux и Android';
 
   if (import.meta.server) {
     useSeoMeta({
@@ -20,10 +22,15 @@ export const useLandingSeo = () => {
       ogSiteName: 'UltimaVLESS',
       ogLocale: 'ru_RU',
       ogImage,
+      ogImageType: 'image/png',
+      ogImageWidth: 1200,
+      ogImageHeight: 630,
+      ogImageAlt,
       twitterCard: 'summary_large_image',
       twitterTitle: seo.title,
       twitterDescription: seo.description,
       twitterImage: ogImage,
+      twitterImageAlt: ogImageAlt,
     });
   }
 
