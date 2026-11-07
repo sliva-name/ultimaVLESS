@@ -38,7 +38,7 @@ export const useLandingSeo = () => {
             '@type': 'SoftwareApplication',
             name: 'UltimaVLESS',
             applicationCategory: 'SecurityApplication',
-            operatingSystem: 'Windows, macOS, Linux',
+            operatingSystem: 'Windows, macOS, Linux, Android',
             description: seo.description,
             softwareVersion: '7.4.1',
             offers: {

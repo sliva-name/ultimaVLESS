@@ -3,7 +3,7 @@ defineProps<{
   downloadUrl: string;
 }>();
 
-const trustItems = ['Open source', 'Windows Setup и Portable', 'VLESS Reality/Vision'];
+const trustItems = ['Open source', 'Windows Setup и Portable', 'APK для Android', 'VLESS Reality/Vision'];
 </script>
 
 <template>
@@ -16,9 +16,10 @@ const trustItems = ['Open source', 'Windows Setup и Portable', 'VLESS Reality/V
         UltimaVLESS с готовыми бесплатными конфигами внутри
       </h1>
       <p class="mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:mt-6 sm:text-xl sm:leading-8">
-        Скачайте настольный VPN-клиент для Windows, macOS и Linux. Он умеет
-        импортировать подписки, работать через системный прокси или TUN и сразу
-        предлагает бесплатный список конфигов для быстрого старта.
+        Скачайте VPN-клиент для Windows, macOS, Linux и Android. Он умеет
+        импортировать подписки, работать через системный прокси или TUN (на
+        Android — через системный VPN) и сразу предлагает бесплатный список
+        конфигов для быстрого старта.
       </p>
 
       <div class="mt-8 flex flex-col gap-3 sm:mt-9 sm:flex-row">

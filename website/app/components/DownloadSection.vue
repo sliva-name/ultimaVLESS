@@ -14,10 +14,10 @@ defineProps<{
       <SectionHeading
         eyebrow="Скачать UltimaVLESS"
         title="Выберите сборку для своей системы"
-        description="Все актуальные файлы лежат в последнем релизе GitHub. Для Windows доступны установщик и portable-версия."
+        description="Все актуальные файлы лежат в последнем релизе GitHub. Для Windows доступны установщик и portable-версия, для Android — APK."
       />
 
-      <div class="mt-8 grid gap-3 sm:mt-10 sm:gap-4 md:grid-cols-3">
+      <div class="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <article
           v-for="item in downloads"
           :key="item.os"

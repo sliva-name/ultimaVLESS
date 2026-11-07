@@ -6,13 +6,14 @@ export const siteLinks = {
 export const seo = {
   title: 'UltimaVLESS - бесплатный VLESS VPN-клиент с конфигами внутри',
   description:
-    'Скачайте UltimaVLESS: бесплатный Xray/VLESS VPN-клиент для Windows, macOS и Linux с импортом готовых бесплатных конфигов прямо в приложении.',
+    'Скачайте UltimaVLESS: бесплатный Xray/VLESS VPN-клиент для Windows, macOS, Linux и Android с импортом готовых бесплатных конфигов прямо в приложении.',
   keywords: [
     'UltimaVLESS',
     'VLESS VPN клиент',
     'Xray VPN',
     'бесплатные VLESS конфиги',
     'VPN для Windows',
+    'VPN для Android',
     'Reality Vision VPN',
     'TUN VPN клиент',
   ],
@@ -52,7 +53,7 @@ export const features = [
 ];
 
 export const quickStartSteps = [
-  'Скачайте установщик или portable-версию с GitHub Releases.',
+  'Скачайте установщик, portable-версию или APK для Android с GitHub Releases.',
   'Откройте «Настройки» -> «Источники» и импортируйте бесплатный Mobile White List.',
   'Выберите сервер, проверьте пинг и нажмите «Подключиться».',
 ];
@@ -73,6 +74,11 @@ export const downloads = [
     title: 'AppImage / DEB',
     text: 'Готовые сборки для быстрого запуска на популярных дистрибутивах.',
   },
+  {
+    os: 'Android 7.0+',
+    title: 'APK',
+    text: 'Большинству телефонов подходит файл …-arm64-v8a.apk. Если не уверены, берите …-universal.apk: он работает на любом устройстве, но весит больше.',
+  },
 ];
 
 export const faq = [
@@ -90,5 +96,10 @@ export const faq = [
     question: 'Чем отличается Proxy от TUN?',
     answer:
       'Proxy включает системный прокси и чаще всего не требует прав администратора. TUN направляет весь системный трафик через виртуальный адаптер.',
+  },
+  {
+    question: 'Есть ли версия для Android?',
+    answer:
+      'Да, для Android 7.0 и новее. Скачайте APK из последнего релиза на GitHub: arm64-v8a подходит большинству телефонов, universal — если не уверены. Вместо TUN там работает системный VPN, есть и режим «Только прокси». Обновления приходят прямо в приложении.',
   },
 ];
