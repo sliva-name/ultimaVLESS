@@ -40,7 +40,6 @@ export const useLandingSeo = () => {
             applicationCategory: 'SecurityApplication',
             operatingSystem: 'Windows, macOS, Linux, Android',
             description: seo.description,
-            softwareVersion: '7.4.1',
             offers: {
               '@type': 'Offer',
               price: '0',
