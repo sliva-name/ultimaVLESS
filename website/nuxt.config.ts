@@ -10,7 +10,11 @@ const baseURL =
 export default defineNuxtConfig({
   compatibilityDate: '2026-06-14',
   devtools: { enabled: true },
-  css: ['~/assets/css/main.css'],
+  css: [
+    '@fontsource-variable/inter',
+    '@fontsource-variable/jetbrains-mono',
+    '~/assets/css/main.css',
+  ],
   vite: {
     plugins: [tailwindcss()],
   },
@@ -32,7 +36,16 @@ export default defineNuxtConfig({
         { rel: 'apple-touch-icon', href: `${baseURL}brand/logo.svg` },
       ],
       meta: [
-        { name: 'theme-color', content: '#020617' },
+        {
+          name: 'theme-color',
+          content: '#0e0f11',
+          media: '(prefers-color-scheme: dark)',
+        },
+        {
+          name: 'theme-color',
+          content: '#f3f3f0',
+          media: '(prefers-color-scheme: light)',
+        },
         { name: 'color-scheme', content: 'dark light' },
       ],
     },

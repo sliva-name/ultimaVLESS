@@ -1,59 +1,62 @@
 <script setup lang="ts">
-defineProps<{
-  downloadUrl: string;
-}>();
+import { Star } from '@lucide/vue';
+import { siteLinks } from '~/data/landing';
 
 const navItems = [
   { label: 'Возможности', href: '#features' },
-  { label: 'Конфиги', href: '#free-configs' },
+  { label: 'Как начать', href: '#start' },
+  { label: 'Скриншоты', href: '#screens' },
   { label: 'Скачать', href: '#download' },
+  { label: 'Вопросы', href: '#faq' },
 ];
 
 const {
   app: { baseURL },
 } = useRuntimeConfig();
 const logoUrl = `${baseURL}brand/logo.svg`;
+
+const { stars } = useRelease();
 </script>
 
 <template>
-  <header
-    class="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:flex-nowrap lg:px-8"
-    aria-label="Главная навигация"
-  >
-    <NuxtLink class="group flex items-center gap-3" to="/" aria-label="UltimaVLESS">
-      <img
-        class="h-9 w-9 rounded-2xl shadow-lg shadow-emerald-500/20 transition-transform group-hover:scale-105 sm:h-10 sm:w-10"
-        :src="logoUrl"
-        alt=""
-        width="40"
-        height="40"
-      />
-      <span class="text-base font-semibold tracking-tight text-white sm:text-lg">
-        UltimaVLESS
-      </span>
-    </NuxtLink>
-
-    <nav
-      class="order-3 -mx-4 flex w-[calc(100%+2rem)] gap-2 overflow-x-auto px-4 pb-1 text-sm text-slate-300 sm:-mx-6 sm:w-[calc(100%+3rem)] sm:px-6 md:order-none md:mx-0 md:w-auto md:items-center md:gap-7 md:overflow-visible md:px-0 md:pb-0"
-      aria-label="Разделы сайта"
-    >
-      <a
-        v-for="item in navItems"
-        :key="item.href"
-        class="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 transition-colors hover:text-white md:border-0 md:bg-transparent md:px-0 md:py-0"
-        :href="item.href"
-      >
-        {{ item.label }}
+  <header class="sticky top-0 z-40 border-b border-line bg-canvas/85 backdrop-blur-md">
+    <div class="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6 lg:px-8">
+      <a class="flex shrink-0 items-center gap-2.5" href="#top" aria-label="UltimaVLESS — в начало">
+        <img class="h-8 w-8" :src="logoUrl" alt="" width="32" height="32" />
+        <span class="text-[15px] font-semibold tracking-tight text-fg">UltimaVLESS</span>
       </a>
-    </nav>
 
-    <a
-      class="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-300 hover:bg-emerald-400/20"
-      :href="downloadUrl"
-      rel="noopener"
-      target="_blank"
-    >
-      Скачать
-    </a>
+      <nav class="hidden flex-1 items-center justify-center gap-1 lg:flex" aria-label="Разделы сайта">
+        <a
+          v-for="item in navItems"
+          :key="item.href"
+          class="rounded-md px-3 py-2 text-sm text-fg2 transition-colors hover:bg-s2 hover:text-fg"
+          :href="item.href"
+        >
+          {{ item.label }}
+        </a>
+      </nav>
+
+      <div class="ml-auto flex items-center gap-2 lg:ml-0">
+        <a
+          class="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-s1 px-3 text-sm font-medium text-fg2 transition-colors hover:border-line2 hover:text-fg"
+          :href="siteLinks.repository"
+          rel="noopener"
+          target="_blank"
+          :aria-label="stars === null ? 'UltimaVLESS на GitHub' : `UltimaVLESS на GitHub, звёзд: ${stars}`"
+        >
+          <GithubMark class="h-4 w-4" />
+          <Star class="hidden h-3.5 w-3.5 sm:block" aria-hidden="true" />
+          <span v-if="stars !== null" class="font-mono text-[13px] tabular-nums">{{ stars }}</span>
+          <span v-else class="hidden sm:inline">GitHub</span>
+        </a>
+        <a
+          class="inline-flex h-9 items-center rounded-lg bg-acc-fill px-4 text-sm font-semibold text-white transition-colors hover:bg-acc-fill-hover"
+          href="#download"
+        >
+          Скачать
+        </a>
+      </div>
+    </div>
   </header>
 </template>
