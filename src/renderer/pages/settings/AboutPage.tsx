@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Code, Download, Tag } from 'lucide-react';
+import { AlertTriangle, Code, Download, Star, Tag } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BUNDLED_XRAY_VERSION } from '@/shared/constants';
 import { useUpdateStatus } from '@/renderer/hooks/useUpdateStatus';
+import { openRepoForStar } from '@/renderer/hooks/useStarPrompt';
+import { REPO_URL } from '@/renderer/utils/starPrompt';
 import {
   Button,
   Page,
@@ -12,8 +14,6 @@ import {
   StatusPill,
   Tile,
 } from '@/renderer/components/ui';
-
-const REPO_URL = 'https://github.com/sliva-name/ultimaVLESS';
 
 /** «О программе»: installed version, the update and the source code. */
 export const AboutPage: React.FC = () => {
@@ -125,6 +125,16 @@ export const AboutPage: React.FC = () => {
                 }
               >
                 {t('pages.about.open')}
+              </Button>
+            }
+          />
+          <Row
+            tile={<Tile icon={Star} tone="warn" />}
+            label={t('pages.about.starLabel')}
+            hint={t('pages.about.starHint')}
+            trailing={
+              <Button size="sm" icon={Star} onClick={openRepoForStar}>
+                {t('pages.about.starAction')}
               </Button>
             }
           />

@@ -121,7 +121,13 @@
       "recovering": "正在恢复连接 · 第 {{count}} 次尝试",
       "recoveryStopped": "在 {{count}} 次尝试后停止恢复",
       "lastReason": "上次原因：{{reason}}",
-      "offlineHint": "即使没有 VPN 也无法访问互联网。请检查 Wi-Fi 或网线，然后按下环形按钮。"
+      "offlineHint": "即使没有 VPN 也无法访问互联网。请检查 Wi-Fi 或网线，然后按下环形按钮。",
+      "star": {
+        "title": "喜欢 UltimaVLESS 吗？",
+        "text": "在 GitHub 上点个星——这能帮助更多人发现这个项目。",
+        "action": "点个星",
+        "dismiss": "隐藏"
+      }
     },
     "empty": {
       "title": "添加您的第一个服务器",
@@ -177,7 +183,10 @@
         "updateReady": "版本 {{version}} 已下载",
         "updateReadyHint": "重启后安装",
         "sourceCode": "源代码",
-        "open": "打开"
+        "open": "打开",
+        "starLabel": "支持项目",
+        "starHint": "GitHub 上的星标能帮助更多人找到 UltimaVLESS",
+        "starAction": "点个星"
       },
       "routing": {
         "title": "路由",

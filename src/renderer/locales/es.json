@@ -129,7 +129,13 @@
       "recovering": "Restaurando la conexión · intento {{count}}",
       "recoveryStopped": "Recuperación detenida tras {{count}} intentos",
       "lastReason": "Último motivo: {{reason}}",
-      "offlineHint": "Sin acceso a internet incluso sin la VPN. Comprueba el Wi-Fi o el cable y, a continuación, pulsa el anillo."
+      "offlineHint": "Sin acceso a internet incluso sin la VPN. Comprueba el Wi-Fi o el cable y, a continuación, pulsa el anillo.",
+      "star": {
+        "title": "¿Te gusta UltimaVLESS?",
+        "text": "Dale una estrella en GitHub: así otros encontrarán el proyecto más fácilmente.",
+        "action": "Dar una estrella",
+        "dismiss": "Ocultar"
+      }
     },
     "empty": {
       "title": "Añade tu primer servidor",
@@ -185,7 +191,10 @@
         "updateReady": "La versión {{version}} está descargada",
         "updateReadyHint": "Se instala al reiniciar",
         "sourceCode": "Código fuente",
-        "open": "Abrir"
+        "open": "Abrir",
+        "starLabel": "Apoyar el proyecto",
+        "starHint": "Una estrella en GitHub ayuda a que otros encuentren UltimaVLESS",
+        "starAction": "Dar una estrella"
       },
       "routing": {
         "title": "Enrutamiento",

@@ -27,6 +27,7 @@ import { localizeError } from '@/shared/localizeError';
 import logoUrl from '@/renderer/assets/logo.svg';
 import { Dial } from '@/renderer/components/Dial';
 import { UpdateCard } from './UpdateCard';
+import { StarCard } from './StarCard';
 import { formatDuration, useFormat } from '@/renderer/hooks/useFormat';
 import { useSessionDuration } from '@/renderer/hooks/useSessionDuration';
 import { describeServer, PingBadge, ServerFlag } from './serverParts';
@@ -479,6 +480,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       </header>
 
       <UpdateCard className="mx-4 mb-1" />
+      <StarCard
+        connected={connected}
+        connectedAt={trafficSnapshot?.connectedAt ?? 0}
+        className="mx-4 mb-1"
+      />
 
       <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         <div className="min-h-full flex flex-col px-4 pb-4">
