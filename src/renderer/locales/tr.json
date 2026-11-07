@@ -125,7 +125,13 @@
       "recovering": "Bağlantı restore ediliyor · deneme {{count}}",
       "recoveryStopped": "{{count}} denemeden sonra kurtarma durduruldu",
       "lastReason": "Son neden: {{reason}}",
-      "offlineHint": "VPN olmadan bile internet erişimi yok. Wi-Fi veya kabloyu kontrol edin, ardından halkaya basın."
+      "offlineHint": "VPN olmadan bile internet erişimi yok. Wi-Fi veya kabloyu kontrol edin, ardından halkaya basın.",
+      "star": {
+        "title": "UltimaVLESS'i beğendiniz mi?",
+        "text": "GitHub'da yıldız verin — bu, başkalarının projeyi bulmasına yardımcı olur.",
+        "action": "Yıldız ver",
+        "dismiss": "Gizle"
+      }
     },
     "empty": {
       "title": "İlk sunucunuzu ekleyin",
@@ -181,7 +187,10 @@
         "updateReady": "Sürüm {{version}} indirildi",
         "updateReadyHint": "Yeniden başlatıldığında yüklenir",
         "sourceCode": "Kaynak kodu",
-        "open": "Aç"
+        "open": "Aç",
+        "starLabel": "Projeyi destekleyin",
+        "starHint": "GitHub'daki bir yıldız, başkalarının UltimaVLESS'i bulmasına yardımcı olur",
+        "starAction": "Yıldız ver"
       },
       "routing": {
         "title": "Yönlendirme",

@@ -10,6 +10,7 @@ import { useRefreshSubscriptions } from '@/renderer/hooks/useRefreshSubscription
 import { ServerPanel } from '@/renderer/components/servers/ServerPanel';
 import { Stage } from '@/renderer/components/home/Stage';
 import { EmptyStage } from '@/renderer/components/home/EmptyStage';
+import { StarCard } from '@/renderer/components/home/StarCard';
 import { TunConflictNotice } from '@/renderer/components/TunConflictNotice';
 import type { Section } from '@/renderer/components/shell/Rail';
 
@@ -71,10 +72,14 @@ export const HomePage: React.FC<HomePageProps> = ({
       />
 
       <main className="flex-[999_1_400px] min-w-0 min-h-0 overflow-y-auto flex flex-col bg-canvas">
-        <div className="shrink-0 px-8 pt-4 empty:hidden">
+        <div className="shrink-0 px-8 pt-4 flex flex-col gap-3 empty:hidden">
           <TunConflictNotice
             check={tunConflicts}
             connectionMode={connectionMode}
+          />
+          <StarCard
+            connected={isConnected}
+            connectedAt={snapshot.traffic?.connectedAt ?? 0}
           />
         </div>
         {servers.length === 0 ? (

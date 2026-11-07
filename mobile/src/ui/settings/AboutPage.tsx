@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Code, Download, Tag } from 'lucide-react';
+import { AlertTriangle, Code, Download, Star, Tag } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { UpdateStatus } from '@/shared/ipc';
 import { BUNDLED_XRAY_VERSION } from '@/shared/constants';
+import { openRepoForStar } from '@/renderer/hooks/useStarPrompt';
+import { REPO_URL } from '@/renderer/utils/starPrompt';
 import {
   Foot,
   NavChevron,
@@ -13,8 +15,6 @@ import {
   RowGroup,
   Tile,
 } from './kit';
-
-const REPO_URL = 'https://github.com/sliva-name/ultimaVLESS';
 
 interface AboutPageProps {
   appVersion: string;
@@ -125,6 +125,14 @@ export const AboutPage: React.FC<AboutPageProps> = ({
                   console.error('Failed to open the repository', error);
                 });
             }}
+          />
+          <Row
+            tile={<Tile icon={Star} tone="warn" />}
+            label={t('pages.about.starLabel')}
+            hint={t('pages.about.starHint')}
+            trailing={<NavChevron />}
+            wrap
+            onClick={openRepoForStar}
           />
         </RowGroup>
       </Panel>

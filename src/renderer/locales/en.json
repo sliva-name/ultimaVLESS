@@ -125,7 +125,13 @@
       "recovering": "Restoring the connection · attempt {{count}}",
       "recoveryStopped": "Recovery stopped after {{count}} attempts",
       "lastReason": "Last reason: {{reason}}",
-      "offlineHint": "No internet access even without the VPN. Check Wi-Fi or the cable, then press the ring."
+      "offlineHint": "No internet access even without the VPN. Check Wi-Fi or the cable, then press the ring.",
+      "star": {
+        "title": "Enjoying UltimaVLESS?",
+        "text": "Star it on GitHub — it helps others find the project.",
+        "action": "Give a star",
+        "dismiss": "Hide"
+      }
     },
     "empty": {
       "title": "Add your first server",
@@ -181,7 +187,10 @@
         "updateReady": "Version {{version}} is downloaded",
         "updateReadyHint": "Installs on restart",
         "sourceCode": "Source code",
-        "open": "Open"
+        "open": "Open",
+        "starLabel": "Support the project",
+        "starHint": "A GitHub star helps others find UltimaVLESS",
+        "starAction": "Give a star"
       },
       "routing": {
         "title": "Routing",
