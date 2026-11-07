@@ -1,30 +1,118 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
+/*
+ * Design tokens of the app's 2026 redesign: dark «Графит» by default, light
+ * «Бумага» when the system asks for it (see src/renderer/index.css and
+ * desktop.css). Utilities read them as variables, so the light block below
+ * only swaps the values.
+ */
 @theme {
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans:
+    'Inter Variable', Inter, 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono:
+    'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Consolas,
+    monospace;
+
+  --color-canvas: #0e0f11;
+  --color-s1: #151619;
+  --color-s2: #1b1d21;
+  --color-s3: #23262b;
+  --color-line: #2a2d33;
+  --color-line2: #363a41;
+  --color-fg: #ecedef;
+  --color-fg2: #a9adb6;
+  --color-fg3: #80858f;
+  --color-acc: #8fa3ff;
+  --color-acc-fill: #4a63e7;
+  --color-acc-fill-hover: #5b73f0;
+  --color-acc-soft: #1c2340;
+  --color-acc-line: #34407a;
+  --color-ok: #4ade9a;
+  --color-ok-soft: #0f2a1f;
+  --color-ok-line: #1f5a40;
+  --color-warn: #f5b544;
+  --color-warn-soft: #2b2110;
+  --color-warn-line: #5e4718;
+  --color-lat1: #4ade9a;
+  --color-lat1-soft: rgb(74 222 154 / 0.12);
+  --color-lat2: #facc15;
+  --color-lat2-soft: rgb(250 204 21 / 0.12);
+  --color-lat3: #fb923c;
+  --color-lat3-soft: rgb(251 146 60 / 0.13);
+  --color-shot: #0b0c0e;
+
+  --shadow-frame: 0 24px 64px -24px rgb(0 0 0 / 0.7);
+  --shadow-phone: 0 24px 48px -16px rgb(0 0 0 / 0.75);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --color-canvas: #f3f3f0;
+    --color-s1: #ffffff;
+    --color-s2: #f8f8f6;
+    --color-s3: #eeeeea;
+    --color-line: #e2e2dd;
+    --color-line2: #cfcfc8;
+    --color-fg: #16171a;
+    --color-fg2: #4e5259;
+    --color-fg3: #6a6e75;
+    --color-acc: #3d55d6;
+    --color-acc-fill: #3d55d6;
+    --color-acc-fill-hover: #3048c4;
+    --color-acc-soft: #e9edff;
+    --color-acc-line: #b9c4f5;
+    --color-ok: #0f7a55;
+    --color-ok-soft: #e2f4eb;
+    --color-ok-line: #a9dcc3;
+    --color-warn: #8a5300;
+    --color-warn-soft: #fff3dc;
+    --color-warn-line: #ebcb8f;
+    --color-lat1: #0f7a55;
+    --color-lat1-soft: #e2f4eb;
+    --color-lat2: #7a5b00;
+    --color-lat2-soft: #fff4cc;
+    --color-lat3: #a04a00;
+    --color-lat3-soft: #ffe9d9;
+    --color-shot: #e6e6e1;
+    --shadow-frame: 0 24px 64px -28px rgb(16 17 20 / 0.28);
+    --shadow-phone: 0 24px 48px -20px rgb(16 17 20 / 0.45);
+  }
 }
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+
   html {
     scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
   }
 
   body {
     min-width: 320px;
-    background: #020617;
+    background: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   :focus-visible {
-    outline: 2px solid #67e8f9;
-    outline-offset: 4px;
+    outline: 2px solid var(--color-acc);
+    outline-offset: 2px;
   }
 
   ::selection {
-    background: rgba(52, 211, 153, 0.35);
-    color: #ffffff;
+    background: color-mix(in srgb, var(--color-acc) 32%, transparent);
   }
 
   details summary::-webkit-details-marker {
