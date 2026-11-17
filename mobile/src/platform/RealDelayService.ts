@@ -1,6 +1,7 @@
 import {
   RealDelayService as DesktopRealDelayService,
   type DelayTestProcess,
+  type DelayTestProxy,
   type RealDelayServiceOptions,
 } from '@desktop/main/services/RealDelayService';
 import type { XrayConfig } from '@/shared/xray-types';
@@ -14,7 +15,7 @@ export {
   buildDelayTestConfig,
   measureHttpThroughProxy,
 } from '@desktop/main/services/RealDelayService';
-export type { DelayTestProcess, RealDelayServiceOptions };
+export type { DelayTestProcess, DelayTestProxy, RealDelayServiceOptions };
 
 let nextProbeId = 0;
 

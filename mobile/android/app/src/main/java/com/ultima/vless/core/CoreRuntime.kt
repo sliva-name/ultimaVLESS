@@ -296,7 +296,7 @@ object CoreRuntime {
         return core.measureDelay(url)
     }
 
-    /** Throwaway core for a real-delay probe; listens on its own loopback port. */
+    /** Throwaway core for a real-delay probe; listens on its own loopback port, behind a one-off login. */
     fun startProbe(context: Context, id: String, config: String) {
         init(context)
         ensureCoreEnv(context)
