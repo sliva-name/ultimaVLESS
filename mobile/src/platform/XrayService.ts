@@ -122,6 +122,7 @@ export class XrayService extends EventEmitter {
             ports,
             performanceSettings: plan.performanceSettings,
           }),
+          connectionMode,
         ),
       );
     } catch (e) {
@@ -161,7 +162,10 @@ export class XrayService extends EventEmitter {
       this.adoptedStartedAt = status.startedAt;
     }
 
-    const ready = await this.waitForLocalProxy(ports);
+    // A VPN session has no local proxy to wait for (`adaptConfigForAndroid`):
+    // its core is up once the native start returns.
+    const vpn = connectionMode === 'tun';
+    const ready = vpn || (await this.waitForLocalProxy(ports));
     if (!ready) {
       const reason = `Xray did not open the local proxy on 127.0.0.1:${ports.socks}`;
       this.stopNative();
@@ -175,7 +179,7 @@ export class XrayService extends EventEmitter {
       lastStartAt: this.adoptedStartedAt ?? requestedAt,
       lastReadyAt: Date.now(),
       lastReadinessCheckAt: Date.now(),
-      localProxyReachable: true,
+      localProxyReachable: vpn ? null : true,
       lastFailureReason: null,
     });
     logger.info('XrayService', 'Xray is running', { mode: connectionMode });

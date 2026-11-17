@@ -55,6 +55,42 @@ describe('planAndroidRouting', () => {
 });
 
 describe('adaptConfigForAndroid', () => {
+  const tunConfig = (): XrayConfig =>
+    ({
+      inbounds: [
+        { tag: 'tun-in', port: 0, protocol: 'tun', settings: { mtu: 1400 } },
+        {
+          tag: 'socks',
+          port: 10808,
+          listen: '127.0.0.1',
+          protocol: 'socks',
+          settings: { udp: true },
+        },
+        {
+          tag: 'http',
+          port: 10809,
+          listen: '127.0.0.1',
+          protocol: 'http',
+          settings: {},
+        },
+      ],
+      outbounds: [{ tag: 'proxy', protocol: 'vless' }],
+    }) as XrayConfig;
+
+  it('leaves the tunnel as the only way into a VPN session', () => {
+    // Apps the VPN leaves out share loopback and would reach the server
+    // through a local proxy, learning its address (issue #93).
+    const adapted = adaptConfigForAndroid(tunConfig(), 'tun');
+    expect(adapted.inbounds?.map((inbound) => inbound.tag)).toEqual(['tun-in']);
+  });
+
+  it('keeps the local proxy of a proxy-only session', () => {
+    const config = tunConfig();
+    config.inbounds = config.inbounds?.slice(1);
+    const adapted = adaptConfigForAndroid(config, 'proxy');
+    expect(adapted.inbounds).toEqual(config.inbounds);
+  });
+
   it('strips the gRPC API and the TUN settings the VpnService owns', () => {
     const config: XrayConfig = {
       api: { tag: 'api', listen: '127.0.0.1:10813', services: [] },
@@ -76,16 +112,16 @@ describe('adaptConfigForAndroid', () => {
       ],
       outbounds: [{ tag: 'proxy', protocol: 'vless' }],
     } as XrayConfig;
-    const adapted = adaptConfigForAndroid(config);
+    const adapted = adaptConfigForAndroid(config, 'tun');
     expect(adapted.api).toBeUndefined();
     // The name keeps Xray from enumerating interfaces over netlink.
     expect(adapted.inbounds?.[0].settings).toEqual({
       name: 'ultima0',
       mtu: 1400,
     });
-    expect(adapted.inbounds?.[1]).toEqual(config.inbounds?.[1]);
     // The input stays untouched.
     expect(config.api).toBeDefined();
+    expect(config.inbounds).toHaveLength(2);
   });
 });
 

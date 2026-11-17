@@ -188,7 +188,7 @@ object CoreRuntime {
         AppFiles.trimXrayLog(svc)
         val started = core ?: Libv2ray.newCoreController(Callbacks).also { controller = it }
         synchronized(coreLock) {
-            started.startLoop(request.config, tunnel?.fd ?: 0)
+            started.startLoop(request.coreConfig(), tunnel?.fd ?: 0)
         }
         synchronized(trafficLock) {
             started.queryAllOutboundTrafficStats()
@@ -284,6 +284,16 @@ object CoreRuntime {
             }
         }
         uplink to downlink
+    }
+
+    /**
+     * GET through the session's core, made inside it: a VPN session has no
+     * local proxy for the app's own checks (see [SessionRequest.coreConfig]).
+     */
+    fun measureDelay(url: String): Long {
+        val core = controller
+        check(session != null && core != null && core.isRunning) { "Xray core is not running" }
+        return core.measureDelay(url)
     }
 
     /** Throwaway core for a real-delay probe; listens on its own loopback port. */

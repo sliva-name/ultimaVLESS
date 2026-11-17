@@ -33,7 +33,7 @@ function startProbeCore(config: XrayConfig): DelayTestProcess {
   let killed = false;
   const started = UltimaCore.startProbeCore({
     id,
-    config: JSON.stringify(adaptConfigForAndroid(config)),
+    config: JSON.stringify(adaptConfigForAndroid(config, 'proxy')),
   }).catch((error: unknown) => {
     logger.debug('RealDelayService', 'Probe core failed to start', {
       error: error instanceof Error ? error.message : String(error),

@@ -69,9 +69,14 @@ describe('Android backend', () => {
     expect(saved).toMatchObject({ ok: true, configCount: 2 });
     const { servers } = await window.electronAPI.getAppSnapshot();
     const nl = servers.find((server) => server.name === 'NL')!;
+    const loopbackProbes = () =>
+      core.tcpHosts.filter((host) => host === '127.0.0.1').length;
+    const loopbackBefore = loopbackProbes();
 
     const result = await window.electronAPI.connect(nl.uuid);
     expect(result).toEqual({ ok: true });
+    // No local proxy to wait for: the session has none.
+    expect(loopbackProbes()).toBe(loopbackBefore);
 
     const start = core.starts.at(-1)!;
     expect(start.mode).toBe('tun');
@@ -85,6 +90,9 @@ describe('Android backend', () => {
     });
     const config = JSON.parse(start.config) as XrayConfig;
     expect(config.api).toBeUndefined();
+    // Apps the VPN leaves out share loopback: a local SOCKS or HTTP proxy
+    // would take them through the server (issue #93).
+    expect(config.inbounds).toHaveLength(1);
     const tunInbound = config.inbounds?.find((i) => i.protocol === 'tun');
     expect(tunInbound?.settings).toEqual({ name: 'ultima0', mtu: 1400 });
     expect(config.outbounds?.[0]).toMatchObject({

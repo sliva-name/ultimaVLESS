@@ -16,6 +16,7 @@ import type { XrayLogCursor as DesktopXrayLogCursor } from '@desktop/main/servic
 import type * as DesktopPrivilege from '@desktop/main/services/PrivilegeService';
 import type * as DesktopRunningApps from '@desktop/main/services/runningApps';
 import type { RealDelayService as DesktopRealDelayService } from '@desktop/main/services/RealDelayService';
+import type * as DesktopCoreProbe from '@desktop/main/services/coreProbe';
 import type { XrayService } from './XrayService';
 import type { SystemProxyService } from './SystemProxyService';
 import type { TunRouteService } from './TunRouteService';
@@ -29,6 +30,7 @@ import type { XrayLogCursor } from './xrayLogCursor';
 import type * as Privilege from './PrivilegeService';
 import type * as RunningApps from './runningApps';
 import type { RealDelayService } from './RealDelayService';
+import type * as CoreProbe from './coreProbe';
 
 /** `Actual` must accept every call the desktop code makes on `Expected[K]`. */
 type Covers<Expected, Actual extends { [K in keyof Expected]: unknown }> = {
@@ -172,6 +174,15 @@ export type Conformance = [
     Covers<
       Methods<DesktopRealDelayService, 'pingServer' | 'pingServers'>,
       RealDelayService
+    >
+  >,
+  AllTrue<
+    Covers<
+      Pick<
+        typeof DesktopCoreProbe,
+        'probeCoreListeners' | 'probeTrafficThroughCore'
+      >,
+      typeof CoreProbe
     >
   >,
 ];

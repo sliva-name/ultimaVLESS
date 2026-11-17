@@ -89,10 +89,24 @@ const DESKTOP_ONLY_TUN_SETTINGS = [
  * The compiled desktop config, minus what has no place in an app process:
  * the gRPC stats listener (traffic is read in-process) and the TUN settings
  * that would make Xray configure interfaces and routes itself.
+ *
+ * In VPN mode the tunnel is also the only inbound. Every app on the device
+ * shares loopback, the ones the VPN leaves out too, so a local SOCKS or HTTP
+ * listener would take any of them through the server and show them its
+ * address (issue #93). The app checks such a session inside the core
+ * instead (`platform/coreProbe.ts`).
  */
-export function adaptConfigForAndroid(config: XrayConfig): XrayConfig {
+export function adaptConfigForAndroid(
+  config: XrayConfig,
+  mode: ConnectionMode,
+): XrayConfig {
   const adapted = structuredClone(config);
   delete adapted.api;
+  if (mode === 'tun') {
+    adapted.inbounds = (adapted.inbounds ?? []).filter(
+      (inbound) => inbound?.protocol === 'tun',
+    );
+  }
   for (const inbound of adapted.inbounds ?? []) {
     if (inbound?.protocol !== 'tun' || !inbound.settings) continue;
     const settings = { ...(inbound.settings as Record<string, unknown>) };

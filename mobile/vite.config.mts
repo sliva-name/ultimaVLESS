@@ -35,6 +35,7 @@ const PLATFORM_OVERRIDES: Record<string, string> = {
   'main/services/XrayService.ts': 'platform/XrayService.ts',
   'main/services/connectionMonitor/xrayLogCursor.ts':
     'platform/xrayLogCursor.ts',
+  'main/services/coreProbe.ts': 'platform/coreProbe.ts',
   'main/services/runningApps.ts': 'platform/runningApps.ts',
 };
 

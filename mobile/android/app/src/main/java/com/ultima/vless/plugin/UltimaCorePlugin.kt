@@ -219,6 +219,11 @@ class UltimaCorePlugin : Plugin() {
     }
 
     @PluginMethod
+    fun measureCoreDelay(call: PluginCall) = background(call) {
+        call.resolve(JSObject().put("delayMs", CoreRuntime.measureDelay(call.getString("url")!!)))
+    }
+
+    @PluginMethod
     fun startProbeCore(call: PluginCall) = background(call) {
         CoreRuntime.startProbe(context, call.getString("id")!!, call.getString("config")!!)
         call.resolve()

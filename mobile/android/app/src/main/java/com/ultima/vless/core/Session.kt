@@ -92,6 +92,26 @@ data class SessionRequest(
 ) {
     val isTun: Boolean get() = mode == MODE_TUN
 
+    /**
+     * The config the core runs. In a VPN session the tunnel is its only
+     * inbound: every app shares loopback, the ones the VPN leaves out too, so
+     * a local SOCKS or HTTP listener would take them through the server. The
+     * WebView leaves those out already; this also covers a session saved by
+     * an older version and brought back by the tile or Always-on VPN.
+     */
+    fun coreConfig(): String {
+        if (!isTun) return config
+        val json = JSONObject(config)
+        val inbounds = json.optJSONArray("inbounds") ?: return config
+        val tunnelOnly = JSONArray()
+        for (index in 0 until inbounds.length()) {
+            val inbound = inbounds.optJSONObject(index) ?: continue
+            if (inbound.optString("protocol") == "tun") tunnelOnly.put(inbound)
+        }
+        if (tunnelOnly.length() == inbounds.length()) return config
+        return json.put("inbounds", tunnelOnly).toString()
+    }
+
     fun toJson(): JSONObject = JSONObject()
         .put("config", config)
         .put("mode", mode)

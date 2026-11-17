@@ -144,30 +144,33 @@ export const DiagnosticsPage: React.FC<DiagnosticsPageProps> = ({
               </Pill>
             }
           />
-          <Row
-            tile={<Tile icon={Plug} />}
-            label={t('mobile.settings.diag.localProxy')}
-            hint={`127.0.0.1:${PRIMARY_RUNTIME_PORTS.socks} · ${PRIMARY_RUNTIME_PORTS.http}`}
-            trailing={
-              <Pill
-                tone={
-                  health.localProxyReachable == null
-                    ? 'plain'
-                    : health.localProxyReachable
-                      ? 'ok'
-                      : 'bad'
-                }
-              >
-                {health.localProxyReachable == null
-                  ? '—'
-                  : t(
-                      health.localProxyReachable
-                        ? 'mobile.settings.diag.proxyReachable'
-                        : 'mobile.settings.diag.proxyUnreachable',
-                    )}
-              </Pill>
-            }
-          />
+          {/* VPN sessions run without a local proxy. */}
+          {snapshot.connectionMode === 'proxy' && (
+            <Row
+              tile={<Tile icon={Plug} />}
+              label={t('mobile.settings.diag.localProxy')}
+              hint={`127.0.0.1:${PRIMARY_RUNTIME_PORTS.socks} · ${PRIMARY_RUNTIME_PORTS.http}`}
+              trailing={
+                <Pill
+                  tone={
+                    health.localProxyReachable == null
+                      ? 'plain'
+                      : health.localProxyReachable
+                        ? 'ok'
+                        : 'bad'
+                  }
+                >
+                  {health.localProxyReachable == null
+                    ? '—'
+                    : t(
+                        health.localProxyReachable
+                          ? 'mobile.settings.diag.proxyReachable'
+                          : 'mobile.settings.diag.proxyUnreachable',
+                      )}
+                </Pill>
+              }
+            />
+          )}
           <Row
             tile={<Tile icon={RefreshCw} />}
             label={t('mobile.settings.diag.recovery')}
