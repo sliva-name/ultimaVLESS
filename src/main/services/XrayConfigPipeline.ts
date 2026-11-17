@@ -45,6 +45,7 @@ import {
 import { applyStatsApi } from './configGenerator/statsApi';
 import { adoptProxyOutboundTag } from './configGenerator/proxyTag';
 import { applyRemoteDnsSettings, buildDnsObject } from './configGenerator/dns';
+import { coreProbeRoute } from './coreProbe';
 import { logger } from './LoggerService';
 
 type MutableConfigNode = Record<string, unknown>;
@@ -194,10 +195,10 @@ export class XrayConfigPipeline {
     }
 
     this.stripUntrustedInbounds(cfg);
-    cfg.inbounds = createLocalProxyInbounds(
-      perf.sniffingRouteOnly,
-      options.ports,
-    );
+    cfg.inbounds = [
+      ...createLocalProxyInbounds(perf.sniffingRouteOnly, options.ports),
+      ...coreProbeRoute().inbounds,
+    ];
 
     if (connectionMode === 'tun') {
       cfg.inbounds.unshift(
@@ -1007,10 +1008,10 @@ export class XrayConfigPipeline {
         ? this.buildWireGuardOutbound(config)
         : this.buildStreamOutbound(config, protocol, perf);
 
-    const inbounds: XrayInbound[] = createLocalProxyInbounds(
-      perf.sniffingRouteOnly,
-      options.ports,
-    );
+    const inbounds: XrayInbound[] = [
+      ...createLocalProxyInbounds(perf.sniffingRouteOnly, options.ports),
+      ...coreProbeRoute().inbounds,
+    ];
     if (connectionMode === 'tun') {
       inbounds.unshift(
         createTunInbound({

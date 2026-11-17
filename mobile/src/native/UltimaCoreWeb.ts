@@ -114,9 +114,9 @@ export class UltimaCoreWeb extends WebPlugin implements UltimaCorePlugin {
     };
   }
 
-  async measureCoreDelay(): Promise<{ delayMs: number }> {
+  async probeCoreSocket(): Promise<{ status: number }> {
     if (!this.status.running) throw new Error('Xray core is not running');
-    return { delayMs: 120 };
+    return { status: 204 };
   }
 
   async startProbeCore(): Promise<void> {}

@@ -180,7 +180,7 @@ export type Conformance = [
     Covers<
       Pick<
         typeof DesktopCoreProbe,
-        'probeCoreListeners' | 'probeTrafficThroughCore'
+        'coreProbeRoute' | 'probeCoreListeners' | 'probeTrafficThroughCore'
       >,
       typeof CoreProbe
     >

@@ -132,12 +132,14 @@ export interface UltimaCorePlugin {
   /** Cumulative bytes of the `proxy` outbound since the core started. */
   getTraffic(): Promise<{ uplink: number; downlink: number }>;
   /**
-   * GET through the running session's core, made inside it: a VPN session
-   * has no local proxy to send the app's own checks through. libv2ray sends
-   * two requests over one connection and reports the faster; it rejects
-   * when neither gets a 200 or 204 within its 12 s.
+   * GET through the running core's probe socket (`platform/coreProbe.ts`),
+   * as through an HTTP proxy; resolves with the response's status code.
    */
-  measureCoreDelay(options: { url: string }): Promise<{ delayMs: number }>;
+  probeCoreSocket(options: {
+    path: string;
+    url: string;
+    timeoutMs: number;
+  }): Promise<{ status: number }>;
 
   /** Throwaway core for a real-delay probe. */
   startProbeCore(options: { id: string; config: string }): Promise<void>;

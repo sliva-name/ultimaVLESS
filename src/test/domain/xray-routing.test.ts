@@ -9,6 +9,7 @@ import {
   buildSiteRules,
   resolveRoutingMode,
 } from '@/main/services/configGenerator/routing';
+import { CONNECTIVITY_TARGETS } from '@/main/services/networkProbe';
 
 function perf(overrides: Partial<PerformanceSettings>): PerformanceSettings {
   return { ...DEFAULT_PERFORMANCE_SETTINGS, ...overrides };
@@ -224,7 +225,7 @@ describe('buildDefaultRoutingRules', () => {
       }),
     );
     // Equally specific hosts: the exclusion is listed first.
-    expect(rules.slice(2)).toEqual([
+    expect(rules.slice(1)).toEqual([
       { type: 'field', domain: ['domain:vk.com'], outboundTag: 'direct' },
       { type: 'field', domain: ['domain:youtube.com'], outboundTag: 'proxy' },
       { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
@@ -242,7 +243,7 @@ describe('buildDefaultRoutingRules', () => {
         proxyDomains: ['youtube.com'],
       }),
     );
-    expect(rules.slice(2)).toEqual([
+    expect(rules.slice(1)).toEqual([
       { type: 'field', domain: ['domain:vk.com'], outboundTag: 'direct' },
       { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
       {
@@ -270,20 +271,28 @@ describe('buildDefaultRoutingRules', () => {
     expect(buildProbePinRules(DEFAULT_PERFORMANCE_SETTINGS)).toEqual([]);
     for (const routingMode of ['sites', 'apps'] as const) {
       const rules = buildDefaultRoutingRules(perf({ routingMode }));
-      expect(rules.slice(0, 2)).toEqual([
-        {
-          type: 'field',
-          domain: [
-            'full:connectivitycheck.gstatic.com',
-            'full:captive.apple.com',
-            'full:www.msftncsi.com',
-          ],
-          port: '80',
-          outboundTag: 'proxy',
-        },
-        { type: 'field', ip: ['1.1.1.1'], port: '80', outboundTag: 'proxy' },
-      ]);
+      expect(rules[0]).toEqual({
+        type: 'field',
+        inboundTag: ['http'],
+        attrs: { 'x-ultima-probe': expect.stringMatching(/^[0-9a-f-]{36}$/) },
+        outboundTag: 'proxy',
+      });
     }
+  });
+
+  it('pins the probes, not their hosts', () => {
+    // A rule on the probe hosts would take any program's request to them,
+    // or with a spoofed Host, through the server and show it its address.
+    const rules = buildDefaultRoutingRules(perf({ routingMode: 'apps' }));
+    const hosts = CONNECTIVITY_TARGETS.map((target) => target.host);
+    for (const rule of rules) {
+      const matched = [...(rule.domain ?? []), ...(rule.ip ?? [])].join(' ');
+      for (const host of hosts) expect(matched).not.toContain(host);
+    }
+    // Stable within a run, so a recompiled config matches the running one.
+    expect(buildProbePinRules(perf({ routingMode: 'sites' }))).toEqual(
+      buildProbePinRules(perf({ routingMode: 'apps' })),
+    );
   });
 
   it('treats settings saved before routing modes existed as tunnel-everything', () => {

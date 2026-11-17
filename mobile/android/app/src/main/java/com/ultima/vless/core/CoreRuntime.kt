@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicReference
 object CoreRuntime {
     private const val TAG = "UltimaCore"
     private const val TUNNEL_GRACE_MS = 1500L
+    /** The app's own probes enter the core here (`coreProbeSocketPath` in the WebView). */
+    private const val PROBE_SOCKET = "core-probe.sock"
 
     private val executor = Executors.newSingleThreadExecutor { Thread(it, "ultima-core") }
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -186,9 +188,12 @@ object CoreRuntime {
         }
         ensureCoreEnv(svc)
         AppFiles.trimXrayLog(svc)
+        // Xray listens on the probe socket but does not replace the file a
+        // killed core left behind; it fails the start instead.
+        File(svc.filesDir, PROBE_SOCKET).delete()
         val started = core ?: Libv2ray.newCoreController(Callbacks).also { controller = it }
         synchronized(coreLock) {
-            started.startLoop(request.coreConfig(), tunnel?.fd ?: 0)
+            started.startLoop(request.coreConfig(svc.filesDir.absolutePath), tunnel?.fd ?: 0)
         }
         synchronized(trafficLock) {
             started.queryAllOutboundTrafficStats()
@@ -284,16 +289,6 @@ object CoreRuntime {
             }
         }
         uplink to downlink
-    }
-
-    /**
-     * GET through the session's core, made inside it: a VPN session has no
-     * local proxy for the app's own checks (see [SessionRequest.coreConfig]).
-     */
-    fun measureDelay(url: String): Long {
-        val core = controller
-        check(session != null && core != null && core.isRunning) { "Xray core is not running" }
-        return core.measureDelay(url)
     }
 
     /** Throwaway core for a real-delay probe; listens on its own loopback port, behind a one-off login. */

@@ -91,8 +91,17 @@ describe('Android backend', () => {
     const config = JSON.parse(start.config) as XrayConfig;
     expect(config.api).toBeUndefined();
     // Apps the VPN leaves out share loopback: a local SOCKS or HTTP proxy
-    // would take them through the server (issue #93).
-    expect(config.inbounds).toHaveLength(1);
+    // would take them through the server (issue #93). Besides the tunnel
+    // only the probe socket in the app's private files stays.
+    expect(
+      config.inbounds?.map(({ protocol, listen }) => ({ protocol, listen })),
+    ).toEqual([
+      { protocol: 'tun', listen: undefined },
+      {
+        protocol: 'http',
+        listen: '/data/user/0/com.ultima.vless/files/core-probe.sock',
+      },
+    ]);
     const tunInbound = config.inbounds?.find((i) => i.protocol === 'tun');
     expect(tunInbound?.settings).toEqual({ name: 'ultima0', mtu: 1400 });
     expect(config.outbounds?.[0]).toMatchObject({

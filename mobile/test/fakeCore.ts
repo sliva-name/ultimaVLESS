@@ -34,8 +34,8 @@ export class FakeCore {
     body: '',
     truncated: false,
   });
-  /** URLs requested inside the running core (VPN-session checks). */
-  coreRequests: string[] = [];
+  /** Requests sent through the running core's probe socket. */
+  coreRequests: { path: string; url: string }[] = [];
   coreRequestsWork = true;
   startError: Error | null = null;
   private readonly listeners = new Map<string, Set<Listener>>();
@@ -103,11 +103,10 @@ export class FakeCore {
     },
     getCoreStatus: async () => ({ ...this.status }),
     getTraffic: async () => ({ uplink: 1000, downlink: 5000 }),
-    measureCoreDelay: async ({ url }: { url: string }) => {
+    probeCoreSocket: async ({ path, url }: { path: string; url: string }) => {
       if (!this.status.running) throw new Error('Xray core is not running');
-      this.coreRequests.push(url);
-      if (!this.coreRequestsWork) throw new Error('context deadline exceeded');
-      return { delayMs: 150 };
+      this.coreRequests.push({ path, url });
+      return { status: this.coreRequestsWork ? 204 : 503 };
     },
     startProbeCore: async () => undefined,
     stopProbeCore: async () => undefined,

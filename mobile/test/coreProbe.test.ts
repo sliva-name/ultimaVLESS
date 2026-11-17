@@ -12,8 +12,14 @@ vi.mock('../src/native/UltimaCore', async () => {
   return { UltimaCore: fake.core.plugin };
 });
 
-const { probeCoreListeners, probeTrafficThroughCore } =
+const DATA_DIR = '/data/user/0/com.ultima.vless/files';
+const SOCKET = `${DATA_DIR}/core-probe.sock`;
+
+const { configureElectronShim } = await import('../src/electron');
+configureElectronShim({ dataDir: DATA_DIR, version: '7.25.0' });
+const { coreProbeRoute, probeCoreListeners, probeTrafficThroughCore } =
   await import('../src/platform/coreProbe');
+const { adaptConfigForAndroid } = await import('../src/backend/androidConfig');
 const { CONNECTIVITY_TARGETS } = await import('@/main/services/networkProbe');
 const { createRuntimeValidator } =
   await import('@/main/domain/connection/RuntimeValidator');
@@ -22,6 +28,9 @@ const { runConnectionHealthProbe } =
 
 const PORTS = { socks: 10808, http: 10809 };
 const OPTIONS = { timeoutMs: 1000, attempts: 2, gapMs: 0 };
+const TARGET_URLS = CONNECTIVITY_TARGETS.map(
+  (t) => `http://${t.host}${t.path}`,
+);
 
 const RUNNING: XrayHealthStatus = {
   state: 'running',
@@ -63,18 +72,49 @@ describe('Android core probes', () => {
     vi.restoreAllMocks();
   });
 
-  it('checks a VPN session inside the core, with no loopback proxy', async () => {
+  it('pins only what comes in through a socket in the private files', () => {
+    const { inbounds, rule } = coreProbeRoute();
+    expect(inbounds).toEqual([
+      expect.objectContaining({
+        tag: 'core-probe',
+        listen: SOCKET,
+        protocol: 'http',
+      }),
+    ]);
+    expect(rule).toEqual({
+      type: 'field',
+      inboundTag: ['core-probe'],
+      outboundTag: 'proxy',
+    });
+    // The socket is no loopback listener, so a VPN session keeps it.
+    const adapted = adaptConfigForAndroid(
+      {
+        inbounds: [
+          { tag: 'tun-in', port: 0, protocol: 'tun', settings: {} },
+          { tag: 'socks', port: 10808, protocol: 'socks', settings: {} },
+          ...inbounds,
+        ],
+      },
+      'tun',
+    );
+    expect(adapted.inbounds?.map((inbound) => inbound.tag)).toEqual([
+      'tun-in',
+      'core-probe',
+    ]);
+  });
+
+  it('checks a VPN session through the probe socket, with no loopback proxy', async () => {
     runSession('tun');
     expect(await probeCoreListeners(PORTS, 500)).toBe(true);
     expect(await probeTrafficThroughCore(PORTS, OPTIONS)).toBe(true);
     expect(core.tcpHosts).toEqual([]);
     expect(proxied).toEqual([]);
     expect(core.coreRequests).toEqual(
-      CONNECTIVITY_TARGETS.map((t) => `http://${t.host}${t.path}`),
+      TARGET_URLS.map((url) => ({ path: SOCKET, url })),
     );
   });
 
-  it('fails a VPN session whose core reaches none of the targets', async () => {
+  it('fails a session whose core reaches none of the targets', async () => {
     runSession('tun');
     core.coreRequestsWork = false;
     expect(await probeTrafficThroughCore(PORTS, OPTIONS)).toBe(false);
@@ -85,7 +125,7 @@ describe('Android core probes', () => {
 
   it('gives up on a core that does not answer within the timeout', async () => {
     runSession('tun');
-    vi.spyOn(core.plugin, 'measureCoreDelay').mockImplementation(
+    vi.spyOn(core.plugin, 'probeCoreSocket').mockImplementation(
       () => new Promise(() => undefined),
     );
     const started = Date.now();
@@ -112,14 +152,15 @@ describe('Android core probes', () => {
     expect(core.coreRequests).toEqual([]);
   });
 
-  it('keeps the desktop loopback checks for a proxy-only session', async () => {
+  it('probes a proxy-only session through the socket too', async () => {
+    // The local proxy is for the user's apps: it must be up, but the pin
+    // rule only takes what comes through the probe socket.
     runSession('proxy');
     expect(await probeCoreListeners(PORTS, 500)).toBe(true);
     expect(core.tcpHosts).toEqual(['127.0.0.1', '127.0.0.1']);
     expect(await probeTrafficThroughCore(PORTS, OPTIONS)).toBe(true);
-    expect(proxied.length).toBeGreaterThan(0);
-    expect(proxied.every((o) => o.proxyPort === PORTS.http)).toBe(true);
-    expect(core.coreRequests).toEqual([]);
+    expect(proxied).toEqual([]);
+    expect(core.coreRequests.map((request) => request.path)).toContain(SOCKET);
   });
 
   it('is what the desktop validator and health monitor run', async () => {
@@ -152,5 +193,6 @@ describe('Android core probes', () => {
     expect(await probeTrafficThroughCore(PORTS, OPTIONS)).toBe(false);
     expect(core.tcpHosts).toEqual([]);
     expect(proxied).toEqual([]);
+    expect(core.coreRequests).toEqual([]);
   });
 });

@@ -219,8 +219,13 @@ class UltimaCorePlugin : Plugin() {
     }
 
     @PluginMethod
-    fun measureCoreDelay(call: PluginCall) = background(call) {
-        call.resolve(JSObject().put("delayMs", CoreRuntime.measureDelay(call.getString("url")!!)))
+    fun probeCoreSocket(call: PluginCall) = background(call) {
+        val status = NetProbes.httpViaUnixSocket(
+            call.getString("path")!!,
+            call.getString("url")!!,
+            call.getInt("timeoutMs") ?: 5000,
+        )
+        call.resolve(JSObject().put("status", status))
     }
 
     @PluginMethod
