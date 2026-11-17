@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { randomUUID } from 'crypto';
 import http from 'http';
 import net from 'net';
 import path from 'path';
@@ -32,6 +33,17 @@ const EXIT_GRACE_MS = 1000;
 /** Each probe is a whole Xray process (~20-30 MB), so keep the pool small. */
 const MAX_CONCURRENT_TESTS = 6;
 
+/**
+ * The probe's loopback HTTP proxy: a fresh port and a one-off login. Every
+ * local program can reach loopback, so without the login any of them could
+ * send traffic through the server under test and learn its address.
+ */
+export interface DelayTestProxy {
+  port: number;
+  user: string;
+  pass: string;
+}
+
 /** A throwaway Xray started for one measurement. */
 export interface DelayTestProcess {
   /** Settles once the process is gone (exit or spawn error). */
@@ -48,7 +60,7 @@ export interface RealDelayServiceOptions {
     signal?: AbortSignal,
   ) => Promise<boolean>;
   measure?: (
-    proxyPort: number,
+    proxy: DelayTestProxy,
     url: string,
     timeoutMs: number,
     signal?: AbortSignal,
@@ -60,14 +72,14 @@ export interface RealDelayServiceOptions {
 
 /**
  * Turns a connection config into a probe-only one: a single loopback HTTP
- * inbound whose traffic is pinned to the server's `proxy` outbound. Split
- * tunnelling, the stats API and file logging are stripped so a user bypass
- * rule cannot send the probe direct and parallel instances never share a
- * port or a log file.
+ * inbound, behind the probe's login, whose traffic is pinned to the server's
+ * `proxy` outbound. Split tunnelling, the stats API and file logging are
+ * stripped so a user bypass rule cannot send the probe direct and parallel
+ * instances never share a port or a log file.
  */
 export function buildDelayTestConfig(
   server: VlessConfig,
-  port: number,
+  proxy: DelayTestProxy,
   performanceSettings: PerformanceSettings = DEFAULT_PERFORMANCE_SETTINGS,
 ): XrayConfig {
   const cfg = XrayConfigCompiler.compile(server, {
@@ -93,9 +105,9 @@ export function buildDelayTestConfig(
     {
       tag: DELAY_TEST_INBOUND_TAG,
       listen: '127.0.0.1',
-      port,
+      port: proxy.port,
       protocol: 'http',
-      settings: {},
+      settings: { accounts: [{ user: proxy.user, pass: proxy.pass }] },
     },
   ];
   const rules = cfg.routing?.rules ?? [];
@@ -136,7 +148,7 @@ export function allocateLoopbackPort(): Promise<number> {
  * the socket or with an error status) counts as a failure.
  */
 export function measureHttpThroughProxy(
-  proxyPort: number,
+  proxy: DelayTestProxy,
   url: string,
   timeoutMs: number,
   signal?: AbortSignal,
@@ -148,12 +160,13 @@ export function measureHttpThroughProxy(
     const startedAt = performance.now();
     const req = http.request({
       host: '127.0.0.1',
-      port: proxyPort,
+      port: proxy.port,
       path: target.href,
       method: 'GET',
       agent: false,
       headers: {
         Host: target.host,
+        'Proxy-Authorization': `Basic ${btoa(`${proxy.user}:${proxy.pass}`)}`,
         'User-Agent': 'Mozilla/5.0',
         Connection: 'close',
       },
@@ -315,13 +328,17 @@ export class RealDelayService {
   ): Promise<number | null> {
     if (signal?.aborted) return null;
 
-    let port: number;
+    let proxy: DelayTestProxy;
     let config: XrayConfig;
     try {
-      port = await this.allocatePort();
+      proxy = {
+        port: await this.allocatePort(),
+        user: randomUUID(),
+        pass: randomUUID(),
+      };
       config = buildDelayTestConfig(
         server,
-        port,
+        proxy,
         this.getPerformanceSettings(),
       );
     } catch (error) {
@@ -345,7 +362,11 @@ export class RealDelayService {
     }
 
     try {
-      const ready = await this.waitForListener(port, instance.exited, signal);
+      const ready = await this.waitForListener(
+        proxy.port,
+        instance.exited,
+        signal,
+      );
       if (!ready || signal?.aborted) {
         logger.debug('RealDelayService', 'Delay test Xray never listened', {
           server: server.name,
@@ -353,7 +374,7 @@ export class RealDelayService {
         return null;
       }
       const latency = await this.measure(
-        port,
+        proxy,
         this.testUrl,
         Math.max(timeout, REAL_DELAY_MIN_TIMEOUT_MS),
         signal,

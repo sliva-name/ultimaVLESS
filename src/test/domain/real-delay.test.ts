@@ -7,6 +7,7 @@ import {
   RealDelayService,
   REAL_DELAY_MIN_TIMEOUT_MS,
   type DelayTestProcess,
+  type DelayTestProxy,
 } from '@/main/services/RealDelayService';
 import { createServerLatencyProbe } from '@/main/services/serverLatencyProbe';
 import { normalizePerformanceSettings } from '@/shared/performanceSettings';
@@ -26,18 +27,25 @@ const vlessServer = (uuid: string) =>
 
 const servers: http.Server[] = [];
 
-async function startProxy(
-  handler: http.RequestListener,
-): Promise<{ port: number; requests: string[] }> {
+async function startProxy(handler: http.RequestListener): Promise<{
+  port: number;
+  requests: string[];
+  logins: (string | undefined)[];
+}> {
   const requests: string[] = [];
+  const logins: (string | undefined)[] = [];
   const server = http.createServer((req, res) => {
     requests.push(req.url ?? '');
+    logins.push(req.headers['proxy-authorization']);
     handler(req, res);
   });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  return { port: (server.address() as net.AddressInfo).port, requests };
+  return { port: (server.address() as net.AddressInfo).port, requests, logins };
 }
+
+const LOGIN = { user: 'probe-user', pass: 'probe-pass' };
+const at = (port: number): DelayTestProxy => ({ port, ...LOGIN });
 
 afterEach(async () => {
   await Promise.all(
@@ -62,7 +70,7 @@ function fakeProcess() {
 
 describe('buildDelayTestConfig', () => {
   it('exposes only a loopback HTTP inbound pinned to the proxy outbound', () => {
-    const cfg = buildDelayTestConfig(vlessServer('a'), 23456, {
+    const cfg = buildDelayTestConfig(vlessServer('a'), at(23456), {
       ...DEFAULT_PERFORMANCE_SETTINGS,
       bypassDomains: ['www.gstatic.com'],
       bypassIps: ['0.0.0.0/0'],
@@ -76,6 +84,8 @@ describe('buildDelayTestConfig', () => {
         listen: '127.0.0.1',
         port: 23456,
         protocol: 'http',
+        // Other local programs would otherwise go through the server.
+        settings: { accounts: [LOGIN] },
       }),
     ]);
     const [first, ...rest] = cfg.routing?.rules ?? [];
@@ -105,7 +115,7 @@ describe('measureHttpThroughProxy', () => {
     });
 
     const latency = await measureHttpThroughProxy(
-      proxy.port,
+      at(proxy.port),
       'http://www.gstatic.com/generate_204',
       2000,
     );
@@ -113,6 +123,9 @@ describe('measureHttpThroughProxy', () => {
     expect(latency).toEqual(expect.any(Number));
     expect(latency).toBeGreaterThan(0);
     expect(proxy.requests).toEqual(['http://www.gstatic.com/generate_204']);
+    expect(proxy.logins).toEqual([
+      `Basic ${Buffer.from('probe-user:probe-pass').toString('base64')}`,
+    ]);
   });
 
   it('fails on an error status, a closed socket, or a timeout', async () => {
@@ -128,13 +141,13 @@ describe('measureHttpThroughProxy', () => {
     const url = 'http://www.gstatic.com/generate_204';
 
     await expect(
-      measureHttpThroughProxy(failing.port, url, 2000),
+      measureHttpThroughProxy(at(failing.port), url, 2000),
     ).resolves.toBeNull();
     await expect(
-      measureHttpThroughProxy(closing.port, url, 2000),
+      measureHttpThroughProxy(at(closing.port), url, 2000),
     ).resolves.toBeNull();
     await expect(
-      measureHttpThroughProxy(hanging.port, url, 100),
+      measureHttpThroughProxy(at(hanging.port), url, 100),
     ).resolves.toBeNull();
   });
 
@@ -142,7 +155,7 @@ describe('measureHttpThroughProxy', () => {
     const hanging = await startProxy(() => {});
     const controller = new AbortController();
     const pending = measureHttpThroughProxy(
-      hanging.port,
+      at(hanging.port),
       'http://www.gstatic.com/generate_204',
       10_000,
       controller.signal,
@@ -161,7 +174,7 @@ describe('RealDelayService', () => {
       return proc;
     });
     let nextPort = 30000;
-    const measure = vi.fn(async (port: number) =>
+    const measure = vi.fn(async ({ port }: DelayTestProxy) =>
       port === 30001 ? null : port - 29000,
     );
     const onResult = vi.fn();
@@ -194,11 +207,21 @@ describe('RealDelayService', () => {
     }
     // The TCP-ping timeout is too short for a proxied request.
     expect(measure).toHaveBeenCalledWith(
-      30000,
+      expect.objectContaining({ port: 30000 }),
       expect.stringContaining('generate_204'),
       REAL_DELAY_MIN_TIMEOUT_MS,
       undefined,
     );
+    // Each probe gets its own login, and measures with the one it runs.
+    const logins = spawnXray.mock.calls.map(
+      ([config]) => config.inbounds?.[0]?.settings,
+    );
+    expect(logins).toEqual(
+      measure.mock.calls.map(([{ user, pass }]) => ({
+        accounts: [{ user, pass }],
+      })),
+    );
+    expect(new Set(measure.mock.calls.map(([{ pass }]) => pass)).size).toBe(3);
   });
 
   it('never runs more Xray instances than the concurrency limit', async () => {
@@ -282,7 +305,7 @@ describe('RealDelayService', () => {
       },
       allocatePort: async () => 30000,
       waitForListener: async () => true,
-      measure: async (_port, _url, _timeout, signal) =>
+      measure: async (_proxy, _url, _timeout, signal) =>
         new Promise<number | null>((resolve) => {
           signal?.addEventListener('abort', () => resolve(null));
           controller.abort();

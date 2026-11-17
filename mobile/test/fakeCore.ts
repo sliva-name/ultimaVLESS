@@ -34,6 +34,9 @@ export class FakeCore {
     body: '',
     truncated: false,
   });
+  /** Requests sent through the running core's probe socket. */
+  coreRequests: { path: string; url: string }[] = [];
+  coreRequestsWork = true;
   startError: Error | null = null;
   private readonly listeners = new Map<string, Set<Listener>>();
 
@@ -100,6 +103,11 @@ export class FakeCore {
     },
     getCoreStatus: async () => ({ ...this.status }),
     getTraffic: async () => ({ uplink: 1000, downlink: 5000 }),
+    probeCoreSocket: async ({ path, url }: { path: string; url: string }) => {
+      if (!this.status.running) throw new Error('Xray core is not running');
+      this.coreRequests.push({ path, url });
+      return { status: this.coreRequestsWork ? 204 : 503 };
+    },
     startProbeCore: async () => undefined,
     stopProbeCore: async () => undefined,
     allocatePort: async () => ({ port: 23456 }),

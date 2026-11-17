@@ -1,5 +1,7 @@
 package com.ultima.vless.net
 
+import android.net.LocalSocket
+import android.net.LocalSocketAddress
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -128,6 +130,32 @@ object NetProbes {
             return HttpResult(status, responseHeaders, body, truncated)
         } finally {
             connection.disconnect()
+        }
+    }
+
+    /**
+     * A GET sent, as to an HTTP proxy, to the Xray inbound listening on the
+     * Unix socket at [path]; returns the response's status code. The socket
+     * lives in the app's private files, so this is the one way in that other
+     * apps cannot use (`platform/coreProbe.ts`).
+     */
+    fun httpViaUnixSocket(path: String, url: String, timeoutMs: Int): Int {
+        val target = URL(url)
+        if (target.protocol != "http") {
+            throw ProbeException("Unsupported URL scheme: ${target.protocol}", "EPROTO")
+        }
+        val host = if (target.port == -1) target.host else "${target.host}:${target.port}"
+        LocalSocket().use { socket ->
+            socket.connect(LocalSocketAddress(path, LocalSocketAddress.Namespace.FILESYSTEM))
+            socket.soTimeout = timeoutMs
+            val request = "GET $target HTTP/1.1\r\nHost: $host\r\n" +
+                "User-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
+            socket.outputStream.write(request.toByteArray(Charsets.ISO_8859_1))
+            socket.outputStream.flush()
+            val statusLine = socket.inputStream.bufferedReader(Charsets.ISO_8859_1).readLine()
+                ?: throw ProbeException("The probe socket closed without an answer", "ECONNRESET")
+            return statusLine.split(' ').getOrNull(1)?.toIntOrNull()
+                ?: throw ProbeException("Not an HTTP status line: $statusLine", "EPROTO")
         }
     }
 

@@ -1,9 +1,9 @@
 import { APP_CONSTANTS } from '@/shared/constants';
 import type { XrayHealthStatus } from '@/shared/ipc';
 import {
-  probeHttpThroughProxy,
-  probeTcpPort,
-} from '@/main/services/networkProbe';
+  probeCoreListeners,
+  probeTrafficThroughCore,
+} from '@/main/services/coreProbe';
 import { logger } from '@/main/services/LoggerService';
 import { throwIfAborted } from './abort';
 import type { ConnectionSpec } from './ConnectionSpec';
@@ -29,21 +29,18 @@ export function createRuntimeValidator(deps: {
       signal?: AbortSignal,
     ): Promise<boolean> {
       throwIfAborted(signal);
-      const [socksReady, httpReady] = await Promise.all([
-        probeTcpPort(spec.ports.socks, '127.0.0.1', timeoutMs, signal),
-        probeTcpPort(spec.ports.http, '127.0.0.1', timeoutMs, signal),
-      ]);
+      const listenersReady = await probeCoreListeners(
+        spec.ports,
+        timeoutMs,
+        signal,
+      );
       throwIfAborted(signal);
 
-      if (!socksReady || !httpReady) {
+      if (!listenersReady) {
         logger.warn(
           'RuntimeValidator',
           'Local proxy listeners are unreachable',
-          {
-            mode: spec.mode,
-            socksReady,
-            httpReady,
-          },
+          { mode: spec.mode },
         );
         return false;
       }
@@ -58,13 +55,12 @@ export function createRuntimeValidator(deps: {
         return false;
       }
 
-      const tunnelOk = await probeHttpThroughProxy(
-        spec.ports.http || APP_CONSTANTS.PORTS.HTTP,
-        '127.0.0.1',
-        timeoutMs,
-        attempts,
-        0,
-        signal,
+      const tunnelOk = await probeTrafficThroughCore(
+        {
+          socks: spec.ports.socks,
+          http: spec.ports.http || APP_CONSTANTS.PORTS.HTTP,
+        },
+        { timeoutMs, attempts, gapMs: 0, signal },
       );
       throwIfAborted(signal);
       if (!tunnelOk) {

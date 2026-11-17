@@ -219,6 +219,16 @@ class UltimaCorePlugin : Plugin() {
     }
 
     @PluginMethod
+    fun probeCoreSocket(call: PluginCall) = background(call) {
+        val status = NetProbes.httpViaUnixSocket(
+            call.getString("path")!!,
+            call.getString("url")!!,
+            call.getInt("timeoutMs") ?: 5000,
+        )
+        call.resolve(JSObject().put("status", status))
+    }
+
+    @PluginMethod
     fun startProbeCore(call: PluginCall) = background(call) {
         CoreRuntime.startProbe(context, call.getString("id")!!, call.getString("config")!!)
         call.resolve()

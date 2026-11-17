@@ -7,6 +7,7 @@ import {
   TUN_PREFIX,
 } from '@/main/services/tunRoute/constants';
 import type { VpnOptions } from '../native/UltimaCore';
+import { CORE_PROBE_INBOUND_TAG } from '../platform/coreProbe';
 
 /**
  * What changes when the desktop Xray config runs inside an Android VpnService.
@@ -89,10 +90,25 @@ const DESKTOP_ONLY_TUN_SETTINGS = [
  * The compiled desktop config, minus what has no place in an app process:
  * the gRPC stats listener (traffic is read in-process) and the TUN settings
  * that would make Xray configure interfaces and routes itself.
+ *
+ * In VPN mode the core also keeps no loopback listener. Every app on the
+ * device shares loopback, the ones the VPN leaves out too, so a local SOCKS
+ * or HTTP proxy would take any of them through the server and show them its
+ * address (issue #93). Besides the tunnel only the probe socket stays: it
+ * lives in the app's private files (`platform/coreProbe.ts`).
  */
-export function adaptConfigForAndroid(config: XrayConfig): XrayConfig {
+export function adaptConfigForAndroid(
+  config: XrayConfig,
+  mode: ConnectionMode,
+): XrayConfig {
   const adapted = structuredClone(config);
   delete adapted.api;
+  if (mode === 'tun') {
+    adapted.inbounds = (adapted.inbounds ?? []).filter(
+      (inbound) =>
+        inbound?.protocol === 'tun' || inbound?.tag === CORE_PROBE_INBOUND_TAG,
+    );
+  }
   for (const inbound of adapted.inbounds ?? []) {
     if (inbound?.protocol !== 'tun' || !inbound.settings) continue;
     const settings = { ...(inbound.settings as Record<string, unknown>) };

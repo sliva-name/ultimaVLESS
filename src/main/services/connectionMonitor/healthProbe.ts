@@ -2,11 +2,10 @@ import os from 'os';
 import { APP_CONSTANTS } from '@/shared/constants';
 import type { XrayHealthStatus } from '@/shared/ipc';
 import type { ConnectionMode } from '@/shared/types';
+import { probeCoreListeners, probeTrafficThroughCore } from '../coreProbe';
 import {
   probeDirectInternetConnectivity,
-  probeHttpThroughProxy,
   probeInternetFromLocalAddresses,
-  probeTcpPort,
 } from '../networkProbe';
 import { TUN_ADDRESS, TUN_INTERFACE_NAME } from '../tunRoute/constants';
 
@@ -116,8 +115,10 @@ export async function runConnectionHealthProbe({
   ports,
   signal,
 }: RunConnectionHealthProbeOptions): Promise<ConnectionHealthProbeResult> {
-  const socksPort = ports?.socks ?? APP_CONSTANTS.PORTS.SOCKS;
-  const httpPort = ports?.http ?? APP_CONSTANTS.PORTS.HTTP;
+  const corePorts = {
+    socks: ports?.socks ?? APP_CONSTANTS.PORTS.SOCKS,
+    http: ports?.http ?? APP_CONSTANTS.PORTS.HTTP,
+  };
   const initialXrayState = getXrayHealthStatus();
   if (initialXrayState.state === 'failed') {
     return {
@@ -128,12 +129,7 @@ export async function runConnectionHealthProbe({
     };
   }
 
-  const [socksReady, httpReady] = await Promise.all([
-    probeTcpPort(socksPort, '127.0.0.1', 1500, signal),
-    probeTcpPort(httpPort, '127.0.0.1', 1500, signal),
-  ]);
-
-  if (!socksReady || !httpReady) {
+  if (!(await probeCoreListeners(corePorts, 1500, signal))) {
     const xrayState = getXrayHealthStatus();
     return {
       type: 'local-proxy-failed',
@@ -144,14 +140,12 @@ export async function runConnectionHealthProbe({
     };
   }
 
-  const tunnelOk = await probeHttpThroughProxy(
-    httpPort,
-    '127.0.0.1',
-    tunnelProbe?.timeoutMs ?? 10_000,
-    tunnelProbe?.attempts ?? 3,
-    tunnelProbe?.gapMs ?? 350,
+  const tunnelOk = await probeTrafficThroughCore(corePorts, {
+    timeoutMs: tunnelProbe?.timeoutMs ?? 10_000,
+    attempts: tunnelProbe?.attempts ?? 3,
+    gapMs: tunnelProbe?.gapMs ?? 350,
     signal,
-  );
+  });
   if (!tunnelOk) {
     const hostOffline = await isHostInternetUnavailable(connectionMode);
     if (hostOffline) {

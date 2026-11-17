@@ -1251,14 +1251,20 @@ describe('XrayConfigCompiler routing modes', () => {
     const userRules = rules.filter((r) => !r.inboundTag);
 
     expect(userRules.map((r) => r.outboundTag)).toEqual([
-      'proxy', // probe pin (hosts)
-      'proxy', // probe pin (1.1.1.1)
       'proxy', // youtube.com
       'direct', // geoip:private
       'block', // subscription block rule survives
       'direct', // default route
     ]);
-    expect(userRules[2].domain).toEqual(['domain:youtube.com']);
+    expect(userRules[0].domain).toEqual(['domain:youtube.com']);
+    // The probes go first, matched by their own marker on the local HTTP proxy.
+    const probe = rules.findIndex((r) => r.attrs !== undefined);
+    expect(rules[probe]).toMatchObject({
+      inboundTag: ['http'],
+      attrs: { 'x-ultima-probe': expect.any(String) },
+      outboundTag: 'proxy',
+    });
+    expect(probe).toBeLessThan(rules.indexOf(userRules[0]));
     expect(userRules[userRules.length - 1]).toEqual({
       type: 'field',
       port: '0-65535',

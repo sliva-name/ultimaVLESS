@@ -1,15 +1,14 @@
 import type { PerformanceSettings, RoutingMode } from '@/shared/types';
 import { toXrayDomainMatcher } from '@/shared/splitTunneling';
-import { isValidIpOrCidr } from '@/shared/networkAddresses';
 import type { XrayRoutingRule } from '@/shared/xray-types';
-import { CONNECTIVITY_TARGETS } from '../networkProbe';
+import { coreProbeRoute } from '../coreProbe';
 
 /**
  * User routing rules. Xray stops at the first matching rule, so the order below
  * is the priority the settings screen documents:
  *
  *   1. service rules (stats API, DNS — added by their own builders)
- *   2. connectivity-probe pin (selective modes only)
+ *   2. the app's own connectivity probes (selective modes only)
  *   3. ad / BitTorrent blocks
  *   4. apps that always go direct
  *   5. sites and addresses — exclusions (direct) and, in `sites` mode, sites
@@ -171,33 +170,15 @@ export function buildProxyAppRules(
 }
 
 /**
- * The health probes request these plain-HTTP hosts through the local proxy
- * inbound. When the default route is direct they would succeed over the
+ * When the default route is direct the health probes would succeed over the
  * user's own connection and mask a dead tunnel, so they stay pinned to it.
+ * The rule matches the probes themselves, not their hosts (`coreProbe.ts`):
+ * any program's request to those hosts would otherwise go through the server.
  */
 export function buildProbePinRules(
   perf: PerformanceSettings,
 ): XrayRoutingRule[] {
-  if (resolveRoutingMode(perf) === 'all') return [];
-  const domains: string[] = [];
-  const ips: string[] = [];
-  for (const { host } of CONNECTIVITY_TARGETS) {
-    if (isValidIpOrCidr(host)) ips.push(host);
-    else domains.push(`full:${host}`);
-  }
-  const rules: XrayRoutingRule[] = [];
-  if (domains.length > 0) {
-    rules.push({
-      type: 'field',
-      domain: domains,
-      port: '80',
-      outboundTag: 'proxy',
-    });
-  }
-  if (ips.length > 0) {
-    rules.push({ type: 'field', ip: ips, port: '80', outboundTag: 'proxy' });
-  }
-  return rules;
+  return resolveRoutingMode(perf) === 'all' ? [] : [coreProbeRoute().rule];
 }
 
 export function buildDefaultRouteRule(

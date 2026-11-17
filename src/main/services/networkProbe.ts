@@ -109,6 +109,7 @@ function probeHttpThroughProxyOnce(
   targetHost: string,
   targetPath: string,
   signal?: AbortSignal,
+  headers: Record<string, string> = {},
 ): Promise<boolean> {
   if (signal?.aborted) {
     return Promise.resolve(false);
@@ -121,6 +122,7 @@ function probeHttpThroughProxyOnce(
       path: `http://${targetHost}${targetPath}`,
       method: 'GET',
       headers: {
+        ...headers,
         Host: targetHost,
         'User-Agent': 'Mozilla/5.0',
         Connection: 'close',
@@ -161,6 +163,7 @@ function probeHttpThroughProxyAny(
   proxyHost: string,
   timeoutMs: number,
   signal?: AbortSignal,
+  headers?: Record<string, string>,
 ): Promise<boolean> {
   if (signal?.aborted) {
     return Promise.resolve(false);
@@ -184,6 +187,7 @@ function probeHttpThroughProxyAny(
         target.host,
         target.path,
         signal,
+        headers,
       ).then((res) => {
         if (resolved) return;
         if (res) {
@@ -205,7 +209,7 @@ function probeHttpThroughProxyAny(
 /**
  * Makes an HTTP request through a local HTTP proxy to a neutral connectivity check URL
  * and expects HTTP 204. Retries a few times — single-shot probes often flake on slow links
- * or right after Xray warms up.
+ * or right after Xray warms up. `headers` go to the proxy with each request.
  */
 export async function probeHttpThroughProxy(
   proxyPort: number,
@@ -214,13 +218,20 @@ export async function probeHttpThroughProxy(
   attempts: number = 3,
   gapMs: number = 350,
   signal?: AbortSignal,
+  headers?: Record<string, string>,
 ): Promise<boolean> {
   for (let i = 0; i < attempts; i++) {
     if (signal?.aborted) {
       return false;
     }
     if (
-      await probeHttpThroughProxyAny(proxyPort, proxyHost, timeoutMs, signal)
+      await probeHttpThroughProxyAny(
+        proxyPort,
+        proxyHost,
+        timeoutMs,
+        signal,
+        headers,
+      )
     ) {
       return true;
     }

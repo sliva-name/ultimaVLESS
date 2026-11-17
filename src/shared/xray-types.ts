@@ -203,7 +203,8 @@ export type XrayRoutingRule = {
   user?: string[];
   inboundTag?: string[];
   protocol?: string[];
-  attrs?: string;
+  /** HTTP inbound only: request attributes (lowercase header names) to contain. */
+  attrs?: Record<string, string>;
   /** Executable names (`.exe` optional) owning the connection's local socket. */
   process?: string[];
   outboundTag: string;

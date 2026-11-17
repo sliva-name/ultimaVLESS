@@ -131,6 +131,15 @@ export interface UltimaCorePlugin {
   getCoreStatus(): Promise<CoreStatus>;
   /** Cumulative bytes of the `proxy` outbound since the core started. */
   getTraffic(): Promise<{ uplink: number; downlink: number }>;
+  /**
+   * GET through the running core's probe socket (`platform/coreProbe.ts`),
+   * as through an HTTP proxy; resolves with the response's status code.
+   */
+  probeCoreSocket(options: {
+    path: string;
+    url: string;
+    timeoutMs: number;
+  }): Promise<{ status: number }>;
 
   /** Throwaway core for a real-delay probe. */
   startProbeCore(options: { id: string; config: string }): Promise<void>;
