@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, Notification, Tray } from 'electron';
 import {
-  getAppIconPath,
+  getTrayIcon,
   getNotificationIconPath,
 } from '@/main/utils/runtimePaths';
 import { localizeError } from '@/shared/localizeError';
@@ -41,7 +41,7 @@ export class TrayService {
 
     this.handlers = handlers;
     this.mainWindowRef = getMainWindow;
-    this.tray = new Tray(getAppIconPath(process.platform));
+    this.tray = new Tray(getTrayIcon(process.platform));
     this.tray.on('click', () => {
       // A window that is open but buried behind other apps must be raised, not
       // hidden — otherwise the click looks like it did nothing.
