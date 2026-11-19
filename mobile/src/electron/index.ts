@@ -121,6 +121,20 @@ export const dialog = {
 
 export const powerMonitor = new EventEmitter();
 
+/**
+ * `nativeImage` exists only so desktop modules that import it (e.g.
+ * runtimePaths.getTrayIcon) bundle on Android. The darwin-only code path
+ * never runs here — process.platform is 'android'.
+ */
+export const nativeImage = {
+  createFromPath(): never {
+    throw new Error('nativeImage is not available on Android');
+  },
+  createEmpty(): never {
+    throw new Error('nativeImage is not available on Android');
+  },
+};
+
 export default {
   app,
   ipcMain,
@@ -128,4 +142,5 @@ export default {
   BrowserWindow,
   dialog,
   powerMonitor,
+  nativeImage,
 };
