@@ -92,16 +92,23 @@ async function fetchLibv2ray(version) {
   fs.writeFileSync(path.join(libsDir, 'libv2ray.aar'), aar);
 }
 
+/**
+ * Windows' own tar reads zip. Not Expand-Archive: started from PowerShell 7,
+ * Windows PowerShell loads 7's Archive module, which fails there and still
+ * exits 0. The full path skips Git's GNU tar, which cannot read zip.
+ */
 function extractZip(zipPath, destination) {
+  // tar, unlike unzip, does not create the folder.
+  fs.mkdirSync(destination, { recursive: true });
   const result =
     process.platform === 'win32'
       ? spawnSync(
-          'powershell',
-          [
-            '-NoProfile',
-            '-Command',
-            `Expand-Archive -Path "${zipPath}" -DestinationPath "${destination}" -Force`,
-          ],
+          path.join(
+            process.env.SystemRoot ?? 'C:\\Windows',
+            'System32',
+            'tar.exe',
+          ),
+          ['-xf', zipPath, '-C', destination],
           { stdio: 'inherit' },
         )
       : spawnSync('unzip', ['-o', zipPath, '-d', destination], {
