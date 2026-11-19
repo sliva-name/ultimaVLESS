@@ -436,7 +436,11 @@ async function buildWindow(): Promise<BrowserWindow> {
     height: 700,
     show: false,
     backgroundColor: WINDOW_BACKGROUND,
-    icon: getAppIconPath(process.platform),
+    // macOS takes the window icon from the .app bundle; `icon` there is
+    // ignored anyway and would only feed the path through nativeImage.
+    ...(process.platform === 'darwin'
+      ? {}
+      : { icon: getAppIconPath(process.platform) }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
