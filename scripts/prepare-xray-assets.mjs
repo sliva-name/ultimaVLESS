@@ -198,15 +198,19 @@ async function main() {
     }
 
     const { spawnSync } = await import('child_process');
+    // Windows' own tar reads zip. Not Expand-Archive: started from PowerShell 7
+    // (as on GitHub runners), Windows PowerShell loads 7's Archive module,
+    // which fails there and still exits 0. The full path skips Git's GNU tar,
+    // which cannot read zip.
     const unzipResult =
       process.platform === 'win32'
         ? spawnSync(
-            'powershell',
-            [
-              '-NoProfile',
-              '-Command',
-              `Expand-Archive -Path "${zipPath}" -DestinationPath "${extractDir}" -Force`,
-            ],
+            path.join(
+              process.env.SystemRoot ?? 'C:\\Windows',
+              'System32',
+              'tar.exe',
+            ),
+            ['-xf', zipPath, '-C', extractDir],
             { stdio: 'inherit' },
           )
         : spawnSync('unzip', ['-o', zipPath, '-d', extractDir], {
