@@ -1,6 +1,7 @@
 import React from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  createEvent,
   fireEvent,
   render,
   screen,
@@ -224,25 +225,49 @@ describe('mobile UI', () => {
     history.back();
     await closed();
 
-    // A short drag springs back; a long one follows the finger and closes.
-    const sheet = await openSheet();
-    Object.defineProperty(sheet, 'offsetHeight', {
-      configurable: true,
-      value: 400,
-    });
-    const handle = sheet.querySelector('[data-sheet-drag]')!;
-    fireEvent.pointerDown(handle, { pointerId: 1, clientY: 100 });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 150 });
-    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 150 });
+    // The sheet takes the fling speed from the events' times, so the test sets
+    // them: with the real clock a slow runner turns a short drag into a fling.
+    const openForDrag = async () => {
+      const sheet = await openSheet();
+      Object.defineProperty(sheet, 'offsetHeight', {
+        configurable: true,
+        value: 400,
+      });
+      const handle = sheet.querySelector('[data-sheet-drag]')!;
+      const pointer = (
+        type: 'pointerDown' | 'pointerMove' | 'pointerUp',
+        clientY: number,
+        timeStamp: number,
+      ) => {
+        const event = createEvent[type](handle, { pointerId: 1, clientY });
+        Object.defineProperty(event, 'timeStamp', { value: timeStamp });
+        fireEvent(handle, event);
+      };
+      return { sheet, pointer };
+    };
+
+    // A short slow drag springs back.
+    const { sheet, pointer } = await openForDrag();
+    pointer('pointerDown', 100, 1000);
+    pointer('pointerMove', 150, 1400);
+    pointer('pointerUp', 150, 1400);
     expect(sheet).toHaveStyle({ transform: 'translateY(0px)' });
     expect(sheetOpen()).toBe(true);
 
-    fireEvent.pointerDown(handle, { pointerId: 1, clientY: 100 });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 40 });
+    // A long one follows the finger and closes, however slow.
+    pointer('pointerDown', 100, 2000);
+    pointer('pointerMove', 40, 2100);
     expect(sheet).toHaveStyle({ transform: 'translateY(0px)' });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 300 });
+    pointer('pointerMove', 300, 3000);
     expect(sheet).toHaveStyle({ transform: 'translateY(200px)' });
-    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 300 });
+    pointer('pointerUp', 300, 3000);
+    await closed();
+
+    // A short quick flick closes too.
+    const flick = await openForDrag();
+    flick.pointer('pointerDown', 100, 4000);
+    flick.pointer('pointerMove', 130, 4020);
+    flick.pointer('pointerUp', 130, 4020);
     await closed();
   });
 
