@@ -44,6 +44,9 @@ const NON_IDENTITY_CATALOG_KEYS = new Set([
   'pingStale',
   'source',
   'subscriptionId',
+  // Same parameters written differently (query order, `#name` encoding) are
+  // the same server; stored servers without it must keep matching too.
+  'shareLink',
 ]);
 
 function stableJson(value: unknown): string {

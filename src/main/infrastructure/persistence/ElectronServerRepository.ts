@@ -27,6 +27,18 @@ function pingOverlayFingerprint(overlay: Record<string, StoredPing>): string {
     .join('||');
 }
 
+/**
+ * What is on disk. The share link is no identity, so the catalog fingerprint
+ * skips it, but the first refresh that brings links must still be written.
+ */
+function persistedFingerprint(
+  catalog: VlessConfig[],
+  overlay: Record<string, StoredPing>,
+): string {
+  const links = catalog.map((server) => server.shareLink ?? '').join('\n');
+  return `${catalogListFingerprint(catalog)}##${links}##${pingOverlayFingerprint(overlay)}`;
+}
+
 function stripPing(server: VlessConfig): VlessConfig {
   const catalog = { ...server };
   delete catalog.ping;
@@ -162,7 +174,7 @@ export function createServerRepository(): ServerRepository {
       const unique = uniqueCatalogServers(servers);
       const catalog = unique.map(stripPing);
       const overlay = extractPingOverlay(unique);
-      const fingerprint = `${catalogListFingerprint(catalog)}##${pingOverlayFingerprint(overlay)}`;
+      const fingerprint = persistedFingerprint(catalog, overlay);
       if (fingerprint === lastPersistedFingerprint) {
         logger.debug(
           'ServerRepository',
@@ -182,7 +194,7 @@ export function createServerRepository(): ServerRepository {
     },
     savePings(overlay: ServerPingOverlay) {
       const catalog = readCatalog();
-      const fingerprint = `${catalogListFingerprint(catalog)}##${pingOverlayFingerprint(overlay)}`;
+      const fingerprint = persistedFingerprint(catalog, overlay);
       if (fingerprint === lastPersistedFingerprint) {
         logger.debug('ServerRepository', 'savePings skipped (unchanged)');
         return;

@@ -198,6 +198,10 @@ export class UltimaCoreWeb extends WebPlugin implements UltimaCorePlugin {
     await navigator.clipboard?.writeText(text);
   }
 
+  async copyText({ text }: { text: string }): Promise<void> {
+    await navigator.clipboard.writeText(text);
+  }
+
   async openUrl({ url }: { url: string }): Promise<void> {
     window.open(url, '_blank', 'noopener');
   }

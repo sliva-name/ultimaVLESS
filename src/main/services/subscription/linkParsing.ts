@@ -867,7 +867,10 @@ export function parseDirectLinksFromText(input: string): VlessConfig[] {
   const configs: VlessConfig[] = [];
   for (const line of candidates) {
     const config = parseLink(line);
-    if (config) configs.push(config);
+    // Kept as given, so "copy link" returns what the provider sent.
+    if (config) {
+      configs.push({ ...config, shareLink: normalizeLinkForParsing(line) });
+    }
   }
   return configs;
 }

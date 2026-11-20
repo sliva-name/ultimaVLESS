@@ -9,6 +9,7 @@ import type {
   ConnectResult,
   DisconnectResult,
   SaveManualLinksResult,
+  ServerDetails,
   UpdateStatus,
 } from '@/shared/ipc';
 import type {
@@ -97,6 +98,9 @@ export function createElectronApiMock(
       return makeAppSnapshot({ connectionMode });
     }),
     setSelectedServerId: vi.fn(async (_serverId: string | null) => true),
+    getServerDetails: vi.fn(
+      async (_serverId: string): Promise<ServerDetails | null> => null,
+    ),
     getConnectionMode: vi.fn(async (): Promise<ConnectionMode> => 'proxy'),
     setConnectionMode: vi.fn(async (_mode: ConnectionMode) => true),
     getTunCapabilityStatus: vi.fn(async () => ({

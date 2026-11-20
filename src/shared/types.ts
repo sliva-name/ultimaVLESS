@@ -130,6 +130,13 @@ export interface ServerConfig {
 
   // Full Xray config from JSON subscription
   rawConfig?: XrayConfig;
+
+  /**
+   * The share link this server was parsed from (`vless://…`), for "copy
+   * link". Not part of the server's identity; absent for JSON servers and
+   * for servers stored before it was kept.
+   */
+  shareLink?: string;
 }
 
 export type VlessConfig = ServerConfig;

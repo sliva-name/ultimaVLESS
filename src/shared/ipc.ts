@@ -2,6 +2,7 @@ export * from './ipc/channels';
 export * from './ipc/payloads';
 export * from './views/appSnapshot';
 export * from './views/monitorStatus';
+export * from './views/serverDetails';
 export * from './views/traffic';
 export * from './views/tunEnvironment';
 export * from './views/update';

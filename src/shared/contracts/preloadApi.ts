@@ -19,6 +19,7 @@ import type {
   TunCapabilityStatus,
 } from '@/shared/views/monitorStatus';
 import type { UpdateStatus } from '@/shared/views/update';
+import type { ServerDetails } from '@/shared/views/serverDetails';
 import type {
   CloseConflictingAppResult,
   ConflictingAppsScan,
@@ -59,6 +60,8 @@ export interface IElectronAPI {
   clearBlockedServers: () => Promise<boolean>;
   getAppSnapshot: () => Promise<AppSnapshot>;
   setSelectedServerId: (serverId: string | null) => Promise<boolean>;
+  /** One server's parameters and link, credentials included; null if gone. */
+  getServerDetails: (serverId: string) => Promise<ServerDetails | null>;
   getConnectionMode: () => Promise<ConnectionMode>;
   setConnectionMode: (mode: ConnectionMode) => Promise<boolean>;
   getTunCapabilityStatus: () => Promise<TunCapabilityStatus>;

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import {
   ChevronDown,
+  Info,
   Loader2,
   Lock,
   Power,
@@ -21,6 +22,7 @@ import {
   ServerFlag,
   subscriptionColorIndex,
 } from './serverParts';
+import { ServerDetailsSheet } from './ServerDetailsSheet';
 
 type ServerRow = VlessConfig & Pick<SafeServerConfig, 'outboundCompatible'>;
 
@@ -36,6 +38,12 @@ interface ServersScreenProps {
   onToggleConnection: () => void;
   onPingAll: () => Promise<void>;
   onStopPing: () => Promise<void>;
+  /** The selected server's parameters sheet; a route, so back closes it. */
+  detailsOpen: boolean;
+  onOpenDetails: () => void;
+  onCloseDetails: () => void;
+  /** Sources, where manual links are edited. */
+  onEditManual: () => void;
 }
 
 /** Group dots, in the order of the desktop subscription colors. */
@@ -67,6 +75,10 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
   onToggleConnection,
   onPingAll,
   onStopPing,
+  detailsOpen,
+  onOpenDetails,
+  onCloseDetails,
+  onEditManual,
 }) => {
   const { t } = useTranslation();
   const format = useFormat();
@@ -362,6 +374,16 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
           </span>
           <button
             type="button"
+            onClick={onOpenDetails}
+            aria-label={t('serverDetails.openAria', {
+              name: selectedServer.name,
+            })}
+            className="w-12 h-12 shrink-0 flex items-center justify-center rounded-full text-fg2"
+          >
+            <Info aria-hidden strokeWidth={2} className="w-6 h-6" />
+          </button>
+          <button
+            type="button"
             onClick={onToggleConnection}
             disabled={phase === 'disconnecting'}
             aria-label={t(
@@ -390,6 +412,15 @@ export const ServersScreen: React.FC<ServersScreenProps> = ({
           </button>
         </div>
       )}
+
+      {/* Stays mounted, so the system back closes it with its animation. */}
+      <ServerDetailsSheet
+        open={detailsOpen}
+        server={selectedServer}
+        subscriptions={subscriptions}
+        onClose={onCloseDetails}
+        onEditManual={onEditManual}
+      />
     </div>
   );
 };
