@@ -502,7 +502,7 @@
         "sniffingRouteOnly": "Yalnızca yönlendirme koklama (sniffing)",
         "sniffingRouteOnlyHint": "Koklama sonuçlarını yalnızca yönlendirme için kullanın, hedefi geçersiz kılmayın.",
         "pingMethod": "Ping yöntemi",
-        "pingMethodHint": "Gerçek gecikme, her sunucu için kısa ömürlü bir Xray başlatır ve v2rayN'de olduğu gibi üzerinden bir HTTP isteği zamanlar. Trafik geçirmeyen ancak yanıt veren sunucuları yakalar ve büyük listelerde daha yavaştır.",
+        "pingMethodHint": "Gerçek gecikme, her sunucu için kısa ömürlü bir Xray başlatır ve üzerinden iki HTTP isteği gönderir. İlki sunucunun trafik geçirdiğini doğrular; gösterilen değer ikincisidir: el sıkışma olmadan zaten açık bir bağlantının gecikmesi, protokoller arasında karşılaştırılabilir. Büyük listelerde daha yavaştır.",
         "pingMethodTcp": "TCP ping",
         "pingMethodTcpDesc": "Hızlı, yalnızca erişilebilirlik",
         "pingMethodReal": "Gerçek gecikme",

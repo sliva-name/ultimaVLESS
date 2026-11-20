@@ -184,6 +184,10 @@ describe('Android backend', () => {
     expect(idle.every((result) => typeof result.latency === 'number')).toBe(
       true,
     );
+    // Real delay is the native two-request tunnel probe's figure.
+    expect(idle.map((result) => result.latency)).toEqual(
+      idle.map(() => core.tunnelLatency),
+    );
 
     expect(await window.electronAPI.connect(servers[0].uuid)).toEqual({
       ok: true,

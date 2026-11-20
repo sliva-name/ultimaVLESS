@@ -13,9 +13,46 @@ export {
   REAL_DELAY_MIN_TIMEOUT_MS,
   REAL_DELAY_TEST_URL,
   buildDelayTestConfig,
-  measureHttpThroughProxy,
 } from '@desktop/main/services/RealDelayService';
 export type { DelayTestProcess, DelayTestProxy, RealDelayServiceOptions };
+
+/**
+ * The desktop measurement (CONNECT, then two GETs on the same tunnel, the
+ * second one reported) needs a raw socket the WebView does not have, so the
+ * native side runs it.
+ */
+export function measureTunnelDelay(
+  proxy: DelayTestProxy,
+  url: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<number | null> {
+  if (signal?.aborted) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const onAbort = (): void => resolve(null);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    UltimaCore.tunnelDelay({
+      proxyPort: proxy.port,
+      user: proxy.user,
+      pass: proxy.pass,
+      url,
+      timeoutMs,
+    })
+      .then(
+        ({ latency }) => latency ?? null,
+        (error: unknown) => {
+          logger.debug('RealDelayService', 'Tunnel delay failed', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        },
+      )
+      .then((latency) => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve(signal?.aborted ? null : latency);
+      });
+  });
+}
 
 let nextProbeId = 0;
 
@@ -59,6 +96,7 @@ export class RealDelayService extends DesktopRealDelayService {
     super({
       spawnXray: startProbeCore,
       allocatePort: async () => (await UltimaCore.allocatePort()).port,
+      measure: measureTunnelDelay,
       // Each probe core shares the app's memory with the VPN itself.
       maxConcurrent: 4,
       ...options,

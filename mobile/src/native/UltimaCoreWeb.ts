@@ -127,6 +127,16 @@ export class UltimaCoreWeb extends WebPlugin implements UltimaCorePlugin {
     return { port: 20000 + Math.floor(Math.random() * 20000) };
   }
 
+  async tunnelDelay({
+    proxyPort,
+  }: {
+    proxyPort: number;
+  }): Promise<{ latency: number | null }> {
+    const latency = fakeLatency('probe', proxyPort);
+    await new Promise((r) => setTimeout(r, latency));
+    return { latency };
+  }
+
   async tcpConnect({
     host,
     port,

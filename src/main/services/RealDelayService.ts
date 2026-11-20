@@ -1,6 +1,5 @@
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
-import http from 'http';
 import net from 'net';
 import path from 'path';
 import {
@@ -20,9 +19,9 @@ import { probeServers, type PingServersOptions } from './serverLatencyProbe';
 /** Same probe v2rayN uses for its "real delay": tiny, cacheless, plain HTTP. */
 export const REAL_DELAY_TEST_URL = 'http://www.gstatic.com/generate_204';
 /**
- * Floor for the HTTP budget. The figure includes the proxy handshake
- * (TLS/REALITY) and a round trip to the probe host, so the TCP-ping timeouts
- * the ping runner passes in would fail healthy but distant servers.
+ * Floor for the HTTP budget. It covers the proxy handshake (TLS/REALITY,
+ * QUIC) and two round trips to the probe host, so the TCP-ping timeouts the
+ * ping runner passes in would fail healthy but distant servers.
  */
 export const REAL_DELAY_MIN_TIMEOUT_MS = 5000;
 const DELAY_TEST_INBOUND_TAG = 'delay-test-in';
@@ -142,12 +141,63 @@ export function allocateLoopbackPort(): Promise<number> {
   });
 }
 
+/** A probe target's 204 has a few hundred bytes of headers. */
+const MAX_RESPONSE_HEAD_BYTES = 16 * 1024;
+
+interface ResponseHead {
+  status: number;
+  /** Body bytes to skip before the next response on the same connection. */
+  bodyLength: number;
+  /** Whether a second request can follow on this connection. */
+  reusable: boolean;
+}
+
+function parseResponseHead(head: string): ResponseHead {
+  const [statusLine = '', ...lines] = head.split('\r\n');
+  const status = Number(statusLine.split(' ')[1]) || 0;
+  let contentLength: number | null = null;
+  let reusable = /^HTTP\/1\.1 /i.test(statusLine);
+  for (const line of lines) {
+    const colon = line.indexOf(':');
+    if (colon < 0) continue;
+    const name = line.slice(0, colon).trim().toLowerCase();
+    const value = line
+      .slice(colon + 1)
+      .trim()
+      .toLowerCase();
+    if (name === 'content-length') contentLength = Number(value);
+    if (name === 'connection' && value.includes('close')) reusable = false;
+    if (name === 'transfer-encoding' && value !== 'identity') reusable = false;
+  }
+  const bodyless = status === 204 || status === 304 || status < 200;
+  if (
+    !bodyless &&
+    (contentLength === null || !Number.isFinite(contentLength))
+  ) {
+    // The body runs until the server closes the connection.
+    reusable = false;
+  }
+  return {
+    status,
+    bodyLength: bodyless ? 0 : Math.max(0, contentLength ?? 0),
+    reusable,
+  };
+}
+
+const isSuccess = (status: number): boolean => status >= 200 && status < 400;
+
 /**
- * Times one GET through a local HTTP proxy, from request start to response
- * headers. Anything but a 2xx/3xx (Xray answers a dead outbound by closing
- * the socket or with an error status) counts as a failure.
+ * Real delay on an open tunnel: one CONNECT through the probe's HTTP inbound,
+ * then two GETs over it (plain-HTTP `url` only).
+ *
+ * The first request pays for the proxy's own setup (TCP + TLS/REALITY, or
+ * QUIC + Hysteria auth) and is what proves the server passes traffic: if it
+ * fails, the server is reported dead. The second is the round trip an app
+ * sees once connected, comparable across protocols, and is the figure
+ * reported. When the target will not keep the connection open, or the second
+ * request fails or runs out of time, the first figure is reported instead.
  */
-export function measureHttpThroughProxy(
+export function measureTunnelDelay(
   proxy: DelayTestProxy,
   url: string,
   timeoutMs: number,
@@ -155,43 +205,100 @@ export function measureHttpThroughProxy(
 ): Promise<number | null> {
   if (signal?.aborted) return Promise.resolve(null);
   const target = new URL(url);
+  if (target.protocol !== 'http:') {
+    logger.debug('RealDelayService', 'Delay test URL must be plain HTTP', {
+      url,
+    });
+    return Promise.resolve(null);
+  }
+  const authority = `${target.hostname}:${target.port || 80}`;
+  const login = btoa(`${proxy.user}:${proxy.pass}`);
+  const request =
+    `GET ${target.pathname}${target.search} HTTP/1.1\r\n` +
+    `Host: ${target.host}\r\nUser-Agent: Mozilla/5.0\r\nAccept: */*\r\n\r\n`;
+
   return new Promise((resolve) => {
     let settled = false;
-    const startedAt = performance.now();
-    const req = http.request({
-      host: '127.0.0.1',
-      port: proxy.port,
-      path: target.href,
-      method: 'GET',
-      agent: false,
-      headers: {
-        Host: target.host,
-        'Proxy-Authorization': `Basic ${btoa(`${proxy.user}:${proxy.pass}`)}`,
-        'User-Agent': 'Mozilla/5.0',
-        Connection: 'close',
-      },
-    });
+    let stage: 'tunnel' | 'first' | 'body' | 'second' = 'tunnel';
+    let pending = Buffer.alloc(0);
+    let skip = 0;
+    let sentAt = 0;
+    let first: number | null = null;
+
+    const socket = net.connect({ host: '127.0.0.1', port: proxy.port });
+    socket.setNoDelay(true);
 
     const finish = (latency: number | null): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
-      req.destroy();
+      socket.destroy();
       resolve(latency);
     };
     const onAbort = (): void => finish(null);
-    const timer = setTimeout(() => finish(null), timeoutMs);
-
+    // Running out of time on the second request still leaves a working server.
+    const timer = setTimeout(() => finish(first), timeoutMs);
     signal?.addEventListener('abort', onAbort, { once: true });
-    req.once('response', (res) => {
-      const latency = Math.max(1, Math.round(performance.now() - startedAt));
-      const status = res.statusCode ?? 0;
-      res.resume();
-      finish(status >= 200 && status < 400 ? latency : null);
+
+    const send = (): void => {
+      sentAt = performance.now();
+      socket.write(request);
+    };
+    const elapsed = (): number =>
+      Math.max(1, Math.round(performance.now() - sentAt));
+
+    const pump = (): void => {
+      while (!settled) {
+        if (stage === 'body') {
+          const n = Math.min(skip, pending.length);
+          pending = pending.subarray(n);
+          skip -= n;
+          if (skip > 0) return;
+          stage = 'second';
+          send();
+          continue;
+        }
+        const end = pending.indexOf('\r\n\r\n');
+        if (end < 0) {
+          if (pending.length > MAX_RESPONSE_HEAD_BYTES) finish(first);
+          return;
+        }
+        const head = parseResponseHead(
+          pending.subarray(0, end).toString('latin1'),
+        );
+        pending = pending.subarray(end + 4);
+        if (stage === 'tunnel') {
+          // 407 for a wrong login; Xray answers CONNECT before dialing out.
+          if (head.status !== 200) return finish(null);
+          stage = 'first';
+          send();
+        } else if (stage === 'first') {
+          // Xray answers a dead outbound by closing the tunnel or with an
+          // error status.
+          if (!isSuccess(head.status)) return finish(null);
+          first = elapsed();
+          if (!head.reusable) return finish(first);
+          skip = head.bodyLength;
+          stage = 'body';
+        } else {
+          return finish(isSuccess(head.status) ? elapsed() : first);
+        }
+      }
+    };
+
+    socket.once('connect', () => {
+      socket.write(
+        `CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n` +
+          `Proxy-Authorization: Basic ${login}\r\n\r\n`,
+      );
     });
-    req.once('error', () => finish(null));
-    req.end();
+    socket.on('data', (chunk: Buffer) => {
+      pending = Buffer.concat([pending, chunk]);
+      pump();
+    });
+    socket.once('error', () => finish(first));
+    socket.once('close', () => finish(first));
   });
 }
 
@@ -263,9 +370,12 @@ function spawnBundledXray(config: XrayConfig): DelayTestProcess {
 
 /**
  * v2rayN-style "real delay": each server gets its own short-lived Xray with
- * the exact outbound a connection would use, and the figure is the time an
- * HTTP request through it takes. Unlike a TCP ping this fails servers that
- * accept connections but reject the handshake or cannot reach the internet.
+ * the exact outbound a connection would use, and HTTP requests go through
+ * it. Unlike a TCP ping this fails servers that accept connections but reject
+ * the handshake or cannot reach the internet. The figure is the round trip on
+ * the already open tunnel ({@link measureTunnelDelay}), so a protocol with a
+ * longer handshake (Hysteria2's QUIC + auth) does not look three times slower
+ * than the connection really is.
  */
 export class RealDelayService {
   private readonly spawnXray: (config: XrayConfig) => DelayTestProcess;
@@ -282,7 +392,7 @@ export class RealDelayService {
     this.spawnXray = options.spawnXray ?? spawnBundledXray;
     this.allocatePort = options.allocatePort ?? allocateLoopbackPort;
     this.waitForListener = options.waitForListener ?? waitForLoopbackListener;
-    this.measure = options.measure ?? measureHttpThroughProxy;
+    this.measure = options.measure ?? measureTunnelDelay;
     this.getPerformanceSettings =
       options.getPerformanceSettings ?? (() => DEFAULT_PERFORMANCE_SETTINGS);
     this.maxConcurrent = Math.max(

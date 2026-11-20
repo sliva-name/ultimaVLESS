@@ -498,7 +498,7 @@
         "sniffingRouteOnly": "仅嗅探路由",
         "sniffingRouteOnlyHint": "仅将嗅探结果用于路由，不覆盖目标地址。",
         "pingMethod": "Ping 方法",
-        "pingMethodHint": "真实延迟会为每个服务器启动一个短暂的 Xray 实例，并像 v2rayN 一样通过它计时 HTTP 请求。它会捕获有响应但不传递流量的服务器，并且在大型列表上较慢。",
+        "pingMethodHint": "真实延迟会为每个服务器启动一个短暂的 Xray 实例，并通过它发送两个 HTTP 请求。第一个请求确认服务器能够传递流量，显示的是第二个请求的耗时，即已建立连接的延迟，不含握手时间，可在不同协议之间直接比较。在大型列表上较慢。",
         "pingMethodTcp": "TCP ping",
         "pingMethodTcpDesc": "快速，仅检查可达性",
         "pingMethodReal": "真实延迟",

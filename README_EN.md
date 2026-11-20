@@ -65,7 +65,7 @@ The mode can be switched while connected — the client reconnects to the same s
 - **Auto switching**: if the current server stops passing traffic, the client moves to another one and restores the connection.
 
 **Server checks**
-- **Real delay** by default: each server gets a temporary Xray and an HTTP request goes through it, like in v2rayN. A server that answers but passes no traffic does not look alive.
+- **Real delay** by default: each server gets a temporary Xray, and two HTTP requests go through one connection to it. The first checks that the server passes traffic, so a server that answers but passes none does not look alive. The figure shown is the second: the delay of an already open connection without the handshake, so Hysteria2 and VLESS compare fairly.
 - Fast **TCP ping** — reachability only, under "Settings → Mode and network".
 - Check all servers or one subscription; a check can be stopped.
 

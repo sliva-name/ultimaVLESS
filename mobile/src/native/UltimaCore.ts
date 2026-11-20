@@ -145,6 +145,19 @@ export interface UltimaCorePlugin {
   startProbeCore(options: { id: string; config: string }): Promise<void>;
   stopProbeCore(options: { id: string }): Promise<void>;
   allocatePort(): Promise<{ port: number }>;
+  /**
+   * Real delay through a probe core's HTTP inbound: CONNECT, then two GETs of
+   * the plain-HTTP `url` on that tunnel. `latency` is the second request in
+   * ms, the first one when the target would not keep the connection open, or
+   * null when the first request failed.
+   */
+  tunnelDelay(options: {
+    proxyPort: number;
+    user: string;
+    pass: string;
+    url: string;
+    timeoutMs: number;
+  }): Promise<{ latency: number | null }>;
 
   tcpConnect(options: {
     host: string;
