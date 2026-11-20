@@ -68,6 +68,7 @@ export const mobileElectronApi: IElectronAPI = {
   clearBlockedServers: () => invoke(C.clearBlockedServers),
   getAppSnapshot: () => invoke(C.getAppSnapshot),
   setSelectedServerId: (serverId) => invoke(C.setSelectedServerId, serverId),
+  getServerDetails: (serverId) => invoke(C.getServerDetails, serverId),
   getConnectionMode: () => invoke(C.getConnectionMode),
   setConnectionMode: (mode) => invoke(C.setConnectionMode, mode),
   getTunCapabilityStatus: () => invoke(C.getTunCapabilityStatus),

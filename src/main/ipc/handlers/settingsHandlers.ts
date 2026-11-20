@@ -7,6 +7,7 @@ import {
 } from 'electron';
 import { normalizePerformanceSettings } from '@/shared/performanceSettings';
 import { describeExecutable } from '@/main/services/runningApps';
+import { buildServerDetails } from '@/main/services/serverDetails';
 import { logger } from '@/main/services/LoggerService';
 import { IPC_INVOKE_CHANNELS, TunCapabilityStatus } from '@/shared/ipc';
 import type { SnapshotReason } from '@/main/runtime/SnapshotPublisher';
@@ -71,6 +72,19 @@ export function registerSettingsHandlers({
       deps.configService.setSelectedServerId(serverId);
       notifySnapshot('settings');
       return true;
+    },
+  );
+
+  // Credentials leave main only here: one server, when its card is opened.
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.getServerDetails,
+    (event: IpcMainInvokeEvent, serverId: unknown) => {
+      assertTrustedSender(event);
+      if (typeof serverId !== 'string' || serverId.trim().length === 0) {
+        throw new Error('Invalid server id');
+      }
+      const server = deps.serverRepository.get(serverId);
+      return server ? buildServerDetails(server) : null;
     },
   );
 

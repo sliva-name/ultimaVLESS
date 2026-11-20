@@ -177,6 +177,12 @@ export interface UltimaCorePlugin {
     text: string;
     fileName: string;
   }): Promise<void>;
+  /** `sensitive` keeps the clip out of the system's copy preview. */
+  copyText(options: {
+    text: string;
+    label?: string;
+    sensitive?: boolean;
+  }): Promise<void>;
   openUrl(options: { url: string }): Promise<void>;
   listApps(): Promise<{ apps: InstalledApp[] }>;
 

@@ -3,16 +3,8 @@ import clsx from 'clsx';
 import { Clock, Globe, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { VlessConfig } from '@/shared/types';
+import { PROTOCOL_NAMES } from '@/shared/views/serverDetails';
 import { CountryFlag, hasCountryFlag } from '@/renderer/components/CountryFlag';
-
-const PROTOCOL_NAMES: Record<string, string> = {
-  vless: 'VLESS',
-  vmess: 'VMess',
-  trojan: 'Trojan',
-  shadowsocks: 'Shadowsocks',
-  hysteria: 'Hysteria',
-  wireguard: 'WireGuard',
-};
 
 const TRANSPORT_NAMES: Record<string, string> = {
   ws: 'WS',

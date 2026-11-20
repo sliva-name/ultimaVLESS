@@ -9,6 +9,12 @@ const IPV4_PATTERN = /\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g;
 const IPV6_PATTERN = /\b[0-9a-f]{0,4}(?::{1,2}[0-9a-f]{0,4}){2,7}\b/gi;
 /** `scheme://user:pass@host` — subscription URLs sometimes embed credentials. */
 const BASIC_AUTH_PATTERN = /(\bhttps?:\/\/)[^\s/@:]+:[^\s/@]+@/gi;
+/**
+ * A whole share link is a credential: a Trojan password or a Shadowsocks
+ * key looks like nothing the patterns above catch.
+ */
+const SHARE_LINK_PATTERN =
+  /\b(vless|vmess|trojan|ss|hy2|hysteria2|wireguard):\/\/[^\s"'<>`]+/gi;
 
 /** IPs we deliberately keep as-is because they never reveal private identity. */
 const PRESERVED_IPS = new Set(['127.0.0.1', '0.0.0.0', '255.255.255.255']);
@@ -49,6 +55,7 @@ function redactIpv6(match: string): string {
 
 export function sanitizeSensitiveText(text: string): string {
   return text
+    .replace(SHARE_LINK_PATTERN, '$1://***')
     .replace(UUID_PATTERN, '***-UUID-***')
     .replace(BASIC_AUTH_PATTERN, '$1***:***@')
     .replace(IPV6_PATTERN, redactIpv6)
@@ -81,6 +88,7 @@ const SECRET_KEY_NAMES = new Set([
   'cookie',
   'rawconfig',
   'subscriptionurl',
+  'sharelink',
 ]);
 
 const SECRET_KEY_SUBSTRINGS = ['password', 'secret', 'token', 'apikey'];

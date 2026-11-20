@@ -79,6 +79,46 @@ describe('mobile UI', () => {
     expect(await screen.findByText('Подключено · VPN')).toBeInTheDocument();
   });
 
+  it('shows the selected server parameters in a sheet and copies its link as sensitive', async () => {
+    const info = await screen.findByRole('button', {
+      name: 'Параметры сервера Amsterdam',
+    });
+    info.focus();
+    fireEvent.click(info);
+    const sheet = await screen.findByRole('dialog', {
+      name: 'Параметры сервера Amsterdam',
+    });
+    expect(within(sheet).getByText('Добавлен вручную')).toBeInTheDocument();
+    expect(await within(sheet).findByText('203.0.113.10')).toBeInTheDocument();
+    const uuid = '5f1c8b3e-2a7d-4e1b-9c3a-0d6e7f8a9b10';
+    expect(within(sheet).queryByText(uuid)).not.toBeInTheDocument();
+    expect(within(sheet).getByText('vless://••••••••')).toBeInTheDocument();
+
+    fireEvent.click(
+      within(sheet).getByRole('button', { name: 'Показать ключи' }),
+    );
+    expect(within(sheet).getByText(uuid)).toBeInTheDocument();
+    expect(within(sheet).getByText(LINK)).toBeInTheDocument();
+
+    fireEvent.click(
+      within(sheet).getByRole('button', { name: 'Скопировать ссылку' }),
+    );
+    await waitFor(() =>
+      expect(fake.core!.clipboard).toEqual([
+        expect.objectContaining({ text: LINK, sensitive: true }),
+      ]),
+    );
+
+    // The system back closes it and leaves the servers screen open.
+    history.back();
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText('Сменить сервер можно после отключения'),
+    ).toBeInTheDocument();
+  });
+
   it('localizes the notification: server name as title, mode and units in the text', () => {
     const start = fake.core!.starts[0];
     expect(start.sessionName).toBe('Amsterdam');

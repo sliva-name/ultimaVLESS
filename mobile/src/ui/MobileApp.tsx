@@ -18,6 +18,10 @@ import {
   type SettingsPage,
 } from './useMobileNav';
 
+const SERVERS_ROUTE: MobileRoute = { tab: 'servers', page: 'root' };
+/** The selected server's parameters sheet over the servers screen. */
+const SERVER_DETAILS_ROUTE: MobileRoute = { ...SERVERS_ROUTE, sheet: true };
+
 function MobileShell() {
   const { route, navigate, back } = useMobileNav();
   const {
@@ -93,6 +97,12 @@ function MobileShell() {
             onToggleConnection={handleToggleConnection}
             onPingAll={pingAllServers}
             onStopPing={stopPing}
+            detailsOpen={!!route.sheet}
+            onOpenDetails={() =>
+              navigate([SERVERS_ROUTE, SERVER_DETAILS_ROUTE])
+            }
+            onCloseDetails={back}
+            onEditManual={() => openSettings('sources')}
           />
         )}
         {route.tab === 'settings' && (

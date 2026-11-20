@@ -38,6 +38,8 @@ export class FakeCore {
   coreRequests: { path: string; url: string }[] = [];
   coreRequestsWork = true;
   startError: Error | null = null;
+  /** What `copyText` put on the clipboard. */
+  clipboard: { text: string; sensitive?: boolean }[] = [];
   private readonly listeners = new Map<string, Set<Listener>>();
 
   emit(eventName: string, event: unknown): void {
@@ -145,6 +147,9 @@ export class FakeCore {
       size: (this.logs.get(name) ?? '').length,
     }),
     shareText: async () => undefined,
+    copyText: async (options: { text: string; sensitive?: boolean }) => {
+      this.clipboard.push(options);
+    },
     openUrl: async () => undefined,
     listApps: async () => ({
       apps: [

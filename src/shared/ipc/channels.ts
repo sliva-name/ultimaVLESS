@@ -13,6 +13,7 @@ export const IPC_INVOKE_CHANNELS = {
   saveManualLinks: 'save-manual-links',
   getAppSnapshot: 'get-app-snapshot',
   setSelectedServerId: 'set-selected-server-id',
+  getServerDetails: 'get-server-details',
   getConnectionMode: 'get-connection-mode',
   setConnectionMode: 'set-connection-mode',
   getAppVersion: 'get-app-version',

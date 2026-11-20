@@ -20,6 +20,7 @@ import {
   PingResult,
   RefreshSubscriptionsResult,
   SaveManualLinksResult,
+  ServerDetails,
   TunCapabilityStatus,
   UpdateStatus,
   UpdateSubscriptionPayload,
@@ -105,6 +106,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       IPC_INVOKE_CHANNELS.setSelectedServerId,
       serverId,
     ) as Promise<boolean>,
+  getServerDetails: (serverId: string) =>
+    ipcRenderer.invoke(
+      IPC_INVOKE_CHANNELS.getServerDetails,
+      serverId,
+    ) as Promise<ServerDetails | null>,
   getConnectionMode: () =>
     ipcRenderer.invoke(
       IPC_INVOKE_CHANNELS.getConnectionMode,

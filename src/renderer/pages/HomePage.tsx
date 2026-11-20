@@ -94,6 +94,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             onModeChange={onModeChange}
             onOpenRouting={() => onNavigate('routing')}
             onOpenDiagnostics={() => onNavigate('diag')}
+            onOpenSources={() => onNavigate('subs')}
           />
         )}
       </main>

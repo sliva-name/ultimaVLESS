@@ -2,6 +2,9 @@ package com.ultima.vless.plugin
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -13,6 +16,7 @@ import android.net.Network
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
+import android.os.PersistableBundle
 import android.util.Base64
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
@@ -396,6 +400,35 @@ class UltimaCorePlugin : Plugin() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(chooser)
         call.resolve()
+    }
+
+    /**
+     * Puts text on the clipboard. A `sensitive` clip (a share link: it grants
+     * access to the server) is kept out of the system's copy preview and the
+     * keyboard's clipboard suggestions.
+     */
+    @PluginMethod
+    fun copyText(call: PluginCall) {
+        val clip = ClipData.newPlainText(call.getString("label") ?: "", call.getString("text") ?: "")
+        if (call.getBoolean("sensitive", false) == true) {
+            clip.description.extras = PersistableBundle().apply {
+                putBoolean(
+                    if (Build.VERSION.SDK_INT >= 33) ClipDescription.EXTRA_IS_SENSITIVE
+                    else "android.content.extra.IS_SENSITIVE",
+                    true,
+                )
+            }
+        }
+        // Older ClipboardManagers need a Looper; the plugin thread has none.
+        bridge.executeOnMainThread {
+            try {
+                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(clip)
+                call.resolve()
+            } catch (error: Exception) {
+                call.reject(error.message ?: "Clipboard is unavailable", "ECLIPBOARD")
+            }
+        }
     }
 
     @PluginMethod

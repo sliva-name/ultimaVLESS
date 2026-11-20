@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import {
   AlertTriangle,
@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Info,
   RefreshCw,
   Route,
   XCircle,
@@ -34,6 +35,7 @@ import {
   PingBadge,
   ServerFlag,
 } from '@/renderer/components/servers/serverParts';
+import { ServerDetailsDialog } from '@/renderer/components/servers/ServerDetailsDialog';
 import { formatDuration, useFormat } from '@/renderer/hooks/useFormat';
 import { useSessionDuration } from '@/renderer/hooks/useSessionDuration';
 import { useNow } from '@/renderer/hooks/useNow';
@@ -48,6 +50,8 @@ interface StageProps {
   onModeChange: (mode: ConnectionMode) => void;
   onOpenRouting: () => void;
   onOpenDiagnostics: () => void;
+  /** Subscriptions and manual links, where a manual server is edited. */
+  onOpenSources: () => void;
 }
 
 /** "No default route" from main: the computer has no network at all. */
@@ -86,10 +90,14 @@ export const Stage: React.FC<StageProps> = ({
   onModeChange,
   onOpenRouting,
   onOpenDiagnostics,
+  onOpenSources,
 }) => {
   const { t, i18n } = useTranslation();
   const format = useFormat();
   const [details, setDetails] = useState(false);
+  /** The server whose parameters dialog is open. */
+  const [detailsServer, setDetailsServer] = useState<VlessConfig | null>(null);
+  const closeDetails = useCallback(() => setDetailsServer(null), []);
   const { session, connectionMode, process, health, recovery } = snapshot;
   const phase = session.phase;
   const trafficSnapshot = snapshot.traffic;
@@ -221,9 +229,18 @@ export const Stage: React.FC<StageProps> = ({
       {selectedServer && (
         <div className="-mt-1 flex flex-wrap justify-center gap-2">
           <PingBadge server={selectedServer} large />
-          <span className="h-7 box-border inline-flex items-center px-2.5 rounded-lg bg-s1 border border-line text-xs leading-4 font-medium text-fg2">
+          <button
+            type="button"
+            onClick={() => setDetailsServer(selectedServer)}
+            aria-label={t('serverDetails.openAria', {
+              name: selectedServer.name,
+            })}
+            title={t('serverDetails.open')}
+            className="h-7 box-border inline-flex items-center gap-1.5 px-2.5 rounded-lg bg-s1 border border-line text-xs leading-4 font-medium text-fg2 hover:text-fg hover:bg-s2"
+          >
+            <Info aria-hidden strokeWidth={1.75} className="w-3.5 h-3.5" />
             {describeServer(selectedServer)}
-          </span>
+          </button>
           {routingSummary && (
             <button
               type="button"
@@ -342,6 +359,13 @@ export const Stage: React.FC<StageProps> = ({
           onDiagnostics={onOpenDiagnostics}
         />
       )}
+
+      <ServerDetailsDialog
+        server={detailsServer}
+        subscriptions={snapshot.subscriptions}
+        onClose={closeDetails}
+        onEditManual={onOpenSources}
+      />
     </div>
   );
 };
