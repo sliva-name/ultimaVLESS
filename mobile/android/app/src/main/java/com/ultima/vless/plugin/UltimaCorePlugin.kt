@@ -41,6 +41,7 @@ import com.ultima.vless.util.Updates
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.Executors
+import org.json.JSONObject
 
 /**
  * The native side of `mobile/src/native/UltimaCore.ts`. Capacitor runs plugin
@@ -306,6 +307,21 @@ class UltimaCorePlugin : Plugin() {
                 .put("body", result.body)
                 .put("truncated", result.truncated),
         )
+    }
+
+    @PluginMethod
+    fun tunnelDelay(call: PluginCall) = background(call) {
+        // A failed probe is a dead server, not a plugin error.
+        val latency = runCatching {
+            NetProbes.tunnelDelay(
+                proxyPort = call.getInt("proxyPort")!!,
+                user = call.getString("user") ?: "",
+                pass = call.getString("pass") ?: "",
+                url = call.getString("url")!!,
+                timeoutMs = call.getInt("timeoutMs") ?: 5000,
+            )
+        }.getOrNull()
+        call.resolve(JSObject().put("latency", latency ?: JSONObject.NULL))
     }
 
     @PluginMethod

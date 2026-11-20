@@ -2,6 +2,8 @@ package com.ultima.vless.net
 
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
+import android.util.Base64
+import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -156,6 +158,129 @@ object NetProbes {
                 ?: throw ProbeException("The probe socket closed without an answer", "ECONNRESET")
             return statusLine.split(' ').getOrNull(1)?.toIntOrNull()
                 ?: throw ProbeException("Not an HTTP status line: $statusLine", "EPROTO")
+        }
+    }
+
+    /**
+     * Real delay through a probe core's HTTP inbound on 127.0.0.1:[proxyPort]
+     * (`RealDelayService.ts` `measureTunnelDelay` on desktop): one CONNECT,
+     * then two GETs of the plain-HTTP [url] over that tunnel.
+     *
+     * The first GET pays for the proxy's own handshake and proves the server
+     * passes traffic; the second is the round trip a connected app sees.
+     * Returns the second in ms, the first when the target will not keep the
+     * connection open or the second fails, and null when the first fails.
+     */
+    fun tunnelDelay(proxyPort: Int, user: String, pass: String, url: String, timeoutMs: Int): Long? {
+        val target = URL(url)
+        if (target.protocol != "http") {
+            throw ProbeException("Unsupported URL scheme: ${target.protocol}", "EPROTO")
+        }
+        val authority = "${target.host}:${if (target.port == -1) 80 else target.port}"
+        val hostHeader = if (target.port == -1) target.host else authority
+        val path = target.file.ifEmpty { "/" }
+        val login = Base64.encodeToString("$user:$pass".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val get = "GET $path HTTP/1.1\r\nHost: $hostHeader\r\n" +
+            "User-Agent: Mozilla/5.0\r\nAccept: */*\r\n\r\n"
+        val deadline = System.nanoTime() + timeoutMs * 1_000_000L
+
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress("127.0.0.1", proxyPort), timeoutMs)
+            socket.tcpNoDelay = true
+            val input = BufferedInputStream(socket.inputStream)
+            val output = socket.outputStream
+
+            fun exchange(request: String): Pair<ResponseHead, Long> {
+                val left = (deadline - System.nanoTime()) / 1_000_000L
+                if (left <= 0) throw SocketTimeoutException("Delay test ran out of time")
+                socket.soTimeout = left.toInt()
+                val startedAt = System.nanoTime()
+                output.write(request.toByteArray(Charsets.ISO_8859_1))
+                output.flush()
+                val head = parseResponseHead(readHead(input))
+                return head to maxOf(1L, (System.nanoTime() - startedAt) / 1_000_000L)
+            }
+
+            // Xray answers CONNECT before dialing out; 407 means a wrong login.
+            val (tunnel, _) = exchange(
+                "CONNECT $authority HTTP/1.1\r\nHost: $authority\r\n" +
+                    "Proxy-Authorization: Basic $login\r\n\r\n",
+            )
+            if (tunnel.status != 200) return null
+
+            val (firstHead, first) = try {
+                exchange(get)
+            } catch (_: IOException) {
+                return null
+            }
+            if (firstHead.status !in 200..399) return null
+            if (!firstHead.reusable) return first
+
+            return try {
+                skipFully(input, firstHead.bodyLength)
+                val (secondHead, second) = exchange(get)
+                if (secondHead.status in 200..399) second else first
+            } catch (_: IOException) {
+                first
+            }
+        }
+    }
+
+    private class ResponseHead(val status: Int, val bodyLength: Long, val reusable: Boolean)
+
+    private fun parseResponseHead(head: String): ResponseHead {
+        val lines = head.split("\r\n")
+        val statusLine = lines.firstOrNull() ?: ""
+        val status = statusLine.split(' ').getOrNull(1)?.toIntOrNull() ?: 0
+        var contentLength: Long? = null
+        var reusable = statusLine.startsWith("HTTP/1.1 ", ignoreCase = true)
+        for (line in lines.drop(1)) {
+            val colon = line.indexOf(':')
+            if (colon < 0) continue
+            val name = line.substring(0, colon).trim().lowercase()
+            val value = line.substring(colon + 1).trim().lowercase()
+            when (name) {
+                "content-length" -> contentLength = value.toLongOrNull()
+                "connection" -> if (value.contains("close")) reusable = false
+                "transfer-encoding" -> if (value != "identity") reusable = false
+            }
+        }
+        val bodyless = status == 204 || status == 304 || status < 200
+        // Without a length the body runs until the server closes the connection.
+        if (!bodyless && contentLength == null) reusable = false
+        return ResponseHead(status, if (bodyless) 0 else maxOf(0L, contentLength ?: 0L), reusable)
+    }
+
+    /** Reads up to and including the blank line that ends a response head. */
+    private fun readHead(input: InputStream): String {
+        val out = ByteArrayOutputStream()
+        var matched = 0
+        while (matched < 4) {
+            val byte = input.read()
+            if (byte < 0) throw ProbeException("The tunnel closed before a response", "ECONNRESET")
+            out.write(byte)
+            val expected = if (matched % 2 == 0) '\r'.code else '\n'.code
+            matched = when {
+                byte == expected -> matched + 1
+                byte == '\r'.code -> 1
+                else -> 0
+            }
+            if (out.size() > 16 * 1024) throw ProbeException("Response head too large", "EPROTO")
+        }
+        return out.toString(Charsets.ISO_8859_1.name()).removeSuffix("\r\n\r\n")
+    }
+
+    private fun skipFully(input: InputStream, count: Long) {
+        var left = count
+        while (left > 0) {
+            val skipped = input.skip(left)
+            if (skipped > 0) {
+                left -= skipped
+            } else if (input.read() < 0) {
+                throw ProbeException("The tunnel closed inside a response body", "ECONNRESET")
+            } else {
+                left -= 1
+            }
         }
     }
 

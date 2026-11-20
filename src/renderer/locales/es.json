@@ -506,7 +506,7 @@
         "sniffingRouteOnly": "Solo enrutamiento de sniffing",
         "sniffingRouteOnlyHint": "Usar los resultados del sniffing solo para enrutamiento, no anular el destino.",
         "pingMethod": "Método de ping",
-        "pingMethodHint": "La latencia real inicia un Xray de corta duración para cada servidor y mide el tiempo de una solicitud HTTP a través de él, como v2rayN. Detecta servidores que responden pero no pasan tráfico, y es más lento en listas grandes.",
+        "pingMethodHint": "La latencia real inicia un Xray de corta duración para cada servidor y envía dos solicitudes HTTP a través de él. La primera comprueba que el servidor pasa tráfico; la cifra mostrada es la de la segunda, la latencia de una conexión ya abierta sin el handshake, comparable entre protocolos. Es más lento en listas grandes.",
         "pingMethodTcp": "Ping TCP",
         "pingMethodTcpDesc": "Rápido, solo accesibilidad",
         "pingMethodReal": "Latencia real",

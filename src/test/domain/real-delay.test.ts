@@ -1,9 +1,8 @@
-import http from 'http';
 import net from 'net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildDelayTestConfig,
-  measureHttpThroughProxy,
+  measureTunnelDelay,
   RealDelayService,
   REAL_DELAY_MIN_TIMEOUT_MS,
   type DelayTestProcess,
@@ -25,37 +24,102 @@ const vlessServer = (uuid: string) =>
     sni: 'vpn.example.com',
   });
 
-const servers: http.Server[] = [];
+const servers: net.Server[] = [];
+const sockets = new Set<net.Socket>();
 
-async function startProxy(handler: http.RequestListener): Promise<{
+interface TunnelProxy {
   port: number;
-  requests: string[];
+  /** CONNECT targets, one per tunnel. */
+  connects: string[];
   logins: (string | undefined)[];
-}> {
-  const requests: string[] = [];
-  const logins: (string | undefined)[] = [];
-  const server = http.createServer((req, res) => {
-    requests.push(req.url ?? '');
-    logins.push(req.headers['proxy-authorization']);
-    handler(req, res);
+  /** Request lines received inside the tunnels. */
+  requests: string[];
+}
+
+/**
+ * Stands in for the probe Xray's HTTP inbound and the target behind it:
+ * answers CONNECT, then hands each GET on the tunnel to `respond`.
+ */
+async function startTunnelProxy(
+  respond: (index: number, socket: net.Socket) => void,
+  connectStatus = 200,
+): Promise<TunnelProxy> {
+  const proxy: TunnelProxy = {
+    port: 0,
+    connects: [],
+    logins: [],
+    requests: [],
+  };
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+    let buffer = '';
+    let tunnelOpen = false;
+    let index = 0;
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString('latin1');
+      let end = buffer.indexOf('\r\n\r\n');
+      while (end >= 0) {
+        const head = buffer.slice(0, end);
+        buffer = buffer.slice(end + 4);
+        const [requestLine = '', ...headers] = head.split('\r\n');
+        if (!tunnelOpen) {
+          proxy.connects.push(requestLine.split(' ')[1] ?? '');
+          proxy.logins.push(
+            headers
+              .find((h) => h.toLowerCase().startsWith('proxy-authorization:'))
+              ?.slice('proxy-authorization:'.length)
+              .trim(),
+          );
+          if (connectStatus !== 200) {
+            socket.end(
+              `HTTP/1.1 ${connectStatus} Nope\r\nContent-Length: 0\r\n\r\n`,
+            );
+            return;
+          }
+          tunnelOpen = true;
+          socket.write('HTTP/1.1 200 Connection established\r\n\r\n');
+        } else {
+          proxy.requests.push(requestLine);
+          respond(index++, socket);
+        }
+        end = buffer.indexOf('\r\n\r\n');
+      }
+    });
   });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  return { port: (server.address() as net.AddressInfo).port, requests, logins };
+  proxy.port = (server.address() as net.AddressInfo).port;
+  return proxy;
 }
+
+const NO_CONTENT = 'HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n';
+/** First answer slow (the proxy handshake), the next ones at once. */
+const HANDSHAKE_MS = 150;
+const slowFirst =
+  (
+    first: string,
+    next: (socket: net.Socket) => void = (s) => s.write(NO_CONTENT),
+  ) =>
+  (index: number, socket: net.Socket) => {
+    if (index === 0) setTimeout(() => socket.write(first), HANDSHAKE_MS);
+    else next(socket);
+  };
 
 const LOGIN = { user: 'probe-user', pass: 'probe-pass' };
 const at = (port: number): DelayTestProxy => ({ port, ...LOGIN });
+const URL_204 = 'http://www.gstatic.com/generate_204';
 
 afterEach(async () => {
+  for (const socket of sockets) socket.destroy();
+  sockets.clear();
   await Promise.all(
-    servers.splice(0).map(
-      (server) =>
-        new Promise<void>((resolve) => {
-          server.closeAllConnections();
-          server.close(() => resolve());
-        }),
-    ),
+    servers
+      .splice(0)
+      .map(
+        (server) =>
+          new Promise<void>((resolve) => server.close(() => resolve())),
+      ),
   );
 });
 
@@ -108,55 +172,104 @@ describe('buildDelayTestConfig', () => {
   });
 });
 
-describe('measureHttpThroughProxy', () => {
-  it('times a proxied GET and sends the absolute URL to the proxy', async () => {
-    const proxy = await startProxy((_req, res) => {
-      res.writeHead(204).end();
-    });
+describe('measureTunnelDelay', () => {
+  it('reports the second GET on one tunnel, not the handshake-heavy first', async () => {
+    const proxy = await startTunnelProxy(slowFirst(NO_CONTENT));
 
-    const latency = await measureHttpThroughProxy(
-      at(proxy.port),
-      'http://www.gstatic.com/generate_204',
-      2000,
-    );
+    const latency = await measureTunnelDelay(at(proxy.port), URL_204, 2000);
 
     expect(latency).toEqual(expect.any(Number));
     expect(latency).toBeGreaterThan(0);
-    expect(proxy.requests).toEqual(['http://www.gstatic.com/generate_204']);
+    expect(latency).toBeLessThan(HANDSHAKE_MS - 50);
+    // One tunnel, both requests inside it, behind the probe's login.
+    expect(proxy.connects).toEqual(['www.gstatic.com:80']);
+    expect(proxy.requests).toEqual([
+      'GET /generate_204 HTTP/1.1',
+      'GET /generate_204 HTTP/1.1',
+    ]);
     expect(proxy.logins).toEqual([
       `Basic ${Buffer.from('probe-user:probe-pass').toString('base64')}`,
     ]);
   });
 
-  it('fails on an error status, a closed socket, or a timeout', async () => {
-    const failing = await startProxy((_req, res) => {
-      res.writeHead(503).end();
-    });
-    const closing = await startProxy((req) => {
-      req.socket.destroy();
-    });
-    const hanging = await startProxy(() => {
+  it('skips a response body before the second request', async () => {
+    const proxy = await startTunnelProxy(
+      slowFirst('HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello'),
+    );
+
+    const latency = await measureTunnelDelay(at(proxy.port), URL_204, 2000);
+
+    expect(latency).toBeLessThan(HANDSHAKE_MS - 50);
+    expect(proxy.requests).toHaveLength(2);
+  });
+
+  it('falls back to the first figure when the tunnel cannot take a second request', async () => {
+    const closes = await startTunnelProxy(
+      slowFirst('HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n'),
+    );
+    const dropsSecond = await startTunnelProxy(
+      slowFirst(NO_CONTENT, (socket) => socket.destroy()),
+    );
+    const failsSecond = await startTunnelProxy(
+      slowFirst(NO_CONTENT, (socket) =>
+        socket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n'),
+      ),
+    );
+
+    for (const proxy of [closes, dropsSecond, failsSecond]) {
+      const latency = await measureTunnelDelay(at(proxy.port), URL_204, 2000);
+      expect(latency).toBeGreaterThanOrEqual(HANDSHAKE_MS - 20);
+    }
+    // A closing target is never asked twice.
+    expect(closes.requests).toHaveLength(1);
+  });
+
+  it('reports the first figure when the second request runs out of time', async () => {
+    const proxy = await startTunnelProxy(
+      slowFirst(NO_CONTENT, () => {
+        // The second request never gets an answer.
+      }),
+    );
+
+    const latency = await measureTunnelDelay(at(proxy.port), URL_204, 500);
+
+    expect(latency).toBeGreaterThanOrEqual(HANDSHAKE_MS - 20);
+  });
+
+  it('fails when the tunnel or the first request fails', async () => {
+    const wrongLogin = await startTunnelProxy(() => {}, 407);
+    const failing = await startTunnelProxy((_i, socket) =>
+      socket.write('HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\n\r\n'),
+    );
+    const closing = await startTunnelProxy((_i, socket) => socket.destroy());
+    const hanging = await startTunnelProxy(() => {
       // Never answers.
     });
-    const url = 'http://www.gstatic.com/generate_204';
 
     await expect(
-      measureHttpThroughProxy(at(failing.port), url, 2000),
+      measureTunnelDelay(at(wrongLogin.port), URL_204, 2000),
     ).resolves.toBeNull();
     await expect(
-      measureHttpThroughProxy(at(closing.port), url, 2000),
+      measureTunnelDelay(at(failing.port), URL_204, 2000),
     ).resolves.toBeNull();
     await expect(
-      measureHttpThroughProxy(at(hanging.port), url, 100),
+      measureTunnelDelay(at(closing.port), URL_204, 2000),
+    ).resolves.toBeNull();
+    await expect(
+      measureTunnelDelay(at(hanging.port), URL_204, 100),
+    ).resolves.toBeNull();
+    // Only plain HTTP can be spoken on the tunnel.
+    await expect(
+      measureTunnelDelay(at(hanging.port), 'https://www.gstatic.com/', 100),
     ).resolves.toBeNull();
   });
 
   it('gives up as soon as the signal aborts', async () => {
-    const hanging = await startProxy(() => {});
+    const hanging = await startTunnelProxy(() => {});
     const controller = new AbortController();
-    const pending = measureHttpThroughProxy(
+    const pending = measureTunnelDelay(
       at(hanging.port),
-      'http://www.gstatic.com/generate_204',
+      URL_204,
       10_000,
       controller.signal,
     );

@@ -502,7 +502,7 @@
         "sniffingRouteOnly": "Sniffing route-only",
         "sniffingRouteOnlyHint": "Use sniffing results only for routing, don't override destination.",
         "pingMethod": "Ping method",
-        "pingMethodHint": "Real delay starts a short-lived Xray for each server and times an HTTP request through it, like v2rayN. It catches servers that answer but pass no traffic, and is slower on large lists.",
+        "pingMethodHint": "Real delay starts a short-lived Xray for each server and sends two HTTP requests through it. The first checks that the server passes traffic; the figure shown is the second, the delay of an already open connection without the handshake, comparable across protocols. Slower on large lists.",
         "pingMethodTcp": "TCP ping",
         "pingMethodTcpDesc": "Fast, reachability only",
         "pingMethodReal": "Real delay",

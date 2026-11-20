@@ -34,6 +34,8 @@ export class FakeCore {
     body: '',
     truncated: false,
   });
+  /** What a real-delay probe through a throwaway core reports. */
+  tunnelLatency: number | null = 120;
   /** Requests sent through the running core's probe socket. */
   coreRequests: { path: string; url: string }[] = [];
   coreRequestsWork = true;
@@ -113,6 +115,7 @@ export class FakeCore {
     startProbeCore: async () => undefined,
     stopProbeCore: async () => undefined,
     allocatePort: async () => ({ port: 23456 }),
+    tunnelDelay: async () => ({ latency: this.tunnelLatency }),
     tcpConnect: async ({ host }: { host: string }) => {
       this.tcpHosts.push(host);
       return { ok: true };
