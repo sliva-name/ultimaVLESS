@@ -114,6 +114,8 @@ The mode can be switched while connected — the client reconnects to the same s
 
 Transports: RAW (TCP), XHTTP, WebSocket, gRPC, HTTPUpgrade, mKCP. REALITY and Vision are not separate protocols but VLESS settings.
 
+**Hysteria 2 link speed.** If the server sets Brutal rates (`brutalUp`/`brutalDown` in `finalmask.quicParams`), add your speed in Mbit/s to the link: `hy2://…?upmbps=40&downmbps=200`. The client tells the server, and data then flows at that fixed rate (capped by the server's own) instead of BBR — this helps on lossy paths. Enter the speed a speed test measures without the VPN, not your plan's maximum: an overstated value floods the link, causes loss and slows the connection down. Without these parameters BBR is used, as before. The accepted speed shows in the server's parameters.
+
 **Not supported:** TUIC, `vmess://` links, protocols outside Xray, and encrypted Happ links (`happ://crypt…`) — only the Happ app can open them; ask your provider for a regular `https://` link.
 
 ## Connection modes

@@ -145,6 +145,8 @@
         "spiderX": "SpiderX",
         "obfs": "混淆",
         "obfsPassword": "混淆密码",
+        "bandwidthUp": "上传速度",
+        "bandwidthDown": "下载速度",
         "wgPrivateKey": "私钥",
         "wgAddress": "隧道地址",
         "wgEndpoint": "对端",

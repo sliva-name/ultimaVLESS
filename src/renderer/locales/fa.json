@@ -149,6 +149,8 @@
         "spiderX": "SpiderX",
         "obfs": "مبهم‌سازی",
         "obfsPassword": "رمز مبهم‌سازی",
+        "bandwidthUp": "سرعت آپلود",
+        "bandwidthDown": "سرعت دانلود",
         "wgPrivateKey": "کلید خصوصی",
         "wgAddress": "آدرس در تونل",
         "wgEndpoint": "همتا",

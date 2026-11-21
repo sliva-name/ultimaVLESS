@@ -42,6 +42,7 @@ import {
   buildSiteRules,
   resolveRoutingMode,
 } from './configGenerator/routing';
+import { withHysteriaBandwidth } from './configGenerator/hysteriaBandwidth';
 import { applyStatsApi } from './configGenerator/statsApi';
 import { adoptProxyOutboundTag } from './configGenerator/proxyTag';
 import { applyRemoteDnsSettings, buildDnsObject } from './configGenerator/dns';
@@ -1298,7 +1299,9 @@ export class XrayConfigPipeline {
       addUdpMasks(finalmask, [{ type: 'salamander', settings }]);
     }
 
-    return finalmask;
+    return protocol === 'hysteria'
+      ? withHysteriaBandwidth(finalmask, config)
+      : finalmask;
   }
 
   private static buildOutboundSettings(

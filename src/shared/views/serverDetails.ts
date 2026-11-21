@@ -36,6 +36,8 @@ export type ServerDetailKey =
   | 'spiderX'
   | 'obfs'
   | 'obfsPassword'
+  | 'bandwidthUp'
+  | 'bandwidthDown'
   | 'wgPrivateKey'
   | 'wgAddress'
   | 'wgEndpoint'
