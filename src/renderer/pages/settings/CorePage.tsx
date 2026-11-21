@@ -14,6 +14,7 @@ import type { NetworkSettings } from '@/renderer/hooks/useNetworkSettings';
 import { CORE_FIELDS, FINGERPRINT_LABELS } from '@/renderer/settingsModel';
 import {
   Button,
+  MbpsField,
   NumberField,
   Panel,
   Row,
@@ -83,6 +84,20 @@ export const CorePage: React.FC<{ net: NetworkSettings }> = ({ net }) => {
     />
   );
 
+  const mbps = (field: 'hysteriaUpMbps' | 'hysteriaDownMbps') => (
+    <Row
+      label={t(`settings.network.${field}`)}
+      hint={t(`settings.network.${field}Hint`)}
+      trailing={
+        <MbpsField
+          label={t(`settings.network.${field}`)}
+          value={perfSettings[field]}
+          onChange={(v) => updatePerfField(field, v)}
+        />
+      }
+    />
+  );
+
   // Puts this page's fields back as unsaved edits; routing and DNS stay.
   const resetCore = () => {
     for (const field of CORE_FIELDS) {
@@ -135,6 +150,17 @@ export const CorePage: React.FC<{ net: NetworkSettings }> = ({ net }) => {
               description: 'Native UDP',
             },
           ])}
+        </RowGroup>
+      </Panel>
+
+      <Panel
+        title="Hysteria2"
+        desc={t('settings.network.hysteriaBandwidthHint')}
+        locked={locked}
+      >
+        <RowGroup>
+          {mbps('hysteriaUpMbps')}
+          {mbps('hysteriaDownMbps')}
         </RowGroup>
       </Panel>
 

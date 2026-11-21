@@ -497,6 +497,9 @@ export class XrayConfigPipeline {
 
       if (!outbound.streamSettings) outbound.streamSettings = {};
       this.normalizeStreamSettings(outbound.streamSettings);
+      if (outbound.protocol === 'hysteria') {
+        this.applyHysteriaBandwidth(outbound.streamSettings, perf);
+      }
       this.applyXhttpMaxConnections(
         outbound.streamSettings,
         perf.xhttpMaxConnections,
@@ -608,6 +611,31 @@ export class XrayConfigPipeline {
         }
       }
     }
+  }
+
+  /**
+   * This device's Hysteria2 speed for a JSON server: only the directions its
+   * own `finalmask.quicParams` leaves out. A malformed finalmask is left for
+   * Xray to report.
+   */
+  private static applyHysteriaBandwidth(
+    streamSettings: MutableStreamSettings,
+    perf: PerformanceSettings,
+  ): void {
+    const current = streamSettings.finalmask;
+    if (
+      current !== undefined &&
+      (current === null ||
+        typeof current !== 'object' ||
+        Array.isArray(current))
+    ) {
+      return;
+    }
+    const finalmask = withHysteriaBandwidth(
+      current as Record<string, unknown> | undefined,
+      perf,
+    );
+    if (finalmask) streamSettings.finalmask = finalmask;
   }
 
   private static isTunableProxyProtocol(protocol: unknown): boolean {
@@ -1241,7 +1269,7 @@ export class XrayConfigPipeline {
       };
     }
 
-    const finalmask = this.buildFinalmask(config, protocol);
+    const finalmask = this.buildFinalmask(config, protocol, perf);
     if (finalmask) {
       streamSettings.finalmask = finalmask;
     }
@@ -1270,6 +1298,7 @@ export class XrayConfigPipeline {
   private static buildFinalmask(
     config: VlessConfig,
     protocol: StructuredOutboundProtocol,
+    perf: PerformanceSettings,
   ): Record<string, unknown> | undefined {
     let finalmask: Record<string, unknown> | undefined = config.finalmask
       ? (JSON.parse(JSON.stringify(config.finalmask)) as Record<
@@ -1300,7 +1329,7 @@ export class XrayConfigPipeline {
     }
 
     return protocol === 'hysteria'
-      ? withHysteriaBandwidth(finalmask, config)
+      ? withHysteriaBandwidth(finalmask, config, perf)
       : finalmask;
   }
 

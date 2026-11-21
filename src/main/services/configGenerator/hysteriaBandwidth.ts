@@ -1,42 +1,36 @@
-import type { VlessConfig } from '@/shared/types';
+import { isBrutalMbps } from '@/shared/hysteriaBandwidth';
+import type { PerformanceSettings, VlessConfig } from '@/shared/types';
 
-/**
- * Xray refuses a Brutal rate under 65536 bytes/s. Its `Bandwidth` counts
- * `mbps` in powers of 1024 bits, so that is 0.5 mbps.
- * @see https://github.com/XTLS/Xray-core/blob/main/infra/conf/transport_method.go (`Bandwidth.Bps`)
- */
-const MIN_BRUTAL_MBPS = 0.5;
-/** 1 tbps: anything above is a typo, not a link. */
-const MAX_BRUTAL_MBPS = 1024 * 1024;
-
-/** A link speed Xray accepts as a Brutal rate, in Mbit/s. */
-export function isBrutalMbps(value: unknown): value is number {
-  return (
-    typeof value === 'number' &&
-    Number.isFinite(value) &&
-    value >= MIN_BRUTAL_MBPS &&
-    value <= MAX_BRUTAL_MBPS
-  );
-}
+/** Where a declared speed can come from, in the order they win. */
+export type HysteriaRateSource = Pick<
+  VlessConfig | PerformanceSettings,
+  'hysteriaUpMbps' | 'hysteriaDownMbps'
+>;
 
 /**
  * Declares the client's link speed to a Hysteria server in
  * `finalmask.quicParams`. `brutalDown` lets a server whose own `brutalUp` is
  * set send with Brutal at `min(its brutalUp, brutalDown)`; `brutalUp` does
  * the same for the client's uploads. Without them both sides keep BBR.
- * Rates already in the link's own `fm` win; other quicParams stay as they are.
+ *
+ * Each direction is taken on its own: a rate already in the link's own `fm`
+ * wins, then the first source with a rate Xray accepts (the link's
+ * `upmbps`/`downmbps`, then this device's setting). Other quicParams stay as
+ * they are.
  * @see https://github.com/XTLS/Xray-core/blob/main/transport/internet/hysteria/hub.go
  */
 export function withHysteriaBandwidth(
   finalmask: Record<string, unknown> | undefined,
-  config: Pick<VlessConfig, 'hysteriaUpMbps' | 'hysteriaDownMbps'>,
+  ...sources: (HysteriaRateSource | undefined)[]
 ): Record<string, unknown> | undefined {
-  const rates = (
-    [
-      ['brutalUp', config.hysteriaUpMbps],
-      ['brutalDown', config.hysteriaDownMbps],
-    ] as const
-  ).filter(([, mbps]) => isBrutalMbps(mbps));
+  const rates: [string, number][] = [];
+  for (const [param, key] of [
+    ['brutalUp', 'hysteriaUpMbps'],
+    ['brutalDown', 'hysteriaDownMbps'],
+  ] as const) {
+    const mbps = sources.map((source) => source?.[key]).find(isBrutalMbps);
+    if (mbps !== undefined) rates.push([param, mbps]);
+  }
   if (rates.length === 0) return finalmask;
 
   const next = finalmask ?? {};

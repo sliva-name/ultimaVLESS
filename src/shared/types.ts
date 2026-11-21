@@ -318,6 +318,13 @@ export interface PerformanceSettings {
   directApps: string[];
   /** Latency probe used by the ping buttons and unattended refreshes. */
   pingMethod: PingMethod;
+  /**
+   * This device's measured link speed in Mbit/s for Hysteria2 servers whose
+   * link declares none (`upmbps`/`downmbps`, `fm.quicParams`): a server with
+   * Brutal then sends at that fixed rate instead of BBR. 0 = not set.
+   */
+  hysteriaUpMbps: number;
+  hysteriaDownMbps: number;
 }
 
 export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
@@ -351,4 +358,7 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   // A TCP connect only shows that the port answers: behind DPI, or another
   // VPN's own TCP stack, servers that pass no traffic still look alive.
   pingMethod: 'real',
+  // A speed only this device can measure; without one, servers keep BBR.
+  hysteriaUpMbps: 0,
+  hysteriaDownMbps: 0,
 };

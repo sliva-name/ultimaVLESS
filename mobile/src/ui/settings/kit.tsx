@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { readMbpsInput } from '@/shared/hysteriaBandwidth';
 
 export type Tone = 'info' | 'ok' | 'warn' | 'bad' | 'violet' | 'teal' | 'plain';
 
@@ -500,6 +501,52 @@ export const NumberRow: React.FC<NumberRowProps> = ({
             if (e.key === 'Enter') e.currentTarget.blur();
           }}
           className="shrink-0 w-[76px] h-10 px-3 rounded-[10px] border border-line2 bg-s2 text-fg text-[15px] leading-5 text-right tabular-nums outline-none focus:border-acc-fill"
+        />
+      }
+    />
+  );
+};
+
+/**
+ * A speed in Mbit/s that may be left empty (0, "not set"). Decimals with `.`
+ * or `,`; clamped to what Xray accepts when the field is left.
+ */
+export const MbpsRow: React.FC<Omit<NumberRowProps, 'min' | 'max'>> = ({
+  label,
+  hint,
+  value,
+  onChange,
+}) => {
+  const text = (mbps: number) => (mbps > 0 ? String(mbps) : '');
+  const [draft, setDraft] = useState(text(value));
+  // A reset or a discard replaces the value from outside.
+  const [shown, setShown] = useState(value);
+  if (shown !== value) {
+    setShown(value);
+    setDraft(text(value));
+  }
+  const commit = () => {
+    const next = readMbpsInput(draft) ?? value;
+    setDraft(text(next));
+    if (next !== value) onChange(next);
+  };
+  return (
+    <Row
+      label={label}
+      hint={hint}
+      trailing={
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft}
+          placeholder="—"
+          aria-label={label}
+          onChange={(e) => setDraft(e.target.value.replace(/[^\d.,]/g, ''))}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+          className="shrink-0 w-[92px] h-10 px-3 rounded-[10px] border border-line2 bg-s2 text-fg text-[15px] leading-5 text-right tabular-nums outline-none placeholder:text-fg3 focus:border-acc-fill"
         />
       }
     />

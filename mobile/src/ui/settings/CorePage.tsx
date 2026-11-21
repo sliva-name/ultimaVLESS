@@ -17,6 +17,7 @@ import {
   udp443Options,
 } from './options';
 import {
+  MbpsRow,
   NumberRow,
   PageBody,
   Panel,
@@ -101,6 +102,24 @@ export const CorePage: React.FC<{ net: NetworkSettings; locked: boolean }> = ({
               update('xudpProxyUDP443', value as XudpProxyUDP443)
             }
           />
+        </RowGroup>
+      </Panel>
+
+      <Panel
+        title="Hysteria2"
+        desc={t('settings.network.hysteriaBandwidthHint')}
+        locked={locked}
+      >
+        <RowGroup>
+          {(['hysteriaUpMbps', 'hysteriaDownMbps'] as const).map((key) => (
+            <MbpsRow
+              key={key}
+              label={t(`settings.network.${key}`)}
+              hint={t(`settings.network.${key}Hint`)}
+              value={settings[key]}
+              onChange={(value) => update(key, value)}
+            />
+          ))}
         </RowGroup>
       </Panel>
 

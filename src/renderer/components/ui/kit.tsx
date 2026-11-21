@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import clsx from 'clsx';
 import { AlertTriangle, Info, Lock, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { readMbpsInput } from '@/shared/hysteriaBandwidth';
 
 export type Tone = 'info' | 'ok' | 'warn' | 'bad' | 'violet' | 'teal' | 'plain';
 
@@ -517,6 +518,52 @@ export const NumberField: React.FC<NumberFieldProps> = ({
         if (e.key === 'Enter') e.currentTarget.blur();
       }}
       className="shrink-0 w-20 h-8 px-2.5 rounded-lg border border-line2 bg-s2 text-fg text-[13px] leading-5 text-right tabular-nums outline-none focus:border-acc-fill"
+    />
+  );
+};
+
+interface MbpsFieldProps {
+  label: string;
+  /** 0 is "not set" and shows as an empty field. */
+  value: number;
+  onChange: (value: number) => void;
+}
+
+/**
+ * A speed in Mbit/s that may be left empty. Typed freely (decimals with `.`
+ * or `,`), clamped to what Xray accepts when the field is left.
+ */
+export const MbpsField: React.FC<MbpsFieldProps> = ({
+  label,
+  value,
+  onChange,
+}) => {
+  const text = (mbps: number) => (mbps > 0 ? String(mbps) : '');
+  const [draft, setDraft] = useState(text(value));
+  // A reset or a discard replaces the value from outside.
+  const [shown, setShown] = useState(value);
+  if (shown !== value) {
+    setShown(value);
+    setDraft(text(value));
+  }
+  const commit = () => {
+    const next = readMbpsInput(draft) ?? value;
+    setDraft(text(next));
+    if (next !== value) onChange(next);
+  };
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={draft}
+      placeholder="—"
+      aria-label={label}
+      onChange={(e) => setDraft(e.target.value.replace(/[^\d.,]/g, ''))}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+      }}
+      className="shrink-0 w-24 h-8 px-2.5 rounded-lg border border-line2 bg-s2 text-fg text-[13px] leading-5 text-right tabular-nums outline-none placeholder:text-fg3 focus:border-acc-fill"
     />
   );
 };
