@@ -198,6 +198,30 @@ describe('mobile UI', () => {
     expect(screen.queryByText('1 изменение')).not.toBeInTheDocument();
   });
 
+  it('saves the Hysteria2 speed, empty meaning not set', async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Ядро Xray/ }));
+    const up = await screen.findByRole('textbox', {
+      name: 'Скорость отдачи, Мбит/с',
+    });
+    const down = screen.getByRole('textbox', {
+      name: 'Скорость загрузки, Мбит/с',
+    });
+    expect(up).toHaveValue('');
+    expect(down).toHaveValue('');
+
+    fireEvent.change(down, { target: { value: '95,5' } });
+    fireEvent.blur(down);
+    expect(down).toHaveValue('95.5');
+    fireEvent.click(await screen.findByRole('button', { name: 'Сохранить' }));
+    await waitFor(async () =>
+      expect(await window.electronAPI.getPerformanceSettings()).toMatchObject({
+        hysteriaUpMbps: 0,
+        hysteriaDownMbps: 95.5,
+      }),
+    );
+  });
+
   it('opens a subscription menu outside the card that would clip it', async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
     fireEvent.click(

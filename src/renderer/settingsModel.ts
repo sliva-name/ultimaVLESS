@@ -21,6 +21,8 @@ export const CORE_FIELDS = [
   'xhttpMaxConnections',
   'xudpConcurrency',
   'xudpProxyUDP443',
+  'hysteriaUpMbps',
+  'hysteriaDownMbps',
   'tunMtu',
   'tcpFastOpen',
   'sniffingRouteOnly',

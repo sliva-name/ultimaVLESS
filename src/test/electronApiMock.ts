@@ -165,6 +165,8 @@ export function createElectronApiMock(
       proxyApps: [],
       directApps: [],
       pingMethod: 'tcp',
+      hysteriaUpMbps: 0,
+      hysteriaDownMbps: 0,
     })),
     setPerformanceSettings: vi.fn(
       async (_settings: PerformanceSettings) => true,

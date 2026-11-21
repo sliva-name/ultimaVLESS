@@ -131,6 +131,11 @@ const DetailsBody: React.FC<{
                   className="m-0 min-w-0 font-mono text-[13px] leading-5 text-fg text-right break-all"
                 >
                   {shown ? field.value : MASK}
+                  {field.fromDevice && (
+                    <span className="block font-sans text-fg3 select-none">
+                      {t('serverDetails.fromDevice')}
+                    </span>
+                  )}
                 </dd>
               </div>
             );

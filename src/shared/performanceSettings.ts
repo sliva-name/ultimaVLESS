@@ -20,6 +20,7 @@ import {
 import { isValidIpv4Address } from './networkAddresses';
 import { normalizeBypassDomains, normalizeBypassIps } from './splitTunneling';
 import { normalizeAppEntries } from './appRouting';
+import { normalizeHysteriaMbps } from './hysteriaBandwidth';
 
 export { isValidIpv4Address };
 
@@ -122,7 +123,9 @@ export function performanceSettingsEqual(
     sameStringList(left.proxyIps, right.proxyIps) &&
     sameStringList(left.proxyApps, right.proxyApps) &&
     sameStringList(left.directApps, right.directApps) &&
-    left.pingMethod === right.pingMethod
+    left.pingMethod === right.pingMethod &&
+    left.hysteriaUpMbps === right.hysteriaUpMbps &&
+    left.hysteriaDownMbps === right.hysteriaDownMbps
   );
 }
 
@@ -219,6 +222,9 @@ export function isUnmodifiedLegacyPerformanceSettings(value: unknown): boolean {
     value.tunBlockDnsLeaks !== DEFAULT_PERFORMANCE_SETTINGS.tunBlockDnsLeaks
   ) {
     return false;
+  }
+  for (const key of ['hysteriaUpMbps', 'hysteriaDownMbps']) {
+    if (key in value && normalizeHysteriaMbps(value[key]) !== 0) return false;
   }
   return true;
 }
@@ -337,5 +343,8 @@ export function normalizePerformanceSettings(
     pingMethod: VALID_PING_METHODS.includes(value.pingMethod as PingMethod)
       ? (value.pingMethod as PingMethod)
       : DEFAULT_PERFORMANCE_SETTINGS.pingMethod,
+    // Missing in settings saved before it existed: not set.
+    hysteriaUpMbps: normalizeHysteriaMbps(value.hysteriaUpMbps),
+    hysteriaDownMbps: normalizeHysteriaMbps(value.hysteriaDownMbps),
   };
 }

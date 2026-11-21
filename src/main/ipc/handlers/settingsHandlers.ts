@@ -84,7 +84,12 @@ export function registerSettingsHandlers({
         throw new Error('Invalid server id');
       }
       const server = deps.serverRepository.get(serverId);
-      return server ? buildServerDetails(server) : null;
+      return server
+        ? buildServerDetails(
+            server,
+            deps.configService.getPerformanceSettings(),
+          )
+        : null;
     },
   );
 

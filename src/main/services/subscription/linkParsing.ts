@@ -10,7 +10,7 @@ import {
   isDialingUdpMask,
   migrateLegacyUdpHop,
 } from '@/main/services/configGenerator/outboundCompat';
-import { isBrutalMbps } from '@/main/services/configGenerator/hysteriaBandwidth';
+import { isBrutalMbps } from '@/shared/hysteriaBandwidth';
 import { redactUrl } from '@/main/utils/redactUrl';
 import { unbracketIpv6 } from '@/shared/networkAddresses';
 

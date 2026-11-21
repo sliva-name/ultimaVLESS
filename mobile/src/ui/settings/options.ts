@@ -38,6 +38,8 @@ export const CORE_FIELDS = [
   'xhttpMaxConnections',
   'xudpConcurrency',
   'xudpProxyUDP443',
+  'hysteriaUpMbps',
+  'hysteriaDownMbps',
   'sniffingRouteOnly',
   'domainStrategy',
   'fingerprint',

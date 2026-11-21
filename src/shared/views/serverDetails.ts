@@ -50,6 +50,8 @@ export interface ServerDetailField {
   value: string;
   /** A credential: masked until the viewer asks to see it. */
   secret?: boolean;
+  /** Not the server's own: this device's settings supply it. */
+  fromDevice?: boolean;
 }
 
 export interface ServerDetails {

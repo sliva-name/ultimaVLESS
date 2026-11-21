@@ -121,6 +121,11 @@ export const ServerDetailsDialog: React.FC<ServerDetailsDialogProps> = ({
                           className="m-0 min-w-0 font-mono text-xs leading-5 text-fg text-right break-all"
                         >
                           {shown ? field.value : MASK}
+                          {field.fromDevice && (
+                            <span className="block font-sans text-fg3 select-none">
+                              {t('serverDetails.fromDevice')}
+                            </span>
+                          )}
                         </dd>
                       </div>
                     );
