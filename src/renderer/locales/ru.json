@@ -157,6 +157,8 @@
         "spiderX": "SpiderX",
         "obfs": "Обфускация",
         "obfsPassword": "Пароль обфускации",
+        "bandwidthUp": "Скорость отдачи",
+        "bandwidthDown": "Скорость загрузки",
         "wgPrivateKey": "Приватный ключ",
         "wgAddress": "Адрес в туннеле",
         "wgEndpoint": "Пир",

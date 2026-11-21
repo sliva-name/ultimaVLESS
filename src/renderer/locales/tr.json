@@ -149,6 +149,8 @@
         "spiderX": "SpiderX",
         "obfs": "Gizleme",
         "obfsPassword": "Gizleme parolası",
+        "bandwidthUp": "Yükleme hızı",
+        "bandwidthDown": "İndirme hızı",
         "wgPrivateKey": "Özel anahtar",
         "wgAddress": "Tünel adresi",
         "wgEndpoint": "Eş",

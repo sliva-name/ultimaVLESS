@@ -5,6 +5,13 @@ import {
   type ServerDetailKey,
   type ServerDetails,
 } from '@/shared/views/serverDetails';
+import { withHysteriaBandwidth } from './configGenerator/hysteriaBandwidth';
+
+/** A Brutal rate as the config writes it (`50 mbps`); "0" declares none. */
+function readRate(value: unknown): string | undefined {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text !== '' && text !== '0' ? text : undefined;
+}
 
 /**
  * The parameters a person would compare with their provider's panel, in
@@ -64,6 +71,15 @@ export function buildServerDetails(server: VlessConfig): ServerDetails {
     add('spiderX', server.spx);
     add('obfs', server.hysteriaObfs?.type);
     add('obfsPassword', server.hysteriaObfs?.password, true);
+    if (protocol === 'hysteria') {
+      // The rates the client declares, the link's own `fm` included.
+      const quicParams = withHysteriaBandwidth(
+        server.finalmask ? { ...server.finalmask } : undefined,
+        server,
+      )?.quicParams as Record<string, unknown> | undefined;
+      add('bandwidthUp', readRate(quicParams?.brutalUp));
+      add('bandwidthDown', readRate(quicParams?.brutalDown));
+    }
   }
 
   const details: ServerDetails = { fields };

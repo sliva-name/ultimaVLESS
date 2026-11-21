@@ -105,6 +105,13 @@ export interface ServerConfig {
   hysteriaAuth?: string;
   /** `packetSize` ("min-max") turns salamander into Gecko obfs. */
   hysteriaObfs?: { type?: string; password?: string; packetSize?: string };
+  /**
+   * The client's measured link speed in Mbit/s (`upmbps`/`downmbps`), sent
+   * to the server as `finalmask.quicParams.brutalUp`/`brutalDown`: a server
+   * with Brutal then sends at that fixed rate instead of BBR.
+   */
+  hysteriaUpMbps?: number;
+  hysteriaDownMbps?: number;
 
   // WireGuard
   wgSecretKey?: string;

@@ -10,6 +10,7 @@ import {
   isDialingUdpMask,
   migrateLegacyUdpHop,
 } from '@/main/services/configGenerator/outboundCompat';
+import { isBrutalMbps } from '@/main/services/configGenerator/hysteriaBandwidth';
 import { redactUrl } from '@/main/utils/redactUrl';
 import { unbracketIpv6 } from '@/shared/networkAddresses';
 
@@ -572,6 +573,34 @@ function parseGeckoPacketSize(params: URLSearchParams): string | undefined {
   return from >= 1 && from <= to && to <= 2048 ? `${from}-${to}` : undefined;
 }
 
+/** Xray `Bandwidth` units, in Mbit/s (powers of 1024). */
+const BANDWIDTH_UNIT_MBPS: Record<string, number> = {
+  k: 1 / 1024,
+  m: 1,
+  g: 1024,
+};
+
+/**
+ * Link speed in Mbit/s. The official URI has none; s-ui, sublinkX and
+ * Hiddify write `upmbps`/`downmbps`, mihomo `up`/`down`. A bare number is
+ * Mbit/s there; `100 mbps`, `1g` and other Xray units are read too.
+ */
+function parseHysteriaMbps(
+  params: URLSearchParams,
+  names: readonly string[],
+): number | undefined {
+  const raw = names
+    .map((name) => (params.get(name) ?? '').trim())
+    .find((value) => value !== '');
+  if (!raw) return undefined;
+  const match = /^(\d+(?:\.\d+)?|\.\d+)\s*(?:([kmg])(?:b|bps)?)?$/i.exec(raw);
+  if (!match) return undefined;
+  const unit = (match[2] ?? 'm').toLowerCase();
+  const mbps = Number(match[1]) * BANDWIDTH_UNIT_MBPS[unit]!;
+  // 0 means "not declared" (BBR); Xray would refuse a too small rate.
+  return isBrutalMbps(mbps) ? mbps : undefined;
+}
+
 /**
  * Official Hysteria 2 URI: hy2:// / hysteria2://
  * https://hysteria.network/docs/developers/URI-Scheme/
@@ -621,6 +650,8 @@ function parseHysteria2Link(link: string): VlessConfig | null {
       obfs?.toLowerCase() === 'gecko'
         ? parseGeckoPacketSize(params)
         : undefined;
+    const upMbps = parseHysteriaMbps(params, ['upmbps', 'up']);
+    const downMbps = parseHysteriaMbps(params, ['downmbps', 'down']);
 
     let finalmask = parseFinalmaskParam(params);
     const mport = params.get('mport') ?? '';
@@ -680,6 +711,9 @@ function parseHysteria2Link(link: string): VlessConfig | null {
               ...(packetSize ? { packetSize } : {}),
             }
           : undefined,
+      // Client tuning, so out of the id: a new speed keeps it selected.
+      ...(upMbps !== undefined ? { hysteriaUpMbps: upMbps } : {}),
+      ...(downMbps !== undefined ? { hysteriaDownMbps: downMbps } : {}),
       finalmask,
     };
   } catch {

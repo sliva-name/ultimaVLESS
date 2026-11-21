@@ -153,6 +153,8 @@
         "spiderX": "SpiderX",
         "obfs": "Ofuscación",
         "obfsPassword": "Contraseña de ofuscación",
+        "bandwidthUp": "Velocidad de subida",
+        "bandwidthDown": "Velocidad de bajada",
         "wgPrivateKey": "Clave privada",
         "wgAddress": "Dirección en el túnel",
         "wgEndpoint": "Par",

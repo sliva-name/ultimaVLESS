@@ -149,6 +149,8 @@
         "spiderX": "SpiderX",
         "obfs": "Obfuscation",
         "obfsPassword": "Obfuscation password",
+        "bandwidthUp": "Upload speed",
+        "bandwidthDown": "Download speed",
         "wgPrivateKey": "Private key",
         "wgAddress": "Tunnel address",
         "wgEndpoint": "Peer",
